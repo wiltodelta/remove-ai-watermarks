@@ -36,9 +36,9 @@ uv tool install git+https://github.com/wiltodelta/remove-ai-watermarks.git
 To update to the latest version:
 
 ```bash
-pipx upgrade remove-ai-watermarks
+pipx install --force git+https://github.com/wiltodelta/remove-ai-watermarks.git
 # or
-uv tool upgrade remove-ai-watermarks
+uv tool install --force git+https://github.com/wiltodelta/remove-ai-watermarks.git
 ```
 
 ### Install from repository (macOS)
