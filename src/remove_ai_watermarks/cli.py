@@ -321,8 +321,8 @@ def cmd_metadata(
 @click.option(
     "--inpaint-method", type=click.Choice(["ns", "telea", "gaussian"]), default="ns", help="Inpainting method."
 )
-@click.option("--strength", type=float, default=0.04, help="Invisible watermark denoising strength (0.0–1.0).")
-@click.option("--steps", type=int, default=50, help="Number of denoising steps for invisible removal.")
+@click.option("--strength", type=float, default=0.02, help="Invisible watermark denoising strength (0.0–1.0).")
+@click.option("--steps", type=int, default=100, help="Number of denoising steps for invisible removal.")
 @click.option(
     "--pipeline",
     type=click.Choice(["default", "ctrlregen"]),

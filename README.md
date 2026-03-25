@@ -60,19 +60,18 @@ uv pip install -e .
 
 After installation the `remove-ai-watermarks` command is available system-wide.
 
-#### Invisible watermark removal (additional setup)
+#### Invisible watermark removal
 
-Invisible removal uses diffusion models and requires a **HuggingFace token** and a GPU for reasonable speed.
+Invisible removal uses diffusion models and a GPU for reasonable speed.
 
 ```bash
-# 1. Create a free token at https://huggingface.co/settings/tokens
-# 2. Copy the example env file and paste your token
+# On first run, the model (~2 GB) will be downloaded automatically.
+# Device is auto-detected: CUDA (Linux/Windows) > MPS (macOS) > CPU.
+# To force a device: --device cuda / --device mps / --device cpu
+
+# Optional: set a HuggingFace token for gated/private models
 cp .env.example .env
 # Edit .env and set HF_TOKEN=hf_your_token_here
-
-# 3. On first run, the model (~2 GB) will be downloaded automatically.
-#    Device is auto-detected: CUDA (Linux/Windows) > MPS (macOS) > CPU.
-#    To force a device: --device cuda / --device mps / --device cpu
 ```
 
 #### Developer setup
@@ -95,21 +94,28 @@ pytest
 ### CLI
 
 ```bash
-# Remove visible Gemini watermark
+# Remove all watermarks from a single image (visible + invisible + metadata)
+remove-ai-watermarks all image.png -o clean.png
+
+# Process an entire directory
+remove-ai-watermarks batch ./images/ --mode all
+```
+
+#### Individual commands
+
+```bash
+# Visible watermark only (Gemini sparkle) — fast, offline
 remove-ai-watermarks visible image.png -o clean.png
 
-# Remove invisible watermarks (SynthID etc.) with optimal quality retention
+# Invisible watermark only (SynthID etc.) — requires GPU
 remove-ai-watermarks invisible image.png -o clean.png --humanize 4.0
 
-# Strip AI metadata
+# Check / strip AI metadata only
 remove-ai-watermarks metadata image.png --check
 remove-ai-watermarks metadata image.png --remove
 
-# Batch processing
+# Batch with a specific mode
 remove-ai-watermarks batch ./images/ --mode visible
-
-# Full pipeline: visible + invisible + metadata
-remove-ai-watermarks all image.png -o clean.png
 ```
 
 ### Python API
