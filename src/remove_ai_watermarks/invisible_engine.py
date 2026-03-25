@@ -131,8 +131,9 @@ class InvisibleEngine:
             new_size = (int(image.width * ratio), int(image.height * ratio))
             if self._progress_callback:
                 self._progress_callback(
-                    f"Auto-downscaling {image.width}x{image.height} "
-                    f"to {new_size[0]}x{new_size[1]} to prevent Memory Error..."
+                    f"Downscaling {image.width}x{image.height} "
+                    f"to {new_size[0]}x{new_size[1]} "
+                    f"(model trained at {max_dimension}px)..."
                 )
             image = image.resize(new_size, Image.Resampling.LANCZOS)
 
