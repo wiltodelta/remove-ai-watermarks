@@ -27,6 +27,8 @@ class FaceProtector:
         self.haar_cascade = None
 
         if self.use_yolo:
+            # Fix SSL certificate issues on macOS (fresh Python installs)
+            self._fix_ssl_certs()
             logger.info(f"Loading YOLO model '{model_name}' for face protection...")
             self.detector = YOLO(model_name)
         else:
@@ -70,6 +72,20 @@ class FaceProtector:
                 y2 = min(image.shape[0], y + h + margin_y)
                 bboxes.append((x1, y1, x2, y2))
             return bboxes
+
+    @staticmethod
+    def _fix_ssl_certs() -> None:
+        """Set SSL_CERT_FILE from certifi if not already set (macOS fix)."""
+        import os
+
+        if os.environ.get("SSL_CERT_FILE"):
+            return
+        try:
+            import certifi
+
+            os.environ["SSL_CERT_FILE"] = certifi.where()
+        except ImportError:
+            pass
 
     def extract_faces(self, image: np.ndarray) -> list[tuple[tuple[int, int, int, int], np.ndarray]]:
         """

@@ -33,6 +33,14 @@ pipx install git+https://github.com/wiltodelta/remove-ai-watermarks.git
 uv tool install git+https://github.com/wiltodelta/remove-ai-watermarks.git
 ```
 
+To update to the latest version:
+
+```bash
+pipx upgrade remove-ai-watermarks
+# or
+uv tool upgrade remove-ai-watermarks
+```
+
 ### Install from repository (macOS)
 
 **Prerequisites:** Python 3.10+ and `pip` (or [`uv`](https://docs.astral.sh/uv/)).
@@ -136,6 +144,20 @@ if has_ai_metadata(Path("image.png")):
 - Python ≥ 3.10
 - **Visible removal / metadata**: CPU only, no GPU required
 - **Invisible removal**: GPU recommended (CUDA or MPS), works on CPU (slow)
+
+## Troubleshooting
+
+**SSL certificate error on macOS** (`CERTIFICATE_VERIFY_FAILED`):
+
+```bash
+# Option 1: Run the Python certificate installer
+/Applications/Python\ 3.*/Install\ Certificates.command
+
+# Option 2: Install certifi (the tool auto-detects it)
+pip install certifi
+```
+
+**First run is slow** — this is expected. The tool downloads model weights (~2 GB) on first launch. Subsequent runs use cached models.
 
 ## Credits
 
