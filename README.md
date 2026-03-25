@@ -21,28 +21,28 @@ Unified tool for removing **visible** and **invisible** AI watermarks from image
 
 ## Installation
 
-### Recommended (macOS)
+### Recommended
 
 Install as an isolated CLI tool — no need to manage virtual environments:
 
 ```bash
-# Using pipx (brew install pipx)
+# Using pipx (https://pipx.pypa.io)
 pipx install git+https://github.com/wiltodelta/remove-ai-watermarks.git
 
-# Or using uv (brew install uv)
+# Or using uv (https://docs.astral.sh/uv)
 uv tool install git+https://github.com/wiltodelta/remove-ai-watermarks.git
 ```
 
 To update to the latest version:
 
 ```bash
-pipx install --force git+https://github.com/wiltodelta/remove-ai-watermarks.git
+pipx upgrade remove-ai-watermarks
 
 # or
-uv tool install --force git+https://github.com/wiltodelta/remove-ai-watermarks.git
+uv tool upgrade remove-ai-watermarks
 ```
 
-### Install from repository (macOS)
+### Install from repository
 
 **Prerequisites:** Python 3.10+ and `pip` (or [`uv`](https://docs.astral.sh/uv/)).
 
@@ -60,9 +60,9 @@ uv pip install -e .
 
 After installation the `remove-ai-watermarks` command is available system-wide.
 
-#### Invisible watermark removal (optional)
+#### Invisible watermark removal (additional setup)
 
-Invisible removal uses diffusion models and requires a **HuggingFace token** and a decent GPU (CUDA) or Apple Silicon (MPS).
+Invisible removal uses diffusion models and requires a **HuggingFace token** and a GPU for reasonable speed.
 
 ```bash
 # 1. Create a free token at https://huggingface.co/settings/tokens
@@ -71,8 +71,8 @@ cp .env.example .env
 # Edit .env and set HF_TOKEN=hf_your_token_here
 
 # 3. On first run, the model (~2 GB) will be downloaded automatically.
-#    On macOS with Apple Silicon, MPS acceleration is used by default.
-#    On macOS without GPU, add --device cpu (inference will be slow).
+#    Device is auto-detected: CUDA (Linux/Windows) > MPS (macOS) > CPU.
+#    To force a device: --device cuda / --device mps / --device cpu
 ```
 
 #### Developer setup
@@ -148,14 +148,14 @@ if has_ai_metadata(Path("image.png")):
 
 ## Troubleshooting
 
-**SSL certificate error on macOS** (`CERTIFICATE_VERIFY_FAILED`):
+**SSL certificate error** (`CERTIFICATE_VERIFY_FAILED`):
 
 ```bash
-# Option 1: Run the Python certificate installer
-/Applications/Python\ 3.*/Install\ Certificates.command
-
-# Option 2: Install certifi (the tool auto-detects it)
+# Install certifi (the tool auto-detects it)
 pip install certifi
+
+# macOS only: run the Python certificate installer
+/Applications/Python\ 3.*/Install\ Certificates.command
 ```
 
 **First run is slow** — this is expected. The tool downloads model weights (~2 GB) on first launch. Subsequent runs use cached models.
