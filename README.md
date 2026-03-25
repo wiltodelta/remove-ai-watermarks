@@ -13,6 +13,55 @@ Unified tool for removing **visible** and **invisible** AI watermarks from image
 - **Batch processing** — process entire directories
 - **Detection** — three-stage NCC watermark detection with confidence scoring
 
+## How it works
+
+### 1. Visible watermark removal
+
+Gemini embeds a sparkle logo using alpha blending:
+
+```text
+watermarked = α × logo + (1 − α) × original
+```
+
+We reverse this with a known alpha map (extracted from Gemini on a pure-black background):
+
+```text
+original = (watermarked − α × logo) / (1 − α)
+```
+
+A three-stage NCC (Normalized Cross-Correlation) detector finds the watermark position and scale dynamically, so it works even if the image was resized or cropped. After removal, residual sparkle-edge artifacts are cleaned via gradient-masked inpainting.
+
+**Speed**: ~0.05s per image. No GPU needed.
+
+### 2. Invisible watermark removal
+
+AI services (Google SynthID, StableSignature, TreeRing) embed imperceptible patterns in the frequency domain. These survive cropping, resizing, and JPEG compression.
+
+The removal pipeline:
+
+```text
+image → downscale to 768px → encode to latent space (VAE)
+      → add controlled noise (forward diffusion)
+      → denoise (reverse diffusion, ~2 steps at strength 0.02)
+      → decode back to pixels (VAE) → upscale to original resolution
+```
+
+The key insight: even minimal noise injection (strength 0.02 = 2% perturbation) breaks the watermark signal while preserving visual quality. The diffusion model acts as a learned image prior — it reconstructs the image faithfully while destroying the watermark pattern.
+
+**Face Protection**: before diffusion, YOLO detects people in the image and extracts them. After diffusion, the original faces are blended back with a soft elliptical mask to prevent AI distortion of facial features.
+
+**Analog Humanizer**: optional film grain and chromatic aberration injection that makes the output indistinguishable from a photo of a screen, defeating AI-generated image classifiers.
+
+### 3. AI metadata stripping
+
+AI tools embed generation metadata in multiple layers:
+
+- **EXIF tags** — prompt, seed, model hash, sampler settings
+- **PNG text chunks** — ComfyUI workflows, Stable Diffusion parameters
+- **C2PA manifests** — Google Imagen, OpenAI DALL-E, Adobe Firefly provenance
+
+The cleaner parses each layer, removes AI-related fields, and preserves standard metadata (Author, Copyright, Title).
+
 ## Examples
 
 | Before (Watermarked) | After (Cleaned) |
