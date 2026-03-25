@@ -1,3 +1,9 @@
+"""Analog Humanizer: film grain and chromatic aberration injection.
+
+Simulates analog film imperfections to defeat digital AI perfection
+classifiers. Ported from NeuralBleach.
+"""
+
 import cv2
 import numpy as np
 from numpy.typing import NDArray

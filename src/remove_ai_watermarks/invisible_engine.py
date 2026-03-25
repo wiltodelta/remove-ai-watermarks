@@ -175,7 +175,7 @@ class InvisibleEngine:
                     if self._progress_callback:
                         self._progress_callback(f"Extracted {len(original_faces)} face(s) for protection.")
                 except Exception as e:
-                    logger.error(f"Failed to extract faces: {e}")
+                    logger.error("Failed to extract faces: %s", e)
 
             out_path = self._remover.remove_watermark(
                 image_path=image_path,

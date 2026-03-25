@@ -1,3 +1,5 @@
+"""YOLO-based face detection and soft-blend restoration for diffusion pipelines."""
+
 import logging
 from pathlib import Path
 
@@ -11,7 +13,7 @@ try:
 except ImportError:
     HAS_YOLO = False
 
-logger = logging.getLogger("face_protector")
+logger = logging.getLogger(__name__)
 
 
 class FaceProtector:
@@ -29,12 +31,14 @@ class FaceProtector:
         if self.use_yolo:
             # Fix SSL certificate issues on macOS (fresh Python installs)
             self._fix_ssl_certs()
-            logger.info(f"Loading YOLO model '{model_name}' for face protection...")
+            logger.info("Loading YOLO model '%s' for face protection...", model_name)
             self.detector = YOLO(model_name)
         else:
             if use_yolo and not HAS_YOLO:
                 logger.warning(
-                    "ultralytics YOLO is not installed. Falling back to OpenCV Haar Cascades. Install ultralytics with `pip install ultralytics` for better face detection."
+                    "ultralytics YOLO is not installed. Falling back to OpenCV Haar "
+                    "Cascades. Install ultralytics with `pip install ultralytics` "
+                    "for better face detection."
                 )
             logger.info("Loading OpenCV Haar Cascade for face protection...")
             cascade_path = Path(cv2.__file__).parent / "data" / "haarcascade_frontalface_default.xml"
@@ -139,6 +143,6 @@ class FaceProtector:
                 blended = src_roi * mask + target_roi * (1.0 - mask)
                 result[y1:y2, x1:x2] = blended.astype(np.uint8)
             except Exception as e:
-                logger.warning(f"Failed to restore face at {x1},{y1} to {x2},{y2}: {e}")
+                logger.warning("Failed to restore face at %d,%d to %d,%d: %s", x1, y1, x2, y2, e)
 
         return result
