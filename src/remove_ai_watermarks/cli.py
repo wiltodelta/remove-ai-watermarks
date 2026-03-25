@@ -371,75 +371,96 @@ def cmd_all(
 
     t0 = time.monotonic()
 
-    # ── Step 1: Visible watermark ────────────────────────────────
-    console.print("\n  [bold cyan]① Visible watermark removal[/]")
-    engine = GeminiEngine()
-    image = cv2.imread(str(source), cv2.IMREAD_COLOR)
-    if image is None:
-        console.print(f"[red]Error:[/] Failed to read image: {source}")
-        raise SystemExit(1)
+    # Use a temp file for intermediate results so the user doesn't see
+    # a partial output file during long model downloads.
+    import tempfile
 
-    h, w = image.shape[:2]
-    console.print(f"    [dim]Input:[/] {source.name}  ({w}×{h})")
-
-    with console.status("[cyan]Removing visible watermark…[/]"):
-        det = engine.detect_watermark(image)
-        if det.detected:
-            result = engine.remove_watermark(image)
-            if inpaint:
-                if det.confidence > 0.15:
-                    region = det.region
-                else:
-                    config = get_watermark_config(w, h)
-                    pos = config.get_position(w, h)
-                    region = (pos[0], pos[1], config.logo_size, config.logo_size)
-                result = engine.inpaint_residual(result, region, method=inpaint_method)
-            console.print("    [green]✓[/] Visible watermark removed")
-        else:
-            result = image.copy()
-            console.print("    [dim]Skipped (no visible watermark detected)[/]")
-
-    # Save intermediate
-    output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), result)
-
-    # ── Step 2: Invisible watermark ──────────────────────────────
-    console.print("\n  [bold cyan]② Invisible watermark removal[/]")
-    from remove_ai_watermarks.invisible_engine import InvisibleEngine
-
-    device_str = None if device == "auto" else device
-
-    def progress_cb(msg: str) -> None:
-        console.print(f"    [dim]{msg}[/]")
-
-    inv_engine = InvisibleEngine(
-        model_id=model,
-        device=device_str,
-        pipeline=pipeline,
-        hf_token=hf_token,
-        progress_callback=progress_cb,
-    )
-
-    console.print(f"    [dim]Strength:[/] {strength}  Steps: {steps}")
-    inv_engine.remove_watermark(
-        image_path=output,
-        output_path=output,
-        strength=strength,
-        num_inference_steps=steps,
-        seed=seed,
-        humanize=humanize,
-    )
-    console.print("    [green]✓[/] Invisible watermark removed")
-
-    # ── Step 3: Metadata ─────────────────────────────────────────
-    console.print("\n  [bold cyan]③ AI metadata stripping[/]")
+    tmp_fd, tmp_path_str = tempfile.mkstemp(suffix=source.suffix)
+    tmp_path = Path(tmp_path_str)
     try:
-        from remove_ai_watermarks.metadata import remove_ai_metadata
+        import os
 
-        remove_ai_metadata(output, output)
-        console.print("    [green]✓[/] AI metadata stripped")
-    except Exception as e:
-        console.print(f"    [yellow]⚠[/] Metadata strip failed: {e}")
+        os.close(tmp_fd)
+
+        # ── Step 1: Visible watermark ────────────────────────────────
+        console.print("\n  [bold cyan]① Visible watermark removal[/]")
+        engine = GeminiEngine()
+        image = cv2.imread(str(source), cv2.IMREAD_COLOR)
+        if image is None:
+            console.print(f"[red]Error:[/] Failed to read image: {source}")
+            raise SystemExit(1)
+
+        h, w = image.shape[:2]
+        console.print(f"    [dim]Input:[/] {source.name}  ({w}×{h})")
+
+        with console.status("[cyan]Removing visible watermark…[/]"):
+            det = engine.detect_watermark(image)
+            if det.detected:
+                result = engine.remove_watermark(image)
+                if inpaint:
+                    if det.confidence > 0.15:
+                        region = det.region
+                    else:
+                        config = get_watermark_config(w, h)
+                        pos = config.get_position(w, h)
+                        region = (pos[0], pos[1], config.logo_size, config.logo_size)
+                    result = engine.inpaint_residual(result, region, method=inpaint_method)
+                console.print("    [green]✓[/] Visible watermark removed")
+            else:
+                result = image.copy()
+                console.print("    [dim]Skipped (no visible watermark detected)[/]")
+
+        # Save to temp file for invisible engine input
+        cv2.imwrite(str(tmp_path), result)
+
+        # ── Step 2: Invisible watermark ──────────────────────────────
+        console.print("\n  [bold cyan]② Invisible watermark removal[/]")
+        from remove_ai_watermarks.invisible_engine import InvisibleEngine
+
+        device_str = None if device == "auto" else device
+
+        def progress_cb(msg: str) -> None:
+            console.print(f"    [dim]{msg}[/]")
+
+        inv_engine = InvisibleEngine(
+            model_id=model,
+            device=device_str,
+            pipeline=pipeline,
+            hf_token=hf_token,
+            progress_callback=progress_cb,
+        )
+
+        console.print(f"    [dim]Strength:[/] {strength}  Steps: {steps}")
+        inv_engine.remove_watermark(
+            image_path=tmp_path,
+            output_path=tmp_path,
+            strength=strength,
+            num_inference_steps=steps,
+            seed=seed,
+            humanize=humanize,
+        )
+        console.print("    [green]✓[/] Invisible watermark removed")
+
+        # ── Step 3: Metadata ─────────────────────────────────────────
+        console.print("\n  [bold cyan]③ AI metadata stripping[/]")
+        try:
+            from remove_ai_watermarks.metadata import remove_ai_metadata
+
+            remove_ai_metadata(tmp_path, tmp_path)
+            console.print("    [green]✓[/] AI metadata stripped")
+        except Exception as e:
+            console.print(f"    [yellow]⚠[/] Metadata strip failed: {e}")
+
+        # ── Write final result ────────────────────────────────────────
+        import shutil
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp_path), str(output))
+
+    finally:
+        # Clean up temp file if it still exists
+        if tmp_path.exists():
+            tmp_path.unlink()
 
     # ── Done ─────────────────────────────────────────────────────
     elapsed = time.monotonic() - t0
