@@ -8,7 +8,7 @@ and a DINOv2-based IP Adapter for semantic guidance to regenerate
 watermarked images from partially noised latents.
 
 Attribution:
-    Based on https://github.com/yepengliu/CtrlRegen (Apache-2.0).
+    Based on https://github.com/yepengliu/CtrlRegen .
 """
 
 from __future__ import annotations

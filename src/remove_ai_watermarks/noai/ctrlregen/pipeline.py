@@ -12,7 +12,7 @@ default implementation then uses ``hidden_states[-2]`` from DINOv2,
 which is exactly what the projection was trained on.
 
 Attribution:
-    Adapted from https://github.com/yepengliu/CtrlRegen (Apache-2.0).
+    Adapted from https://github.com/yepengliu/CtrlRegen .
 """
 
 from __future__ import annotations

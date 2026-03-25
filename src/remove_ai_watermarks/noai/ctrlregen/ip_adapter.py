@@ -6,7 +6,7 @@ semantic features.  This mixin provides ``load_ctrlregen_ip_adapter``
 which handles the custom weight format and encoder swap.
 
 Attribution:
-    Adapted from https://github.com/yepengliu/CtrlRegen (Apache-2.0).
+    Adapted from https://github.com/yepengliu/CtrlRegen .
 """
 
 from __future__ import annotations

@@ -139,8 +139,22 @@ if has_ai_metadata(Path("image.png")):
 
 ## Credits
 
-- [noai-watermark](https://github.com/mertizci/noai-watermark) by mertizci — invisible watermark removal
-- [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool) by Allen Kuo — visible watermark removal algorithm
+- [noai-watermark](https://github.com/mertizci/noai-watermark) by mertizci — invisible watermark removal engine
+- [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool) by Allen Kuo (MIT) — visible watermark removal algorithm
+- [CtrlRegen](https://github.com/yepengliu/CtrlRegen) by Liu et al. (ICLR 2025) — controllable regeneration pipeline
+- [NeuralBleach](https://github.com/...) (MIT) — analog humanizer technique
+
+## ⚠️ Disclaimer
+
+This tool is provided for **educational and research purposes only**.
+
+Removing AI watermarks to misrepresent AI-generated content as human-created
+may violate applicable laws, including the U.S. Digital Millennium Copyright Act
+(DMCA) and the COPIED Act. Users are solely responsible for ensuring their use
+complies with all applicable laws and platform terms of service.
+
+The authors do not condone the use of this tool for deception, fraud,
+or any activity that violates applicable laws or regulations.
 
 ## License
 

@@ -5,7 +5,7 @@ canny edges) and a DINOv2-based IP Adapter (semantic control), then
 runs controllable regeneration with optional color matching.
 
 Attribution:
-    Based on https://github.com/yepengliu/CtrlRegen (Apache-2.0).
+    Based on https://github.com/yepengliu/CtrlRegen .
 """
 
 from __future__ import annotations

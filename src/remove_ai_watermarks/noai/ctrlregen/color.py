@@ -5,7 +5,7 @@ color shifts.  This module uses histogram-based color transfer to
 align the regenerated image's color distribution back to the original.
 
 Attribution:
-    Adapted from https://github.com/yepengliu/CtrlRegen (Apache-2.0).
+    Adapted from https://github.com/yepengliu/CtrlRegen .
 """
 
 from __future__ import annotations
