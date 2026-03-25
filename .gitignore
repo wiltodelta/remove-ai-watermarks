@@ -1,0 +1,29 @@
+# Dependencies
+.venv/
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# Environment secrets
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test results
+data/results/
+
+# Reference materials
+_refs/
+
+# Downloaded model weights
+yolov8n.pt
+.coverage
