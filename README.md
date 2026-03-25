@@ -37,6 +37,7 @@ To update to the latest version:
 
 ```bash
 pipx install --force git+https://github.com/wiltodelta/remove-ai-watermarks.git
+
 # or
 uv tool install --force git+https://github.com/wiltodelta/remove-ai-watermarks.git
 ```
