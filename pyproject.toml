@@ -9,28 +9,31 @@ dependencies = [
     "pillow>=10.0.0",
     "piexif>=1.1.3",
     "numpy>=1.24.0",
-    "opencv-python>=4.8.0",
+    "opencv-python-headless>=4.8.0",
     "click>=8.0.0",
     "rich>=13.0.0",
+    "color-matcher",
+    "python-dotenv>=1.0.0",
+    "requests>=2.33.0",
+]
+
+[project.optional-dependencies]
+gpu = [
     "torch>=2.0.0",
     "diffusers>=0.25.0",
     "transformers>=4.35.0",
     "accelerate>=0.25.0",
     "controlnet-aux>=0.0.9",
-    "color-matcher",
     "safetensors",
-    "python-dotenv>=1.0.0",
     "ultralytics>=8.0.0",
-    "requests>=2.33.0",
+    "opencv-python>=4.8.0",
 ]
-
-[project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.4.0",
 ]
-all = ["remove-ai-watermarks[dev]"]
+all = ["remove-ai-watermarks[gpu,dev]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"
