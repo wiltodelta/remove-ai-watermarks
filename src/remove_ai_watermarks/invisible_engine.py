@@ -3,8 +3,8 @@
 Wraps the vendored noai-watermark code for removing invisible AI watermarks
 (SynthID, StableSignature, TreeRing) via diffusion-based regeneration.
 
-This module requires the 'invisible' extra dependencies:
-    uv pip install 'remove-ai-watermarks[invisible]'
+This module requires the 'gpu' extra dependencies:
+    uv pip install 'remove-ai-watermarks[gpu]'
 """
 
 from __future__ import annotations

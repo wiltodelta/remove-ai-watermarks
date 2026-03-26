@@ -202,7 +202,9 @@ def cmd_visible(
 @click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
 @click.option("--hf-token", type=str, default=None, help="HuggingFace API token.")
-@click.option("--humanize", type=float, default=0.0, help="Humanization strength (0.0–1.0) for invisible removal.")
+@click.option(
+    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0–6.0)."
+)
 @click.pass_context
 def cmd_invisible(
     ctx: click.Context,
@@ -219,7 +221,17 @@ def cmd_invisible(
     """Remove invisible AI watermarks (SynthID, StableSignature, TreeRing).
 
     Uses diffusion-based regeneration. Requires GPU for reasonable speed.
+    Requires the [gpu] extra: pip install 'remove-ai-watermarks[gpu]'
     """
+    from remove_ai_watermarks.invisible_engine import is_available as invisible_available
+
+    if not invisible_available():
+        console.print(
+            "[red]Error:[/] GPU dependencies not installed.\n"
+            "  Install them with: [bold]pip install 'remove-ai-watermarks[gpu]'[/]"
+        )
+        raise SystemExit(1)
+
     from remove_ai_watermarks.invisible_engine import InvisibleEngine
 
     source = _validate_image(source)
@@ -333,7 +345,9 @@ def cmd_metadata(
 @click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
 @click.option("--hf-token", type=str, default=None, help="HuggingFace API token.")
-@click.option("--humanize", type=float, default=0.0, help="Humanization strength (0.0–1.0) for invisible removal.")
+@click.option(
+    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0–6.0)."
+)
 @click.pass_context
 def cmd_all(
     ctx: click.Context,
@@ -415,31 +429,39 @@ def cmd_all(
 
         # ── Step 2: Invisible watermark ──────────────────────────────
         console.print("\n  [bold cyan]② Invisible watermark removal[/]")
-        from remove_ai_watermarks.invisible_engine import InvisibleEngine
+        from remove_ai_watermarks.invisible_engine import is_available as invisible_available
 
-        device_str = None if device == "auto" else device
+        if not invisible_available():
+            console.print(
+                "    [yellow]⚠[/] Skipped — GPU dependencies not installed.\n"
+                "    Install them with: [bold]pip install 'remove-ai-watermarks[gpu]'[/]"
+            )
+        else:
+            from remove_ai_watermarks.invisible_engine import InvisibleEngine
 
-        def progress_cb(msg: str) -> None:
-            console.print(f"    [dim]{msg}[/]")
+            device_str = None if device == "auto" else device
 
-        inv_engine = InvisibleEngine(
-            model_id=model,
-            device=device_str,
-            pipeline=pipeline,
-            hf_token=hf_token,
-            progress_callback=progress_cb,
-        )
+            def progress_cb(msg: str) -> None:
+                console.print(f"    [dim]{msg}[/]")
 
-        console.print(f"    [dim]Strength:[/] {strength}  Steps: {steps}")
-        inv_engine.remove_watermark(
-            image_path=tmp_path,
-            output_path=tmp_path,
-            strength=strength,
-            num_inference_steps=steps,
-            seed=seed,
-            humanize=humanize,
-        )
-        console.print("    [green]✓[/] Invisible watermark removed")
+            inv_engine = InvisibleEngine(
+                model_id=model,
+                device=device_str,
+                pipeline=pipeline,
+                hf_token=hf_token,
+                progress_callback=progress_cb,
+            )
+
+            console.print(f"    [dim]Strength:[/] {strength}  Steps: {steps}")
+            inv_engine.remove_watermark(
+                image_path=tmp_path,
+                output_path=tmp_path,
+                strength=strength,
+                num_inference_steps=steps,
+                seed=seed,
+                humanize=humanize,
+            )
+            console.print("    [green]✓[/] Invisible watermark removed")
 
         # ── Step 3: Metadata ─────────────────────────────────────────
         console.print("\n  [bold cyan]③ AI metadata stripping[/]")
@@ -486,7 +508,9 @@ def cmd_all(
 @click.option("--strength", type=float, default=None, help="Denoising strength (invisible mode).")
 @click.option("--steps", type=int, default=50, help="Number of denoising steps (invisible mode).")
 @click.option("--inpaint/--no-inpaint", default=True, help="Apply inpainting (visible mode).")
-@click.option("--humanize", type=float, default=0.0, help="Humanization strength (0.0–1.0) for invisible removal.")
+@click.option(
+    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0–6.0)."
+)
 @click.option("--pipeline", type=click.Choice(["default", "ctrlregen"]), default="default", help="Pipeline profile.")
 @click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
@@ -588,7 +612,13 @@ def cmd_batch(
                     if invisible_available():
                         from remove_ai_watermarks.invisible_engine import InvisibleEngine
 
-                        engine_inv = InvisibleEngine()
+                        if "_inv_engine" not in ctx.obj:
+                            ctx.obj["_inv_engine"] = InvisibleEngine(
+                                device=None if device == "auto" else device,
+                                pipeline=pipeline,
+                                hf_token=hf_token,
+                            )
+                        engine_inv = ctx.obj["_inv_engine"]
                         engine_inv.remove_watermark(
                             img_path if mode == "invisible" else out_path,
                             out_path,

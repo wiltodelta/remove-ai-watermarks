@@ -126,6 +126,13 @@ uv pip install -e .
 
 After installation the `remove-ai-watermarks` command is available system-wide.
 
+> **Note**: The base install covers visible watermark removal and metadata stripping.
+> For invisible watermark removal (SynthID etc.), install GPU dependencies:
+>
+> ```bash
+> pip install -e ".[gpu]"   # or: uv pip install -e ".[gpu]"
+> ```
+
 #### Invisible watermark removal
 
 Invisible removal uses diffusion models and a GPU for reasonable speed.
@@ -237,7 +244,7 @@ pip install certifi
 - [noai-watermark](https://github.com/mertizci/noai-watermark) by mertizci — invisible watermark removal engine
 - [GeminiWatermarkTool](https://github.com/allenk/GeminiWatermarkTool) by Allen Kuo (MIT) — visible watermark removal algorithm
 - [CtrlRegen](https://github.com/yepengliu/CtrlRegen) by Liu et al. (ICLR 2025) — controllable regeneration pipeline
-- [NeuralBleach](https://github.com/...) (MIT) — analog humanizer technique
+- NeuralBleach (MIT) — analog humanizer technique
 
 ## ⚠️ Disclaimer
 

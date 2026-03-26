@@ -79,7 +79,7 @@ class TestMainGroup:
     def test_version(self, runner):
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "0.3.0" in result.output
+        assert "0.3.1" in result.output
 
     def test_no_command_shows_banner(self, runner):
         result = runner.invoke(main, [])
@@ -151,8 +151,9 @@ class TestInvisibleCommand:
     def test_invisible_basic(self, runner, sample_png, tmp_path):
         mock_cls, mock_engine = _mock_invisible_engine()
         output = tmp_path / "clean.png"
-        with patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True), patch(
-            "remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls
+        with (
+            patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
+            patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
         ):
             result = runner.invoke(
                 main,
@@ -164,8 +165,9 @@ class TestInvisibleCommand:
 
     def test_invisible_default_output(self, runner, sample_png):
         mock_cls, mock_engine = _mock_invisible_engine()
-        with patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True), patch(
-            "remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls
+        with (
+            patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
+            patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
         ):
             result = runner.invoke(main, ["invisible", str(sample_png)])
         assert result.exit_code == 0, result.output
@@ -188,8 +190,9 @@ class TestAllCommand:
     def test_all_basic(self, runner, sample_png, tmp_path):
         mock_cls, mock_engine = _mock_invisible_engine()
         output = tmp_path / "clean.png"
-        with patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True), patch(
-            "remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls
+        with (
+            patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
+            patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
         ):
             result = runner.invoke(
                 main,
@@ -282,10 +285,11 @@ class TestBatchCommand:
         input_dir = _make_batch_dir(tmp_path)
         output_dir = tmp_path / "output"
         mock_cls, mock_engine = _mock_invisible_engine()
-        with patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True), patch(
-            "remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls
-        ), patch("remove_ai_watermarks.cli.invisible_available", return_value=True, create=True), patch(
-            "remove_ai_watermarks.invisible_engine.is_available", return_value=True
+        with (
+            patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
+            patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
+            patch("remove_ai_watermarks.cli.invisible_available", return_value=True, create=True),
+            patch("remove_ai_watermarks.invisible_engine.is_available", return_value=True),
         ):
             result = runner.invoke(
                 main,
@@ -298,10 +302,11 @@ class TestBatchCommand:
         input_dir = _make_batch_dir(tmp_path)
         output_dir = tmp_path / "output"
         mock_cls, mock_engine = _mock_invisible_engine()
-        with patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True), patch(
-            "remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls
-        ), patch("remove_ai_watermarks.cli.invisible_available", return_value=True, create=True), patch(
-            "remove_ai_watermarks.invisible_engine.is_available", return_value=True
+        with (
+            patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
+            patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
+            patch("remove_ai_watermarks.cli.invisible_available", return_value=True, create=True),
+            patch("remove_ai_watermarks.invisible_engine.is_available", return_value=True),
         ):
             result = runner.invoke(
                 main,
@@ -319,4 +324,3 @@ class TestBatchCommand:
         assert result.exit_code == 0
         expected_dir = tmp_path / "input_clean"
         assert expected_dir.exists()
-

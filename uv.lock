@@ -1993,64 +1993,73 @@ wheels = [
 
 [[package]]
 name = "remove-ai-watermarks"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
-    { name = "accelerate" },
     { name = "click" },
     { name = "color-matcher" },
-    { name = "controlnet-aux" },
-    { name = "diffusers" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "opencv-python" },
+    { name = "opencv-python-headless" },
     { name = "piexif" },
     { name = "pillow" },
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "rich" },
-    { name = "safetensors" },
-    { name = "torch" },
-    { name = "transformers" },
-    { name = "ultralytics" },
 ]
 
 [package.optional-dependencies]
 all = [
+    { name = "accelerate" },
+    { name = "controlnet-aux" },
+    { name = "diffusers" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "transformers" },
+    { name = "ultralytics" },
 ]
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+gpu = [
+    { name = "accelerate" },
+    { name = "controlnet-aux" },
+    { name = "diffusers" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "transformers" },
+    { name = "ultralytics" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", specifier = ">=0.25.0" },
+    { name = "accelerate", marker = "extra == 'gpu'", specifier = ">=0.25.0" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "color-matcher" },
-    { name = "controlnet-aux", specifier = ">=0.0.9" },
-    { name = "diffusers", specifier = ">=0.25.0" },
+    { name = "controlnet-aux", marker = "extra == 'gpu'", specifier = ">=0.0.9" },
+    { name = "diffusers", marker = "extra == 'gpu'", specifier = ">=0.25.0" },
     { name = "numpy", specifier = ">=1.24.0" },
-    { name = "opencv-python", specifier = ">=4.8.0" },
+    { name = "opencv-python-headless", specifier = ">=4.8.0" },
     { name = "piexif", specifier = ">=1.1.3" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "remove-ai-watermarks", extras = ["dev"], marker = "extra == 'all'" },
+    { name = "remove-ai-watermarks", extras = ["gpu", "dev"], marker = "extra == 'all'" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
-    { name = "safetensors" },
-    { name = "torch", specifier = ">=2.0.0" },
-    { name = "transformers", specifier = ">=4.35.0" },
-    { name = "ultralytics", specifier = ">=8.0.0" },
+    { name = "safetensors", marker = "extra == 'gpu'" },
+    { name = "torch", marker = "extra == 'gpu'", specifier = ">=2.0.0" },
+    { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.35.0" },
+    { name = "ultralytics", marker = "extra == 'gpu'", specifier = ">=8.0.0" },
 ]
-provides-extras = ["dev", "all"]
+provides-extras = ["gpu", "dev", "all"]
 
 [[package]]
 name = "requests"
