@@ -1,7 +1,7 @@
 [project]
 name = "remove-ai-watermarks"
 version = "0.2.2"
-description = "Unified tool for removing visible and invisible AI watermarks from images"
+description = "Remove visible and invisible AI watermarks from images (Gemini / Nano Banana, ChatGPT, Stable Diffusion)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
