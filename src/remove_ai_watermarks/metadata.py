@@ -103,8 +103,9 @@ def has_ai_metadata(image_path: Path) -> bool:
         if has_c2pa_metadata(image_path):
             return True
     except ImportError:
-        # Try simple binary scan
-        data = image_path.read_bytes()
+        # Try simple binary scan (read only first 512KB to avoid OOM on huge files)
+        with open(image_path, "rb") as f:
+            data = f.read(512 * 1024)
         if b"c2pa" in data.lower() or b"C2PA" in data:
             return True
 
