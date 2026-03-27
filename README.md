@@ -15,6 +15,14 @@ Strips SynthID, C2PA Content Credentials, EXIF/XMP "Made with AI" labels, and vi
 - **Batch processing** — process entire directories
 - **Detection** — three-stage NCC watermark detection with confidence scoring
 
+> **Try it online** — don't want to install anything? Use [raiw.cc](https://raiw.cc), a free web service powered by this library.
+
+## Examples
+
+| Before (Watermarked) | After (Cleaned) |
+| --- | --- |
+| ![Before](demo_banana_before.png) | ![After](demo_banana_after.png) |
+
 ## Supported models
 
 | AI model | Visible watermark | Invisible watermark | Metadata | Our approach |
@@ -78,12 +86,6 @@ AI tools embed generation metadata that social platforms use to show "Made with 
 - **C2PA Content Credentials** — cryptographic provenance manifests from Google Imagen, OpenAI DALL-E, Adobe Firefly
 
 The cleaner parses each layer, removes AI-related fields, and preserves standard metadata (Author, Copyright, Title).
-
-## Examples
-
-| Before (Watermarked) | After (Cleaned) |
-| --- | --- |
-| ![Before](demo_banana_before.png) | ![After](demo_banana_after.png) |
 
 ## Installation
 
