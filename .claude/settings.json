@@ -9,31 +9,5 @@
     "context7@claude-plugins-official": true,
     "code-simplifier@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "if": "Bash(git commit*)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run ruff check . && uv run ruff format --check . && uv run pyright"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "if": "Edit|Write(src/**/*.py|tests/**/*.py)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && jq -r '.tool_input.file_path' | xargs uv run ruff check --fix --quiet && jq -r '.tool_input.file_path' | xargs uv run ruff format --quiet"
-          }
-        ]
-      }
-    ]
   }
 }
