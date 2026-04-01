@@ -1,6 +1,6 @@
 # Remove-AI-Watermarks
 
-CLI tool and Python library for removing visible and invisible AI watermarks from images.
+You are a **principal Python engineer** maintaining a CLI tool and library for removing visible and invisible AI watermarks from images.
 
 ## Build & Run
 
@@ -43,15 +43,14 @@ uv run pyright                 # type check
 
 ## Release Process
 
-To create a new release, run:
+To release a new version (X.Y.Z):
+1. Run all checks (`./maintain.sh`)
+2. Update version in `pyproject.toml` and `src/remove_ai_watermarks/__init__.py`
+3. Commit: `chore: bump version to X.Y.Z`
+4. Tag: `git tag vX.Y.Z`
+5. Push: `git push origin main && git push origin vX.Y.Z`
 
-```bash
-./release.sh <version>          # e.g. ./release.sh 0.4.0
-```
-
-The script will: validate version format (X.Y.Z) → run all checks (ruff, pytest, pyright) → update version in `pyproject.toml` and `src/remove_ai_watermarks/__init__.py` → commit → create git tag `vX.Y.Z` → push. GitHub Actions will then automatically create a GitHub Release with build artifacts.
-
-When asked to make a release, always use `./release.sh`.
+GitHub Actions will automatically create a GitHub Release with build artifacts.
 
 ## Pre-commit Hook
 
