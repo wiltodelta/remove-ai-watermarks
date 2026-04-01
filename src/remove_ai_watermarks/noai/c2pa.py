@@ -267,31 +267,30 @@ def inject_c2pa_chunk(target_path: Path, output_path: Path, c2pa_chunk: bytes) -
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(target_path, "rb") as f_in:
-        with open(output_path, "wb") as f_out:
-            f_out.write(f_in.read(8))
+    with open(target_path, "rb") as f_in, open(output_path, "wb") as f_out:
+        f_out.write(f_in.read(8))
 
-            c2pa_injected = False
-            while True:
-                chunk_header = f_in.read(8)
-                if len(chunk_header) < 8:
-                    break
+        c2pa_injected = False
+        while True:
+            chunk_header = f_in.read(8)
+            if len(chunk_header) < 8:
+                break
 
-                length = struct.unpack(">I", chunk_header[:4])[0]
-                chunk_type = chunk_header[4:8]
-                chunk_data = f_in.read(length)
-                crc = f_in.read(4)
+            length = struct.unpack(">I", chunk_header[:4])[0]
+            chunk_type = chunk_header[4:8]
+            chunk_data = f_in.read(length)
+            crc = f_in.read(4)
 
-                if chunk_type == b"IDAT" and not c2pa_injected:
-                    f_out.write(c2pa_chunk)
-                    c2pa_injected = True
+            if chunk_type == b"IDAT" and not c2pa_injected:
+                f_out.write(c2pa_chunk)
+                c2pa_injected = True
 
-                if chunk_type == C2PA_CHUNK_TYPE:
-                    continue
+            if chunk_type == C2PA_CHUNK_TYPE:
+                continue
 
-                f_out.write(chunk_header)
-                f_out.write(chunk_data)
-                f_out.write(crc)
+            f_out.write(chunk_header)
+            f_out.write(chunk_data)
+            f_out.write(crc)
 
-                if chunk_type == b"IEND":
-                    break
+            if chunk_type == b"IEND":
+                break

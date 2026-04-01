@@ -20,8 +20,10 @@ import sys
 import threading
 import time
 import warnings
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ── ANSI color constants ────────────────────────────────────────────
 _CYAN = "\033[36m"
@@ -99,7 +101,7 @@ def run_with_progress(
     def worker() -> None:
         try:
             output_holder["result"] = task()
-        except Exception as error:  # pragma: no cover – passthrough
+        except Exception as error:  # pragma: no cover - passthrough
             output_holder["error"] = error
         finally:
             done.set()
@@ -202,18 +204,15 @@ def silence_library_output(
             lambda: _silence_diffusers(),
             lambda: __import__("huggingface_hub").logging.set_verbosity_error(),
         ):
-            try:
+            with contextlib.suppress(Exception):
                 _silence()
-            except Exception:
-                pass
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            with contextlib.redirect_stdout(io.StringIO()):
-                with contextlib.redirect_stderr(io.StringIO()):
-                    if set_progress:
-                        set_progress("Executing watermark removal pipeline...")
-                    return run_func()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                if set_progress:
+                    set_progress("Executing watermark removal pipeline...")
+                return run_func()
 
     return wrapped
 
@@ -300,7 +299,7 @@ def make_pipeline_progress(
                 idx = 0
             pipeline_done.wait(timeout=0.4)
 
-    def step_callback(step: int, timestep: int, latents: Any) -> None:  # noqa: ARG001
+    def step_callback(step: int, timestep: int, latents: Any) -> None:
         first_step.set()
         last_cb_time[0] = time.monotonic()
         elapsed = time.monotonic() - t0_holder[0]

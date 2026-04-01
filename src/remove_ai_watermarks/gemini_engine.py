@@ -4,13 +4,13 @@ Port of the GeminiWatermarkTool reverse-alpha-blending algorithm from C++ to Pyt
 Original author: Allen Kuo (allenk) — https://github.com/allenk/GeminiWatermarkTool
 
 The Gemini AI watermark is applied using alpha blending:
-    watermarked = α × logo + (1 - α) × original
+    watermarked = a * logo + (1 - a) * original
 
 We reverse this to recover the original:
-    original = (watermarked - α × logo) / (1 - α)
+    original = (watermarked - a * logo) / (1 - a)
 
 The alpha maps are derived from background captures of the Gemini watermark
-on pure-black backgrounds (48×48 for small images, 96×96 for large images).
+on pure-black backgrounds (48x48 for small images, 96x96 for large images).
 """
 
 from __future__ import annotations
@@ -19,11 +19,13 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import cv2
 import numpy as np
-from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +33,8 @@ logger = logging.getLogger(__name__)
 class WatermarkSize(Enum):
     """Watermark size mode based on image dimensions."""
 
-    SMALL = "small"  # 48×48, for images ≤ 1024×1024
-    LARGE = "large"  # 96×96, for images > 1024×1024
+    SMALL = "small"  # 48x48, for images <= 1024x1024
+    LARGE = "large"  # 96x96, for images > 1024x1024
 
 
 @dataclass
@@ -69,8 +71,8 @@ def get_watermark_config(width: int, height: int) -> WatermarkPosition:
     """Get the appropriate watermark configuration based on image size.
 
     Rules discovered from Gemini:
-      - W > 1024 AND H > 1024: 96×96 logo at (W-64-96, H-64-96)
-      - Otherwise:              48×48 logo at (W-32-48, H-32-48)
+      - W > 1024 AND H > 1024: 96x96 logo at (W-64-96, H-64-96)
+      - Otherwise:              48x48 logo at (W-32-48, H-32-48)
     """
     if width > 1024 and height > 1024:
         return WatermarkPosition(margin_right=64, margin_bottom=64, logo_size=96)
@@ -272,10 +274,7 @@ class GeminiEngine:
 
         if ref_h > 8:
             ref_region = image[y1 - ref_h : y1, x1:x2]
-            if len(ref_region.shape) == 3:
-                gray_ref = cv2.cvtColor(ref_region, cv2.COLOR_BGR2GRAY)
-            else:
-                gray_ref = ref_region
+            gray_ref = cv2.cvtColor(ref_region, cv2.COLOR_BGR2GRAY) if len(ref_region.shape) == 3 else ref_region
 
             _, s_wm = cv2.meanStdDev(gray_region)
             _, s_ref = cv2.meanStdDev(gray_ref)
@@ -397,7 +396,7 @@ class GeminiEngine:
     ) -> None:
         """Apply reverse alpha blending in-place.
 
-        Formula: original = (watermarked - α × logo) / (1 - α)
+        Formula: original = (watermarked - a * logo) / (1 - a)
         """
         x, y = position
         ah, aw = alpha_map.shape[:2]

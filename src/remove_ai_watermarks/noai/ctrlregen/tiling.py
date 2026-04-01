@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -116,7 +118,7 @@ def run_tiled(
                 _t0: float = tile_t0,
                 _es: int = effective_steps,
             ) -> Callable:
-                def _cb(step: int, timestep: int, latents: Any) -> None:  # noqa: ARG001
+                def _cb(step: int, timestep: int, latents: Any) -> None:
                     elapsed = time.monotonic() - _t0
                     cur = step + 1
                     per = elapsed / max(1, cur)

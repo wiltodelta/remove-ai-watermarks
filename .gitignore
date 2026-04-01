@@ -27,3 +27,6 @@ _refs/
 # Downloaded model weights
 yolov8n.pt
 .coverage
+
+# Claude Code local settings
+.claude/settings.local.json

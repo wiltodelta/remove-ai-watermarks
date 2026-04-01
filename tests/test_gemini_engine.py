@@ -29,7 +29,7 @@ class TestWatermarkConfig:
         assert get_watermark_size(1920, 1080) == WatermarkSize.LARGE
 
     def test_boundary_image_stays_small(self):
-        """Exactly 1024×1024 should be SMALL (rule: > 1024 for LARGE)."""
+        """Exactly 1024x1024 should be SMALL (rule: > 1024 for LARGE)."""
         assert get_watermark_size(1024, 1024) == WatermarkSize.SMALL
 
     def test_one_dimension_small(self):

@@ -12,6 +12,7 @@ Attribution:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import torch
 from diffusers.models.modeling_utils import _LOW_CPU_MEM_USAGE_DEFAULT
@@ -43,7 +44,7 @@ class CustomIPAdapterMixin:
         subfolder: str | list[str],
         weight_name: str | list[str],
         image_encoder_folder: str | None = "image_encoder",
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Load CtrlRegen IP-Adapter weights and DINOv2 image encoder.
 
@@ -93,7 +94,7 @@ class CustomIPAdapterMixin:
         }
 
         state_dicts: list[dict] = []
-        for path_or_dict, wn, sf in zip(pretrained_model_name_or_path_or_dict, weight_name, subfolder):
+        for path_or_dict, wn, sf in zip(pretrained_model_name_or_path_or_dict, weight_name, subfolder, strict=False):
             if not isinstance(path_or_dict, dict):
                 model_file = _get_model_file(
                     path_or_dict,
@@ -110,7 +111,7 @@ class CustomIPAdapterMixin:
                 if wn.endswith(".safetensors"):
                     state_dict: dict = {"image_proj": {}, "ip_adapter": {}}
                     with safe_open(model_file, framework="pt", device="cpu") as f:
-                        for key in f.keys():
+                        for key in f.keys():  # noqa: SIM118
                             if key.startswith("image_proj."):
                                 state_dict["image_proj"][key.replace("image_proj.", "")] = f.get_tensor(key)
                             elif key.startswith("ip_adapter."):
@@ -126,15 +127,15 @@ class CustomIPAdapterMixin:
             state_dicts.append(state_dict)
 
         # Always use DINOv2-giant as the image encoder.
-        if hasattr(self, "image_encoder") and getattr(self, "image_encoder", None) is None:
-            if image_encoder_folder is not None:
-                logger.info("Loading DINOv2-giant image encoder for CtrlRegen")
-                enc_dtype = getattr(self, "dtype", torch.float32)  # type: ignore[attr-defined]
-                image_encoder = AutoModel.from_pretrained(DINOV2_MODEL_ID).to(
-                    self.device,
-                    dtype=enc_dtype,  # type: ignore[attr-defined]
-                )
-                self.register_modules(image_encoder=image_encoder)  # type: ignore[attr-defined]
+        has_encoder_attr = hasattr(self, "image_encoder") and getattr(self, "image_encoder", None) is None
+        if has_encoder_attr and image_encoder_folder is not None:
+            logger.info("Loading DINOv2-giant image encoder for CtrlRegen")
+            enc_dtype = getattr(self, "dtype", torch.float32)  # type: ignore[attr-defined]
+            image_encoder = AutoModel.from_pretrained(DINOV2_MODEL_ID).to(
+                self.device,
+                dtype=enc_dtype,  # type: ignore[attr-defined]
+            )
+            self.register_modules(image_encoder=image_encoder)  # type: ignore[attr-defined]
 
         if hasattr(self, "feature_extractor") and getattr(self, "feature_extractor", None) is None:
             feature_extractor = AutoImageProcessor.from_pretrained(DINOV2_MODEL_ID)

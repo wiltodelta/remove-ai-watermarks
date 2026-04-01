@@ -12,13 +12,16 @@ This module implements a simple regeneration attack that:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
 import time
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 from PIL import Image
 
@@ -105,7 +108,7 @@ def _detect_cuda_index_url() -> str:
                 major, minor = version_str.split(".")[:2]
                 cuda_tag = f"cu{major}{minor}"
                 return f"https://download.pytorch.org/whl/{cuda_tag}"
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return "https://download.pytorch.org/whl/cu121"
 
@@ -195,9 +198,9 @@ def _ensure_watermark_deps() -> None:
 
     torch = _torch
     _HAS_TORCH = True
-    from diffusers import AutoPipelineForImage2Image  # noqa: N813
+    from diffusers import AutoPipelineForImage2Image
 
-    AutoImg2ImgPipeline = AutoPipelineForImage2Image  # noqa: N806
+    AutoImg2ImgPipeline = AutoPipelineForImage2Image
     _HAS_DIFFUSERS = True
 
 
@@ -245,7 +248,7 @@ class WatermarkRemover:
         torch_dtype: Any = None,
         progress_callback: Callable[[str], None] | None = None,
         hf_token: str | None = None,
-    ):
+    ) -> None:
         self.model_id = model_id or self.DEFAULT_MODEL_ID
         self.model_profile = detect_model_profile(self.model_id)
 
@@ -273,10 +276,8 @@ class WatermarkRemover:
         """Send a progress update through callback when available."""
         if self._progress_callback is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self._progress_callback(message)
-        except Exception:
-            pass
 
     # ── Preload ──────────────────────────────────────────────────────
 
@@ -351,18 +352,14 @@ class WatermarkRemover:
                 ) from exc
 
             if hasattr(self._pipeline, "enable_xformers_memory_efficient_attention"):
-                try:
+                with contextlib.suppress(Exception):
                     self._set_progress("Enabling memory optimizations...")
                     self._pipeline.enable_xformers_memory_efficient_attention()  # type: ignore
-                except Exception:
-                    pass
 
             # Mac Float32 memory slicing
             if self.device == "mps" and hasattr(self._pipeline, "enable_attention_slicing"):
-                try:
+                with contextlib.suppress(Exception):
                     self._pipeline.enable_attention_slicing("max")
-                except Exception:
-                    pass
 
             logger.info("Model loaded successfully")
             self._set_progress("Model initialized. Preparing input image...")
@@ -562,11 +559,9 @@ class WatermarkRemover:
             if self.device == "mps" and is_mps_error(error):
                 logger.warning("MPS out of memory during CtrlRegen. Falling back to CPU.")
                 self._set_progress("MPS out of memory! Retrying CtrlRegen on CPU...")
-                try:
+                with contextlib.suppress(Exception):
                     if _HAS_TORCH and hasattr(torch, "mps"):
                         torch.mps.empty_cache()  # type: ignore[attr-defined]
-                except Exception:
-                    pass
 
                 self.device = "cpu"
                 self.torch_dtype = torch.float32  # type: ignore[assignment]

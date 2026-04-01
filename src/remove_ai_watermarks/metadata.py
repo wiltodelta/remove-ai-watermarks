@@ -8,8 +8,12 @@ For metadata-only operations, the heavy ML dependencies are NOT required.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -184,10 +188,8 @@ def remove_ai_metadata(
             if _is_ai_key(key):
                 continue
             if key == "exif":
-                try:
+                with contextlib.suppress(Exception):
                     exif_data = piexif.load(value)
-                except Exception:
-                    pass
                 continue
             if key in ("dpi", "gamma"):
                 save_kwargs[key] = value
@@ -203,10 +205,8 @@ def remove_ai_metadata(
             save_kwargs["pnginfo"] = pnginfo
 
         if exif_data and save_kwargs["format"] == "JPEG":
-            try:
+            with contextlib.suppress(Exception):
                 save_kwargs["exif"] = piexif.dump(exif_data)
-            except Exception:
-                pass
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         img.save(output_path, **save_kwargs)

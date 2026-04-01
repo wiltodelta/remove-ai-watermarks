@@ -12,9 +12,7 @@ dependencies = [
     "opencv-python-headless>=4.8.0",
     "click>=8.0.0",
     "rich>=13.0.0",
-    "color-matcher",
     "python-dotenv>=1.0.0",
-    "requests>=2.33.0",
 ]
 
 [project.optional-dependencies]
@@ -26,11 +24,13 @@ gpu = [
     "controlnet-aux>=0.0.9",
     "safetensors",
     "ultralytics>=8.0.0",
+    "color-matcher>=0.5.0",
 ]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.4.0",
+    "pyright>=1.1.0",
 ]
 all = ["remove-ai-watermarks[gpu,dev]"]
 
@@ -55,21 +55,38 @@ addopts = "-v --tb=short"
 [tool.ruff]
 target-version = "py310"
 line-length = 120
-
-[tool.pyright]
-exclude = ["tests"]
-reportOptionalMemberAccess = "warning"
-reportPrivateImportUsage = false
-reportInvalidTypeForm = false
-reportOptionalCall = false
-reportMissingImports = "warning"
-reportCallIssue = "warning"
-reportAttributeAccessIssue = "warning"
-reportArgumentType = "warning"
-reportPossiblyUnboundVariable = "warning"
-reportAssignmentType = "warning"
-reportOperatorIssue = "warning"
+exclude = ["_refs"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP"]
-ignore = ["E501"]
+select = ["E", "F", "B", "I", "S", "UP", "SIM", "RET", "COM", "C4", "G", "PT", "PIE", "T20", "DTZ", "ICN", "TCH", "RUF", "ANN"]
+ignore = [
+    "COM812",  # missing trailing comma (conflicts with ruff formatter)
+    "ANN401",  # typing.Any — sometimes unavoidable with third-party libs
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["ANN", "S101", "S105", "S106", "S108"]
+"src/remove_ai_watermarks/noai/watermark_remover.py" = ["S603", "S606", "S607", "T201"]  # subprocess calls for auto-install/CUDA fix
+"src/remove_ai_watermarks/noai/c2pa.py" = ["S110"]  # try-except-pass for corrupt file handling
+"src/remove_ai_watermarks/noai/ctrlregen/engine.py" = ["S101", "S603"]  # assert for loaded state, subprocess for auto-install
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+exclude = ["_refs"]
+
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["."]
+reportAttributeAccessIssue = false
+reportOptionalSubscript = false
+reportOptionalMemberAccess = false
+reportArgumentType = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportMissingTypeArgument = false

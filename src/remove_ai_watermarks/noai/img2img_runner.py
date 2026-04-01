@@ -6,11 +6,14 @@ class focused on orchestration.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from PIL import Image
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from PIL import Image
 
 from remove_ai_watermarks.noai.progress import is_mps_error, make_pipeline_progress
 
@@ -28,7 +31,6 @@ def run_img2img(
     set_progress: Callable[[str], None],
 ) -> Image.Image:
     """Execute img2img with live progress and return the generated image."""
-    w, h = image.size
     effective_steps = max(1, int(num_inference_steps * strength))
 
     step_cb, first_step, done_ev, start_updater = make_pipeline_progress(
@@ -143,10 +145,8 @@ def _call_pipeline(
 
 
 def _try_clear_mps_cache() -> None:
-    try:
+    with contextlib.suppress(Exception):
         import torch
 
         if hasattr(torch, "mps"):
             torch.mps.empty_cache()  # type: ignore[attr-defined]
-    except Exception:
-        pass

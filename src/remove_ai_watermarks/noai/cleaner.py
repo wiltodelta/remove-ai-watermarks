@@ -13,8 +13,11 @@ The removal pipeline:
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+import contextlib
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import piexif
 from PIL import Image
@@ -85,23 +88,19 @@ def _extract_non_ai_metadata(source_path: Path, keep_standard: bool) -> dict[str
     with Image.open(source_path) as img:
         # Handle EXIF data
         if "exif" in img.info:
-            try:
+            with contextlib.suppress(Exception):
                 exif_dict = piexif.load(img.info["exif"])
                 cleaned_metadata["exif"] = exif_dict
-            except Exception:
-                pass
 
         # Extract non-AI metadata
         for key, value in img.info.items():
             if _is_ai_metadata_key(key):
                 continue
 
-            if keep_standard and key in PNG_METADATA_KEYS:
+            is_standard = keep_standard and key in PNG_METADATA_KEYS
+            is_nonstandard = not keep_standard and key not in ["exif", "dpi", "gamma"] and key not in PNG_METADATA_KEYS
+            if is_standard or is_nonstandard:
                 cleaned_metadata[key] = value
-            elif not keep_standard:
-                # Remove standard metadata while still preserving non-standard fields.
-                if key not in ["exif", "dpi", "gamma"] and key not in PNG_METADATA_KEYS:
-                    cleaned_metadata[key] = value
 
         # Keep DPI and gamma
         if "dpi" in img.info:
@@ -154,11 +153,9 @@ def _prepare_clean_jpeg_kwargs(save_kwargs: dict[str, Any], metadata: dict[str, 
     """Prepare save kwargs for clean JPEG."""
     exif_dict = metadata.get("exif", {"0th": {}, "Exif": {}, "1st": {}, "GPS": {}, "Interop": {}})
 
-    try:
+    with contextlib.suppress(Exception):
         exif_bytes = piexif.dump(exif_dict)
         save_kwargs["exif"] = exif_bytes
-    except Exception:
-        pass
 
     if "dpi" in metadata:
         save_kwargs["dpi"] = metadata["dpi"]

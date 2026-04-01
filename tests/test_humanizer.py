@@ -8,7 +8,7 @@ def test_humanizer_does_not_modify_original_if_disabled():
     img[50, 50] = [100, 150, 200]
     org_img = img.copy()
 
-    # grain=0, shift=0 means disabled essentially. But wait, apply_analog_humanizer currently applies chromatic shift even if grain=0.
+    # grain=0, shift=0 means disabled — result should match original.
     result = apply_analog_humanizer(img, grain_intensity=0.0, chromatic_shift=0)
     assert np.array_equal(result, org_img)
 

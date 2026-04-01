@@ -6,7 +6,10 @@ higher-level modules can import without circular dependencies.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from remove_ai_watermarks.noai.constants import SUPPORTED_FORMATS
 

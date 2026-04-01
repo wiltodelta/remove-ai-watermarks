@@ -23,7 +23,7 @@ class FaceProtector:
     been destroyed by latent diffusion or other algorithms.
     """
 
-    def __init__(self, use_yolo: bool = True, model_name: str = "yolov8n.pt"):
+    def __init__(self, use_yolo: bool = True, model_name: str = "yolov8n.pt") -> None:
         self.use_yolo = use_yolo and HAS_YOLO
         self.detector = None
         self.haar_cascade = None
@@ -62,20 +62,19 @@ class FaceProtector:
                     bboxes.append((int(x1), int(y1), int(x2), int(y2)))
             return bboxes
 
-        else:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            faces = self.haar_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-            bboxes = []
-            for x, y, w, h in faces:
-                # Add a 20% margin around the haar cascade face box
-                margin_x = int(w * 0.2)
-                margin_y = int(h * 0.2)
-                x1 = max(0, x - margin_x)
-                y1 = max(0, y - int(margin_y * 1.5))  # more margin on top for hair
-                x2 = min(image.shape[1], x + w + margin_x)
-                y2 = min(image.shape[0], y + h + margin_y)
-                bboxes.append((x1, y1, x2, y2))
-            return bboxes
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        faces = self.haar_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        bboxes = []
+        for x, y, w, h in faces:
+            # Add a 20% margin around the haar cascade face box
+            margin_x = int(w * 0.2)
+            margin_y = int(h * 0.2)
+            x1 = max(0, x - margin_x)
+            y1 = max(0, y - int(margin_y * 1.5))  # more margin on top for hair
+            x2 = min(image.shape[1], x + w + margin_x)
+            y2 = min(image.shape[0], y + h + margin_y)
+            bboxes.append((x1, y1, x2, y2))
+        return bboxes
 
     @staticmethod
     def _fix_ssl_certs() -> None:

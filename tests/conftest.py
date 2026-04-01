@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import cv2
 import numpy as np
@@ -11,25 +14,25 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_image_path(tmp_path: Path) -> Path:
-    """Create a minimal 200×200 test PNG image and return its path."""
+    """Create a minimal 200x200 test PNG image and return its path."""
     img = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
     path = tmp_path / "test_image.png"
     cv2.imwrite(str(path), img)
     return path
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_large_image_path(tmp_path: Path) -> Path:
-    """Create a 1200×1200 test PNG image (triggers large watermark branch)."""
+    """Create a 1200x1200 test PNG image (triggers large watermark branch)."""
     img = np.random.randint(0, 255, (1200, 1200, 3), dtype=np.uint8)
     path = tmp_path / "test_large.png"
     cv2.imwrite(str(path), img)
     return path
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_jpeg_path(tmp_path: Path) -> Path:
     """Create a minimal JPEG test image."""
     img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
@@ -38,7 +41,7 @@ def tmp_jpeg_path(tmp_path: Path) -> Path:
     return path
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_png_with_ai_metadata(tmp_path: Path) -> Path:
     """Create a PNG with AI-related metadata keys."""
     img = Image.new("RGB", (64, 64), color=(128, 128, 128))
@@ -51,7 +54,7 @@ def tmp_png_with_ai_metadata(tmp_path: Path) -> Path:
     return path
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_clean_png(tmp_path: Path) -> Path:
     """Create a PNG with no AI metadata."""
     img = Image.new("RGB", (64, 64), color=(200, 100, 50))

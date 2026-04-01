@@ -89,7 +89,7 @@ def main(ctx: click.Context, verbose: bool) -> None:
 @click.option(
     "--inpaint-method", type=click.Choice(["ns", "telea", "gaussian"]), default="ns", help="Inpainting method."
 )
-@click.option("--inpaint-strength", type=float, default=0.85, help="Inpainting blend strength (0.0–1.0).")
+@click.option("--inpaint-strength", type=float, default=0.85, help="Inpainting blend strength (0.0-1.0).")
 @click.option("--detect/--no-detect", default=True, help="Detect watermark before removal.")
 @click.option("--detect-threshold", type=float, default=0.25, help="Detection confidence threshold.")
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
@@ -128,7 +128,7 @@ def cmd_visible(
         raise SystemExit(1)
 
     h, w = image.shape[:2]
-    console.print(f"  [dim]Input:[/]  {source.name}  ({w}×{h})")
+    console.print(f"  [dim]Input:[/]  {source.name}  ({w}x{h})")
 
     # Detection (we always detect softly, to find dynamic region for inpainting)
     with console.status("[cyan]Detecting watermark…[/]"):
@@ -197,14 +197,14 @@ def cmd_visible(
 @click.option(
     "-o", "--output", type=click.Path(path_type=Path), default=None, help="Output path (default: <source>_clean.<ext>)."
 )
-@click.option("--strength", type=float, default=0.02, help="Denoising strength (0.0–1.0). Default: 0.02.")
+@click.option("--strength", type=float, default=0.02, help="Denoising strength (0.0-1.0). Default: 0.02.")
 @click.option("--steps", type=int, default=100, help="Number of denoising steps. Default: 100.")
 @click.option("--pipeline", type=click.Choice(["default", "ctrlregen"]), default="default", help="Pipeline profile.")
 @click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
 @click.option("--hf-token", type=str, default=None, help="HuggingFace API token.")
 @click.option(
-    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0–6.0)."
+    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0-6.0)."
 )
 @click.pass_context
 def cmd_invisible(
@@ -334,7 +334,7 @@ def cmd_metadata(
 @click.option(
     "--inpaint-method", type=click.Choice(["ns", "telea", "gaussian"]), default="ns", help="Inpainting method."
 )
-@click.option("--strength", type=float, default=0.02, help="Invisible watermark denoising strength (0.0–1.0).")
+@click.option("--strength", type=float, default=0.02, help="Invisible watermark denoising strength (0.0-1.0).")
 @click.option("--steps", type=int, default=100, help="Number of denoising steps for invisible removal.")
 @click.option(
     "--pipeline",
@@ -347,7 +347,7 @@ def cmd_metadata(
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
 @click.option("--hf-token", type=str, default=None, help="HuggingFace API token.")
 @click.option(
-    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0–6.0)."
+    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0-6.0)."
 )
 @click.pass_context
 def cmd_all(
@@ -406,7 +406,7 @@ def cmd_all(
             raise SystemExit(1)
 
         h, w = image.shape[:2]
-        console.print(f"    [dim]Input:[/] {source.name}  ({w}×{h})")
+        console.print(f"    [dim]Input:[/] {source.name}  ({w}x{h})")
 
         with console.status("[cyan]Removing visible watermark…[/]"):
             det = engine.detect_watermark(image)
@@ -598,7 +598,7 @@ def _process_batch_image(
 @click.option("--steps", type=int, default=50, help="Number of denoising steps (invisible mode).")
 @click.option("--inpaint/--no-inpaint", default=True, help="Apply inpainting (visible mode).")
 @click.option(
-    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0–6.0)."
+    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0-6.0)."
 )
 @click.option("--pipeline", type=click.Choice(["default", "ctrlregen"]), default="default", help="Pipeline profile.")
 @click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")

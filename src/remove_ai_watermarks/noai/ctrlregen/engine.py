@@ -10,12 +10,15 @@ Attribution:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
 import time
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import torch
 from PIL import Image
@@ -114,12 +117,12 @@ class CtrlRegenEngine:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-            except (subprocess.CalledProcessError, FileNotFoundError):
+            except (subprocess.CalledProcessError, FileNotFoundError) as exc:
                 raise ImportError(
                     "Failed to auto-install missing dependencies: "
                     + ", ".join(missing)
                     + ". Try manually: pip install --force-reinstall noai-watermark"
-                )
+                ) from exc
 
         self.base_model_id = base_model_id or DEFAULT_BASE_MODEL
         self.device = device
@@ -132,10 +135,8 @@ class CtrlRegenEngine:
     def _set_progress(self, message: str) -> None:
         if self._progress_callback is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self._progress_callback(message)
-        except Exception:
-            pass
 
     # ------------------------------------------------------------------
     # Loading
@@ -202,10 +203,8 @@ class CtrlRegenEngine:
         pipe = pipe.to(self.device)
 
         if hasattr(pipe, "enable_xformers_memory_efficient_attention"):
-            try:
+            with contextlib.suppress(Exception):
                 pipe.enable_xformers_memory_efficient_attention()
-            except Exception:
-                pass
 
         self._pipeline = pipe
         self._canny_detector = CannyDetector()

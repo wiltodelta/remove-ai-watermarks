@@ -33,5 +33,3 @@ class CustomCtrlRegenPipeline(
     while ``CustomIPAdapterMixin`` only adds the
     ``load_ctrlregen_ip_adapter`` method.
     """
-
-    pass

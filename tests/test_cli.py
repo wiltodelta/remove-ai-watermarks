@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import cv2
 import numpy as np
@@ -15,12 +18,12 @@ from PIL.PngImagePlugin import PngInfo
 from remove_ai_watermarks.cli import main
 
 
-@pytest.fixture()
+@pytest.fixture
 def runner():
     return CliRunner()
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_png(tmp_path: Path) -> Path:
     """Create a sample PNG for CLI testing."""
     img = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
@@ -79,7 +82,8 @@ class TestMainGroup:
     def test_version(self, runner):
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "0.3.1" in result.output
+        assert "remove-ai-watermarks" in result.output
+        assert "version" in result.output
 
     def test_no_command_shows_banner(self, runner):
         result = runner.invoke(main, [])
@@ -164,7 +168,7 @@ class TestInvisibleCommand:
         mock_engine.remove_watermark.assert_called_once()
 
     def test_invisible_default_output(self, runner, sample_png):
-        mock_cls, mock_engine = _mock_invisible_engine()
+        mock_cls, _mock_engine = _mock_invisible_engine()
         with (
             patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
             patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
@@ -188,7 +192,7 @@ class TestAllCommand:
         assert "visible" in result.output.lower()
 
     def test_all_basic(self, runner, sample_png, tmp_path):
-        mock_cls, mock_engine = _mock_invisible_engine()
+        mock_cls, _mock_engine = _mock_invisible_engine()
         output = tmp_path / "clean.png"
         with (
             patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
@@ -284,7 +288,7 @@ class TestBatchCommand:
     def test_batch_invisible_mode(self, runner, tmp_path):
         input_dir = _make_batch_dir(tmp_path)
         output_dir = tmp_path / "output"
-        mock_cls, mock_engine = _mock_invisible_engine()
+        mock_cls, _mock_engine = _mock_invisible_engine()
         with (
             patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
             patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
@@ -301,7 +305,7 @@ class TestBatchCommand:
     def test_batch_all_mode(self, runner, tmp_path):
         input_dir = _make_batch_dir(tmp_path)
         output_dir = tmp_path / "output"
-        mock_cls, mock_engine = _mock_invisible_engine()
+        mock_cls, _mock_engine = _mock_invisible_engine()
         with (
             patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
             patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),

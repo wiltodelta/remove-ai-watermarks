@@ -6,8 +6,10 @@ human-readable summary without modifying the source file.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import piexif
 from PIL import Image
@@ -82,9 +84,8 @@ def extract_ai_metadata(source_path: Path) -> dict[str, Any]:
 
         for key, value in img.info.items():
             key_lower = key.lower()
-            if key not in ai_metadata:
-                if any(kw in key_lower for kw in AI_KEYWORDS):
-                    ai_metadata[key] = value
+            if key not in ai_metadata and any(kw in key_lower for kw in AI_KEYWORDS):
+                ai_metadata[key] = value
 
     # Check for C2PA metadata
     if has_c2pa_metadata(source_path):
@@ -111,10 +112,7 @@ def has_ai_metadata(image_path: Path) -> bool:
             if key in img.info:
                 return True
 
-    if has_c2pa_metadata(image_path):
-        return True
-
-    return False
+    return bool(has_c2pa_metadata(image_path))
 
 
 def get_ai_metadata_summary(source_path: Path) -> str:
@@ -138,7 +136,7 @@ def get_ai_metadata_summary(source_path: Path) -> str:
     for key, value in ai_meta.items():
         if key == "c2pa_chunk":
             continue
-        elif key == "c2pa" and isinstance(value, dict):
+        if key == "c2pa" and isinstance(value, dict):
             lines.append("C2PA Metadata:")
             for ck, cv in value.items():
                 lines.append(f"  {ck}: {cv}")

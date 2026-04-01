@@ -35,11 +35,27 @@ uv run pyright                 # type check
 
 ## Key Conventions
 
-- Python 3.10+, ruff line-length 120, type hints everywhere
+- Python 3.10+, ruff line-length 120, pyright strict mode, type hints everywhere
 - GPU/ML modules (invisible_engine, ctrlregen, watermark_remover) are optional — guard imports with `is_available()` checks
 - Tests for ML modules are limited to availability checks (require multi-GB downloads)
-- Always run `./maintain.sh` before committing
 - Use `uv` for all package operations, never raw `pip`
+- `_refs/` directory is excluded from all checks — contains third-party reference code
+
+## Release Process
+
+To create a new release, run:
+
+```bash
+./release.sh <version>          # e.g. ./release.sh 0.4.0
+```
+
+The script will: validate version format (X.Y.Z) → run all checks (ruff, pytest, pyright) → update version in `pyproject.toml` and `src/remove_ai_watermarks/__init__.py` → commit → create git tag `vX.Y.Z` → push. GitHub Actions will then automatically create a GitHub Release with build artifacts.
+
+When asked to make a release, always use `./release.sh`.
+
+## Pre-commit Hook
+
+Git hooks live in `.githooks/`. Run `./maintain.sh` once to activate them (sets `core.hooksPath`). The pre-commit hook runs ruff check, ruff format --check, and pytest.
 
 ## Language
 

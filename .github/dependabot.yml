@@ -1,21 +1,29 @@
 version: 2
 
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
-    commit-message:
-      prefix: "deps"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
-    open-pull-requests-limit: 10
+      - "python"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    commit-message:
-      prefix: "ci"
+    open-pull-requests-limit: 5
     labels:
-      - "ci"
+      - "dependencies"
+      - "github-actions"
+    groups:
+      actions:
+        patterns:
+          - "*"

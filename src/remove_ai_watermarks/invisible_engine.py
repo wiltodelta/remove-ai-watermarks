@@ -12,8 +12,11 @@ from __future__ import annotations
 import logging
 import os
 import warnings
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Suppress verbose deprecation warnings from diffusers/transformers/huggingface_hub
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -106,7 +109,7 @@ class InvisibleEngine:
         Args:
             image_path: Path to the watermarked image.
             output_path: Output path (None = overwrite source).
-            strength: Denoising strength (0.0–1.0). Default 0.04.
+            strength: Denoising strength (0.0-1.0). Default 0.04.
             steps: Number of denoising steps.
             guidance_scale: Classifier-free guidance scale.
             seed: Random seed for reproducibility.
