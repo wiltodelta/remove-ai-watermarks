@@ -116,6 +116,82 @@ def has_ai_metadata(image_path: Path) -> bool:
     return False
 
 
+def _scan_png_c2pa_chunk(image_path: Path) -> dict[str, str]:
+    """Extract a human-readable summary of the C2PA manifest in a PNG file.
+
+    PIL does not expose the caBX JUMBF box via ``img.info``, so we delegate
+    chunk extraction to the existing ``extract_c2pa_chunk`` helper and pull
+    key fields from the JUMBF payload without a full CBOR parser.
+    """
+    import re
+
+    from remove_ai_watermarks.noai.c2pa import extract_c2pa_chunk
+
+    raw = extract_c2pa_chunk(image_path)
+    if raw is None:
+        return {}
+
+    # extract_c2pa_chunk returns chunk_header (8 bytes) + data + crc (4 bytes).
+    payload = raw[8:-4]
+    result: dict[str, str] = {"c2pa_manifest": f"C2PA manifest ({len(payload)} bytes)"}
+
+    def _cbor_text_after(key: bytes) -> str | None:
+        """Return the CBOR text-string immediately following ``key``.
+
+        Handles CBOR major-type 3 length prefixes: direct (0x60-0x77),
+        1-byte (0x78 NN), and 2-byte (0x79 NN NN).
+        """
+        idx = payload.find(key)
+        if idx < 0:
+            return None
+        p = idx + len(key)
+        if p >= len(payload):
+            return None
+        head = payload[p]
+        if 0x60 <= head <= 0x77:
+            length, start = head - 0x60, p + 1
+        elif head == 0x78 and p + 1 < len(payload):
+            length, start = payload[p + 1], p + 2
+        elif head == 0x79 and p + 2 < len(payload):
+            length, start = (payload[p + 1] << 8) | payload[p + 2], p + 3
+        else:
+            return None
+        raw_str = payload[start : start + length]
+        try:
+            return raw_str.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw_str.decode("latin1", errors="replace")
+
+    if generator := _cbor_text_after(b"name"):
+        result["claim_generator"] = generator
+
+    if spec := _cbor_text_after(b"specVersion"):
+        result["c2pa_spec"] = spec
+
+    dst_match = re.search(
+        rb"(http://cv\.iptc\.org/newscodes/digitalsourcetype/[A-Za-z0-9_-]+)",
+        payload,
+    )
+    if dst_match:
+        result["digital_source_type"] = dst_match.group(1).decode("latin1")
+
+    actions = sorted(
+        {m.decode("latin1") for m in re.findall(rb"c2pa\.(created|converted|edited|opened|placed)", payload)}
+    )
+    if actions:
+        result["c2pa_actions"] = ", ".join(actions)
+
+    # Scan cert DN printable strings for the signer org name.
+    signer_match = re.search(
+        rb"([A-Za-z][A-Za-z0-9 .,&'()\-]{2,48}OpenAI[A-Za-z0-9 .,&'()\-]{0,48})",
+        payload,
+    )
+    if signer_match:
+        result["signer"] = signer_match.group(1).decode("latin1").strip()
+
+    return result
+
+
 def get_ai_metadata(image_path: Path) -> dict[str, str]:
     """Extract AI-related metadata from an image.
 
@@ -139,6 +215,7 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
                 else:
                     result[key] = str(value)
 
+    result.update(_scan_png_c2pa_chunk(image_path))
     return result
 
 

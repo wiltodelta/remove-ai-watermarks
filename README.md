@@ -29,6 +29,7 @@ Strips SynthID, C2PA Content Credentials, EXIF/XMP "Made with AI" labels, and vi
 | --- | --- | --- | --- | --- |
 | **Google Gemini / Nano Banana** | ✅ Sparkle logo | ✅ SynthID | ✅ C2PA + EXIF | Alpha reversal + diffusion + metadata strip |
 | **OpenAI DALL-E 3 / ChatGPT** | — | — | ✅ C2PA manifest | Metadata strip |
+| **OpenAI ChatGPT Images 2.0** (gpt-image-2) | — | ⚠️ imperceptible pixel watermark (no public detector yet) | ✅ C2PA manifest (verified) | Diffusion regeneration + metadata strip |
 | **Stable Diffusion (AUTOMATIC1111, ComfyUI)** | — | ✅ DWT / steganographic | ✅ PNG text chunks | Diffusion regeneration + metadata strip |
 | **Adobe Firefly** | — | — | ✅ Content Credentials (C2PA) | Metadata strip |
 | **Midjourney** | — | — | ✅ EXIF + XMP (prompt, model, seed) | Metadata strip |
