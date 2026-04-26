@@ -309,12 +309,19 @@ class GeminiEngine:
     ) -> NDArray:
         """Remove Gemini visible watermark from an image using reverse alpha blending.
 
+        No-op when the detector does not find a watermark: returns an unmodified
+        copy. Reverse alpha blending applied where no sparkle exists creates a
+        visible inverse artifact, so we refuse to touch pixels without a positive
+        detection. To bypass detection (e.g. you know the exact region), use
+        ``remove_watermark_custom``.
+
         Args:
             image: BGR image as numpy array (will NOT be modified in-place).
             force_size: Force a specific watermark size (auto-detect if None).
 
         Returns:
-            Cleaned BGR image as numpy array.
+            Cleaned BGR image as numpy array, or an unmodified copy when no
+            watermark is detected.
         """
         result = image.copy()
 
@@ -324,35 +331,28 @@ class GeminiEngine:
         elif result.shape[2] == 1:
             result = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
 
-        h, w = result.shape[:2]
-        size = force_size or get_watermark_size(w, h)
+        size = force_size or get_watermark_size(result.shape[1], result.shape[0])
 
         # Detect dynamic position & size
         detection = self.detect_watermark(image, force_size=size)
 
-        # If the confidence is really high (>0.15), use the dynamically detected position and size.
-        if detection.confidence > 0.15:
-            pos = (detection.region[0], detection.region[1])
-            alpha_map = self.get_interpolated_alpha(detection.region[2])
+        if not detection.detected:
             logger.debug(
-                "Using dynamic watermark position (%d, %d) at size %dx%d [conf=%.3f]",
-                pos[0],
-                pos[1],
-                detection.region[2],
-                detection.region[3],
+                "No watermark detected (conf=%.3f); returning image unchanged.",
                 detection.confidence,
             )
-        else:
-            config = get_watermark_config(w, h)
-            pos = config.get_position(w, h)
-            alpha_map = self.get_alpha_map(size)
-            logger.debug(
-                "Dynamic search failed. Using fallback default position (%d, %d) with %dx%d alpha map.",
-                pos[0],
-                pos[1],
-                alpha_map.shape[1],
-                alpha_map.shape[0],
-            )
+            return result
+
+        pos = (detection.region[0], detection.region[1])
+        alpha_map = self.get_interpolated_alpha(detection.region[2])
+        logger.debug(
+            "Removing watermark at (%d, %d) size %dx%d [conf=%.3f]",
+            pos[0],
+            pos[1],
+            detection.region[2],
+            detection.region[3],
+            detection.confidence,
+        )
 
         self._reverse_alpha_blend(result, alpha_map, pos)
         return result
