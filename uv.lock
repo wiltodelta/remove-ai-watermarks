@@ -2690,7 +2690,7 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "5.7.0"
+version = "5.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -2704,9 +2704,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4d/fe/7e84d20ac7d4d5d14bac2eab5976088d86342959fc2c0da54b4c2fc99856/transformers-5.7.0.tar.gz", hash = "sha256:a9d35cf39804e3456c1f9bc1a79ad5ffa878640a61f51f66f71c97f4b4e2ce10", size = 8401287, upload-time = "2026-04-28T18:30:09.75Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/e6/4134ea2fbea322cddc7ffc94a0d8ee47fe32ce8e876b320cd37d88edfc4d/transformers-5.8.1.tar.gz", hash = "sha256:4dd5b6de4105725104d84fd6abd74b305f4debfc251b38c648ee5dd087cf543b", size = 8532019, upload-time = "2026-05-13T03:21:57.234Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/60/86a9fe3037bec221094e2acb680219ad88b77006edba42fc0407a577ca93/transformers-5.7.0-py3-none-any.whl", hash = "sha256:869660cd8fc92badc041f5551bf755a42f4b9558c93341bf3fa3eeed7065079c", size = 10474236, upload-time = "2026-04-28T18:30:05.655Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/b1/8be7e7ef0b5200491312201918b6125ef9c9df9dd0f0240ccef9ac824e6b/transformers-5.8.1-py3-none-any.whl", hash = "sha256:5340fb95962162cdfdae5cc91d7f8fedd92ed75216c1154c5e1f590fcf56dd0e", size = 10632882, upload-time = "2026-05-13T03:21:52.876Z" },
 ]
 
 [[package]]
@@ -2756,7 +2756,7 @@ wheels = [
 
 [[package]]
 name = "ultralytics"
-version = "8.4.43"
+version = "8.4.49"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
@@ -2774,9 +2774,9 @@ dependencies = [
     { name = "torchvision" },
     { name = "ultralytics-thop" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/f1/9df482fe77aedce41202941682c91df209e9b033e42c27f1e6113e712761/ultralytics-8.4.43.tar.gz", hash = "sha256:174de586b4f2b2a8fab33c57b6aa059ce4408544585e874477ca30835e780a8f", size = 1037739, upload-time = "2026-04-28T16:53:32.246Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/b5/2bc179c1ebc3d0459a94c73ebbaa85fdd313c8019f4465c01c58dfe59bef/ultralytics-8.4.49.tar.gz", hash = "sha256:f7da2996847c82f47f21bc87b1ba2916ecde9fa8928d0875a5a35d53f1473a3b", size = 1039816, upload-time = "2026-05-12T17:21:47.839Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/bf/fdcbb5b21e6d40e9b761217fae6d3e5aa1596c076f4a6016e81d71754387/ultralytics-8.4.43-py3-none-any.whl", hash = "sha256:f2fe87ba6667c85341ea49e23c142bb80e6dfb12f8736917d28b08e6bf5b0e51", size = 1229481, upload-time = "2026-04-28T16:53:27.481Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/28/f45cd4744a69cc7c218646e4037c3c799038ee9ad1b2f51143aac6af92a3/ultralytics-8.4.49-py3-none-any.whl", hash = "sha256:63170d6bb38fbc07b8a577495a7b2fc0aaa8ddda7848dda49b942879043d56bc", size = 1231374, upload-time = "2026-05-12T17:21:43.019Z" },
 ]
 
 [[package]]
