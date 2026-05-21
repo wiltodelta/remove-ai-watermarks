@@ -176,8 +176,7 @@ def _reinstall_torch_cuda_and_restart() -> None:
         return
 
     os.environ[_CUDA_FIX_ENV_KEY] = "1"
-    restart_code = f"import sys; sys.argv = {sys.argv!r}; from remove_ai_watermarks.cli import main; sys.exit(main())"
-    os.execl(sys.executable, sys.executable, "-c", restart_code)
+    os.execv(sys.executable, [sys.executable, "-m", "remove_ai_watermarks.cli", *sys.argv])
 
 
 def _ensure_watermark_deps() -> None:
