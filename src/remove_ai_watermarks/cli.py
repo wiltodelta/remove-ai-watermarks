@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
@@ -19,6 +20,11 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from remove_ai_watermarks import __version__
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from remove_ai_watermarks.gemini_engine import DetectionResult
 
 console = Console()
 
@@ -53,6 +59,74 @@ def _validate_image(path: Path) -> Path:
             f"[yellow]Warning:[/] {path.suffix} may not be supported (expected: {', '.join(SUPPORTED_FORMATS)})"
         )
     return path
+
+
+_ALPHA_FORMATS = {".png", ".webp"}
+
+
+def _watermark_region(det: DetectionResult, width: int, height: int) -> tuple[int, int, int, int]:
+    """Pick a watermark bbox: detector's region if confident, else the default config slot."""
+    if det.confidence > 0.15:
+        return det.region
+    from remove_ai_watermarks.gemini_engine import get_watermark_config
+
+    config = get_watermark_config(width, height)
+    px, py = config.get_position(width, height)
+    return (px, py, config.logo_size, config.logo_size)
+
+
+def _read_bgr_and_alpha(path: Path) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Read an image preserving its alpha channel separately.
+
+    Returns ``(bgr, alpha)`` where ``alpha`` is a single-channel ndarray when the
+    source has transparency, else ``None``. Greyscale inputs are promoted to BGR.
+    Returns ``(None, None)`` if the image cannot be decoded.
+    """
+    import cv2
+
+    image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    if image is None:
+        return None, None
+    if image.ndim == 2:
+        return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), None
+    if image.shape[2] == 4:
+        return image[:, :, :3].copy(), image[:, :, 3].copy()
+    return image, None
+
+
+def _write_bgr_with_alpha(
+    path: Path,
+    bgr: np.ndarray,
+    alpha: np.ndarray | None,
+    clear_region: tuple[int, int, int, int] | None = None,
+    pad: int = 6,
+) -> None:
+    """Write BGR (with optional alpha) to ``path``.
+
+    When ``alpha`` is provided and the output extension supports it, writes a
+    4-channel image. If ``clear_region`` is given as ``(x, y, w, h)``, alpha is
+    forced to 0 inside that bbox (expanded by ``pad`` px) so the watermark area
+    becomes fully transparent in the saved file.
+    """
+    import cv2
+    import numpy as np
+
+    if alpha is None or path.suffix.lower() not in _ALPHA_FORMATS:
+        cv2.imwrite(str(path), bgr)
+        return
+
+    alpha_out = alpha
+    if clear_region is not None:
+        alpha_out = alpha.copy()
+        x, y, w, h = clear_region
+        height, width = alpha.shape[:2]
+        x0, y0 = max(0, x - pad), max(0, y - pad)
+        x1, y1 = min(width, x + w + pad), min(height, y + h + pad)
+        if x1 > x0 and y1 > y0:
+            alpha_out[y0:y1, x0:x1] = 0
+
+    bgra = np.dstack([bgr, alpha_out])
+    cv2.imwrite(str(path), bgra)
 
 
 # ── Main group ───────────────────────────────────────────────────────
@@ -109,8 +183,6 @@ def cmd_visible(
 
     Uses reverse alpha blending — fast, deterministic, offline.
     """
-    import cv2
-
     from remove_ai_watermarks.gemini_engine import GeminiEngine
 
     _banner()
@@ -121,8 +193,8 @@ def cmd_visible(
 
     engine = GeminiEngine()
 
-    # Load image
-    image = cv2.imread(str(source), cv2.IMREAD_COLOR)
+    # Load image (preserving any alpha channel separately)
+    image, alpha = _read_bgr_and_alpha(source)
     if image is None:
         console.print(f"[red]Error:[/] Failed to read image: {source}")
         raise SystemExit(1)
@@ -150,18 +222,12 @@ def cmd_visible(
 
     # Removal
     t0 = time.monotonic()
+    region: tuple[int, int, int, int] | None = None
     with console.status("[cyan]Removing watermark…[/]"):
         result = engine.remove_watermark(image)
 
         if inpaint:
-            if det.confidence > 0.15:
-                region = det.region
-            else:
-                from remove_ai_watermarks.gemini_engine import get_watermark_config
-
-                config = get_watermark_config(w, h)
-                pos = config.get_position(w, h)
-                region = (pos[0], pos[1], config.logo_size, config.logo_size)
+            region = _watermark_region(det, w, h)
             result = engine.inpaint_residual(
                 result,
                 region,
@@ -171,9 +237,9 @@ def cmd_visible(
 
     elapsed = time.monotonic() - t0
 
-    # Save
+    # Save (preserves transparency by clearing alpha in the watermark region)
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), result)
+    _write_bgr_with_alpha(output, result, alpha, clear_region=region)
 
     # Strip metadata
     if strip_metadata:
@@ -379,9 +445,7 @@ def cmd_all(
 
     If invisible watermark deps are not installed, skips step 2 with a warning.
     """
-    import cv2
-
-    from remove_ai_watermarks.gemini_engine import GeminiEngine, get_watermark_config
+    from remove_ai_watermarks.gemini_engine import GeminiEngine
 
     _banner()
     source = _validate_image(source)
@@ -405,7 +469,7 @@ def cmd_all(
         # ── Step 1: Visible watermark ────────────────────────────────
         console.print("\n  [bold cyan]① Visible watermark removal[/]")
         engine = GeminiEngine()
-        image = cv2.imread(str(source), cv2.IMREAD_COLOR)
+        image, alpha = _read_bgr_and_alpha(source)
         if image is None:
             console.print(f"[red]Error:[/] Failed to read image: {source}")
             raise SystemExit(1)
@@ -413,25 +477,21 @@ def cmd_all(
         h, w = image.shape[:2]
         console.print(f"    [dim]Input:[/] {source.name}  ({w}x{h})")
 
+        region: tuple[int, int, int, int] | None = None
         with console.status("[cyan]Removing visible watermark…[/]"):
             det = engine.detect_watermark(image)
             if det.detected:
                 result = engine.remove_watermark(image)
                 if inpaint:
-                    if det.confidence > 0.15:
-                        region = det.region
-                    else:
-                        config = get_watermark_config(w, h)
-                        pos = config.get_position(w, h)
-                        region = (pos[0], pos[1], config.logo_size, config.logo_size)
+                    region = _watermark_region(det, w, h)
                     result = engine.inpaint_residual(result, region, method=inpaint_method)
                 console.print("    [green]✓[/] Visible watermark removed")
             else:
                 result = image.copy()
                 console.print("    [dim]Skipped (no visible watermark detected)[/]")
 
-        # Save to temp file for invisible engine input
-        cv2.imwrite(str(tmp_path), result)
+        # Save to temp file for invisible engine input (preserve alpha if present)
+        _write_bgr_with_alpha(tmp_path, result, alpha, clear_region=region)
 
         # ── Step 2: Invisible watermark ──────────────────────────────
         console.print("\n  [bold cyan]② Invisible watermark removal[/]")
@@ -480,10 +540,15 @@ def cmd_all(
             console.print(f"    [yellow]⚠[/] Metadata strip failed: {e}")
 
         # ── Write final result ────────────────────────────────────────
-        import shutil
-
+        # The invisible step (and downstream cv2.IMREAD_COLOR paths) drops alpha,
+        # so re-attach the original alpha (with the watermark region cleared)
+        # when writing the final output for transparent formats.
         output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(tmp_path), str(output))
+        final_bgr, _ = _read_bgr_and_alpha(tmp_path)
+        if final_bgr is None:
+            console.print(f"[red]Error:[/] Failed to read intermediate file: {tmp_path}")
+            raise SystemExit(1)
+        _write_bgr_with_alpha(output, final_bgr, alpha, clear_region=region)
 
     finally:
         # Clean up temp file if it still exists
@@ -521,13 +586,11 @@ def _process_batch_image(
     Raises:
         ValueError: If the image cannot be opened.
     """
-    if mode in ("visible", "all"):
-        import cv2
+    saved_alpha: np.ndarray | None = None
+    saved_region: tuple[int, int, int, int] | None = None
 
-        from remove_ai_watermarks.gemini_engine import (
-            GeminiEngine,
-            get_watermark_config,
-        )
+    if mode in ("visible", "all"):
+        from remove_ai_watermarks.gemini_engine import GeminiEngine
 
         if "_vis_engine" not in ctx.obj:
             ctx.obj["_vis_engine"] = GeminiEngine()
@@ -535,27 +598,24 @@ def _process_batch_image(
         read_path = img_path
         if mode == "all" and out_path.exists():
             read_path = out_path
-        image = cv2.imread(str(read_path), cv2.IMREAD_COLOR)
+        image, alpha = _read_bgr_and_alpha(read_path)
         if image is None:
             raise ValueError("Failed to read image")
 
+        region: tuple[int, int, int, int] | None = None
         det = engine.detect_watermark(image)
         if det.detected:
             result = engine.remove_watermark(image)
             if inpaint:
-                if det.confidence > 0.15:
-                    region = det.region
-                else:
-                    h, w = image.shape[:2]
-                    config = get_watermark_config(w, h)
-                    pos = config.get_position(w, h)
-                    region = (pos[0], pos[1], config.logo_size, config.logo_size)
-
+                h, w = image.shape[:2]
+                region = _watermark_region(det, w, h)
                 result = engine.inpaint_residual(result, region)
         else:
             result = image.copy()
 
-        cv2.imwrite(str(out_path), result)
+        _write_bgr_with_alpha(out_path, result, alpha, clear_region=region)
+        saved_alpha = alpha
+        saved_region = region
 
     if mode in ("invisible", "all"):
         from remove_ai_watermarks.invisible_engine import (
@@ -585,6 +645,13 @@ def _process_batch_image(
         from remove_ai_watermarks.metadata import remove_ai_metadata
 
         remove_ai_metadata(img_path if mode == "metadata" else out_path, out_path)
+
+    # In "all" mode, the invisible step (color-only OpenCV paths) drops alpha,
+    # so re-attach the cached alpha when the input had transparency.
+    if mode == "all" and saved_alpha is not None:
+        final_bgr, _ = _read_bgr_and_alpha(out_path)
+        if final_bgr is not None:
+            _write_bgr_with_alpha(out_path, final_bgr, saved_alpha, clear_region=saved_region)
 
 
 @main.command("batch")

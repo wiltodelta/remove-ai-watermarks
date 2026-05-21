@@ -71,6 +71,27 @@ def _mock_invisible_engine():
     return mock_cls, mock_engine
 
 
+def _mock_invisible_engine_drops_alpha():
+    """Mock InvisibleEngine that mimics the real engine's BGR-only output path.
+
+    The real diffusion-based engine reads with cv2.IMREAD_COLOR and writes a
+    3-channel result. This mock simulates that so we can regression-test alpha
+    preservation across the ``all`` pipeline.
+    """
+
+    def _mock_remove_watermark(image_path, output_path=None, **kwargs):
+        out = output_path or image_path.with_stem(image_path.stem + "_clean")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        bgr = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        cv2.imwrite(str(out), bgr)
+        return out
+
+    mock_engine = MagicMock()
+    mock_engine.remove_watermark.side_effect = _mock_remove_watermark
+    mock_cls = MagicMock(return_value=mock_engine)
+    return mock_cls, mock_engine
+
+
 class TestMainGroup:
     """Tests for the top-level CLI group."""
 
@@ -143,6 +164,73 @@ class TestVisibleCommand:
         result = runner.invoke(main, ["visible", "/nonexistent/file.png"])
         assert result.exit_code != 0
 
+    def test_visible_preserves_rgba_transparency(self, runner, tmp_path):
+        """Visible removal on an RGBA PNG must keep the alpha channel,
+        not silently flatten the image onto an opaque background.
+        """
+        rgba = np.zeros((200, 200, 4), dtype=np.uint8)
+        rgba[:, :, :3] = 200  # light grey foreground
+        rgba[50:150, 50:150, 3] = 255  # opaque square in the middle, rest transparent
+        src = tmp_path / "rgba_in.png"
+        cv2.imwrite(str(src), rgba)
+
+        output = tmp_path / "rgba_out.png"
+        result = runner.invoke(
+            main,
+            ["visible", str(src), "-o", str(output), "--no-detect"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert output.exists()
+
+        out = cv2.imread(str(output), cv2.IMREAD_UNCHANGED)
+        assert out.ndim == 3, f"output is not 3D: shape={out.shape}"
+        assert out.shape[2] == 4, f"output is not RGBA: shape={out.shape}"
+        # The transparent corners must remain transparent.
+        assert out[0, 0, 3] == 0
+        assert out[199, 199, 3] == 0
+        # The opaque centre remains opaque (the watermark region default is bottom-right,
+        # which doesn't overlap the centre square at 200x200).
+        assert out[100, 100, 3] == 255
+
+    def test_visible_clears_alpha_in_watermark_region(self, runner, tmp_path):
+        """When inpainting an RGBA image, the watermark region must be cleared
+        in the alpha channel so the sparkle area becomes transparent, not opaque-black.
+        """
+        rgba = np.full((200, 200, 4), 255, dtype=np.uint8)  # fully opaque white
+        src = tmp_path / "rgba_full.png"
+        cv2.imwrite(str(src), rgba)
+
+        output = tmp_path / "rgba_cleared.png"
+        result = runner.invoke(
+            main,
+            ["visible", str(src), "-o", str(output), "--no-detect"],
+        )
+
+        assert result.exit_code == 0, result.output
+        out = cv2.imread(str(output), cv2.IMREAD_UNCHANGED)
+        assert out.shape[2] == 4
+        # Default sparkle position is in the bottom-right; alpha there must be 0.
+        from remove_ai_watermarks.gemini_engine import get_watermark_config
+
+        cfg = get_watermark_config(200, 200)
+        px, py = cfg.get_position(200, 200)
+        size = cfg.logo_size
+        assert out[py + size // 2, px + size // 2, 3] == 0, "alpha in the watermark region was not cleared"
+
+    def test_visible_rgb_input_stays_rgb(self, runner, sample_png, tmp_path):
+        """Regression: a plain RGB PNG must NOT gain a spurious alpha channel."""
+        output = tmp_path / "rgb_out.png"
+        result = runner.invoke(
+            main,
+            ["visible", str(sample_png), "-o", str(output), "--no-detect"],
+        )
+
+        assert result.exit_code == 0, result.output
+        out = cv2.imread(str(output), cv2.IMREAD_UNCHANGED)
+        assert out.ndim == 3, f"output is not 3D: shape={out.shape}"
+        assert out.shape[2] == 3, f"RGB input produced non-RGB output: shape={out.shape}"
+
 
 class TestInvisibleCommand:
     """Tests for the 'invisible' subcommand."""
@@ -208,6 +296,33 @@ class TestAllCommand:
     def test_all_nonexistent_file(self, runner):
         result = runner.invoke(main, ["all", "/nonexistent/file.png"])
         assert result.exit_code != 0
+
+    def test_all_preserves_rgba_across_invisible_step(self, runner, tmp_path):
+        """Regression: ``all`` must keep transparency even when the invisible
+        step writes a 3-channel result (as the real diffusion engine does).
+        """
+        rgba = np.zeros((200, 200, 4), dtype=np.uint8)
+        rgba[:, :, :3] = 200
+        rgba[50:150, 50:150, 3] = 255  # opaque square; corners transparent
+        src = tmp_path / "rgba_in.png"
+        cv2.imwrite(str(src), rgba)
+
+        output = tmp_path / "rgba_out.png"
+        mock_cls, _engine = _mock_invisible_engine_drops_alpha()
+        with (
+            patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
+            patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
+            patch("remove_ai_watermarks.cli.invisible_available", return_value=True, create=True),
+            patch("remove_ai_watermarks.invisible_engine.is_available", return_value=True),
+        ):
+            result = runner.invoke(main, ["all", str(src), "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        out = cv2.imread(str(output), cv2.IMREAD_UNCHANGED)
+        assert out.ndim == 3, f"output not 3D: shape={out.shape}"
+        assert out.shape[2] == 4, f"output is not RGBA: shape={out.shape}"
+        assert out[0, 0, 3] == 0
+        assert out[100, 100, 3] == 255
 
 
 class TestMetadataCommand:
@@ -318,6 +433,37 @@ class TestBatchCommand:
             )
         assert result.exit_code == 0, result.output
         assert "3 processed" in result.output
+
+    def test_batch_all_mode_preserves_rgba(self, runner, tmp_path):
+        """Regression: batch ``all`` must keep transparency across the
+        alpha-dropping invisible step (mirrors test_all_preserves_rgba_...).
+        """
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        rgba = np.zeros((200, 200, 4), dtype=np.uint8)
+        rgba[:, :, :3] = 200
+        rgba[50:150, 50:150, 3] = 255
+        cv2.imwrite(str(input_dir / "rgba.png"), rgba)
+
+        output_dir = tmp_path / "output"
+        mock_cls, _engine = _mock_invisible_engine_drops_alpha()
+        with (
+            patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
+            patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
+            patch("remove_ai_watermarks.cli.invisible_available", return_value=True, create=True),
+            patch("remove_ai_watermarks.invisible_engine.is_available", return_value=True),
+        ):
+            result = runner.invoke(
+                main,
+                ["batch", str(input_dir), "-o", str(output_dir), "--mode", "all"],
+            )
+        assert result.exit_code == 0, result.output
+
+        out = cv2.imread(str(output_dir / "rgba.png"), cv2.IMREAD_UNCHANGED)
+        assert out.ndim == 3, f"output not 3D: shape={out.shape}"
+        assert out.shape[2] == 4, f"output is not RGBA: shape={out.shape}"
+        assert out[0, 0, 3] == 0
+        assert out[100, 100, 3] == 255
 
     def test_batch_default_output_dir(self, runner, tmp_path):
         input_dir = _make_batch_dir(tmp_path)
