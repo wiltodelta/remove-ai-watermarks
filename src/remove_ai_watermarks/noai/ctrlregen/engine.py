@@ -36,7 +36,7 @@ _HAS_COLOR_MATCHER = False
 _HAS_DIFFUSERS = False
 
 try:
-    from ctrlregen.pipeline import CustomCtrlRegenPipeline
+    from remove_ai_watermarks.noai.ctrlregen.pipeline import CustomCtrlRegenPipeline
     from diffusers import AutoencoderKL, ControlNetModel, UniPCMultistepScheduler
 
     _HAS_DIFFUSERS = True
@@ -54,7 +54,7 @@ except ImportError:
     CannyDetector = None  # type: ignore[assignment,misc]
 
 try:
-    from ctrlregen.color import color_match
+    from remove_ai_watermarks.noai.ctrlregen.color import color_match
 
     _HAS_COLOR_MATCHER = True
 except ImportError:
@@ -239,7 +239,7 @@ class CtrlRegenEngine:
         needs_tiling = orig_w > TILE_SIZE or orig_h > TILE_SIZE
 
         if needs_tiling:
-            from ctrlregen.tiling import resize_center_crop, run_tiled
+            from remove_ai_watermarks.noai.ctrlregen.tiling import resize_center_crop, run_tiled
 
             aligned_w = orig_w // 8 * 8
             aligned_h = orig_h // 8 * 8
@@ -264,7 +264,7 @@ class CtrlRegenEngine:
                 ip_adapter_image=orig_image,
             )
         else:
-            from ctrlregen.tiling import resize_center_crop
+            from remove_ai_watermarks.noai.ctrlregen.tiling import resize_center_crop
 
             proc_image = resize_center_crop(image, PROCESS_SIZE)
             self._set_progress(f"Preprocessed {orig_w}x{orig_h}px → {proc_image.size[0]}x{proc_image.size[1]}px")
