@@ -152,6 +152,17 @@ def main(ctx: click.Context, verbose: bool) -> None:
         click.echo(ctx.get_help())
 
 
+@main.command("gui")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Host interface to bind.")
+@click.option("--port", default=7860, show_default=True, type=int, help="Port to listen on.")
+@click.option("--share", is_flag=True, help="Create a temporary public Gradio share link.")
+def cmd_gui(host: str, port: int, share: bool) -> None:
+    """Launch the browser-based GUI."""
+    from remove_ai_watermarks.gui import create_app
+
+    create_app().queue().launch(server_name=host, server_port=port, share=share)
+
+
 # ── Visible (Gemini) watermark removal ───────────────────────────────
 
 

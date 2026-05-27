@@ -43,6 +43,9 @@ detect = [
 trustmark = [
     "trustmark>=0.8.0",
 ]
+gui = [
+    "gradio>=4.0.0",
+]
 # Universal region eraser backend -- big-LaMa via onnxruntime (Carve/LaMa-ONNX,
 # Apache-2.0). CPU, no torch. Model (~200 MB) is downloaded on first use and
 # cached by huggingface_hub; it is never bundled in this repo. The default cv2
@@ -69,6 +72,7 @@ prerelease = "allow"
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"
+remove-ai-watermarks-gui = "remove_ai_watermarks.gui:main"
 
 [project.urls]
 Repository = "https://github.com/wiltodelta/remove-ai-watermarks"
