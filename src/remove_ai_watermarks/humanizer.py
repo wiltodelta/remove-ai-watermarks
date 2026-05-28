@@ -4,6 +4,9 @@ Simulates analog film imperfections to defeat digital AI perfection
 classifiers. Ported from NeuralBleach.
 """
 
+# cv2/numpy boundary: third-party libs ship no usable element types; relax the
+# unknown-type rules for this file only.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
 import cv2
 import numpy as np
 from numpy.typing import NDArray

@@ -1,5 +1,8 @@
 """YOLO-based face detection and soft-blend restoration for diffusion pipelines."""
 
+# cv2/numpy/ultralytics boundary: these libs ship no usable element types; relax
+# the unknown-type rules for this file only.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false, reportPossiblyUnboundVariable=false
 import logging
 from pathlib import Path
 

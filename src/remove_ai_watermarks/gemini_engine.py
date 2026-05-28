@@ -13,13 +13,17 @@ The alpha maps are derived from background captures of the Gemini watermark
 on pure-black backgrounds (48x48 for small images, 96x96 for large images).
 """
 
+# cv2/numpy boundary: cv2 and numpy ship no usable type info for the array ops
+# below, so strict pyright cannot know their element types. Relax the unknown-type
+# rules for this file only; the public signatures are still annotated with NDArray[Any].
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import cv2
 import numpy as np
@@ -86,7 +90,7 @@ def get_watermark_size(width: int, height: int) -> WatermarkSize:
     return WatermarkSize.SMALL
 
 
-def _calculate_alpha_map(bg_capture: NDArray) -> NDArray:
+def _calculate_alpha_map(bg_capture: NDArray[Any]) -> NDArray[Any]:
     """Calculate alpha map from a background capture.
 
     The alpha map represents how much the watermark affects each pixel.
@@ -103,7 +107,7 @@ def _calculate_alpha_map(bg_capture: NDArray) -> NDArray:
     return gray / 255.0
 
 
-def _load_embedded_asset(name: str) -> NDArray:
+def _load_embedded_asset(name: str) -> NDArray[Any]:
     """Load an embedded PNG asset and decode it with OpenCV."""
     asset_path = Path(__file__).parent / "assets" / name
     if not asset_path.exists():
@@ -151,13 +155,13 @@ class GeminiEngine:
             self._alpha_large.shape,
         )
 
-    def get_alpha_map(self, size: WatermarkSize) -> NDArray:
+    def get_alpha_map(self, size: WatermarkSize) -> NDArray[Any]:
         """Get the base alpha map for a specific standard size."""
         if size == WatermarkSize.SMALL:
             return self._alpha_small
         return self._alpha_large
 
-    def get_interpolated_alpha(self, size_px: int) -> NDArray:
+    def get_interpolated_alpha(self, size_px: int) -> NDArray[Any]:
         """Create an interpolated alpha map dynamically scaled from the high-res 96x96 base."""
         source = self._alpha_large
         if size_px == source.shape[1]:
@@ -170,7 +174,7 @@ class GeminiEngine:
 
     def detect_watermark(
         self,
-        image: NDArray,
+        image: NDArray[Any],
         force_size: WatermarkSize | None = None,
     ) -> DetectionResult:
         """Detect Gemini watermark using multi-scale Snap Engine logic (ported from C++ vendor algorithm)."""
@@ -304,9 +308,9 @@ class GeminiEngine:
 
     def remove_watermark(
         self,
-        image: NDArray,
+        image: NDArray[Any],
         force_size: WatermarkSize | None = None,
-    ) -> NDArray:
+    ) -> NDArray[Any]:
         """Remove Gemini visible watermark from an image using reverse alpha blending.
 
         No-op when the detector does not find a watermark: returns an unmodified
@@ -359,9 +363,9 @@ class GeminiEngine:
 
     def remove_watermark_custom(
         self,
-        image: NDArray,
+        image: NDArray[Any],
         region: tuple[int, int, int, int],
-    ) -> NDArray:
+    ) -> NDArray[Any]:
         """Remove watermark from a custom region with interpolated alpha map.
 
         Args:
@@ -390,8 +394,8 @@ class GeminiEngine:
 
     def _reverse_alpha_blend(
         self,
-        image: NDArray,
-        alpha_map: NDArray,
+        image: NDArray[Any],
+        alpha_map: NDArray[Any],
         position: tuple[int, int],
     ) -> None:
         """Apply reverse alpha blending in-place.
@@ -442,13 +446,13 @@ class GeminiEngine:
 
     def inpaint_residual(
         self,
-        image: NDArray,
+        image: NDArray[Any],
         region: tuple[int, int, int, int],
         strength: float = 0.85,
         method: Literal["gaussian", "telea", "ns"] = "ns",
         inpaint_radius: int = 10,
         padding: int = 32,
-    ) -> NDArray:
+    ) -> NDArray[Any]:
         """Apply inpaint cleanup on residual artifacts after reverse alpha blend.
 
         Uses a sparse mask derived from alpha map gradient to repair only

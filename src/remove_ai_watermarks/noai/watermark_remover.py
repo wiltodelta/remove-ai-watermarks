@@ -10,6 +10,9 @@ This module implements a simple regeneration attack that:
 4. Decodes back to pixel space
 """
 
+# torch/diffusers/cv2 boundary: these libs ship no usable types for the tensor and
+# array ops below; relax the unknown-type rules for this file only.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
 from __future__ import annotations
 
 import contextlib

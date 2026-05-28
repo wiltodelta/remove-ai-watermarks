@@ -15,10 +15,14 @@ Backends:
     huggingface_hub; it is never bundled in this repo.
 """
 
+# cv2/numpy boundary: cv2 ships no usable type info, so strict pyright cannot know
+# its array element types. Relax the unknown-type rules for this file only; the
+# public signatures are still annotated with NDArray[Any].
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import cv2
 import numpy as np
@@ -41,7 +45,7 @@ def boxes_to_mask(
     shape: tuple[int, int],
     boxes: list[tuple[int, int, int, int]],
     dilate: int = 3,
-) -> NDArray:
+) -> NDArray[Any]:
     """Build a uint8 mask (255 inside boxes) from ``(x, y, w, h)`` rectangles."""
     h, w = shape
     mask = np.zeros((h, w), np.uint8)
@@ -57,12 +61,12 @@ def boxes_to_mask(
 
 
 def erase_cv2(
-    image_bgr: NDArray,
-    mask: NDArray,
+    image_bgr: NDArray[Any],
+    mask: NDArray[Any],
     *,
     method: Literal["telea", "ns"] = "telea",
     radius: int = 6,
-) -> NDArray:
+) -> NDArray[Any]:
     """Inpaint ``mask`` with classical cv2 inpainting (CPU, no extra deps)."""
     flag = cv2.INPAINT_TELEA if method == "telea" else cv2.INPAINT_NS
     return cv2.inpaint(image_bgr, mask, radius, flag)
@@ -70,12 +74,9 @@ def erase_cv2(
 
 def lama_available() -> bool:
     """True when the optional LaMa-ONNX backend can run (onnxruntime installed)."""
-    try:
-        import onnxruntime  # noqa: F401
+    import importlib.util
 
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("onnxruntime") is not None
 
 
 def _get_lama_session() -> object:
@@ -93,7 +94,7 @@ def _get_lama_session() -> object:
     return _lama_session
 
 
-def erase_lama(image_bgr: NDArray, mask: NDArray) -> NDArray:
+def erase_lama(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     """Inpaint ``mask`` with big-LaMa via onnxruntime (CPU).
 
     LaMa runs at a fixed square input size. To preserve full-image resolution we
@@ -147,15 +148,15 @@ def erase_lama(image_bgr: NDArray, mask: NDArray) -> NDArray:
 
 
 def erase(
-    image_bgr: NDArray,
+    image_bgr: NDArray[Any],
     *,
     boxes: list[tuple[int, int, int, int]] | None = None,
-    mask: NDArray | None = None,
+    mask: NDArray[Any] | None = None,
     backend: Backend = "cv2",
     dilate: int = 3,
     cv2_method: Literal["telea", "ns"] = "telea",
     cv2_radius: int = 6,
-) -> NDArray:
+) -> NDArray[Any]:
     """Erase the given boxes (or mask) via the chosen inpainting backend.
 
     Provide either ``boxes`` (list of ``(x, y, w, h)``) or a precomputed ``mask``

@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -193,7 +193,7 @@ def has_ai_metadata(image_path: Path) -> bool:
     try:
         with Image.open(image_path) as img:
             for key in img.info:
-                if _is_ai_key(key):
+                if isinstance(key, str) and _is_ai_key(key):
                     return True
     except Exception as exc:
         logger.debug("PIL could not open %s for metadata scan: %s", image_path, exc)
@@ -202,7 +202,8 @@ def has_ai_metadata(image_path: Path) -> bool:
     # binary scan that also catches AVIF/HEIF/JPEG-XL containers (PIL doesn't
     # expose their metadata uniformly).
     try:
-        from c2pa import has_c2pa_metadata
+        # optional official lib, not a declared dep -> falls back to the binary scan
+        from c2pa import has_c2pa_metadata  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
 
         if has_c2pa_metadata(image_path):
             return True
@@ -433,7 +434,7 @@ def _is_xai_signature_pair(description: str, artist: str) -> bool:
     return _XAI_SIGNATURE_RE.match(description) is not None and _UUID_RE.fullmatch(artist) is not None
 
 
-def _exif_text(ifd: dict, tag: int) -> str:
+def _exif_text(ifd: dict[int, Any], tag: int) -> str:
     """Decode a piexif 0th-IFD byte tag to a stripped string ('' if absent)."""
     value = ifd.get(tag)
     return value.decode("latin1", "replace").strip() if isinstance(value, bytes) else ""
@@ -469,7 +470,7 @@ def xai_signature(image_path: Path) -> bool:
     )
 
 
-def _scrub_ai_exif(exif_dict: dict) -> list[str]:
+def _scrub_ai_exif(exif_dict: dict[str, Any]) -> list[str]:
     """Delete AI-provenance tags from a piexif dict's ``0th`` IFD, in place.
 
     Removes (a) the xAI/Grok signature pair (``ImageDescription`` "Signature: ..."
@@ -533,7 +534,7 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     try:
         with Image.open(image_path) as img:
             for key, value in img.info.items():
-                if _is_ai_key(key):
+                if isinstance(key, str) and _is_ai_key(key):
                     if isinstance(value, bytes):
                         result[key] = f"<binary {len(value)} bytes>"
                     elif isinstance(value, str) and len(value) > 200:
@@ -691,7 +692,7 @@ def remove_ai_metadata(
         img = img.copy()
         fmt = output_path.suffix.lower()
 
-        save_kwargs: dict = {}
+        save_kwargs: dict[str, Any] = {}
         if fmt in (".jpg", ".jpeg"):
             save_kwargs["format"] = "JPEG"
             if img.mode in ("RGBA", "P"):
@@ -704,6 +705,8 @@ def remove_ai_metadata(
         exif_data = None
 
         for key, value in img.info.items():
+            if not isinstance(key, str):
+                continue
             if _is_ai_key(key):
                 continue
             if key == "exif":

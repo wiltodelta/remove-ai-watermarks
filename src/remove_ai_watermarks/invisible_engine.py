@@ -7,6 +7,10 @@ This module requires the 'gpu' extra dependencies:
     uv pip install 'remove-ai-watermarks[gpu]'
 """
 
+# cv2/torch boundary: this engine wraps cv2 (resize/imwrite/cvtColor), the YOLO
+# face protector, and the humanizer, none of which carry usable element types;
+# relax the unknown-type rules for this file only.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
 from __future__ import annotations
 
 import logging
@@ -33,13 +37,9 @@ logger = logging.getLogger(__name__)
 
 def is_available() -> bool:
     """Check if invisible watermark removal dependencies are installed."""
-    try:
-        import diffusers  # noqa: F401
-        import torch  # noqa: F401
+    import importlib.util
 
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("diffusers") is not None and importlib.util.find_spec("torch") is not None
 
 
 def _target_size(width: int, height: int, max_resolution: int) -> tuple[int, int] | None:

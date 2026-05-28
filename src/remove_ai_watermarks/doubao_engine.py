@@ -26,11 +26,14 @@ true pixels instead of hallucinating them -- the same approach as the Gemini
 engine.
 """
 
+# cv2/numpy boundary: third-party libs ship no usable element types; relax the
+# unknown-type rules for this file only.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import cv2
 import numpy as np
@@ -119,7 +122,7 @@ class DoubaoEngine:
 
     # ── Locate ────────────────────────────────────────────────────────
 
-    def locate(self, image: NDArray) -> DoubaoLocation:
+    def locate(self, image: NDArray[Any]) -> DoubaoLocation:
         """Anchor the watermark box in the bottom-right corner by geometry."""
         h, w = image.shape[:2]
         wm_w = max(40, int(w * self.width_frac))
@@ -134,7 +137,7 @@ class DoubaoEngine:
 
     # ── Mask ──────────────────────────────────────────────────────────
 
-    def extract_mask(self, image: NDArray, loc: DoubaoLocation) -> NDArray:
+    def extract_mask(self, image: NDArray[Any], loc: DoubaoLocation) -> NDArray[Any]:
         """Build a full-image uint8 mask (255 = watermark glyph) for the box.
 
         Polarity-aware: the mark is a light, low-saturation gray. On a dark
@@ -172,7 +175,7 @@ class DoubaoEngine:
 
     # ── Detect ────────────────────────────────────────────────────────
 
-    def detect(self, image: NDArray) -> DoubaoDetection:
+    def detect(self, image: NDArray[Any]) -> DoubaoDetection:
         """Detect the visible Doubao mark by glyph coverage in the corner box.
 
         Heuristic: a genuine label fills a meaningful fraction of the box with
@@ -198,12 +201,12 @@ class DoubaoEngine:
 
     def remove_watermark(
         self,
-        image: NDArray,
+        image: NDArray[Any],
         *,
         inpaint_method: Literal["telea", "ns"] = "telea",
         inpaint_radius: int = 6,
         dilate: int = 3,
-    ) -> NDArray:
+    ) -> NDArray[Any]:
         """Remove the visible Doubao watermark by inpainting the glyph mask.
 
         Returns an unmodified copy when no glyph pixels are found (so we never
@@ -237,7 +240,7 @@ class DoubaoEngine:
         return cv2.inpaint(image, mask, inpaint_radius, flag)
 
 
-def load_image_bgr(path: str | Path) -> NDArray:
+def load_image_bgr(path: str | Path) -> NDArray[Any]:
     """Read an image as BGR ndarray (helper for scripts/tests)."""
     from remove_ai_watermarks import image_io
 

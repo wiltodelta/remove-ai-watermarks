@@ -12,7 +12,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import click
 from rich.console import Console
@@ -23,7 +23,7 @@ from rich.table import Table
 from remove_ai_watermarks import __version__
 
 if TYPE_CHECKING:
-    import numpy as np
+    from numpy.typing import NDArray
 
     from remove_ai_watermarks.gemini_engine import DetectionResult, GeminiEngine
 
@@ -76,7 +76,7 @@ def _watermark_region(det: DetectionResult, width: int, height: int) -> tuple[in
     return (px, py, config.logo_size, config.logo_size)
 
 
-def _read_bgr_and_alpha(path: Path) -> tuple[np.ndarray | None, np.ndarray | None]:
+def _read_bgr_and_alpha(path: Path) -> tuple[NDArray[Any] | None, NDArray[Any] | None]:
     """Read an image preserving its alpha channel separately.
 
     Returns ``(bgr, alpha)`` where ``alpha`` is a single-channel ndarray when the
@@ -99,8 +99,8 @@ def _read_bgr_and_alpha(path: Path) -> tuple[np.ndarray | None, np.ndarray | Non
 
 def _write_bgr_with_alpha(
     path: Path,
-    bgr: np.ndarray,
-    alpha: np.ndarray | None,
+    bgr: NDArray[Any],
+    alpha: NDArray[Any] | None,
     clear_region: tuple[int, int, int, int] | None = None,
     pad: int = 6,
 ) -> None:
@@ -135,8 +135,8 @@ def _write_bgr_with_alpha(
 
 def _run_doubao_if_selected(
     ctx: click.Context,
-    image: np.ndarray,
-    alpha: np.ndarray | None,
+    image: NDArray[Any],
+    alpha: NDArray[Any] | None,
     output: Path,
     mark: str,
     gemini_engine: GeminiEngine,
@@ -249,7 +249,7 @@ def cmd_visible(
     source: Path,
     output: Path | None,
     inpaint: bool,
-    inpaint_method: str,
+    inpaint_method: Literal["ns", "telea", "gaussian"],
     inpaint_strength: float,
     detect: bool,
     detect_threshold: float,
@@ -378,7 +378,7 @@ def cmd_erase(
     source: Path,
     regions: tuple[str, ...],
     output: Path | None,
-    backend: str,
+    backend: Literal["cv2", "lama"],
     inpaint_method: str,
     dilate: int,
     strip_metadata: bool,
@@ -691,7 +691,7 @@ def cmd_all(
     source: Path,
     output: Path | None,
     inpaint: bool,
-    inpaint_method: str,
+    inpaint_method: Literal["ns", "telea", "gaussian"],
     strength: float,
     steps: int,
     pipeline: str,
@@ -856,7 +856,7 @@ def _process_batch_image(
     Raises:
         ValueError: If the image cannot be opened.
     """
-    saved_alpha: np.ndarray | None = None
+    saved_alpha: NDArray[Any] | None = None
     saved_region: tuple[int, int, int, int] | None = None
 
     if mode in ("visible", "all"):

@@ -6,7 +6,7 @@ human-readable summary without modifying the source file.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -46,6 +46,8 @@ def extract_metadata(source_path: Path) -> dict[str, Any]:
 
         # Extract all other metadata including AI-specific
         for key, value in img.info.items():
+            if not isinstance(key, str):
+                continue
             if key not in metadata and key not in ["exif"]:
                 metadata[key] = value
 
@@ -83,6 +85,8 @@ def extract_ai_metadata(source_path: Path) -> dict[str, Any]:
                 ai_metadata[key] = img.info[key]
 
         for key, value in img.info.items():
+            if not isinstance(key, str):
+                continue
             key_lower = key.lower()
             if key not in ai_metadata and any(kw in key_lower for kw in AI_KEYWORDS):
                 ai_metadata[key] = value
@@ -138,7 +142,7 @@ def get_ai_metadata_summary(source_path: Path) -> str:
             continue
         if key == "c2pa" and isinstance(value, dict):
             lines.append("C2PA Metadata:")
-            for ck, cv in value.items():
+            for ck, cv in cast("dict[str, Any]", value).items():
                 lines.append(f"  {ck}: {cv}")
         elif isinstance(value, str) and len(value) > 100:
             value = value[:100] + "..."

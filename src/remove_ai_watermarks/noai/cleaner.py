@@ -94,6 +94,8 @@ def _extract_non_ai_metadata(source_path: Path, keep_standard: bool) -> dict[str
 
         # Extract non-AI metadata
         for key, value in img.info.items():
+            if not isinstance(key, str):
+                continue
             if _is_ai_metadata_key(key):
                 continue
 
@@ -127,7 +129,7 @@ def _is_ai_metadata_key(key: str) -> bool:
 
 def _prepare_clean_png_kwargs(save_kwargs: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     """Prepare save kwargs for clean PNG."""
-    pnginfo = {}
+    pnginfo: dict[str, Any] = {}
     exclude_keys = ["exif", "exif_raw", "dpi", "gamma"]
 
     for key, value in metadata.items():

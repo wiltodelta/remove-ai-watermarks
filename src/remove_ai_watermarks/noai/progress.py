@@ -259,7 +259,7 @@ def make_pipeline_progress(
     label: str = "Denoising",
     pre_phases: list[tuple[int, str]] | None = None,
     post_phases: list[tuple[int, str]] | None = None,
-) -> tuple[Callable, threading.Event, threading.Event, Callable[[], threading.Thread]]:
+) -> tuple[Callable[..., None], threading.Event, threading.Event, Callable[[], threading.Thread]]:
     """Create step callback and background updater for a diffusion pipeline.
 
     Returns:

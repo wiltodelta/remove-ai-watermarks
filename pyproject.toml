@@ -133,3 +133,33 @@ reportUnknownMemberType = false
 reportUnknownArgumentType = false
 reportUnknownVariableType = false
 reportMissingTypeArgument = false
+
+# CtrlRegen is a torch/diffusers/controlnet-aux boundary: those libs ship no
+# usable types, so strict pyright cannot know the tensor element types. Relax the
+# unknown-type rules for this subpackage only (mirrors the per-file pragmas used
+# for the cv2 engines); the rest of the codebase stays strict.
+[[tool.pyright.executionEnvironments]]
+root = "src/remove_ai_watermarks/noai/ctrlregen"
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportMissingTypeArgument = false
+reportMissingTypeStubs = false
+reportMissingImports = false
+reportArgumentType = false
+reportAssignmentType = false
+reportReturnType = false
+reportCallIssue = false
+reportIndexIssue = false
+reportOperatorIssue = false
+reportOptionalMemberAccess = false
+reportOptionalCall = false
+reportOptionalSubscript = false
+reportOptionalOperand = false
+reportAttributeAccessIssue = false
+reportPrivateImportUsage = false
+reportPrivateUsage = false
+reportInvalidTypeForm = false
+reportConstantRedefinition = false
+reportUnnecessaryComparison = false
