@@ -18,6 +18,15 @@ dependencies = [
 [project.optional-dependencies]
 gpu = [
     "torch>=2.0.0",
+    # The default PyPI torch wheel is a CPU/CUDA build. To drive an Intel GPU
+    # (Arc / Data Center) via ``--device xpu`` you need an XPU-enabled torch
+    # from PyTorch's XPU wheel index (Linux/Windows only -- there is no macOS
+    # XPU build). Install that build first, then this extra (torch is then
+    # already satisfied and won't be re-pulled):
+    #   pip install torch --index-url https://download.pytorch.org/whl/xpu
+    #   pip install 'remove-ai-watermarks[gpu]'
+    # uv users can target the ``pytorch-xpu`` index declared under [tool.uv]:
+    #   uv pip install torch --index-url https://download.pytorch.org/whl/xpu
     "diffusers>=0.38.0",
     # diffusers 0.38's auto-pipeline registry imports ``Qwen3VLForConditional
     # Generation`` (its ``nucleusmoe_image`` pipeline), which only exists in
@@ -76,6 +85,15 @@ all = ["remove-ai-watermarks[gpu,detect,trustmark,lama,dev]"]
 # stable safetensors pin (or once safetensors 0.8.0 stable is out).
 [tool.uv]
 prerelease = "allow"
+
+# PyTorch Intel-GPU (XPU) wheel index. ``explicit = true`` keeps it inert for
+# the default CPU/CUDA install: uv consults it only when a torch install
+# explicitly targets it (see the ``gpu`` extra comment), so it does not alter
+# the locked CPU/CUDA resolution. Linux/Windows only -- no macOS XPU build.
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"

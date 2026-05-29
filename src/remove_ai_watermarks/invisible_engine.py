@@ -88,7 +88,7 @@ class InvisibleEngine:
 
         Args:
             model_id: HuggingFace model ID. None = use default for pipeline.
-            device: Device for inference (auto/cpu/mps/cuda). None = auto.
+            device: Device for inference (auto/cpu/mps/cuda/xpu). None = auto.
             pipeline: Pipeline profile. "default" (SDXL base, defeats SynthID
                 v2) or "ctrlregen" (CtrlRegen).
             hf_token: HuggingFace API token.

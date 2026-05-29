@@ -448,7 +448,12 @@ def cmd_erase(
     default="default",
     help="Pipeline profile (default=SDXL, ctrlregen=CtrlRegen).",
 )
-@click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")
+@click.option(
+    "--device",
+    type=click.Choice(["auto", "cpu", "mps", "cuda", "xpu"]),
+    default="auto",
+    help="Inference device.",
+)
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
 @click.option("--hf-token", type=str, default=None, help="HuggingFace API token.")
 @click.option(
@@ -675,7 +680,12 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
     help="Pipeline profile (default=SDXL, ctrlregen=CtrlRegen).",
 )
 @click.option("--model", type=str, default=None, help="HuggingFace model ID for invisible removal.")
-@click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")
+@click.option(
+    "--device",
+    type=click.Choice(["auto", "cpu", "mps", "cuda", "xpu"]),
+    default="auto",
+    help="Inference device.",
+)
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
 @click.option("--hf-token", type=str, default=None, help="HuggingFace API token.")
 @click.option(
@@ -957,7 +967,12 @@ def _process_batch_image(
     default="default",
     help="Pipeline profile (default=SDXL, ctrlregen=CtrlRegen).",
 )
-@click.option("--device", type=click.Choice(["auto", "cpu", "mps", "cuda"]), default="auto", help="Inference device.")
+@click.option(
+    "--device",
+    type=click.Choice(["auto", "cpu", "mps", "cuda", "xpu"]),
+    default="auto",
+    help="Inference device.",
+)
 @click.option("--seed", type=int, default=None, help="Random seed for reproducibility.")
 @click.option("--hf-token", type=str, default=None, help="HuggingFace API token.")
 @click.option(

@@ -6,7 +6,7 @@ code paths work correctly on CPU, MPS (macOS), and CUDA (Linux/Windows).
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,7 +27,7 @@ class TestDeviceDetection:
 
     def test_returns_valid_device(self):
         device = get_device()
-        assert device in ("cpu", "mps", "cuda")
+        assert device in ("cpu", "mps", "cuda", "xpu")
 
     def test_cpu_fallback_when_no_gpu(self):
         """On CI / machines without GPU, should fall back to cpu or mps."""
@@ -38,6 +38,31 @@ class TestDeviceDetection:
     @patch("remove_ai_watermarks.noai.watermark_remover._HAS_TORCH", False)
     def test_no_torch_returns_cpu(self):
         assert get_device() == "cpu"
+
+    def test_xpu_selected_when_available(self):
+        """An XPU-enabled torch (no CUDA) routes to the Intel GPU backend.
+
+        The whole torch module is mocked so the smoke-test ops succeed without
+        any real device; cuda must read False so the cuda branch is skipped.
+        """
+        fake_torch = MagicMock()
+        fake_torch.cuda.is_available.return_value = False
+        fake_torch.xpu.is_available.return_value = True
+        with patch("remove_ai_watermarks.noai.watermark_remover.torch", fake_torch):
+            assert get_device() == "xpu"
+        fake_torch.tensor.assert_called_with([1.0], device="xpu")
+
+    def test_init_accepts_xpu_and_selects_fp16(self):
+        """WatermarkRemover accepts device='xpu' and picks fp16 (not fp32)."""
+        if not is_watermark_removal_available():
+            pytest.skip("torch/diffusers not installed")
+        import torch
+
+        from remove_ai_watermarks.noai.watermark_remover import WatermarkRemover
+
+        remover = WatermarkRemover(device="xpu")
+        assert remover.device == "xpu"
+        assert remover.torch_dtype == torch.float16
 
 
 class TestMpsErrorDetection:

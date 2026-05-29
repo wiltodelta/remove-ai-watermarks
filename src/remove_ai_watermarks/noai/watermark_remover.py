@@ -222,6 +222,19 @@ def get_device() -> str:
             return "cuda"
         except (AssertionError, RuntimeError):
             pass
+    # Intel GPU (Arc / Data Center) via the torch XPU backend. The torch.xpu
+    # namespace exists in stock wheels, but is_available() is only True on an
+    # XPU-enabled build (download.pytorch.org/whl/xpu), so this is inert on the
+    # default CPU/CUDA install. Checked before the nvidia-smi path so an Intel
+    # box never triggers the CUDA reinstaller.
+    if hasattr(torch, "xpu") and torch.xpu.is_available():  # type: ignore
+        try:
+            t = torch.tensor([1.0], device="xpu")
+            _ = t + t
+            del t
+            return "xpu"
+        except (AssertionError, RuntimeError):
+            pass
     if _has_nvidia_gpu() and not os.environ.get(_CUDA_FIX_ENV_KEY):
         _reinstall_torch_cuda_and_restart()
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -245,7 +258,7 @@ class WatermarkRemover:
 
     Attributes:
         model_id: HuggingFace model ID for the diffusion model.
-        device: Device to run inference on (cuda, mps, or cpu).
+        device: Device to run inference on (cuda, xpu, mps, or cpu).
     """
 
     DEFAULT_MODEL_ID = DEFAULT_MODEL_ID
@@ -270,8 +283,8 @@ class WatermarkRemover:
         self.device = (device or get_device()).lower()
         if self.device == "auto":
             self.device = get_device()
-        if self.device not in {"cpu", "mps", "cuda"}:
-            raise ValueError(f"Unsupported device '{device}'. Use one of: auto, cpu, mps, cuda.")
+        if self.device not in {"cpu", "mps", "cuda", "xpu"}:
+            raise ValueError(f"Unsupported device '{device}'. Use one of: auto, cpu, mps, cuda, xpu.")
         if torch_dtype is None:
             if self.device == "cpu" or self.device == "mps":
                 self.torch_dtype = torch.float32  # type: ignore
@@ -564,7 +577,7 @@ class WatermarkRemover:
             from diffusers import DiffusionPipeline
 
             self._set_progress("Loading Differential-Diffusion pipeline (protect-text)...")
-            use_fp16 = self.device in {"mps", "cuda"}
+            use_fp16 = self.device in {"mps", "cuda", "xpu"}
             load_kwargs: dict[str, Any] = {
                 "custom_pipeline": _DIFF_PIPELINE_NAME,
                 "custom_revision": _DIFF_PIPELINE_REVISION,
