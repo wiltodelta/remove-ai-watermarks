@@ -12,9 +12,15 @@ class TestIsAvailable:
         result = is_available()
         assert isinstance(result, bool)
 
-    def test_available_when_torch_installed(self):
-        """torch + diffusers should be installed in dev env."""
-        assert is_available() is True
+    def test_available_reflects_dependencies(self):
+        """is_available() is True iff torch + diffusers (the gpu extra) import.
+
+        Must not assume the full stack: the core+dev CI env has no diffusers.
+        """
+        import importlib.util
+
+        expected = all(importlib.util.find_spec(m) is not None for m in ("torch", "diffusers"))
+        assert is_available() is expected
 
 
 class TestInvisibleEngineInit:
