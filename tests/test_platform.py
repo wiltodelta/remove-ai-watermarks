@@ -64,6 +64,24 @@ class TestDeviceDetection:
         assert remover.device == "xpu"
         assert remover.torch_dtype == torch.float16
 
+    def test_seed_generator_falls_back_to_cpu_when_device_rng_unsupported(self):
+        """A device with no RNG backend (e.g. some torch-xpu builds) falls back
+        to a CPU generator instead of raising when --seed is used."""
+        from remove_ai_watermarks.noai import watermark_remover as wr
+
+        def fake_generator(device="cpu"):
+            if device == "xpu":
+                raise RuntimeError("Device type xpu is not supported for torch.Generator()")
+            gen = MagicMock()
+            gen.manual_seed.return_value = f"gen:{device}"
+            return gen
+
+        fake_torch = MagicMock()
+        fake_torch.Generator.side_effect = fake_generator
+        with patch.object(wr, "torch", fake_torch):
+            assert wr._make_seed_generator("xpu", 123) == "gen:cpu"
+            assert wr._make_seed_generator("cuda", 123) == "gen:cuda"
+
 
 class TestMpsErrorDetection:
     """Tests for MPS error detection helper."""

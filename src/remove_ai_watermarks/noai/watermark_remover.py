@@ -242,6 +242,20 @@ def get_device() -> str:
     return "cpu"
 
 
+def _make_seed_generator(device: str, seed: int) -> Any:
+    """Build a seeded ``torch.Generator``, falling back to a CPU generator.
+
+    Some backends have no device-side RNG (notably certain torch-xpu builds),
+    so ``torch.Generator(device="xpu")`` can raise. A CPU generator is
+    backend-agnostic and still seeds the pipeline reproducibly, so fall back to
+    it rather than failing the run when ``--seed`` is used on such a device.
+    """
+    try:
+        return torch.Generator(device=device).manual_seed(seed)  # type: ignore
+    except (RuntimeError, TypeError):
+        return torch.Generator().manual_seed(seed)  # type: ignore
+
+
 # Keep legacy name available for backwards compatibility
 _detect_model_profile_from_id = detect_model_profile
 
@@ -448,7 +462,7 @@ class WatermarkRemover:
         generator = None
         if seed is not None and _HAS_TORCH:
             self._set_progress(f"Setting reproducible seed: {seed}")
-            generator = torch.Generator(device=self.device).manual_seed(seed)  # type: ignore
+            generator = _make_seed_generator(self.device, seed)
 
         effective_steps = max(1, int(num_inference_steps * strength))
         self._set_progress(
