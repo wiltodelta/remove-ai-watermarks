@@ -65,6 +65,22 @@ AI_KEYWORDS: tuple[str, ...] = (
 # Reference: https://spec.c2pa.org/specifications/specifications/2.1/specs/C2PA_Specification.html
 C2PA_UUID: bytes = bytes.fromhex("d8fec3d61b0e483c92975828877ec481")
 
+
+def c2pa_marker_in(data: bytes) -> bool:
+    """True if ``data`` carries a real C2PA manifest marker, not just an
+    incidental 4-byte ``c2pa`` substring.
+
+    A bare ``c2pa`` byte match false-positives on compressed pixel data -- a
+    recompressed PNG IDAT (or any large binary) can contain the bytes ``c2pa``
+    by chance (verified 2026-05-29: 4 cleaned PNGs re-flagged this way after
+    their manifest was correctly stripped). Every real manifest is JUMBF-wrapped
+    (the ``jumb`` box FourCC accompanies the ``c2pa`` content type) or uses the
+    standalone C2PA ``uuid`` box in ISOBMFF, so we require one of those: the
+    joint ``jumb`` + ``c2pa`` match has negligible random-collision probability.
+    """
+    return C2PA_UUID in data or (b"jumb" in data and b"c2pa" in data.lower())
+
+
 # IPTC ``digitalSourceType`` values (IPTC 2025.1) that flag AI provenance.
 # Used by Instagram, Facebook, X (Twitter) to show "Made with AI" labels.
 IPTC_AI_MARKERS: tuple[bytes, ...] = (
@@ -213,9 +229,7 @@ def has_ai_metadata(image_path: Path) -> bool:
     # Binary scan covers C2PA (PNG caBX, JPEG APP11, AVIF/HEIF/JXL uuid boxes)
     # and IPTC AI markers in XMP. First 512KB (plus late ISOBMFF provenance boxes).
     data = scan_head(image_path, 512 * 1024)
-    if b"c2pa" in data.lower() or b"C2PA" in data:
-        return True
-    if C2PA_UUID in data:
+    if c2pa_marker_in(data):
         return True
     if any(marker in data for marker in AIGC_MARKERS):
         return True
@@ -310,6 +324,39 @@ def huggingface_job(image_path: Path) -> str | None:
     return None
 
 
+# Samsung Galaxy AI editing marker. Galaxy AI tools (Generative Edit, Sketch to
+# Image, Portrait Studio, Drawing Assist, ...) record their re-edit data as a
+# proprietary ``PhotoEditor_Re_Edit_Data`` JSON that carries a ``genAIType``
+# field; a non-zero value flags that a generative-AI tool produced or altered
+# the pixels. The field is undocumented by Samsung (verified 2026-05-29: absent
+# from the C2PA spec and Samsung's public docs/forums), so detection is
+# empirical -- on real Galaxy S23/S24/S25 files it co-occurs with the C2PA
+# ``trainedAlgorithmicMedia`` source type (3/3 of the verified files that record
+# that type), and on a Galaxy S24 sample it is the *only* AI marker (the C2PA
+# source type was absent there). Medium confidence: it signals Galaxy AI editing
+# without proving the whole image is AI-generated. Scoped to the Samsung editor
+# container to avoid matching a stray ``genAIType`` token elsewhere.
+_SAMSUNG_GENAI_RE = re.compile(rb'genAIType"\s*:\s*(-?\d+)')
+_SAMSUNG_EDITOR_MARKER = b"PhotoEditor_Re_Edit_Data"
+
+
+def samsung_genai(image_path: Path) -> int | None:
+    """Return Samsung's non-zero ``genAIType`` value if the image carries the
+    Galaxy AI editing marker, else None.
+
+    See the module note above ``_SAMSUNG_GENAI_RE``: detection is empirical and
+    gated on the ``PhotoEditor_Re_Edit_Data`` container so an incidental
+    ``genAIType`` token cannot false-positive.
+    """
+    head = scan_head(image_path, 512 * 1024)
+    if _SAMSUNG_EDITOR_MARKER not in head:
+        return None
+    m = _SAMSUNG_GENAI_RE.search(head)
+    if m is None:
+        return None
+    return int(m.group(1)) or None
+
+
 def iptc_ai_system(image_path: Path) -> str | None:
     """Return an IPTC 2025.1 AI-disclosure note if the file carries those XMP
     properties, else None.
@@ -360,7 +407,7 @@ def synthid_source(image_path: Path) -> str | None:
     # C2PA manifest where the PNG parser can't reach it. Binary-scan for the
     # same signal: a C2PA manifest from a SynthID-using issuer on AI content.
     data = scan_head(image_path)
-    has_c2pa = b"c2pa" in data.lower() or C2PA_UUID in data
+    has_c2pa = c2pa_marker_in(data)
     # Matches both "trainedAlgorithmicMedia" and "compositeWithTrainedAlgorithmicMedia".
     ai_source = b"trainedAlgorithmicMedia" in data or b"TrainedAlgorithmicMedia" in data
     if not (has_c2pa and ai_source):
@@ -585,6 +632,9 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     # HuggingFace-hosted job marker (hf-job-id PNG text chunk).
     if job := huggingface_job(image_path):
         result.setdefault("huggingface_job", f"HuggingFace-hosted job ({job})")
+    # Samsung Galaxy AI editing marker (genAIType in PhotoEditor_Re_Edit_Data).
+    if (genai := samsung_genai(image_path)) is not None:
+        result.setdefault("samsung_genai", f"Samsung Galaxy AI editing marker (genAIType={genai})")
     return result
 
 

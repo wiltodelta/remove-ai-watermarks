@@ -113,6 +113,18 @@ class TestIdentifyNonPng:
         r = identify(path, check_visible=False)
         assert any("SynthID" in w for w in r.watermarks)
 
+    def test_black_forest_labs_flux_attributed(self, tmp_path: Path):
+        path = self._c2pa_jpeg(tmp_path, b"Black Forest Labs API ... trainedAlgorithmicMedia")
+        r = identify(path, check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.platform == "Black Forest Labs (FLUX)"
+
+    def test_bytedance_volcengine_attributed(self, tmp_path: Path):
+        path = self._c2pa_jpeg(tmp_path, b"certificate_center@volcengine.com ... trainedAlgorithmicMedia")
+        r = identify(path, check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert "ByteDance" in (r.platform or "")
+
     def test_stability_ai_issuer_attributed_no_synthid(self, tmp_path: Path):
         path = self._c2pa_jpeg(tmp_path, b"Stability AI ... trainedAlgorithmicMedia")
         r = identify(path, check_visible=False)
@@ -130,6 +142,50 @@ class TestIdentifyNonPng:
         assert r.is_ai_generated is None
         assert any("C2PA" in w for w in r.watermarks)
         assert not any("SynthID" in w for w in r.watermarks)
+
+
+class TestIdentifySamsungGalaxy:
+    """Samsung Galaxy / ASUS Gallery C2PA signers (verified on real signed files
+    2026-05-29; synthetic byte blobs here since the originals are private).
+
+    Galaxy AI edits stamp BOTH the device cert AND an AI source-type / genAIType,
+    so the signer attribution must NOT trip the camera-vs-AI integrity clash.
+    """
+
+    def _jpeg(self, tmp_path: Path, name: str, blob: bytes) -> Path:
+        path = tmp_path / name
+        path.write_bytes(b"\xff\xd8\xff\xe1jumbc2pa" + blob + b"\xff\xd9")
+        return path
+
+    def test_galaxy_trained_source_is_high_ai(self, tmp_path: Path):
+        path = self._jpeg(tmp_path, "s25.jpg", b"Samsung Galaxy Galaxy S25 c2pa-rs trainedAlgorithmicMedia")
+        r = identify(path, check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.confidence == "high"
+        assert r.platform == "Samsung Galaxy (C2PA)"
+        assert r.integrity_clashes == []  # device cert + AI source-type is legitimate, not a clash
+
+    def test_galaxy_genai_only_is_medium_ai(self, tmp_path: Path):
+        # The Galaxy S24 case: no trainedAlgorithmicMedia, genAIType is the only
+        # AI marker -- previously missed, now a medium-confidence verdict.
+        path = self._jpeg(
+            tmp_path, "s24.jpg", b'Samsung Galaxy Galaxy S24 c2pa-rs PhotoEditor_Re_Edit_Data{"genAIType":1}'
+        )
+        r = identify(path, check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.confidence == "medium"
+        assert r.platform == "Samsung Galaxy (C2PA)"
+        assert any(s.name == "samsung_genai" for s in r.signals)
+        assert r.integrity_clashes == []
+
+    def test_asus_gallery_signer_not_ai(self, tmp_path: Path):
+        # ASUS Gallery signs edited photos; no AI source-type or genAIType, so the
+        # platform is attributed but the verdict stays unknown.
+        path = self._jpeg(tmp_path, "asus.jpg", b"/com.asus.gallery/3.8.0.98 c2pa-rs no ai marker")
+        r = identify(path, check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is None
+        assert r.platform == "ASUS Gallery (C2PA signer)"
+        assert any("C2PA" in w for w in r.watermarks)
 
 
 # ── End-to-end verdicts on real fixtures ────────────────────────────

@@ -12,12 +12,15 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
 from remove_ai_watermarks.metadata import (
+    C2PA_UUID,
     _is_ai_key,
+    c2pa_marker_in,
     exif_generator,
     get_ai_metadata,
     has_ai_metadata,
     iptc_ai_system,
     remove_ai_metadata,
+    samsung_genai,
     synthid_source,
     xai_signature,
 )
@@ -133,6 +136,71 @@ class TestHasAiMetadata:
         )
         path.write_bytes(b"\xff\xd8\xff\xe1" + xmp + b"\xff\xd9")
         assert has_ai_metadata(path)
+
+
+class TestC2paMarkerIn:
+    """The C2PA presence check requires a JUMBF wrapper or the C2PA uuid box, so
+    a bare 4-byte ``c2pa`` substring (e.g. random compressed pixel data) does not
+    false-positive -- the regression behind 4 cleaned PNGs re-flagging C2PA."""
+
+    def test_jumbf_wrapped_c2pa_detected(self):
+        assert c2pa_marker_in(b"....jumbc2pa....manifest....") is True
+
+    def test_c2pa_uuid_box_detected(self):
+        assert c2pa_marker_in(b"\x00\x00\x00\x18uuid" + C2PA_UUID + b"payload") is True
+
+    def test_bare_c2pa_substring_not_detected(self):
+        # The exact false positive: "c2pa" appears in noise but no JUMBF/uuid box.
+        assert c2pa_marker_in(b"\x9c\xc3\xa7B1\x11c2pa\x80b\x804\xc5\xf9random idat") is False
+
+    def test_jumb_without_c2pa_not_detected(self):
+        assert c2pa_marker_in(b"some jumb box but no manifest label") is False
+
+    def test_empty_not_detected(self):
+        assert c2pa_marker_in(b"") is False
+
+
+class TestSamsungGenai:
+    """Samsung Galaxy AI editing marker (genAIType in PhotoEditor_Re_Edit_Data).
+
+    Synthetic byte blobs -- real Galaxy files are user content and not shipped
+    (public repo), same discipline as the Grok/Doubao fixtures.
+    """
+
+    @staticmethod
+    def _samsung_jpeg(tmp_path: Path, name: str, payload: bytes) -> Path:
+        path = tmp_path / name
+        path.write_bytes(b"\xff\xd8\xff\xe1" + payload + b"\xff\xd9")
+        return path
+
+    def test_nonzero_genai_type_detected(self, tmp_path: Path):
+        p = self._samsung_jpeg(
+            tmp_path, "galaxy.jpg", b'PhotoEditor_Re_Edit_Data{"connectorType":"srvg","genAIType":1}'
+        )
+        assert samsung_genai(p) == 1
+
+    def test_other_nonzero_value_detected(self, tmp_path: Path):
+        p = self._samsung_jpeg(tmp_path, "galaxy5.jpg", b'PhotoEditor_Re_Edit_Data{"genAIType":5}')
+        assert samsung_genai(p) == 5
+
+    def test_zero_genai_type_is_none(self, tmp_path: Path):
+        """genAIType:0 means no generative AI was used -- not a positive signal."""
+        p = self._samsung_jpeg(tmp_path, "edit.jpg", b'PhotoEditor_Re_Edit_Data{"genAIType":0}')
+        assert samsung_genai(p) is None
+
+    def test_genai_without_editor_container_ignored(self, tmp_path: Path):
+        """An incidental genAIType token outside Samsung's editor JSON is ignored."""
+        p = self._samsung_jpeg(tmp_path, "stray.jpg", b'some other blob "genAIType":1 elsewhere')
+        assert samsung_genai(p) is None
+
+    def test_clean_image_is_none(self, tmp_clean_png):
+        assert samsung_genai(tmp_clean_png) is None
+
+    def test_surfaced_in_get_ai_metadata(self, tmp_path: Path):
+        p = self._samsung_jpeg(tmp_path, "galaxy.jpg", b'PhotoEditor_Re_Edit_Data{"genAIType":1}')
+        meta = get_ai_metadata(p)
+        assert "samsung_genai" in meta
+        assert "genAIType=1" in meta["samsung_genai"]
 
 
 class TestGetAiMetadata:

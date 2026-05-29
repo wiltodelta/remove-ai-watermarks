@@ -88,6 +88,14 @@ C2PA_ISSUERS = {
     # Stability AI signs C2PA as "Stability AI" (cert org "Stability AI Ltd").
     # Verified on a live Brand Studio (DreamStudio successor) output, 2026-05-24.
     b"Stability AI": "Stability AI",
+    # Black Forest Labs (FLUX) API output: claim_generator_info "Black Forest
+    # Labs API" + a c2pa.ai_generated_content assertion + trainedAlgorithmicMedia.
+    # Verified on a real signed FLUX JPEG, 2026-05-29.
+    b"Black Forest Labs": "Black Forest Labs",
+    # ByteDance's Volcano Engine (Volcengine) signs its AI image output with a
+    # cert from certificate_center@volcengine.com -- the platform behind Doubao /
+    # Jimeng. Verified on two real signed JPEGs, 2026-05-29.
+    b"volcengine": "ByteDance (Volcano Engine)",
 }
 
 # C2PA issuers whose signed outputs also carry an invisible SynthID pixel

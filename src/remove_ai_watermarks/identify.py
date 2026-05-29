@@ -25,14 +25,15 @@ from typing import TYPE_CHECKING
 from remove_ai_watermarks.metadata import (
     AI_METADATA_KEYS,
     AIGC_MARKERS,
-    C2PA_UUID,
     IPTC_AI_FIELD_MARKERS,
     IPTC_AI_MARKERS,
     aigc_label,
+    c2pa_marker_in,
     exif_generator,
     get_ai_metadata,
     huggingface_job,
     iptc_ai_system,
+    samsung_genai,
     scan_head,
     xai_signature,
 )
@@ -65,6 +66,8 @@ _ISSUER_PLATFORM: tuple[tuple[str, str], ...] = (
     ("OpenAI", "OpenAI (ChatGPT / gpt-image / DALL-E / Sora)"),
     ("Google", "Google (Gemini / Imagen)"),
     ("Stability AI", "Stability AI (Stable Image / DreamStudio)"),
+    ("Black Forest Labs", "Black Forest Labs (FLUX)"),
+    ("ByteDance", "ByteDance (Doubao / Jimeng / Volcano Engine)"),
 )
 
 # PNG-text / EXIF keys that indicate a local diffusion pipeline (vs. a hosted
@@ -94,6 +97,12 @@ _HF_JOB_CAVEAT = (
     "The hf-job-id tag marks a HuggingFace-hosted job (commonly diffusion "
     "generation) but names neither the model nor the content type, so it is a "
     "medium-confidence signal, not proof the pixels are AI-generated."
+)
+_SAMSUNG_GENAI_CAVEAT = (
+    "Samsung's genAIType marker shows a Galaxy AI editing tool (Generative Edit, "
+    "Sketch to Image, ...) touched the image; it is an undocumented proprietary "
+    "field, so it is a medium-confidence signal of AI editing, not proof the "
+    "whole image is AI-generated."
 )
 
 
@@ -151,7 +160,9 @@ def _ai_tools_in(data: bytes) -> list[str]:
 # assert is_ai on their own (the verdict still comes from the digital-source-type:
 # the Pixel sample carries `computationalCapture`, not `trainedAlgorithmicMedia`).
 # Only tokens verified against a real signed file are listed (Leica, Nikon,
-# Truepic, Google Pixel); add Sony/Canon/Samsung/Bria as real samples are captured.
+# Sony, Truepic, Google Pixel); add Canon/Bria as real samples are captured.
+# Samsung Galaxy is an AI-capable editing device, not a pure-capture camera, so
+# it lives in `_SIGNER_C2PA_PLATFORM` below (it must not feed the camera clash).
 _DEVICE_C2PA_PLATFORM: tuple[tuple[bytes, str], ...] = (
     (b"lc_c2pa", "Leica (camera, C2PA capture)"),
     (b"Leica Camera", "Leica (camera, C2PA capture)"),
@@ -172,6 +183,32 @@ _DEVICE_C2PA_PLATFORM: tuple[tuple[bytes, str], ...] = (
 def _device_platform(head: bytes) -> str | None:
     """Map a distinctive C2PA device/camera token in the manifest bytes to a platform."""
     for token, platform in _DEVICE_C2PA_PLATFORM:
+        if token in head:
+            return platform
+    return None
+
+
+# C2PA signers that are an editing app or AI-capable device rather than a
+# verified-capture camera. Unlike `_DEVICE_C2PA_PLATFORM`, these do NOT feed the
+# camera-vs-AI integrity clash (rule 2 in `_integrity_clashes`): a Galaxy phone
+# legitimately stamps BOTH its device credentials AND a `trainedAlgorithmicMedia`
+# source type on a Generative-Edit image, so treating it as a "genuine camera
+# capture" would false-flag every Galaxy AI edit. They only resolve the platform
+# label; the AI verdict still comes from the digital-source-type / genAIType.
+# Tokens verified against real signed files (2026-05-29):
+#   Samsung Galaxy -- cert org on Galaxy S23 FE / S24 / S25 C2PA JPEGs/PNGs
+#     (distinct from the EXIF "SM-xxxx" model string on ordinary Samsung photos).
+#   com.asus.gallery -- ASUS Gallery claim_generator (a C2PA-signed edit, no AI
+#     source type or genAIType on the samples, so it never asserts is_ai).
+_SIGNER_C2PA_PLATFORM: tuple[tuple[bytes, str], ...] = (
+    (b"Samsung Galaxy", "Samsung Galaxy (C2PA)"),
+    (b"com.asus.gallery", "ASUS Gallery (C2PA signer)"),
+)
+
+
+def _signer_platform(head: bytes) -> str | None:
+    """Map a C2PA editing-app / AI-capable-device signer token to a platform."""
+    for token, platform in _SIGNER_C2PA_PLATFORM:
         if token in head:
             return platform
     return None
@@ -353,9 +390,10 @@ def identify(image_path: Path, *, check_visible: bool = True, check_invisible: b
     # neither is a trustworthy "the generator stamped its identity" claim.
     ai_vendor_claims: dict[str, str] = {}
     camera_label = _device_platform(head)
+    signer_label = _signer_platform(head)
 
     # ── C2PA Content Credentials ────────────────────────────────────
-    has_c2pa = bool(info) or b"c2pa" in head.lower() or C2PA_UUID in head
+    has_c2pa = bool(info) or c2pa_marker_in(head)
     issuers = [info["issuer"]] if info.get("issuer") else _issuers_in(head)
     c2pa_is_ai = "trainedAlgorithmicMedia" in info.get("source_type", "") or any(
         m in head for m in (b"trainedAlgorithmicMedia", b"compositeWithTrainedAlgorithmicMedia")
@@ -370,10 +408,11 @@ def identify(image_path: Path, *, check_visible: bool = True, check_invisible: b
         or (", ".join(tools) if (tools := _ai_tools_in(head)) else None)
     )
     # Platform: a distinctive device/camera token in the manifest wins (it is the
-    # signer/producer), with the issuer byte-scan only as fallback. The issuer
-    # scan alone mis-attributed real samples (Leica->Truepic timestamp authority,
-    # Nikon->Adobe namespace, Pixel->Google Gemini) -- the device scan fixes that.
-    platform = (camera_label or _attribute_platform(issuers, is_ai=c2pa_is_ai)) if has_c2pa else None
+    # signer/producer), then an editing-app/AI-device signer (Samsung Galaxy,
+    # ASUS Gallery), with the issuer byte-scan only as fallback. The issuer scan
+    # alone mis-attributed real samples (Leica->Truepic timestamp authority,
+    # Nikon->Adobe namespace, Pixel->Google Gemini) -- the token scans fix that.
+    platform = (camera_label or signer_label or _attribute_platform(issuers, is_ai=c2pa_is_ai)) if has_c2pa else None
     if has_c2pa:
         detail = ", ".join(filter(None, [", ".join(issuers), generator, info.get("source_type")]))
         signals.append(Signal("c2pa", detail or "C2PA manifest present", "high"))
@@ -484,6 +523,22 @@ def identify(image_path: Path, *, check_visible: bool = True, check_invisible: b
         if platform is None:
             platform = "HuggingFace-hosted job (model not identified)"
 
+    # ── Samsung Galaxy AI editing marker (genAIType) ─────────────────
+    # Galaxy AI tools stamp a proprietary genAIType in PhotoEditor_Re_Edit_Data.
+    # Medium confidence: it co-occurs with the C2PA trainedAlgorithmicMedia type
+    # on Galaxy files that record one, and is the SOLE AI marker on a Galaxy S24
+    # sample that omits the source type -- so it lifts an otherwise-Unknown
+    # verdict, but the field is undocumented, so it never overrides a high-
+    # confidence signal. The platform is usually already "Samsung Galaxy" via the
+    # signer-token scan; the fallback covers a future file without the cert org.
+    samsung_genai_type = samsung_genai(image_path)
+    if samsung_genai_type is not None:
+        signals.append(Signal("samsung_genai", f"Samsung genAIType={samsung_genai_type}", "medium"))
+        watermarks.append("Samsung Galaxy AI editing marker (genAIType)")
+        caveats.append(_SAMSUNG_GENAI_CAVEAT)
+        if platform is None:
+            platform = "Samsung Galaxy (Galaxy AI editing)"
+
     # ── Open invisible watermark (SD / SDXL / FLUX, dwtDct) ──────────
     # Public decoder, no key -- a definitive embedded signal on pristine files.
     if check_invisible and (scheme := _invisible_watermark(image_path)) is not None:
@@ -527,11 +582,12 @@ def identify(image_path: Path, *, check_visible: bool = True, check_invisible: b
 
     visible_only = any(s.name == "visible_sparkle" for s in signals) and not ai_from_metadata
     hf_only = bool(hf_job) and not ai_from_metadata
+    samsung_only = samsung_genai_type is not None and not ai_from_metadata
 
     if ai_from_metadata:
         is_ai: bool | None = True
         confidence = "high"
-    elif visible_only or hf_only:
+    elif visible_only or hf_only or samsung_only:
         is_ai = True
         confidence = "medium"
     else:
