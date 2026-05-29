@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import pytest
 
-from remove_ai_watermarks.doubao_engine import DoubaoEngine, load_image_bgr
+from remove_ai_watermarks.doubao_engine import DoubaoEngine, _glyph_structure, load_image_bgr
 
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "samples" / "doubao-1.png"
 
@@ -82,6 +82,55 @@ class TestNegativeAndGuard:
         img = cv2.cvtColor(ramp, cv2.COLOR_GRAY2BGR)
         out = eng.remove_watermark(img)
         assert np.array_equal(img, out)
+
+    def _bright_corner(self, eng: DoubaoEngine, draw) -> np.ndarray:
+        """Dark 1024² image with the bottom-right box painted by ``draw(box_view)``."""
+        img = np.zeros((1024, 1024, 3), np.uint8)
+        x, y, bw, bh = eng.locate(img).bbox
+        draw(img[y : y + bh, x : x + bw])
+        return img
+
+    def test_solid_blob_corner_not_detected(self):
+        """A single bright blob clears coverage but lacks text structure (one
+        dominant component) -- the issue #23 false positive, now rejected."""
+        eng = DoubaoEngine()
+
+        def fill(box):
+            box[box.shape[0] // 4 : box.shape[0] * 3 // 4, : box.shape[1] // 2] = 200
+
+        assert not eng.detect(self._bright_corner(eng, fill)).detected
+
+    def test_text_like_glyph_row_detected(self):
+        """Several small bright bars in one horizontal row (glyph-like) pass the
+        structural gate (many components, no dominant blob, banded)."""
+        eng = DoubaoEngine()
+
+        def glyphs(box):
+            bh, bw = box.shape[:2]
+            gh = int(bh * 0.55)
+            gw = max(3, int(bw * 0.07))
+            y0 = (bh - gh) // 2
+            for i in range(6):
+                cx = int(bw * (0.06 + i * 0.15))
+                box[y0 : y0 + gh, cx : cx + gw] = 200
+
+        assert eng.detect(self._bright_corner(eng, glyphs)).detected
+
+    def test_glyph_structure_descriptors(self):
+        # One filled blob -> 1 component, dominant, fully banded.
+        blob = np.zeros((40, 200), np.uint8)
+        blob[10:30, 20:120] = 255
+        ncomp, top1, _ = _glyph_structure(blob)
+        assert ncomp == 1
+        assert top1 > 0.95
+        # Several separated bars -> many components, none dominant.
+        bars = np.zeros((40, 200), np.uint8)
+        for i in range(6):
+            bars[15:25, 10 + i * 30 : 16 + i * 30] = 255
+        ncomp2, top1_2, _ = _glyph_structure(bars)
+        assert ncomp2 >= 4
+        assert top1_2 < 0.5
+        assert _glyph_structure(np.zeros((40, 200), np.uint8)) == (0, 1.0, 0.0)
 
     def test_document_background_guard(self):
         """A dense high-frequency corner (document-like) trips the coverage

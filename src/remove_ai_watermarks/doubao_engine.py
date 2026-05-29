@@ -72,6 +72,20 @@ TOPHAT_DELTA = 12  # glyph must exceed the local background by this many levels
 # so the threshold sits above that spike and below the real-mark floor.
 DETECT_MIN_COVERAGE = 0.16
 
+# Coverage alone over-fires: any textured bottom-right corner (busy photo,
+# foliage, signage) clears 0.16, so a coverage-only detector false-positived on
+# ~28% of arbitrary images (verified 2026-05-29; issue #23). The real mark is
+# TEXT -- "豆包AI生成", six small glyphs in one horizontal row -- which has a
+# structural signature a texture blob lacks: many small connected components, no
+# single dominant blob, and concentration in a thin horizontal band. Requiring
+# all three on top of coverage cut false positives ~95% (343 -> 17 across the
+# corpus) while keeping the bulk of real-mark recall. Thresholds are corpus-tuned
+# (real marks: components p50=9, largest-component-fraction p50=0.27, band p50=0.82;
+# texture FPs: components p50~2-3, largest-fraction p50~0.90, band p50~0.62).
+DETECT_MIN_COMPONENTS = 4  # distinct glyph pieces (texture blobs have 1-3)
+DETECT_MAX_TOP1_FRAC = 0.6  # largest component as a fraction of glyph pixels (blob -> ~1.0)
+DETECT_MIN_BAND_FRAC = 0.7  # glyph mass within the densest half-height horizontal band
+
 # Safety: a text strip fills a modest slice of the (generous) box. When the box
 # is over a dense-text / document background the mask explodes and cv2 inpainting
 # would smear the real content. Above this coverage we refuse to inpaint and
@@ -102,6 +116,32 @@ class DoubaoDetection:
     confidence: float = 0.0
     region: tuple[int, int, int, int] = (0, 0, 0, 0)
     coverage: float = 0.0  # fraction of the box occupied by glyph pixels
+
+
+def _glyph_structure(box: NDArray[Any]) -> tuple[int, float, float]:
+    """Text-structure descriptors of a binary glyph mask (255 = glyph).
+
+    Returns ``(n_components, largest_component_fraction, band_fraction)``:
+      - ``n_components``: connected glyph pieces (CJK text -> many; a blob -> 1-3).
+      - ``largest_component_fraction``: biggest component / total glyph pixels
+        (text -> small, a dominant texture blob -> near 1.0).
+      - ``band_fraction``: glyph mass within the densest half-box-height
+        horizontal window (a one-line label -> high; spread texture -> low).
+    Used by ``detect`` to reject textured-corner false positives (issue #23).
+    """
+    total = int((box > 0).sum())
+    if total == 0:
+        return 0, 1.0, 0.0
+    n_labels, _, stats, _ = cv2.connectedComponentsWithStats(box, connectivity=8)
+    n_comp = n_labels - 1  # exclude the background label
+    areas = stats[1:, cv2.CC_STAT_AREA] if n_comp > 0 else np.array([0])
+    top1_frac = float(areas.max()) / total
+    bh = box.shape[0]
+    row_glyphs = (box > 0).sum(axis=1).astype(np.float64)
+    win = max(1, int(bh * 0.5))
+    best_band = max((row_glyphs[i : i + win].sum() for i in range(max(1, bh - win + 1))), default=0.0)
+    band_frac = float(best_band) / float(total)
+    return n_comp, top1_frac, band_frac
 
 
 class DoubaoEngine:
@@ -193,8 +233,23 @@ class DoubaoEngine:
         det.coverage = coverage
         # Map coverage to a 0-1 confidence: ~0.06 (noise floor) -> 0, ~0.26 -> 1.
         det.confidence = float(max(0.0, min(1.0, (coverage - 0.06) / 0.20)))
-        det.detected = coverage >= DETECT_MIN_COVERAGE
-        logger.debug("Doubao detect: coverage=%.3f conf=%.3f", coverage, det.confidence)
+        # Coverage is necessary but not sufficient (textured corners clear it);
+        # require the text-structure signature to reject blob false positives.
+        if coverage >= DETECT_MIN_COVERAGE:
+            ncomp, top1_frac, band_frac = _glyph_structure(box)
+            det.detected = (
+                ncomp >= DETECT_MIN_COMPONENTS
+                and top1_frac < DETECT_MAX_TOP1_FRAC
+                and band_frac >= DETECT_MIN_BAND_FRAC
+            )
+            logger.debug(
+                "Doubao detect: coverage=%.3f comps=%d top1=%.2f band=%.2f detected=%s",
+                coverage,
+                ncomp,
+                top1_frac,
+                band_frac,
+                det.detected,
+            )
         return det
 
     # ── Remove ────────────────────────────────────────────────────────
@@ -206,12 +261,15 @@ class DoubaoEngine:
         inpaint_method: Literal["telea", "ns"] = "telea",
         inpaint_radius: int = 6,
         dilate: int = 3,
+        force: bool = False,
     ) -> NDArray[Any]:
         """Remove the visible Doubao watermark by inpainting the glyph mask.
 
         Returns an unmodified copy when no glyph pixels are found (so we never
         smear a clean corner). ``dilate`` grows the mask to cover anti-aliased
-        glyph edges before inpainting.
+        glyph edges before inpainting. ``force`` is accepted for interface
+        symmetry with the other engines but is a no-op here: this remover already
+        inpaints whatever glyph mask it finds without a detection gate.
         """
         if image is None or image.size == 0:
             return image
