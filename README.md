@@ -49,7 +49,7 @@ If this tool saves you time, consider [sponsoring its development](https://githu
 | **xAI Grok (Aurora)** | — | — | ✅ EXIF signature scheme (no C2PA): `Signature:` blob + UUID `Artist` | Detected (`identify`); metadata strip |
 | **Midjourney** | — | — | ✅ EXIF + XMP (prompt, model, seed) | Metadata strip |
 | **Meta AI** | — | — | ✅ IPTC "Made with AI" (digitalSourceType) | Metadata strip (removes the label) |
-| **Doubao** (ByteDance) / China AIGC generators | ✅ "豆包AI生成" text strip (bottom-right) | — | ✅ TC260 AIGC label (`<TC260:AIGC>` XMP **or** `AIGC` PNG chunk) **+ C2PA** signed by ByteDance Volcano Engine (`volcengine`) | Locate + mask + inpaint (cv2 / LaMa) + metadata strip |
+| **Doubao** (ByteDance) / China AIGC generators | ✅ "豆包AI生成" text strip (bottom-right) | — | ✅ TC260 AIGC label (`<TC260:AIGC>` XMP **or** `AIGC` PNG chunk) **+ C2PA** signed by ByteDance Volcano Engine (`volcengine`) | Exact reverse-alpha (captured α map) at native res, else mask + inpaint (cv2 / LaMa) + metadata strip |
 | **Samsung Galaxy AI** (Generative Edit, Sketch to Image, ...) | ✅ bottom-left "AI-generated content" badge (`--mark samsung`) | — | ✅ C2PA (signer "Samsung Galaxy") + `trainedAlgorithmicMedia` / proprietary `genAIType` marker | Locate + mask + inpaint (cv2 / LaMa) + metadata strip |
 | **Black Forest Labs** (FLUX API) | — | — | ✅ C2PA (`Black Forest Labs API` + `c2pa.ai_generated_content` + `trainedAlgorithmicMedia`) | Metadata strip |
 | **StableSignature** (Meta) | — | ✅ In-model watermark | — | Diffusion regeneration |
@@ -81,9 +81,9 @@ A three-stage NCC (Normalized Cross-Correlation) detector finds the watermark po
 
 ### Removing the Doubao "豆包AI生成" text watermark
 
-Doubao (ByteDance) stamps every output with a light, semi-transparent "豆包AI生成" text strip in the bottom-right corner — the visible AIGC label mandated by China's TC260 standard. Unlike the fixed-size Gemini sparkle, it is a text strip that scales with image width, so we anchor a generous bottom-right box by geometry, extract the light low-saturation glyph pixels with a polarity-aware white top-hat mask, and inpaint them (cv2 Telea/NS). The mask is background-relative, so it leaves white-paper documents untouched instead of smearing their text. On dense-text backgrounds where the mask would explode, removal is skipped rather than guessed.
+Doubao (ByteDance) stamps every output with a light, semi-transparent "豆包AI生成" text strip in the bottom-right corner — the visible AIGC label mandated by China's TC260 standard. It is a fixed semi-transparent white overlay, so — like the Gemini sparkle — it is removed by **exact reverse-alpha blending**: `original = (watermarked - α·logo) / (1 - α)`, recovering the true pixels instead of hallucinating them. The α map and logo colour were solved from controlled black + gray captures (on black, `captured = α·logo`; the black/gray pair solves α per-pixel). This is exact at the captured resolution; since the mark scales with image width, it is used when the image width is within the calibrated band, otherwise removal falls back to mask + inpaint (cv2, or big-LaMa via `--backend lama`). Detection gates on a text-structure signature (six glyphs in one row) so textured corners are not mistaken for the mark.
 
-**Speed**: ~0.03s per image. No GPU needed. Best on photo / illustration backgrounds; on high-contrast edges a faint residue can remain (use `erase --backend lama` for neural-quality fill).
+**Speed**: reverse-alpha ~0.05s, cv2 inpaint fallback ~0.03s, no GPU needed. The cv2 fallback can leave faint residue on high-contrast backgrounds (use `--backend lama`); reverse-alpha at the captured resolution is clean.
 
 ### Universal region eraser
 

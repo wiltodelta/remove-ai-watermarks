@@ -8,7 +8,18 @@ import cv2
 import numpy as np
 import pytest
 
-from remove_ai_watermarks.doubao_engine import DoubaoEngine, _glyph_structure, load_image_bgr
+from remove_ai_watermarks.doubao_engine import (
+    _ALPHA_HEIGHT_FRAC,
+    _ALPHA_LOGO_BGR,
+    _ALPHA_MARGIN_BOTTOM_FRAC,
+    _ALPHA_MARGIN_RIGHT_FRAC,
+    _ALPHA_NATIVE_WIDTH,
+    _ALPHA_WIDTH_FRAC,
+    DoubaoEngine,
+    _alpha_template,
+    _glyph_structure,
+    load_image_bgr,
+)
 
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "samples" / "doubao-1.png"
 
@@ -145,3 +156,42 @@ class TestNegativeAndGuard:
         img[y : y + bh, x : x + bw] = noise[:, :, None]
         out = eng.remove_watermark(img)
         assert np.array_equal(img, out)
+
+
+class TestReverseAlpha:
+    """Exact reverse-alpha recovery from the bundled Doubao alpha map."""
+
+    def test_alpha_asset_loads(self):
+        at = _alpha_template()
+        assert at is not None
+        assert at.dtype.kind == "f"
+        assert float(at.min()) >= 0.0
+        assert float(at.max()) <= 1.0
+
+    def test_availability_gated_by_width(self):
+        eng = DoubaoEngine()
+        native = np.zeros((_ALPHA_NATIVE_WIDTH, _ALPHA_NATIVE_WIDTH, 3), np.uint8)
+        far = np.zeros((1024, 1024, 3), np.uint8)  # ratio 0.5 -> out of band
+        assert eng.reverse_alpha_available(native)
+        assert not eng.reverse_alpha_available(far)
+
+    def test_recovers_flat_background(self):
+        """Compose the real alpha onto a flat background, then recover it."""
+        eng = DoubaoEngine()
+        w = _ALPHA_NATIVE_WIDTH
+        bg = 100.0
+        img = np.full((w, w, 3), bg, np.float32)
+        at = _alpha_template()
+        gw, gh = int(_ALPHA_WIDTH_FRAC * w), int(_ALPHA_HEIGHT_FRAC * w)
+        ax = w - int(_ALPHA_MARGIN_RIGHT_FRAC * w) - gw
+        ay = w - int(_ALPHA_MARGIN_BOTTOM_FRAC * w) - gh
+        amap = np.zeros((w, w), np.float32)
+        amap[ay : ay + gh, ax : ax + gw] = cv2.resize(at, (gw, gh))
+        a3 = amap[:, :, None]
+        logo = np.array(_ALPHA_LOGO_BGR, np.float32)
+        wm = (a3 * logo + (1 - a3) * img).clip(0, 255).astype(np.uint8)
+        # the mark must be visible before removal, gone after
+        mark = amap > 0.2
+        assert float(np.abs(wm.astype(np.float32)[mark] - bg).mean()) > 15
+        out = eng.remove_watermark_reverse_alpha(wm).astype(np.float32)
+        assert float(np.abs(out[mark] - bg).mean()) < 6  # recovered close to flat bg

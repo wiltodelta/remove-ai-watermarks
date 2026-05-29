@@ -225,6 +225,12 @@ def _doubao_detect(image: NDArray[Any]) -> MarkDetection:
 def _doubao_remove(
     image: NDArray[Any], backend: Backend, inpaint_method: InpaintMethod, _inpaint: bool, _strength: float, force: bool
 ) -> tuple[NDArray[Any], Region | None]:
+    # Prefer exact reverse-alpha when the mark is present AND the resolution is in
+    # the alpha map's calibrated band; otherwise fall back to mask-based inpaint.
+    engine = _engine("doubao")
+    det = engine.detect(image)
+    if (det.detected or force) and engine.reverse_alpha_available(image):
+        return engine.remove_watermark_reverse_alpha(image), (det.region if det.detected else None)
     return _glyph_remove("doubao", image, backend, inpaint_method, force, gated=False)
 
 

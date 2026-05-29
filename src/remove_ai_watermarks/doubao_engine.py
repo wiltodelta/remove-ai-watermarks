@@ -92,6 +92,45 @@ DETECT_MIN_BAND_FRAC = 0.7  # glyph mass within the densest half-height horizont
 # leave the image untouched -- that hard case needs the neural path, not a guess.
 MAX_INPAINT_COVERAGE = 0.50
 
+# ── Reverse-alpha (exact recovery, Gemini-style) ─────────────────────
+# The Doubao mark is a fixed semi-transparent white overlay, so given its alpha
+# map the original pixels are recovered exactly: original = (wm - a*logo)/(1-a).
+# The alpha map + logo colour were solved from black+gray Doubao captures on a
+# controlled background (data/doubao_capture/): on black, captured = a*logo, and
+# the black/gray pair solves a per-pixel WITHOUT assuming the logo colour. The
+# bundled asset (assets/doubao_alpha.png) is the alpha template (a*255) at the
+# captured width; the geometry below places + scales it (the mark scales with
+# image WIDTH). Exact at the captured width; alignment degrades sub-pixel as the
+# target width departs from native, so it is gated to a band around native and
+# the caller falls back to inpaint outside it. Add captures at more resolutions
+# to widen the band. Verified 2026-05-29: white-capture cross-check -> mark
+# vanishes to a flat fill; clean on doubao-1.png (2048).
+_ALPHA_NATIVE_WIDTH = 2048
+_ALPHA_LOGO_BGR: tuple[float, float, float] = (252.0, 255.0, 255.0)
+_ALPHA_MARGIN_RIGHT_FRAC = 0.0166
+_ALPHA_MARGIN_BOTTOM_FRAC = 0.0195
+_ALPHA_WIDTH_FRAC = 0.1572
+_ALPHA_HEIGHT_FRAC = 0.0347
+# Width band (relative to native) within which the scaled alpha stays aligned.
+_ALPHA_WIDTH_TOLERANCE = 0.06
+_alpha_template_cache: NDArray[Any] | None = None
+
+
+def _alpha_template() -> NDArray[Any] | None:
+    """Lazily load the bundled Doubao alpha template (float [0,1]), or None."""
+    global _alpha_template_cache
+    if _alpha_template_cache is None:
+        from pathlib import Path
+
+        from remove_ai_watermarks import image_io
+
+        path = Path(__file__).parent / "assets" / "doubao_alpha.png"
+        img = image_io.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return None
+        _alpha_template_cache = img.astype(np.float32) / 255.0
+    return _alpha_template_cache
+
 
 @dataclass(frozen=True)
 class DoubaoLocation:
@@ -296,6 +335,43 @@ class DoubaoEngine:
 
         flag = cv2.INPAINT_TELEA if inpaint_method == "telea" else cv2.INPAINT_NS
         return cv2.inpaint(image, mask, inpaint_radius, flag)
+
+    # ── Reverse-alpha (exact recovery) ────────────────────────────────
+
+    def reverse_alpha_available(self, image: NDArray[Any]) -> bool:
+        """True if the bundled alpha map is loadable AND the image width is within
+        the calibrated band, so reverse-alpha stays well-aligned (else fall back)."""
+        if image is None or image.size == 0 or _alpha_template() is None:
+            return False
+        ratio = image.shape[1] / _ALPHA_NATIVE_WIDTH
+        return abs(ratio - 1.0) <= _ALPHA_WIDTH_TOLERANCE
+
+    def remove_watermark_reverse_alpha(self, image: NDArray[Any], *, residual_inpaint: bool = True) -> NDArray[Any]:
+        """Recover the original pixels by inverting the alpha blend:
+        ``original = (wm - a*logo) / (1 - a)``.
+
+        Exact at the captured width (the alpha map IS the watermark's contribution
+        there); the template scales with image WIDTH. A light residual inpaint over
+        the glyph footprint cleans the sub-pixel error introduced by rescaling.
+        Call only when :meth:`reverse_alpha_available` is True.
+        """
+        at = _alpha_template()
+        if at is None:
+            return image.copy()
+        h, w = image.shape[:2]
+        gw = max(1, int(_ALPHA_WIDTH_FRAC * w))
+        gh = max(1, int(_ALPHA_HEIGHT_FRAC * w))
+        ax = max(0, w - int(_ALPHA_MARGIN_RIGHT_FRAC * w) - gw)
+        ay = max(0, h - int(_ALPHA_MARGIN_BOTTOM_FRAC * w) - gh)
+        amap = np.zeros((h, w), np.float32)
+        amap[ay : ay + gh, ax : ax + gw] = cv2.resize(at, (gw, gh), interpolation=cv2.INTER_LINEAR)
+        a3 = np.clip(amap, 0.0, 1.0)[:, :, None]
+        logo = np.array(_ALPHA_LOGO_BGR, np.float32)
+        out = np.clip((image.astype(np.float32) - a3 * logo) / np.clip(1.0 - a3, 0.25, 1.0), 0, 255).astype(np.uint8)
+        if residual_inpaint:
+            rm = cv2.dilate((amap > 0.10).astype(np.uint8) * 255, np.ones((3, 3), np.uint8))
+            out = cv2.inpaint(out, rm, 3, cv2.INPAINT_TELEA)
+        return out
 
 
 def load_image_bgr(path: str | Path) -> NDArray[Any]:
