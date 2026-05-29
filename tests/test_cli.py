@@ -249,6 +249,7 @@ class TestInvisibleCommand:
         mock_cls, mock_engine = _mock_invisible_engine()
         output = tmp_path / "clean.png"
         with (
+            patch("remove_ai_watermarks.invisible_engine.is_available", return_value=True),
             patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
             patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
         ):
@@ -263,6 +264,7 @@ class TestInvisibleCommand:
     def test_invisible_default_output(self, runner, sample_png):
         mock_cls, _mock_engine = _mock_invisible_engine()
         with (
+            patch("remove_ai_watermarks.invisible_engine.is_available", return_value=True),
             patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
             patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
         ):

@@ -5,6 +5,16 @@ description = "Remove visible and invisible AI watermarks from images (Gemini / 
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
 dependencies = [
     "pillow>=10.0.0",
     "piexif>=1.1.3",

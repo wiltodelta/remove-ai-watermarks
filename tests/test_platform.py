@@ -194,13 +194,21 @@ class TestAvailability:
     """Tests for dependency availability checks."""
 
     def test_watermark_removal_available(self):
-        # In dev env with torch+diffusers installed
-        assert is_watermark_removal_available() is True
+        # Reflects the actual environment: True iff torch + diffusers (the gpu
+        # extra) are importable. The core+dev CI env has no diffusers, so this
+        # must not assume the full stack is present.
+        import importlib.util
+
+        expected = all(importlib.util.find_spec(m) is not None for m in ("torch", "diffusers"))
+        assert is_watermark_removal_available() is expected
 
     def test_invisible_is_available(self):
+        import importlib.util
+
         from remove_ai_watermarks.invisible_engine import is_available
 
-        assert is_available() is True
+        expected = all(importlib.util.find_spec(m) is not None for m in ("torch", "diffusers"))
+        assert is_available() is expected
 
 
 # ── Platform-specific path handling ─────────────────────────────────
