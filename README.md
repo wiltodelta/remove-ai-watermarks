@@ -8,6 +8,7 @@ Strips SynthID, C2PA Content Credentials, EXIF/XMP "Made with AI" labels, and vi
 >
 > No Python, no GPU, no setup. Visible-watermark and metadata removal are **free**. Invisible-watermark removal (SynthID / SDXL regeneration) normally needs a local GPU and ~2 GB of models. On **[raiw.cc](https://raiw.cc)** it runs on cloud GPUs in one click for a small per-image fee.
 
+[![Tests](https://github.com/wiltodelta/remove-ai-watermarks/actions/workflows/test.yml/badge.svg)](https://github.com/wiltodelta/remove-ai-watermarks/actions/workflows/test.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/wiltodelta)
 
 If this tool saves you time, consider [sponsoring its development](https://github.com/sponsors/wiltodelta).
