@@ -42,8 +42,18 @@ _MODEL_URL = (
 )
 _MODEL_FILENAME = "text_detection_cn_ppocrv3_2023may.onnx"
 
-# DB detector input: long side scaled to this, rounded to a multiple of 32.
-_DET_INPUT_LONG_SIDE = 736
+# DB detector input: the image is detected at its NATIVE long side, capped at
+# this value (rounded to a multiple of 32), never upscaled. A fixed small input
+# (the old 736) downscaled large images so far that small text fell below the
+# detector's resolution and was missed -- the cause of the "small text still
+# distorts" reports (issue #14). Detection is script-agnostic (DB segments text
+# *regions*, not characters), so this recall fix applies to every language; the
+# only lever that mattered was resolution. 1536 recovers full recall down to
+# ~12 px text on a 2048 canvas at ~100 ms on CPU (a fixed 736 missed it); going
+# higher buys no measured recall at 2x+ the cost. Benchmarked in
+# scripts/text_detection_benchmark.py. Very large canvases with tiny text may
+# still need tiling -- a documented limit, not yet built.
+_DET_MAX_LONG_SIDE = 1536
 # ImageNet mean (x255) and 1/255 scale -- the normalization PP-OCRv3 expects.
 _DET_MEAN = (0.485 * 255, 0.456 * 255, 0.406 * 255)
 _DET_SCALE = 1 / 255.0
@@ -85,6 +95,21 @@ def _model_path() -> Path:
         if tmp_path.exists():
             tmp_path.unlink()
     return target
+
+
+def _detection_input_size(height: int, width: int) -> tuple[int, int]:
+    """DB-detector input ``(in_w, in_h)`` for an image of the given size.
+
+    Detect at the native long side, capped at ``_DET_MAX_LONG_SIDE`` and never
+    upscaled, each side rounded down to a multiple of 32 (the DB head requires
+    /32 dims), floored at 32. Pure function so the resolution contract (the
+    issue #14 small-text recall fix) is unit-testable without the model.
+    """
+    long_side = max(height, width)
+    scale = min(_DET_MAX_LONG_SIDE, long_side) / long_side
+    in_w = max((round(width * scale) // 32) * 32, 32)
+    in_h = max((round(height * scale) // 32) * 32, 32)
+    return in_w, in_h
 
 
 def build_change_map(
@@ -154,9 +179,7 @@ class TextProtector:
             One array of four (x, y) vertices per detected text region.
         """
         height, width = bgr_image.shape[:2]
-        scale = _DET_INPUT_LONG_SIDE / max(height, width)
-        in_w = max((round(width * scale) // 32) * 32, 32)
-        in_h = max((round(height * scale) // 32) * 32, 32)
+        in_w, in_h = _detection_input_size(height, width)
         self._detector.setInputParams(
             scale=_DET_SCALE,
             size=(in_w, in_h),

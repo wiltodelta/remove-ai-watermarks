@@ -11,7 +11,50 @@ from __future__ import annotations
 
 import numpy as np
 
-from remove_ai_watermarks.text_protector import build_change_map
+from remove_ai_watermarks.text_protector import _DET_MAX_LONG_SIDE, _detection_input_size, build_change_map
+
+
+class TestDetectionInputSize:
+    """Resolution contract for the DB detector input (issue #14 recall fix).
+
+    A fixed small input (the old 736) downscaled large canvases so far that small
+    text fell below the detector's resolution and was missed. Detection now runs
+    at the native long side, capped and never upscaled.
+    """
+
+    def test_large_canvas_not_downscaled_to_old_736(self):
+        # The #14 regression: a 2048 canvas must detect well above the old 736
+        # so ~12-16 px text survives. Capped at the max long side.
+        in_w, in_h = _detection_input_size(2048, 2048)
+        assert in_w == _DET_MAX_LONG_SIDE
+        assert in_h == _DET_MAX_LONG_SIDE
+        assert in_w > 736  # the old fixed input that missed small text
+
+    def test_native_resolution_not_upscaled(self):
+        # A 1024 canvas detects at native 1024 (not upscaled to the cap, not
+        # downscaled to the old 736).
+        assert _detection_input_size(1024, 1024) == (1024, 1024)
+
+    def test_small_image_is_native(self):
+        assert _detection_input_size(512, 512) == (512, 512)
+
+    def test_dims_are_multiples_of_32(self):
+        for h, w in [(2048, 1024), (1234, 567), (4096, 4096), (1000, 1000)]:
+            in_w, in_h = _detection_input_size(h, w)
+            assert in_w % 32 == 0
+            assert in_h % 32 == 0
+
+    def test_aspect_ratio_preserved_when_capped(self):
+        # Portrait 2048x1024: long side capped to the max, short side scaled by
+        # the same factor (so the 2:1 aspect is roughly kept).
+        in_w, in_h = _detection_input_size(2048, 1024)
+        assert in_h == _DET_MAX_LONG_SIDE
+        assert abs((in_w / in_h) - 0.5) < 0.05
+
+    def test_floor_at_32(self):
+        in_w, in_h = _detection_input_size(10, 5)
+        assert in_w >= 32
+        assert in_h >= 32
 
 
 class TestBuildChangeMap:
