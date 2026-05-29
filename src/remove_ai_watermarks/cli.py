@@ -20,12 +20,12 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from remove_ai_watermarks import __version__
+from remove_ai_watermarks import __version__, watermark_registry
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from remove_ai_watermarks.gemini_engine import DetectionResult, GeminiEngine
+    from remove_ai_watermarks.gemini_engine import DetectionResult
 
 console = Console()
 
@@ -133,72 +133,6 @@ def _write_bgr_with_alpha(
     image_io.imwrite(path, bgra)
 
 
-def _run_doubao_if_selected(
-    ctx: click.Context,
-    image: NDArray[Any],
-    alpha: NDArray[Any] | None,
-    output: Path,
-    mark: str,
-    gemini_engine: GeminiEngine,
-    detect: bool,
-    detect_threshold: float,
-    inpaint_method: str,
-    strip_metadata: bool,
-) -> bool:
-    """Run the Doubao text-strip removal path when it is the selected mark.
-
-    Returns True when this path handled the image (caller should stop). In
-    ``auto`` mode the Doubao detector competes with the Gemini detector and wins
-    only when it is both positive and at least as confident.
-    """
-    from remove_ai_watermarks.doubao_engine import DoubaoEngine
-
-    doubao = DoubaoEngine()
-    d_det = doubao.detect(image)
-
-    if mark == "auto":
-        g_det = gemini_engine.detect_watermark(image)
-        use_doubao = d_det.detected and d_det.confidence >= g_det.confidence
-        console.print(
-            f"  [dim]Mark auto:[/] gemini={g_det.confidence:.2f} doubao={d_det.confidence:.2f} "
-            f"-> {'doubao' if use_doubao else 'gemini'}"
-        )
-    else:
-        use_doubao = mark == "doubao"
-
-    if not use_doubao:
-        return False
-
-    if detect and not d_det.detected and d_det.confidence < detect_threshold:
-        console.print(
-            f"  [yellow]⚠[/] Doubao mark not detected  [dim](coverage {d_det.coverage:.1%}). "
-            f"Use --no-detect to force.[/]"
-        )
-        raise SystemExit(0)
-
-    method: Literal["telea", "ns"] = "ns" if inpaint_method == "ns" else "telea"
-    t0 = time.monotonic()
-    with console.status("[cyan]Removing Doubao watermark…[/]"):
-        result = doubao.remove_watermark(image, inpaint_method=method)
-    elapsed = time.monotonic() - t0
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    _write_bgr_with_alpha(output, result, alpha, clear_region=d_det.region)
-
-    if strip_metadata:
-        try:
-            from remove_ai_watermarks.metadata import remove_ai_metadata
-
-            remove_ai_metadata(output, output)
-        except Exception as e:
-            if ctx.obj.get("verbose"):
-                console.print(f"  [yellow]⚠[/] Failed to strip metadata: {e}")
-
-    size_kb = output.stat().st_size / 1024
-    console.print(f"  [green]✓[/] Doubao mark removed → {output}  [dim]({size_kb:.0f} KB, {elapsed:.2f}s)[/]")
-    return True
-
-
 # ── Main group ───────────────────────────────────────────────────────
 
 
@@ -238,9 +172,19 @@ def main(ctx: click.Context, verbose: bool) -> None:
 @click.option("--detect-threshold", type=float, default=0.25, help="Detection confidence threshold.")
 @click.option(
     "--mark",
-    type=click.Choice(["auto", "gemini", "doubao"]),
+    type=click.Choice(["auto", *watermark_registry.mark_keys()]),
     default="auto",
-    help="Which visible mark to target. auto picks the stronger of the two detectors.",
+    help="Which visible mark to target. auto picks the stronger of gemini/doubao; "
+    "samsung (Galaxy AI bottom-left badge) is explicit-only.",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(["auto", "cv2", "lama"]),
+    default="auto",
+    help="Background reconstruction for mask-based marks (doubao/samsung). "
+    "auto: LaMa if onnxruntime is installed, else cv2. lama reconstructs texture "
+    "(needs extra 'lama', ~3.5 GB RAM); cv2 is instant but smears. Gemini always "
+    "uses exact reverse-alpha regardless.",
 )
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
 @click.pass_context
@@ -254,23 +198,23 @@ def cmd_visible(
     detect: bool,
     detect_threshold: float,
     mark: str,
+    backend: Literal["auto", "cv2", "lama"],
     strip_metadata: bool,
 ) -> None:
     """Remove a visible AI watermark from an image.
 
-    Targets the Gemini sparkle logo (reverse alpha blending) or the Doubao
-    "豆包AI生成" text strip (locate -> mask -> inpaint). Fast, deterministic,
-    offline. ``--mark auto`` picks whichever detector fires stronger.
+    Finds a known visible mark in its usual place (Gemini sparkle / Doubao text /
+    Samsung badge) via the watermark registry and removes it, reconstructing the
+    background. ``--mark auto`` picks the strongest detected mark; ``--backend``
+    picks the reconstruction quality (lama > cv2) for the mask-based marks.
     """
-    from remove_ai_watermarks.gemini_engine import GeminiEngine
+    from remove_ai_watermarks import watermark_registry as registry
 
     _banner()
     source = _validate_image(source)
 
     if output is None:
         output = source.with_stem(source.stem + "_clean")
-
-    engine = GeminiEngine()
 
     # Load image (preserving any alpha channel separately)
     image, alpha = _read_bgr_and_alpha(source)
@@ -281,45 +225,47 @@ def cmd_visible(
     h, w = image.shape[:2]
     console.print(f"  [dim]Input:[/]  {source.name}  ({w}x{h})")
 
-    # Resolve which visible mark to target, then run the Doubao path if chosen.
-    if _run_doubao_if_selected(
-        ctx, image, alpha, output, mark, engine, detect, detect_threshold, inpaint_method, strip_metadata
-    ):
-        return
-
-    # Detection (we always detect softly, to find dynamic region for inpainting)
-    with console.status("[cyan]Detecting watermark…[/]"):
-        det = engine.detect_watermark(image)
-
-    if detect:
-        if det.detected:
-            console.print(
-                f"  [green]✓[/] Watermark detected  "
-                f"[dim](confidence: {det.confidence:.1%}, "
-                f"spatial: {det.spatial_score:.3f}, "
-                f"gradient: {det.gradient_score:.3f})[/]"
-            )
-        else:
-            console.print(f"  [yellow]⚠[/] Watermark not detected  [dim](confidence: {det.confidence:.1%})[/]")
-            if det.confidence < detect_threshold:
-                console.print("  [dim]Skipping. Use --no-detect to force removal.[/]")
+    # Resolve the target mark from the known-watermark registry. ``auto`` scans
+    # every in-auto mark in its usual place and picks the strongest; an explicit
+    # ``--mark <key>`` targets that one (the user asserts its presence).
+    if mark == "auto":
+        best = registry.best_auto_mark(image)
+        if best is None:
+            console.print("  [yellow]⚠[/] No known visible mark detected (gemini / doubao).")
+            if detect:
+                console.print("  [dim]Skipping. Use --mark <name> --no-detect to force.[/]")
                 raise SystemExit(0)
+            target = "gemini"  # forced (no-detect): fall back to the default mark
+        else:
+            target = best.key
+            console.print(f"  [dim]Mark auto:[/] {best.label}  [dim]({best.location}, conf {best.confidence:.2f})[/]")
+    else:
+        target = mark
 
-    # Removal
+    chosen = registry.get_mark(target)
+    det = chosen.detect(image)
+    if detect and not det.detected:
+        console.print(
+            f"  [yellow]⚠[/] {chosen.label} not detected  "
+            f"[dim](conf {det.confidence:.2f}). Use --no-detect to force.[/]"
+        )
+        raise SystemExit(0)
+    if det.detected:
+        console.print(f"  [green]✓[/] {chosen.label} detected  [dim]({chosen.location}, conf {det.confidence:.2f})[/]")
+
+    method: Literal["telea", "ns"] = "ns" if inpaint_method == "ns" else "telea"
+    resolved_backend = registry.default_backend() if backend == "auto" else backend
+    detail = "reverse-alpha" if chosen.recovery == "reverse-alpha" else f"inpaint:{resolved_backend}"
     t0 = time.monotonic()
-    region: tuple[int, int, int, int] | None = None
-    with console.status("[cyan]Removing watermark…[/]"):
-        result = engine.remove_watermark(image)
-
-        if inpaint:
-            region = _watermark_region(det, w, h)
-            result = engine.inpaint_residual(
-                result,
-                region,
-                strength=inpaint_strength,
-                method=inpaint_method,
-            )
-
+    with console.status(f"[cyan]Removing {chosen.label}… ({detail})[/]"):
+        result, region = chosen.remove(
+            image,
+            backend=resolved_backend,
+            inpaint_method=method,
+            inpaint=inpaint,
+            inpaint_strength=inpaint_strength,
+            force=not detect,
+        )
     elapsed = time.monotonic() - t0
 
     # Save (preserves transparency by clearing alpha in the watermark region)
