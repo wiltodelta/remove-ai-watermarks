@@ -15,7 +15,6 @@ from remove_ai_watermarks.noai.utils import get_image_format, is_supported_forma
 from remove_ai_watermarks.noai.watermark_profiles import (
     detect_model_profile,
     get_model_id_for_profile,
-    get_recommended_strength,
 )
 from remove_ai_watermarks.noai.watermark_remover import get_device, is_watermark_removal_available
 
@@ -120,33 +119,6 @@ class TestModelProfiles:
 
     def test_detect_ctrlregen(self):
         assert detect_model_profile("yepengliu/ctrlregen") == "ctrlregen"
-
-    def test_recommended_strength_high(self):
-        assert get_recommended_strength("treering") == 0.7
-
-    def test_recommended_strength_low(self):
-        assert get_recommended_strength("stablesignature") == 0.04
-
-    def test_recommended_strength_medium(self):
-        assert get_recommended_strength("unknown_type") == 0.35
-
-    @pytest.mark.parametrize("wm_type", ["stegastamp", "stegasamp", "treering", "ringid"])
-    def test_high_perturbation_watermark_types(self, wm_type):
-        """Robust spatial watermarks need aggressive (0.7) regeneration."""
-        assert get_recommended_strength(wm_type) == 0.7
-
-    @pytest.mark.parametrize("wm_type", ["stablesignature", "dwtectsvd", "rivagan", "ssl", "hidden"])
-    def test_low_perturbation_watermark_types(self, wm_type):
-        """Fragile frequency/latent watermarks break at low (0.04) strength."""
-        assert get_recommended_strength(wm_type) == 0.04
-
-    def test_strength_match_is_case_insensitive(self):
-        assert get_recommended_strength("TreeRing") == 0.7
-        assert get_recommended_strength("StableSignature") == 0.04
-
-    def test_strength_matches_substring_in_descriptive_name(self):
-        # e.g. a CLI passing "treering_v2" or "synthid-stegastamp" still maps.
-        assert get_recommended_strength("treering_v2") == 0.7
 
 
 # ── Format utilities ────────────────────────────────────────────────

@@ -32,9 +32,6 @@ from remove_ai_watermarks.noai.watermark_profiles import (
     CTRLREGEN_MODEL_ID,
     DEFAULT_MODEL_ID,
     DEFAULT_STRENGTH,
-    HIGH_STRENGTH,
-    LOW_STRENGTH,
-    MEDIUM_STRENGTH,
     detect_model_profile,
 )
 
@@ -278,10 +275,7 @@ class WatermarkRemover:
 
     DEFAULT_MODEL_ID = DEFAULT_MODEL_ID
     CTRLREGEN_MODEL_ID = CTRLREGEN_MODEL_ID
-    LOW_STRENGTH = LOW_STRENGTH
     DEFAULT_STRENGTH = DEFAULT_STRENGTH
-    MEDIUM_STRENGTH = MEDIUM_STRENGTH
-    HIGH_STRENGTH = HIGH_STRENGTH
 
     def __init__(
         self,
