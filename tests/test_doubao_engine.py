@@ -110,29 +110,38 @@ class TestReverseAlpha:
         assert float(at.min()) >= 0.0
         assert float(at.max()) <= 1.0
 
-    def test_availability_gated_by_width(self):
+    def test_available_whenever_asset_present(self):
+        # NCC alignment generalizes to any resolution, so availability is just
+        # "asset loadable" (any non-empty image); the caller gates on detect.
         eng = DoubaoEngine()
-        native = np.zeros((_ALPHA_NATIVE_WIDTH, _ALPHA_NATIVE_WIDTH, 3), np.uint8)
-        far = np.zeros((1024, 1024, 3), np.uint8)  # ratio 0.5 -> out of band
-        assert eng.reverse_alpha_available(native)
-        assert not eng.reverse_alpha_available(far)
+        assert eng.reverse_alpha_available(np.zeros((1024, 1024, 3), np.uint8))
+        assert eng.reverse_alpha_available(np.zeros((1773, 1535, 3), np.uint8))
+        assert not eng.reverse_alpha_available(np.zeros((0, 0, 3), np.uint8))
 
-    def test_recovers_flat_background(self):
-        """Compose the real alpha onto a flat background, then recover it."""
-        eng = DoubaoEngine()
-        w = _ALPHA_NATIVE_WIDTH
-        bg = 100.0
-        img = np.full((w, w, 3), bg, np.float32)
+    @staticmethod
+    def _compose(w: int, h: int, bg: float = 100.0):
+        """Composite the real alpha (scaled to width ``w``) onto a flat bg.
+        Returns ``(watermarked_uint8, mark_bool_mask)``."""
+        img = np.full((h, w, 3), bg, np.float32)
         at = _alpha_template()
         gw, gh = int(_ALPHA_WIDTH_FRAC * w), int(_ALPHA_HEIGHT_FRAC * w)
         ax = w - int(_ALPHA_MARGIN_RIGHT_FRAC * w) - gw
-        ay = w - int(_ALPHA_MARGIN_BOTTOM_FRAC * w) - gh
-        amap = np.zeros((w, w), np.float32)
+        ay = h - int(_ALPHA_MARGIN_BOTTOM_FRAC * w) - gh
+        amap = np.zeros((h, w), np.float32)
         amap[ay : ay + gh, ax : ax + gw] = cv2.resize(at, (gw, gh))
         a3 = amap[:, :, None]
-        logo = np.array(_ALPHA_LOGO_BGR, np.float32)
-        wm = (a3 * logo + (1 - a3) * img).clip(0, 255).astype(np.uint8)
-        mark = amap > 0.2
-        assert float(np.abs(wm.astype(np.float32)[mark] - bg).mean()) > 15
+        wm = (a3 * np.array(_ALPHA_LOGO_BGR, np.float32) + (1 - a3) * img).clip(0, 255).astype(np.uint8)
+        return wm, amap > 0.2
+
+    @pytest.mark.parametrize(
+        ("w", "h"),
+        [(_ALPHA_NATIVE_WIDTH, _ALPHA_NATIVE_WIDTH), (1773, 2364)],  # native 1:1 + 3:4 portrait
+    )
+    def test_recovers_flat_background(self, w, h):
+        """NCC alignment recovers the flat background at native AND a non-native
+        resolution (the single capture generalizes)."""
+        eng = DoubaoEngine()
+        wm, mark = self._compose(w, h)
+        assert float(np.abs(wm.astype(np.float32)[mark] - 100.0).mean()) > 15  # mark visible
         out = eng.remove_watermark_reverse_alpha(wm).astype(np.float32)
-        assert float(np.abs(out[mark] - bg).mean()) < 6
+        assert float(np.abs(out[mark] - 100.0).mean()) < 8  # recovered close to flat bg

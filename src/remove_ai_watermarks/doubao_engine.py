@@ -80,20 +80,23 @@ DETECT_NCC_THRESHOLD = 0.4
 # controlled background (data/doubao_capture/): on black, captured = a*logo, and
 # the black/gray pair solves a per-pixel WITHOUT assuming the logo colour. The
 # bundled asset (assets/doubao_alpha.png) is the alpha template (a*255) at the
-# captured width; the geometry below places + scales it (the mark scales with
-# image WIDTH). Exact at the captured width; alignment degrades sub-pixel as the
-# target width departs from native, so it is gated to a band around native --
-# OUTSIDE the band removal is skipped (we do not hallucinate via inpaint). Add
-# captures at more resolutions to widen the band. Verified 2026-05-29:
-# white-capture cross-check -> mark vanishes to a flat fill; clean on doubao-1.png.
+# captured width. The mark scales with image WIDTH, but a pure width-scale is
+# only sub-pixel-accurate at the captured width and ghosts elsewhere, so removal
+# does NOT trust fixed geometry: `_aligned_alpha_map` registers the template to
+# the actual mark by a TM_CCOEFF_NORMED scale+position search, which makes the
+# single capture work at any resolution (verified clean on 1773x2364). Verified
+# 2026-05-29: white-capture cross-check -> mark vanishes to a flat fill; clean on
+# doubao-1.png (2048) and the 3:4 portrait corpus size.
 _ALPHA_NATIVE_WIDTH = 2048
 _ALPHA_LOGO_BGR: tuple[float, float, float] = (252.0, 255.0, 255.0)
+_ALPHA_WIDTH_FRAC = 0.1572  # glyph width / image width -- the alignment scale seed
+_ALPHA_HEIGHT_FRAC = 0.0347
+# Margins (of image WIDTH) of the captured mark -- the geometry record / where to
+# seed; alignment refines the actual position, so these are not load-bearing.
 _ALPHA_MARGIN_RIGHT_FRAC = 0.0166
 _ALPHA_MARGIN_BOTTOM_FRAC = 0.0195
-_ALPHA_WIDTH_FRAC = 0.1572
-_ALPHA_HEIGHT_FRAC = 0.0347
-# Width band (relative to native) within which the scaled alpha stays aligned.
-_ALPHA_WIDTH_TOLERANCE = 0.06
+# Alignment scale search (np.linspace args) around the width-scaled glyph size.
+_ALPHA_ALIGN_SEARCH = (0.88, 1.12, 13)
 _alpha_template_cache: NDArray[Any] | None = None
 
 
@@ -270,32 +273,59 @@ class DoubaoEngine:
     # ── Reverse-alpha (exact recovery) ────────────────────────────────
 
     def reverse_alpha_available(self, image: NDArray[Any]) -> bool:
-        """True if the bundled alpha map is loadable AND the image width is within
-        the calibrated band, so reverse-alpha stays well-aligned (else fall back)."""
-        if image is None or image.size == 0 or _alpha_template() is None:
-            return False
-        ratio = image.shape[1] / _ALPHA_NATIVE_WIDTH
-        return abs(ratio - 1.0) <= _ALPHA_WIDTH_TOLERANCE
+        """True if the bundled alpha map is loadable. Sub-pixel NCC alignment
+        (see ``_aligned_alpha_map``) places it on the actual mark at ANY
+        resolution, so there is no width gate -- the caller still gates on
+        ``detect`` so a clean corner is never touched."""
+        return image is not None and image.size > 0 and _alpha_template() is not None
 
-    def remove_watermark_reverse_alpha(self, image: NDArray[Any], *, residual_inpaint: bool = True) -> NDArray[Any]:
-        """Recover the original pixels by inverting the alpha blend:
-        ``original = (wm - a*logo) / (1 - a)``.
+    def _aligned_alpha_map(self, image: NDArray[Any]) -> tuple[NDArray[Any], tuple[int, int, int, int]] | None:
+        """Build a full-image alpha map with the captured template aligned to the
+        actual mark via a TM_CCOEFF_NORMED scale + position search.
 
-        Exact at the captured width (the alpha map IS the watermark's contribution
-        there); the template scales with image WIDTH. A light residual inpaint over
-        the glyph footprint cleans the sub-pixel error introduced by rescaling.
-        Call only when :meth:`reverse_alpha_available` is True.
+        The single captured template (at the captured width) is calibrated by
+        SHAPE; the mark's pixel size/position at other resolutions varies sub-
+        pixel from a pure width-scale, so we register the template to the real
+        glyph candidate instead of trusting fixed geometry (which ghosts off the
+        captured width). Returns ``(alpha_map, glyph_bbox)`` or None.
         """
         at = _alpha_template()
-        if at is None:
-            return image.copy()
+        sil = _glyph_silhouette()
+        if at is None or sil is None:
+            return None
         h, w = image.shape[:2]
-        gw = max(1, int(_ALPHA_WIDTH_FRAC * w))
-        gh = max(1, int(_ALPHA_HEIGHT_FRAC * w))
-        ax = max(0, w - int(_ALPHA_MARGIN_RIGHT_FRAC * w) - gw)
-        ay = max(0, h - int(_ALPHA_MARGIN_BOTTOM_FRAC * w) - gh)
+        loc = self.locate(image)
+        bx, by, bw, bh = loc.bbox
+        box_mask = self.extract_mask(image, loc)[by : by + bh, bx : bx + bw]
+        expected = _ALPHA_WIDTH_FRAC * w
+        best: tuple[float, int, int, int, int] | None = None
+        for scale in np.linspace(*_ALPHA_ALIGN_SEARCH):
+            gw, gh = int(expected * scale), int(_ALPHA_HEIGHT_FRAC * w * scale)
+            if gw < 8 or gh < 4 or gw >= bw or gh >= bh:
+                continue
+            t = cv2.resize(sil, (gw, gh), interpolation=cv2.INTER_NEAREST)
+            _, score, _, top_left = cv2.minMaxLoc(cv2.matchTemplate(box_mask, t, cv2.TM_CCOEFF_NORMED))
+            if best is None or score > best[0]:
+                best = (score, gw, gh, top_left[0], top_left[1])
+        if best is None:
+            return None
+        _, gw, gh, ox, oy = best
+        ax, ay = bx + ox, by + oy
         amap = np.zeros((h, w), np.float32)
         amap[ay : ay + gh, ax : ax + gw] = cv2.resize(at, (gw, gh), interpolation=cv2.INTER_LINEAR)
+        return amap, (ax, ay, gw, gh)
+
+    def remove_watermark_reverse_alpha(self, image: NDArray[Any], *, residual_inpaint: bool = True) -> NDArray[Any]:
+        """Recover the original pixels by inverting the alpha blend
+        ``original = (wm - a*logo)/(1-a)`` with the alpha map aligned to the mark.
+
+        A light residual inpaint over the glyph footprint cleans the remaining
+        sub-pixel seam. Call only when :meth:`reverse_alpha_available` and the
+        mark is detected (the registry gates on both)."""
+        built = self._aligned_alpha_map(image)
+        if built is None:
+            return image.copy()
+        amap, _region = built
         a3 = np.clip(amap, 0.0, 1.0)[:, :, None]
         logo = np.array(_ALPHA_LOGO_BGR, np.float32)
         out = np.clip((image.astype(np.float32) - a3 * logo) / np.clip(1.0 - a3, 0.25, 1.0), 0, 255).astype(np.uint8)
