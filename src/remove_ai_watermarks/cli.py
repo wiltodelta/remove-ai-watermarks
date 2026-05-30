@@ -483,14 +483,20 @@ def cmd_metadata(
     output: Path | None,
     keep_standard: bool,
 ) -> None:
-    """Check or remove AI-generation metadata from images.
+    """Check or remove AI-generation metadata (images, video, and audio).
 
-    Strips EXIF AI tags, PNG text chunks, and C2PA provenance manifests.
+    Strips EXIF AI tags, PNG text chunks, C2PA provenance manifests, and the
+    China TC260 AIGC label. Beyond images (PNG/JPEG/WebP/AVIF/HEIF/JXL) it also
+    strips provenance metadata from MP4/MOV/M4V/M4A containers and, via ffmpeg,
+    from WebM/MP3/WAV/FLAC/OGG. The coded image, audio, and video data are left
+    untouched.
     """
     from remove_ai_watermarks.metadata import get_ai_metadata, has_ai_metadata, remove_ai_metadata
 
+    # No _validate_image() here: unlike the image-only commands, metadata also
+    # accepts video/audio containers, so the image-format warning would misfire.
+    # click's `exists=True` on the argument already enforces the file exists.
     _banner()
-    source = _validate_image(source)
 
     if check or (not remove):
         has_ai = has_ai_metadata(source)
