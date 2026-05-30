@@ -174,17 +174,8 @@ def main(ctx: click.Context, verbose: bool) -> None:
     "--mark",
     type=click.Choice(["auto", *watermark_registry.mark_keys()]),
     default="auto",
-    help="Which visible mark to target. auto picks the stronger of gemini/doubao; "
-    "samsung (Galaxy AI bottom-left badge) is explicit-only.",
-)
-@click.option(
-    "--backend",
-    type=click.Choice(["auto", "cv2", "lama"]),
-    default="auto",
-    help="Background reconstruction for mask-based marks (doubao/samsung). "
-    "auto: LaMa if onnxruntime is installed, else cv2. lama reconstructs texture "
-    "(needs extra 'lama', ~3.5 GB RAM); cv2 is instant but smears. Gemini always "
-    "uses exact reverse-alpha regardless.",
+    help="Which known visible mark to target (auto picks the strongest detected). "
+    "All marks are removed by exact reverse-alpha against a captured alpha map.",
 )
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
 @click.pass_context
@@ -198,15 +189,14 @@ def cmd_visible(
     detect: bool,
     detect_threshold: float,
     mark: str,
-    backend: Literal["auto", "cv2", "lama"],
     strip_metadata: bool,
 ) -> None:
-    """Remove a visible AI watermark from an image.
+    """Remove a known visible AI watermark from an image.
 
-    Finds a known visible mark in its usual place (Gemini sparkle / Doubao text /
-    Samsung badge) via the watermark registry and removes it, reconstructing the
-    background. ``--mark auto`` picks the strongest detected mark; ``--backend``
-    picks the reconstruction quality (lama > cv2) for the mask-based marks.
+    Finds a known mark in its usual place (Gemini sparkle / Doubao text) via the
+    watermark registry and removes it by exact reverse-alpha against a captured
+    alpha map -- recovering the true pixels, not an inpaint guess. ``--mark auto``
+    picks the strongest detected mark. For arbitrary logos/objects, use ``erase``.
     """
     from remove_ai_watermarks import watermark_registry as registry
 
@@ -254,13 +244,10 @@ def cmd_visible(
         console.print(f"  [green]✓[/] {chosen.label} detected  [dim]({chosen.location}, conf {det.confidence:.2f})[/]")
 
     method: Literal["telea", "ns"] = "ns" if inpaint_method == "ns" else "telea"
-    resolved_backend = registry.default_backend() if backend == "auto" else backend
-    detail = "reverse-alpha" if chosen.recovery == "reverse-alpha" else f"inpaint:{resolved_backend}"
     t0 = time.monotonic()
-    with console.status(f"[cyan]Removing {chosen.label}… ({detail})[/]"):
+    with console.status(f"[cyan]Removing {chosen.label}… ({chosen.recovery})[/]"):
         result, region = chosen.remove(
             image,
-            backend=resolved_backend,
             inpaint_method=method,
             inpaint=inpaint,
             inpaint_strength=inpaint_strength,

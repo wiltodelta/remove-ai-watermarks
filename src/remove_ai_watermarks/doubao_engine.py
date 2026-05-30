@@ -1,29 +1,24 @@
 """Doubao visible watermark removal engine.
 
 Doubao (ByteDance) stamps every generated image with a visible "豆包AI生成"
-(Doubao AI generated) text strip in the bottom-right corner. This is the
-explicit AIGC label mandated by China's TC260 standard, rendered as a
-near-white / light-gray, low-saturation text overlay.
+(Doubao AI generated) text strip in the bottom-right corner -- the explicit AIGC
+label mandated by China's TC260 standard, a near-white semi-transparent overlay.
 
-Unlike the Gemini sparkle (a fixed square logo removed by reverse alpha
-blending against a captured alpha map), the Doubao mark is a text strip whose
-exact alpha map we do not yet have. This engine therefore removes it by:
+Like the Gemini sparkle, it is a fixed overlay, so it is removed by **exact
+reverse-alpha blending** against a captured alpha map (``remove_watermark_reverse_alpha``):
+``original = (wm - a*logo)/(1-a)`` -- recovering the true pixels, not an inpaint
+guess. The alpha map + logo colour were solved from black+gray Doubao captures
+(see data/doubao_capture/ and the reverse-alpha section below) and bundled as
+``assets/doubao_alpha.png``.
 
-    locate -> mask -> inpaint
+Detection (``detect``) is reverse-alpha-consistent: it matches that same alpha
+glyph silhouette against the corner via normalized correlation, so it keys on
+the actual "豆包AI生成" shape rather than coverage/structure heuristics.
 
-1. Locate: the mark scales with image WIDTH and sits in the bottom-right at a
-   fixed margin, so we anchor a generous box there (geometry only -- no bundled
-   template). Constants below are derived from measured Doubao output.
-2. Mask: within the box, extract the light, low-saturation glyph pixels with a
-   polarity-aware rule (the mark is brighter than dark backgrounds and a
-   distinct off-white gray against light backgrounds).
-3. Inpaint: cv2 inpainting (TELEA / NS) reconstructs the covered pixels.
-
-This is fast, offline, deterministic, and needs no GPU. A future upgrade path
-is per-pixel reverse alpha blending once a Doubao alpha map is captured on a
-controlled black background (see data/doubao_capture/), which would recover the
-true pixels instead of hallucinating them -- the same approach as the Gemini
-engine.
+``locate`` (geometry box, scales with image WIDTH) and ``extract_mask`` (the
+candidate glyph mask the detector correlates) remain; there is no inpaint-based
+removal here -- arbitrary-region inpainting lives in ``region_eraser`` / the
+``erase`` command. Fast, offline, no GPU.
 """
 
 # cv2/numpy boundary: third-party libs ship no usable element types; relax the
@@ -33,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -66,31 +61,17 @@ MAX_SATURATION = 55  # max channel spread to count a pixel as "grayish"
 LOGO_MIN_LUMA = 150  # glyphs are at least this bright in absolute terms
 TOPHAT_DELTA = 12  # glyph must exceed the local background by this many levels
 
-# Detection: a genuine label fills a meaningful fraction of the box. Measured
-# coverage is >=0.20 on real Doubao outputs; random/textured corners stay <=0.06
-# on large images but can spike to ~0.15 on tiny ones (small box -> high variance),
-# so the threshold sits above that spike and below the real-mark floor.
-DETECT_MIN_COVERAGE = 0.16
-
-# Coverage alone over-fires: any textured bottom-right corner (busy photo,
-# foliage, signage) clears 0.16, so a coverage-only detector false-positived on
-# ~28% of arbitrary images (verified 2026-05-29; issue #23). The real mark is
-# TEXT -- "豆包AI生成", six small glyphs in one horizontal row -- which has a
-# structural signature a texture blob lacks: many small connected components, no
-# single dominant blob, and concentration in a thin horizontal band. Requiring
-# all three on top of coverage cut false positives ~95% (343 -> 17 across the
-# corpus) while keeping the bulk of real-mark recall. Thresholds are corpus-tuned
-# (real marks: components p50=9, largest-component-fraction p50=0.27, band p50=0.82;
-# texture FPs: components p50~2-3, largest-fraction p50~0.90, band p50~0.62).
-DETECT_MIN_COMPONENTS = 4  # distinct glyph pieces (texture blobs have 1-3)
-DETECT_MAX_TOP1_FRAC = 0.6  # largest component as a fraction of glyph pixels (blob -> ~1.0)
-DETECT_MIN_BAND_FRAC = 0.7  # glyph mass within the densest half-height horizontal band
-
-# Safety: a text strip fills a modest slice of the (generous) box. When the box
-# is over a dense-text / document background the mask explodes and cv2 inpainting
-# would smear the real content. Above this coverage we refuse to inpaint and
-# leave the image untouched -- that hard case needs the neural path, not a guess.
-MAX_INPAINT_COVERAGE = 0.50
+# Detection is reverse-alpha-consistent: the mark is recognized by matching the
+# bundled alpha-template glyph silhouette (assets/doubao_alpha.png -- the exact
+# shape we invert) against the extracted candidate mask via zero-mean normalized
+# correlation (cv2 TM_CCOEFF_NORMED). It keys on the actual "豆包AI生成" glyph
+# SHAPE, not on coverage/structure heuristics, so a merely-textured corner does
+# not fire (the old coverage detector false-positived on ~28% of images; #23).
+# Corpus-tuned: real marks score median ~0.61, arbitrary corners <=0.17 (p99);
+# threshold 0.4 -> false positives 7/1243 (0.6%). A small coverage floor skips
+# the template match on a near-empty candidate box.
+DETECT_MIN_COVERAGE = 0.04
+DETECT_NCC_THRESHOLD = 0.4
 
 # ── Reverse-alpha (exact recovery, Gemini-style) ─────────────────────
 # The Doubao mark is a fixed semi-transparent white overlay, so given its alpha
@@ -101,10 +82,10 @@ MAX_INPAINT_COVERAGE = 0.50
 # bundled asset (assets/doubao_alpha.png) is the alpha template (a*255) at the
 # captured width; the geometry below places + scales it (the mark scales with
 # image WIDTH). Exact at the captured width; alignment degrades sub-pixel as the
-# target width departs from native, so it is gated to a band around native and
-# the caller falls back to inpaint outside it. Add captures at more resolutions
-# to widen the band. Verified 2026-05-29: white-capture cross-check -> mark
-# vanishes to a flat fill; clean on doubao-1.png (2048).
+# target width departs from native, so it is gated to a band around native --
+# OUTSIDE the band removal is skipped (we do not hallucinate via inpaint). Add
+# captures at more resolutions to widen the band. Verified 2026-05-29:
+# white-capture cross-check -> mark vanishes to a flat fill; clean on doubao-1.png.
 _ALPHA_NATIVE_WIDTH = 2048
 _ALPHA_LOGO_BGR: tuple[float, float, float] = (252.0, 255.0, 255.0)
 _ALPHA_MARGIN_RIGHT_FRAC = 0.0166
@@ -157,30 +138,37 @@ class DoubaoDetection:
     coverage: float = 0.0  # fraction of the box occupied by glyph pixels
 
 
-def _glyph_structure(box: NDArray[Any]) -> tuple[int, float, float]:
-    """Text-structure descriptors of a binary glyph mask (255 = glyph).
+_silhouette_cache: NDArray[Any] | None = None
 
-    Returns ``(n_components, largest_component_fraction, band_fraction)``:
-      - ``n_components``: connected glyph pieces (CJK text -> many; a blob -> 1-3).
-      - ``largest_component_fraction``: biggest component / total glyph pixels
-        (text -> small, a dominant texture blob -> near 1.0).
-      - ``band_fraction``: glyph mass within the densest half-box-height
-        horizontal window (a one-line label -> high; spread texture -> low).
-    Used by ``detect`` to reject textured-corner false positives (issue #23).
+
+def _glyph_silhouette() -> NDArray[Any] | None:
+    """Binary "豆包AI生成" silhouette (255 = glyph) from the bundled alpha map,
+    used as the detection template. None if the alpha asset is missing."""
+    global _silhouette_cache
+    if _silhouette_cache is None:
+        at = _alpha_template()
+        if at is None:
+            return None
+        _silhouette_cache = (at > 0.15).astype(np.uint8) * 255
+    return _silhouette_cache
+
+
+def _template_match_score(box_mask: NDArray[Any], image_width: int) -> float:
+    """Zero-mean normalized correlation of the alpha-template glyph silhouette
+    (scaled to the mark's expected size) against the candidate ``box_mask``.
+
+    TM_CCOEFF_NORMED keys on glyph SHAPE, not coverage, so a dense textured
+    corner does not score highly -- only the actual "豆包AI生成" shape does.
     """
-    total = int((box > 0).sum())
-    if total == 0:
-        return 0, 1.0, 0.0
-    n_labels, _, stats, _ = cv2.connectedComponentsWithStats(box, connectivity=8)
-    n_comp = n_labels - 1  # exclude the background label
-    areas = stats[1:, cv2.CC_STAT_AREA] if n_comp > 0 else np.array([0])
-    top1_frac = float(areas.max()) / total
-    bh = box.shape[0]
-    row_glyphs = (box > 0).sum(axis=1).astype(np.float64)
-    win = max(1, int(bh * 0.5))
-    best_band = max((row_glyphs[i : i + win].sum() for i in range(max(1, bh - win + 1))), default=0.0)
-    band_frac = float(best_band) / float(total)
-    return n_comp, top1_frac, band_frac
+    sil = _glyph_silhouette()
+    if sil is None or box_mask.size == 0:
+        return 0.0
+    gw = min(box_mask.shape[1] - 1, max(8, int(_ALPHA_WIDTH_FRAC * image_width)))
+    gh = min(box_mask.shape[0] - 1, max(4, int(_ALPHA_HEIGHT_FRAC * image_width)))
+    if gw < 8 or gh < 4:
+        return 0.0
+    template = cv2.resize(sil, (gw, gh), interpolation=cv2.INTER_NEAREST)
+    return float(cv2.matchTemplate(box_mask, template, cv2.TM_CCOEFF_NORMED).max())
 
 
 class DoubaoEngine:
@@ -255,10 +243,12 @@ class DoubaoEngine:
     # ── Detect ────────────────────────────────────────────────────────
 
     def detect(self, image: NDArray[Any]) -> DoubaoDetection:
-        """Detect the visible Doubao mark by glyph coverage in the corner box.
+        """Detect the visible Doubao mark by matching the alpha-template glyph
+        silhouette against the corner candidate (TM_CCOEFF_NORMED).
 
-        Heuristic: a genuine label fills a meaningful fraction of the box with
-        text-like glyph pixels. Coverage maps to a confidence score.
+        Keys on the "豆包AI生成" SHAPE, not coverage, so a textured corner does
+        not fire. ``confidence`` is the correlation score; ``detected`` is it
+        clearing ``DETECT_NCC_THRESHOLD``.
         """
         det = DoubaoDetection()
         if image is None or image.size == 0:
@@ -270,71 +260,12 @@ class DoubaoEngine:
         coverage = float((box > 0).sum()) / float(max(1, bw * bh))
         det.region = loc.bbox
         det.coverage = coverage
-        # Map coverage to a 0-1 confidence: ~0.06 (noise floor) -> 0, ~0.26 -> 1.
-        det.confidence = float(max(0.0, min(1.0, (coverage - 0.06) / 0.20)))
-        # Coverage is necessary but not sufficient (textured corners clear it);
-        # require the text-structure signature to reject blob false positives.
         if coverage >= DETECT_MIN_COVERAGE:
-            ncomp, top1_frac, band_frac = _glyph_structure(box)
-            det.detected = (
-                ncomp >= DETECT_MIN_COMPONENTS
-                and top1_frac < DETECT_MAX_TOP1_FRAC
-                and band_frac >= DETECT_MIN_BAND_FRAC
-            )
-            logger.debug(
-                "Doubao detect: coverage=%.3f comps=%d top1=%.2f band=%.2f detected=%s",
-                coverage,
-                ncomp,
-                top1_frac,
-                band_frac,
-                det.detected,
-            )
+            score = _template_match_score(box, image.shape[1])
+            det.confidence = score
+            det.detected = score >= DETECT_NCC_THRESHOLD
+            logger.debug("Doubao detect: coverage=%.3f ncc=%.2f detected=%s", coverage, score, det.detected)
         return det
-
-    # ── Remove ────────────────────────────────────────────────────────
-
-    def remove_watermark(
-        self,
-        image: NDArray[Any],
-        *,
-        inpaint_method: Literal["telea", "ns"] = "telea",
-        inpaint_radius: int = 6,
-        dilate: int = 3,
-        force: bool = False,
-    ) -> NDArray[Any]:
-        """Remove the visible Doubao watermark by inpainting the glyph mask.
-
-        Returns an unmodified copy when no glyph pixels are found (so we never
-        smear a clean corner). ``dilate`` grows the mask to cover anti-aliased
-        glyph edges before inpainting. ``force`` is accepted for interface
-        symmetry with the other engines but is a no-op here: this remover already
-        inpaints whatever glyph mask it finds without a detection gate.
-        """
-        if image is None or image.size == 0:
-            return image
-        loc = self.locate(image)
-        mask = self.extract_mask(image, loc)
-        if not mask.any():
-            logger.debug("Doubao remove: no glyph pixels found; returning copy")
-            return image.copy()
-
-        x, y, bw, bh = loc.bbox
-        coverage = float((mask[y : y + bh, x : x + bw] > 0).sum()) / float(max(1, bw * bh))
-        if coverage > MAX_INPAINT_COVERAGE:
-            logger.warning(
-                "Doubao remove: box coverage %.2f exceeds %.2f (dense-text/document "
-                "background); leaving image untouched to avoid smearing content",
-                coverage,
-                MAX_INPAINT_COVERAGE,
-            )
-            return image.copy()
-
-        if dilate > 0:
-            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate + 1, 2 * dilate + 1))
-            mask = cv2.dilate(mask, k)
-
-        flag = cv2.INPAINT_TELEA if inpaint_method == "telea" else cv2.INPAINT_NS
-        return cv2.inpaint(image, mask, inpaint_radius, flag)
 
     # ── Reverse-alpha (exact recovery) ────────────────────────────────
 

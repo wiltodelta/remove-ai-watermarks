@@ -17,7 +17,7 @@ If this tool saves you time, consider [sponsoring its development](https://githu
 
 ## Features
 
-- **Visible watermark removal** — a registry of known marks in their usual places: Gemini / Nano Banana sparkle (reverse alpha blending, exact), the Doubao "豆包AI生成" text strip, and the Samsung Galaxy AI bottom-left "AI-generated content" badge (locate + mask + inpaint). Fast, offline, no GPU. `visible --mark auto` finds and removes the strongest detected mark; `--mark samsung` is explicit-only. `--backend lama` reconstructs the background with big-LaMa instead of cv2 for the inpaint-based marks
+- **Visible watermark removal** — a registry of known marks in their usual places: the Gemini / Nano Banana sparkle and the Doubao "豆包AI生成" text strip. Each is removed by **exact reverse-alpha blending** against a captured alpha map (`original = (wm − α·logo)/(1−α)`), recovering the true pixels rather than inpainting a guess. Fast, offline, no GPU. `visible --mark auto` finds and removes the strongest detected mark. (For arbitrary logos/objects, see `erase`.)
 - **Universal region eraser (`erase`)** — remove any logo / watermark / object inside boxes you specify, regardless of position or colour. Default cv2 inpainting (CPU, instant); optional big-LaMa via onnxruntime (`lama` extra) for higher quality
 - **Invisible watermark removal** — SynthID, StableSignature, TreeRing via diffusion-based regeneration (needs a local GPU, or run it with no setup on [raiw.cc](https://raiw.cc))
 - **AI metadata stripping** — EXIF, PNG text chunks, C2PA provenance manifests (PNG / JPEG / AVIF / HEIF / JPEG-XL, **MP4 / MOV / M4V / M4A** at the container level, and **WebM / MP3 / WAV / FLAC / OGG** losslessly via ffmpeg), XMP DigitalSourceType
@@ -50,7 +50,7 @@ If this tool saves you time, consider [sponsoring its development](https://githu
 | **Midjourney** | — | — | ✅ EXIF + XMP (prompt, model, seed) | Metadata strip |
 | **Meta AI** | — | — | ✅ IPTC "Made with AI" (digitalSourceType) | Metadata strip (removes the label) |
 | **Doubao** (ByteDance) / China AIGC generators | ✅ "豆包AI生成" text strip (bottom-right) | — | ✅ TC260 AIGC label (`<TC260:AIGC>` XMP **or** `AIGC` PNG chunk) **+ C2PA** signed by ByteDance Volcano Engine (`volcengine`) | Exact reverse-alpha (captured α map) at native res, else mask + inpaint (cv2 / LaMa) + metadata strip |
-| **Samsung Galaxy AI** (Generative Edit, Sketch to Image, ...) | ✅ bottom-left "AI-generated content" badge (`--mark samsung`) | — | ✅ C2PA (signer "Samsung Galaxy") + `trainedAlgorithmicMedia` / proprietary `genAIType` marker | Locate + mask + inpaint (cv2 / LaMa) + metadata strip |
+| **Samsung Galaxy AI** (Generative Edit, Sketch to Image, ...) | — | — | ✅ C2PA (signer "Samsung Galaxy") + `trainedAlgorithmicMedia` / proprietary `genAIType` marker | Detected (`identify`) + metadata strip |
 | **Black Forest Labs** (FLUX API) | — | — | ✅ C2PA (`Black Forest Labs API` + `c2pa.ai_generated_content` + `trainedAlgorithmicMedia`) | Metadata strip |
 | **StableSignature** (Meta) | — | ✅ In-model watermark | — | Diffusion regeneration |
 | **TreeRing** | — | ✅ Latent space watermark | — | Diffusion regeneration |
@@ -81,9 +81,9 @@ A three-stage NCC (Normalized Cross-Correlation) detector finds the watermark po
 
 ### Removing the Doubao "豆包AI生成" text watermark
 
-Doubao (ByteDance) stamps every output with a light, semi-transparent "豆包AI生成" text strip in the bottom-right corner — the visible AIGC label mandated by China's TC260 standard. It is a fixed semi-transparent white overlay, so — like the Gemini sparkle — it is removed by **exact reverse-alpha blending**: `original = (watermarked - α·logo) / (1 - α)`, recovering the true pixels instead of hallucinating them. The α map and logo colour were solved from controlled black + gray captures (on black, `captured = α·logo`; the black/gray pair solves α per-pixel). This is exact at the captured resolution; since the mark scales with image width, it is used when the image width is within the calibrated band, otherwise removal falls back to mask + inpaint (cv2, or big-LaMa via `--backend lama`). Detection gates on a text-structure signature (six glyphs in one row) so textured corners are not mistaken for the mark.
+Doubao (ByteDance) stamps every output with a light, semi-transparent "豆包AI生成" text strip in the bottom-right corner — the visible AIGC label mandated by China's TC260 standard. It is a fixed semi-transparent white overlay, so — like the Gemini sparkle — it is removed by **exact reverse-alpha blending**: `original = (watermarked - α·logo) / (1 - α)`, recovering the true pixels instead of hallucinating them. The α map and logo colour were solved from controlled black + gray captures (on black, `captured = α·logo`; the black/gray pair solves α per-pixel). This is exact at the captured resolution; since the mark scales with image width, it is applied when the image width is within the calibrated band, and **skipped otherwise** (no inpaint fallback — we never hallucinate). Detection is consistent with removal: it matches the same alpha glyph silhouette against the corner (normalized correlation), so it keys on the actual "豆包AI生成" shape, not on textured corners.
 
-**Speed**: reverse-alpha ~0.05s, cv2 inpaint fallback ~0.03s, no GPU needed. The cv2 fallback can leave faint residue on high-contrast backgrounds (use `--backend lama`); reverse-alpha at the captured resolution is clean.
+**Speed**: ~0.05s, no GPU needed. Reverse-alpha at the captured resolution recovers the true background pixels exactly.
 
 ### Universal region eraser
 
@@ -241,8 +241,7 @@ remove-ai-watermarks identify image.png
 
 # Visible watermark only — fast, offline, CPU. --mark auto (default) finds the
 # strongest known mark (Gemini sparkle / Doubao "豆包AI生成" text); force one
-# with --mark gemini / doubao / samsung (Samsung Galaxy AI badge is explicit-only).
-# --backend lama reconstructs the background with big-LaMa (extra 'lama') instead of cv2.
+# with --mark gemini / doubao. Removed by exact reverse-alpha (true-pixel recovery).
 remove-ai-watermarks visible image.png -o clean.png
 
 # Erase arbitrary region(s) — universal, any logo/watermark/object, any position.
