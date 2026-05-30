@@ -134,14 +134,17 @@ class TestReverseAlpha:
         return wm, amap > 0.2
 
     @pytest.mark.parametrize(
-        ("w", "h"),
-        [(_ALPHA_NATIVE_WIDTH, _ALPHA_NATIVE_WIDTH), (1773, 2364)],  # native 1:1 + 3:4 portrait
+        ("w", "h", "max_err"),
+        [
+            (_ALPHA_NATIVE_WIDTH, _ALPHA_NATIVE_WIDTH, 5.0),  # native 1:1 -> fixed geometry, ~exact
+            (1773, 2364, 8.0),  # 3:4 portrait -> NCC alignment generalizes the single capture
+        ],
     )
-    def test_recovers_flat_background(self, w, h):
-        """NCC alignment recovers the flat background at native AND a non-native
-        resolution (the single capture generalizes)."""
+    def test_recovers_flat_background(self, w, h, max_err):
+        """Recovers the flat background at native (fixed geometry, exact) AND a
+        non-native resolution (NCC alignment generalizes the single capture)."""
         eng = DoubaoEngine()
         wm, mark = self._compose(w, h)
         assert float(np.abs(wm.astype(np.float32)[mark] - 100.0).mean()) > 15  # mark visible
         out = eng.remove_watermark_reverse_alpha(wm).astype(np.float32)
-        assert float(np.abs(out[mark] - 100.0).mean()) < 8  # recovered close to flat bg
+        assert float(np.abs(out[mark] - 100.0).mean()) < max_err

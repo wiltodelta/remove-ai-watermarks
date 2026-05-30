@@ -97,6 +97,10 @@ _ALPHA_MARGIN_RIGHT_FRAC = 0.0166
 _ALPHA_MARGIN_BOTTOM_FRAC = 0.0195
 # Alignment scale search (np.linspace args) around the width-scaled glyph size.
 _ALPHA_ALIGN_SEARCH = (0.88, 1.12, 13)
+# At (near) the captured width the fixed geometry is pixel-exact, so we use it
+# directly there -- NCC alignment is integer-pixel and would land ~1px off,
+# degrading the otherwise-exact native recovery. Off this band, alignment wins.
+_ALPHA_NATIVE_BAND = 0.03
 _alpha_template_cache: NDArray[Any] | None = None
 
 
@@ -279,16 +283,25 @@ class DoubaoEngine:
         ``detect`` so a clean corner is never touched."""
         return image is not None and image.size > 0 and _alpha_template() is not None
 
-    def _aligned_alpha_map(self, image: NDArray[Any]) -> tuple[NDArray[Any], tuple[int, int, int, int]] | None:
-        """Build a full-image alpha map with the captured template aligned to the
-        actual mark via a TM_CCOEFF_NORMED scale + position search.
+    def _fixed_alpha_map(self, image: NDArray[Any]) -> tuple[NDArray[Any], tuple[int, int, int, int]] | None:
+        """Place the template by fixed width-relative geometry -- pixel-exact at
+        the captured width (used there instead of integer-pixel NCC alignment)."""
+        at = _alpha_template()
+        if at is None:
+            return None
+        h, w = image.shape[:2]
+        gw, gh = max(1, int(_ALPHA_WIDTH_FRAC * w)), max(1, int(_ALPHA_HEIGHT_FRAC * w))
+        ax = max(0, w - int(_ALPHA_MARGIN_RIGHT_FRAC * w) - gw)
+        ay = max(0, h - int(_ALPHA_MARGIN_BOTTOM_FRAC * w) - gh)
+        amap = np.zeros((h, w), np.float32)
+        amap[ay : ay + gh, ax : ax + gw] = cv2.resize(at, (gw, gh), interpolation=cv2.INTER_LINEAR)
+        return amap, (ax, ay, gw, gh)
 
-        The single captured template (at the captured width) is calibrated by
-        SHAPE; the mark's pixel size/position at other resolutions varies sub-
-        pixel from a pure width-scale, so we register the template to the real
-        glyph candidate instead of trusting fixed geometry (which ghosts off the
-        captured width). Returns ``(alpha_map, glyph_bbox)`` or None.
-        """
+    def _aligned_alpha_map(self, image: NDArray[Any]) -> tuple[NDArray[Any], tuple[int, int, int, int]] | None:
+        """Build a full-image alpha map with the captured template registered to
+        the actual mark via a TM_CCOEFF_NORMED scale + position search -- so the
+        single capture works off the captured width (a pure width-scale ghosts).
+        Returns ``(alpha_map, glyph_bbox)`` or None."""
         at = _alpha_template()
         sil = _glyph_silhouette()
         if at is None or sil is None:
@@ -322,7 +335,11 @@ class DoubaoEngine:
         A light residual inpaint over the glyph footprint cleans the remaining
         sub-pixel seam. Call only when :meth:`reverse_alpha_available` and the
         mark is detected (the registry gates on both)."""
-        built = self._aligned_alpha_map(image)
+        # At (near) the captured width the fixed geometry is pixel-exact; off it,
+        # NCC alignment registers the template to the real mark.
+        ratio = image.shape[1] / _ALPHA_NATIVE_WIDTH
+        at_native = abs(ratio - 1.0) <= _ALPHA_NATIVE_BAND
+        built = self._fixed_alpha_map(image) if at_native else self._aligned_alpha_map(image)
         if built is None:
             return image.copy()
         amap, _region = built
