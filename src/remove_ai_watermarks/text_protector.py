@@ -151,6 +151,87 @@ def build_change_map(
     return change_map
 
 
+def merge_text_regions(
+    boxes: list[NDArray[Any]],
+    height: int,
+    width: int,
+    dilate_frac: float = 0.012,
+    pad_frac: float = 0.02,
+    max_regions: int = 8,
+) -> list[tuple[int, int, int, int]]:
+    """Group detected text polygons into a few padded axis-aligned rectangles.
+
+    The DB detector returns one box per word/line; the region-high-res text scrub
+    runs a separate diffusion pass per region, so we coalesce nearby boxes into a
+    handful of *local* blocks (a light dilation merges within a paragraph but not
+    across the whole image, so each block stays small enough to upscale within a
+    memory budget). Returns ``(x, y, w, h)`` rects, largest-area first, clipped to
+    the image and capped at ``max_regions``.
+    """
+    import cv2
+    import numpy as np
+
+    mask = np.zeros((height, width), np.uint8)
+    if not boxes:
+        return []
+    cv2.fillPoly(mask, [np.asarray(b, np.int32) for b in boxes], 1)
+    k = max(1, int(min(height, width) * dilate_frac))
+    mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_RECT, (k, k)))
+    n, _labels, stats, _c = cv2.connectedComponentsWithStats(mask, 8)
+    pad = int(min(height, width) * pad_frac)
+    rects: list[tuple[int, int, int, int]] = []
+    for i in range(1, n):
+        x, y, w, h = (
+            int(stats[i, cv2.CC_STAT_LEFT]),
+            int(stats[i, cv2.CC_STAT_TOP]),
+            int(stats[i, cv2.CC_STAT_WIDTH]),
+            int(stats[i, cv2.CC_STAT_HEIGHT]),
+        )
+        x0, y0 = max(0, x - pad), max(0, y - pad)
+        x1, y1 = min(width, x + w + pad), min(height, y + h + pad)
+        rects.append((x0, y0, x1 - x0, y1 - y0))
+    rects.sort(key=lambda r: -(r[2] * r[3]))
+    return rects[:max_regions]
+
+
+def feather_paste(
+    base: NDArray[Any],
+    patch: NDArray[Any],
+    x: int,
+    y: int,
+    feather: int = 8,
+) -> NDArray[Any]:
+    """Alpha-composite ``patch`` into ``base`` at ``(x, y)`` with a feathered edge.
+
+    Used to drop a separately re-scrubbed (high-resolution) text region back into
+    the globally-scrubbed image without a visible seam. Returns a new array;
+    ``base`` is not modified. ``patch`` is clipped to ``base`` bounds.
+    """
+    import numpy as np
+
+    out = base.copy()
+    bh, bw = base.shape[:2]
+    ph, pw = patch.shape[:2]
+    x0, y0 = max(0, x), max(0, y)
+    x1, y1 = min(bw, x + pw), min(bh, y + ph)
+    if x1 <= x0 or y1 <= y0:
+        return out
+    patch_roi = patch[y0 - y : y1 - y, x0 - x : x1 - x].astype(np.float32)
+    base_roi = out[y0:y1, x0:x1].astype(np.float32)
+    rh, rw = base_roi.shape[:2]
+    alpha = np.ones((rh, rw), np.float32)
+    f = max(0, min(feather, rh // 2, rw // 2))
+    if f > 0:
+        ramp = np.linspace(0.0, 1.0, f, dtype=np.float32)
+        alpha[:f, :] *= ramp[:, None]
+        alpha[rh - f :, :] *= ramp[::-1, None]
+        alpha[:, :f] *= ramp[None, :]
+        alpha[:, rw - f :] *= ramp[None, ::-1]
+    a3 = alpha[:, :, None]
+    out[y0:y1, x0:x1] = (patch_roi * a3 + base_roi * (1.0 - a3)).astype(base.dtype)
+    return out
+
+
 class TextProtector:
     """Detect text regions with PP-OCRv3 for diffusion change-map protection."""
 

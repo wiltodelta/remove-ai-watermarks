@@ -481,7 +481,7 @@ class WatermarkRemover:
                 generator,
             )
         elif protect_text and self._can_protect_text():
-            cleaned_image = self._run_differential(
+            cleaned_image = self._run_region_hires(
                 init_image,
                 strength,
                 num_inference_steps,
@@ -620,6 +620,90 @@ class WatermarkRemover:
         self.torch_dtype = torch.float32  # type: ignore[assignment]
         self._diff_pipeline = None
         return self._load_differential_pipeline()
+
+    # Region high-res text scrub: defaults tuned so each text block is upscaled
+    # enough that strokes exceed the VAE's ~8px latent cell, capped so a single
+    # region never blows past the GPU/MPS memory budget.
+    _REGION_HIRES_SCALE = 3.0
+    _REGION_MAX_MEGAPIXELS = 1.3
+
+    def _run_region_hires(
+        self,
+        init_image: Image.Image,
+        strength: float,
+        num_inference_steps: int,
+        guidance_scale: float,
+        generator: Any,
+    ) -> Image.Image:
+        """Scrub the whole image, then RE-scrub each detected text block at high
+        resolution and composite it back.
+
+        Unlike the Differential-Diffusion path (which freezes text in latent space
+        and so leaves the watermark intact there), every pixel here is regenerated
+        -- the watermark is removed everywhere. Small text survives because each
+        text block is upscaled before its img2img pass, so strokes span more than
+        one VAE latent cell (the ~8px floor that softens text at native scale);
+        the scrubbed crop is downscaled and feather-composited back. Falls back to
+        the plain global scrub when no text is detected.
+        """
+        import math
+
+        import cv2
+        import numpy as np
+
+        from remove_ai_watermarks import text_protector
+
+        base = self._run_img2img(init_image, strength, num_inference_steps, guidance_scale, generator)
+
+        bgr = cv2.cvtColor(np.array(init_image), cv2.COLOR_RGB2BGR)
+        try:
+            boxes = text_protector.TextProtector().detect_text_boxes(bgr)
+        except Exception as exc:
+            logger.warning("Text detection failed (%s); keeping the global scrub.", exc)
+            return base
+        if not boxes:
+            self._set_progress("No text detected; global scrub only.")
+            return base
+
+        width, height = init_image.size
+        regions = text_protector.merge_text_regions(boxes, height, width)
+        orig_bgr = cv2.cvtColor(np.array(init_image), cv2.COLOR_RGB2BGR)
+        out_bgr = cv2.cvtColor(np.array(base), cv2.COLOR_RGB2BGR)
+        budget = self._REGION_MAX_MEGAPIXELS * 1_000_000
+
+        done = 0
+        for x, y, w, h in regions:
+            area = max(1, w * h)
+            # INTEGER scale so the upscale -> scrub -> downscale round-trip is an
+            # exact dimensional inverse (a fractional factor truncates and shifts
+            # the composited text ~1-2px, which is invisible but tanks alignment).
+            scale = int(min(self._REGION_HIRES_SCALE, math.sqrt(budget / area)))
+            if scale < 2:
+                # Region too large to even double within the budget: upscaling
+                # buys nothing here; the global scrub covers it (documented limit
+                # for very large text areas -- tiling is the future fix).
+                continue
+            crop = orig_bgr[y : y + h, x : x + w]
+            up = cv2.resize(crop, (w * scale, h * scale), interpolation=cv2.INTER_LANCZOS4)
+            up_pil = Image.fromarray(cv2.cvtColor(up, cv2.COLOR_BGR2RGB))
+            scrubbed = self._run_img2img(up_pil, strength, num_inference_steps, guidance_scale, generator)
+            down = cv2.resize(cv2.cvtColor(np.array(scrubbed), cv2.COLOR_RGB2BGR), (w, h), interpolation=cv2.INTER_AREA)
+            # The up -> scrub -> down round-trip can offset the re-rendered text by
+            # a pixel or two (the diffusion pipeline rounds dims to a multiple of
+            # 8, so the inverse resize is not perfectly centered). Phase-correlate
+            # the patch back to the original crop and translate it so the glyphs
+            # land exactly where they were -- otherwise a sub-pixel shift garbles
+            # the composite even though the text is crisp.
+            cg = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY).astype(np.float32)
+            dg = cv2.cvtColor(down, cv2.COLOR_BGR2GRAY).astype(np.float32)
+            (sx, sy), _resp = cv2.phaseCorrelate(cg, dg)
+            if abs(sx) > 0.1 or abs(sy) > 0.1:
+                m = np.float32([[1, 0, -sx], [0, 1, -sy]])
+                down = cv2.warpAffine(down, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+            out_bgr = text_protector.feather_paste(out_bgr, down, x, y)
+            done += 1
+        self._set_progress(f"Re-scrubbed {done}/{len(regions)} text region(s) at high resolution.")
+        return Image.fromarray(cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB))
 
     def _run_differential(
         self,

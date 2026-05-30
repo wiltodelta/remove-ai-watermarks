@@ -11,7 +11,75 @@ from __future__ import annotations
 
 import numpy as np
 
-from remove_ai_watermarks.text_protector import _DET_MAX_LONG_SIDE, _detection_input_size, build_change_map
+from remove_ai_watermarks.text_protector import (
+    _DET_MAX_LONG_SIDE,
+    _detection_input_size,
+    build_change_map,
+    feather_paste,
+    merge_text_regions,
+)
+
+
+def _quad(x0, y0, x1, y1):
+    """An axis-aligned 4-vertex polygon as the detector returns."""
+    return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.int32)
+
+
+class TestMergeTextRegions:
+    def test_empty(self):
+        assert merge_text_regions([], 256, 256) == []
+
+    def test_far_apart_boxes_stay_separate(self):
+        boxes = [_quad(10, 10, 60, 30), _quad(10, 200, 60, 220)]
+        regions = merge_text_regions(boxes, 256, 256, dilate_frac=0.005, pad_frac=0.0)
+        assert len(regions) == 2
+
+    def test_close_boxes_merge(self):
+        # two boxes on the same line, a few px apart -> one block
+        boxes = [_quad(10, 10, 60, 30), _quad(64, 10, 110, 30)]
+        # dilate_frac sized to close the few-px inter-word gap on one line
+        regions = merge_text_regions(boxes, 256, 256, dilate_frac=0.03)
+        assert len(regions) == 1
+
+    def test_rects_in_bounds_and_padded(self):
+        boxes = [_quad(100, 100, 150, 130)]
+        (x, y, w, h) = merge_text_regions(boxes, 256, 256, pad_frac=0.05)[0]
+        assert x >= 0
+        assert y >= 0
+        assert x + w <= 256
+        assert y + h <= 256
+        assert w > 50  # padded beyond the raw 50px box
+
+    def test_caps_region_count(self):
+        boxes = [_quad(20 * i, 0, 20 * i + 8, 8) for i in range(20)]
+        regions = merge_text_regions(boxes, 64, 512, dilate_frac=0.002, pad_frac=0.0, max_regions=5)
+        assert len(regions) <= 5
+
+
+class TestFeatherPaste:
+    def test_patch_lands_at_location_center(self):
+        base = np.zeros((100, 100, 3), np.uint8)
+        patch = np.full((40, 40, 3), 200, np.uint8)
+        out = feather_paste(base, patch, 30, 30, feather=6)
+        # center of the pasted region is (near) the patch value
+        assert out[50, 50, 0] >= 190
+        # far corner untouched
+        assert out[2, 2, 0] == 0
+
+    def test_does_not_mutate_base(self):
+        base = np.zeros((50, 50, 3), np.uint8)
+        feather_paste(base, np.full((20, 20, 3), 255, np.uint8), 10, 10)
+        assert base.sum() == 0
+
+    def test_shape_preserved(self):
+        base = np.zeros((50, 60, 3), np.uint8)
+        out = feather_paste(base, np.full((10, 10, 3), 100, np.uint8), 5, 5)
+        assert out.shape == base.shape
+
+    def test_partial_out_of_bounds_no_crash(self):
+        base = np.zeros((40, 40, 3), np.uint8)
+        out = feather_paste(base, np.full((30, 30, 3), 150, np.uint8), 25, 25, feather=4)
+        assert out.shape == (40, 40, 3)
 
 
 class TestDetectionInputSize:
