@@ -362,7 +362,7 @@ def cmd_erase(
 @click.option(
     "-o", "--output", type=click.Path(path_type=Path), default=None, help="Output path (default: <source>_clean.<ext>)."
 )
-@click.option("--strength", type=float, default=0.05, help="Denoising strength (0.0-1.0). Default: 0.05.")
+@click.option("--strength", type=float, default=0.10, help="Denoising strength (0.0-1.0). Default: 0.10.")
 @click.option("--steps", type=int, default=50, help="Number of denoising steps. Default: 50.")
 @click.option(
     "--pipeline",
@@ -593,7 +593,7 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
 @click.option(
     "--inpaint-method", type=click.Choice(["ns", "telea", "gaussian"]), default="ns", help="Inpainting method."
 )
-@click.option("--strength", type=float, default=0.05, help="Invisible watermark denoising strength (0.0-1.0).")
+@click.option("--strength", type=float, default=0.10, help="Invisible watermark denoising strength. Default: 0.10.")
 @click.option("--steps", type=int, default=50, help="Number of denoising steps for invisible removal.")
 @click.option(
     "--pipeline",

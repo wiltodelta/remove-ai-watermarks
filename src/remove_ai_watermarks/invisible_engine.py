@@ -19,6 +19,8 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from remove_ai_watermarks.noai.watermark_profiles import DEFAULT_STRENGTH
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -133,7 +135,7 @@ class InvisibleEngine:
         Args:
             image_path: Path to the watermarked image.
             output_path: Output path (None = overwrite source).
-            strength: Denoising strength (0.0-1.0). Default 0.04.
+            strength: Denoising strength (0.0-1.0). None -> DEFAULT_STRENGTH (0.10).
             steps: Number of denoising steps.
             guidance_scale: Classifier-free guidance scale.
             seed: Random seed for reproducibility.
@@ -277,7 +279,7 @@ class InvisibleEngine:
         self,
         input_dir: Path,
         output_dir: Path,
-        strength: float = 0.04,
+        strength: float = DEFAULT_STRENGTH,
         steps: int = 50,
     ) -> list[Path]:
         """Remove invisible watermarks from all images in a directory."""
