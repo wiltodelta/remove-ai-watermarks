@@ -328,28 +328,47 @@ class DoubaoEngine:
         amap[ay : ay + gh, ax : ax + gw] = cv2.resize(at, (gw, gh), interpolation=cv2.INTER_LINEAR)
         return amap, (ax, ay, gw, gh)
 
-    def remove_watermark_reverse_alpha(self, image: NDArray[Any], *, residual_inpaint: bool = True) -> NDArray[Any]:
-        """Recover the original pixels by inverting the alpha blend
-        ``original = (wm - a*logo)/(1-a)`` with the alpha map aligned to the mark.
-
-        A light residual inpaint over the glyph footprint cleans the remaining
-        sub-pixel seam. Call only when :meth:`reverse_alpha_available` and the
-        mark is detected (the registry gates on both)."""
-        # At (near) the captured width the fixed geometry is pixel-exact; off it,
-        # NCC alignment registers the template to the real mark.
-        ratio = image.shape[1] / _ALPHA_NATIVE_WIDTH
-        at_native = abs(ratio - 1.0) <= _ALPHA_NATIVE_BAND
-        built = self._fixed_alpha_map(image) if at_native else self._aligned_alpha_map(image)
-        if built is None:
-            return image.copy()
-        amap, _region = built
+    def _apply_reverse_alpha(self, image: NDArray[Any], amap: NDArray[Any]) -> NDArray[Any]:
+        """Invert the alpha blend with ``amap``: ``original = (wm - a*logo)/(1-a)``."""
         a3 = np.clip(amap, 0.0, 1.0)[:, :, None]
         logo = np.array(_ALPHA_LOGO_BGR, np.float32)
-        out = np.clip((image.astype(np.float32) - a3 * logo) / np.clip(1.0 - a3, 0.25, 1.0), 0, 255).astype(np.uint8)
+        return np.clip((image.astype(np.float32) - a3 * logo) / np.clip(1.0 - a3, 0.25, 1.0), 0, 255).astype(np.uint8)
+
+    def remove_watermark_reverse_alpha(self, image: NDArray[Any], *, residual_inpaint: bool = True) -> NDArray[Any]:
+        """Recover the original pixels by inverting the alpha blend
+        ``original = (wm - a*logo)/(1-a)``.
+
+        Placement: at (near) the captured width the fixed geometry is pixel-exact;
+        off it, NCC alignment registers the template to the real mark. Off-native
+        we try BOTH placements and keep whichever leaves the least residual mark
+        (on a faint/busy-background mark the NCC peak can wander a few px, where
+        geometry wins; on a clear mark alignment wins) -- no magic threshold, it
+        just picks the better removal. A light residual inpaint cleans the seam.
+        Call only when :meth:`reverse_alpha_available` and the mark is detected.
+        """
+        at_native = abs(image.shape[1] / _ALPHA_NATIVE_WIDTH - 1.0) <= _ALPHA_NATIVE_BAND
+        candidates = (
+            [self._fixed_alpha_map(image)]
+            if at_native
+            else [self._fixed_alpha_map(image), self._aligned_alpha_map(image)]
+        )
+        maps = [c for c in candidates if c is not None]
+        if not maps:
+            return image.copy()
+        best_out: NDArray[Any] | None = None
+        best_amap: NDArray[Any] | None = None
+        best_residual = float("inf")
+        for amap, _region in maps:
+            out = self._apply_reverse_alpha(image, amap)
+            residual = self.detect(out).confidence if len(maps) > 1 else 0.0
+            if residual < best_residual:
+                best_residual, best_out, best_amap = residual, out, amap
+        if best_out is None or best_amap is None:  # pragma: no cover - maps is non-empty
+            return image.copy()
         if residual_inpaint:
-            rm = cv2.dilate((amap > 0.10).astype(np.uint8) * 255, np.ones((3, 3), np.uint8))
-            out = cv2.inpaint(out, rm, 3, cv2.INPAINT_TELEA)
-        return out
+            rm = cv2.dilate((best_amap > 0.10).astype(np.uint8) * 255, np.ones((3, 3), np.uint8))
+            best_out = cv2.inpaint(best_out, rm, 3, cv2.INPAINT_TELEA)
+        return best_out
 
 
 def load_image_bgr(path: str | Path) -> NDArray[Any]:
