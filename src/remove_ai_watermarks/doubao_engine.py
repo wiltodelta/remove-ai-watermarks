@@ -338,21 +338,26 @@ class DoubaoEngine:
         """Recover the original pixels by inverting the alpha blend
         ``original = (wm - a*logo)/(1-a)``.
 
-        Placement: at (near) the captured width the fixed geometry is pixel-exact;
-        off it, NCC alignment registers the template to the real mark. Off-native
-        we try BOTH placements and keep whichever leaves the least residual mark
-        (on a faint/busy-background mark the NCC peak can wander a few px, where
-        geometry wins; on a clear mark alignment wins) -- no magic threshold, it
-        just picks the better removal. A light residual inpaint cleans the seam.
+        Placement: at (near) the captured width the fixed geometry is pixel-exact,
+        so the recovery is returned UNTOUCHED -- inpainting over exactly-recovered
+        interior pixels only swaps them for a cv2 hallucination (measured worse on
+        textured backgrounds: native error vs true bg 1.6 reverse-alpha-only vs
+        2.6 with full-footprint inpaint). Off-native, NCC alignment registers the
+        template to the real mark; the alignment is only sub-pixel-approximate, so
+        the interior recovery is no longer exact and the seam can re-trip the
+        detector. There we try BOTH placements and keep whichever leaves the least
+        residual mark (on a faint/busy-background mark the NCC peak can wander a
+        few px, where geometry wins; on a clear mark alignment wins) -- no magic
+        threshold, it just picks the better removal -- then a residual inpaint over
+        the glyph footprint cleans the seam (the interior is approximate anyway, so
+        inpaint there costs nothing and reliably clears the mark).
         Call only when :meth:`reverse_alpha_available` and the mark is detected.
         """
         at_native = abs(image.shape[1] / _ALPHA_NATIVE_WIDTH - 1.0) <= _ALPHA_NATIVE_BAND
-        candidates = (
-            [self._fixed_alpha_map(image)]
-            if at_native
-            else [self._fixed_alpha_map(image), self._aligned_alpha_map(image)]
-        )
-        maps = [c for c in candidates if c is not None]
+        if at_native:
+            amap = self._fixed_alpha_map(image)
+            return self._apply_reverse_alpha(image, amap[0]) if amap is not None else image.copy()
+        maps = [c for c in (self._fixed_alpha_map(image), self._aligned_alpha_map(image)) if c is not None]
         if not maps:
             return image.copy()
         best_out: NDArray[Any] | None = None
@@ -360,7 +365,7 @@ class DoubaoEngine:
         best_residual = float("inf")
         for amap, _region in maps:
             out = self._apply_reverse_alpha(image, amap)
-            residual = self.detect(out).confidence if len(maps) > 1 else 0.0
+            residual = self.detect(out).confidence
             if residual < best_residual:
                 best_residual, best_out, best_amap = residual, out, amap
         if best_out is None or best_amap is None:  # pragma: no cover - maps is non-empty

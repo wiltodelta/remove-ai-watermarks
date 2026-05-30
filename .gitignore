@@ -34,6 +34,7 @@ yolov8n.pt
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Doubao watermark calibration (local only; ship only the derived alpha-map asset).
 # Synthetic seeds + raw Doubao captures are regenerable and not committed.

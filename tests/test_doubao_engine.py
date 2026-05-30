@@ -133,6 +133,19 @@ class TestReverseAlpha:
         wm = (a3 * np.array(_ALPHA_LOGO_BGR, np.float32) + (1 - a3) * img).clip(0, 255).astype(np.uint8)
         return wm, amap > 0.2
 
+    def test_native_returns_exact_reverse_alpha_no_inpaint(self):
+        """At native width the recovery is exact, so it must be returned untouched
+        -- inpainting over exactly-recovered interior pixels degrades quality
+        (regression: native textured error 1.6 reverse-alpha-only vs 2.6 with the
+        old full-footprint inpaint). The output must equal pure reverse-alpha."""
+        eng = DoubaoEngine()
+        wm, _mark = self._compose(_ALPHA_NATIVE_WIDTH, _ALPHA_NATIVE_WIDTH)
+        out = eng.remove_watermark_reverse_alpha(wm)
+        amap = eng._fixed_alpha_map(wm)
+        assert amap is not None
+        expected = eng._apply_reverse_alpha(wm, amap[0])
+        assert np.array_equal(out, expected)  # no inpaint touched the recovery
+
     @pytest.mark.parametrize(
         ("w", "h", "max_err"),
         [
