@@ -70,9 +70,10 @@ class InvisibleEngine:
     to break watermark patterns, and reconstructs via reverse diffusion.
     """
 
-    # SDXL base is the default since May 2026: empirically defeats SynthID v2
-    # at strength=0.10 / steps=50 / native ~1024px. See CLAUDE.md "Known
-    # limitations" for the regression evidence ruling out SD-1.5 pipelines.
+    # SDXL base is the default since May 2026; the current Google SynthID is
+    # removed at strength ~0.30 / steps=50 / native res (oracle-verified, n=3 fresh
+    # Gemini -- 0.10/0.15/0.2 still detected). See CLAUDE.md "Known limitations" for
+    # the strength study and the regression evidence ruling out SD-1.5 pipelines.
     DEFAULT_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
     CTRLREGEN_MODEL_ID = "yepengliu/ctrlregen"
 

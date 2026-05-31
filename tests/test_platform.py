@@ -131,7 +131,7 @@ class TestResolveStrength:
         assert resolve_strength(None, "default") == DEFAULT_STRENGTH
 
     def test_none_ctrlregen_uses_clean_noise_default(self):
-        # ctrlregen must NOT inherit the light SDXL 0.10 (that makes it a no-op);
+        # ctrlregen must NOT inherit the SDXL DEFAULT_STRENGTH (that makes it a no-op);
         # clean-noise regeneration is the lever against robust marks.
         assert resolve_strength(None, "ctrlregen") == CTRLREGEN_DEFAULT_STRENGTH
         assert CTRLREGEN_DEFAULT_STRENGTH > DEFAULT_STRENGTH

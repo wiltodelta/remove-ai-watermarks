@@ -108,15 +108,19 @@ The removal pipeline (default profile, SDXL):
 ```text
 image → encode to latent space (VAE) at native resolution
       → add controlled noise (forward diffusion)
-      → denoise (reverse diffusion, ~50 steps at strength 0.10)
+      → denoise (reverse diffusion, ~50 steps at strength 0.30)
       → decode back to pixels (VAE)
 ```
 
 - Native resolution avoids shrinking the input to 1024 px first; that down-then-up round-trip was the main quality loss (issue #10). Use `--max-resolution N` only to cap GPU/MPS memory on very large inputs.
 
-> **If SynthID still verifies after the run, raise `--strength`.** The default `0.10` is the value that clears the watermark today, but SynthID is a moving target: both Google and OpenAI tighten it over time, and a larger image carries a stronger watermark (a 1600x1600 image needs more than a 400x400 one). There is no single permanent number, and there is no local SynthID detector, so the tool cannot self-check and auto-tune. The rule is simple: if the verifier still reads SynthID, step the strength up — try `--strength 0.12`, then `0.15`. Higher strength changes more detail and text, so use the lowest value that comes back clean on the oracle ([openai.com/research/verify](https://openai.com/research/verify/) or the Gemini app's "Verify with SynthID").
+> **Default strength is `0.30`, tuned to remove the current Google SynthID.** An oracle-verified study (fresh Gemini images, "Verify with SynthID") found the current SynthID survives `0.10`/`0.15`/`0.20` and clears only at `0.30`. SynthID is a moving target (the threshold has climbed `0.05` → `0.10` → `~0.30` as Google hardens it), and there is no local SynthID detector, so the tool cannot self-check and auto-tune. If the oracle still reads SynthID, raise `--strength` further; if you care more about preserving fine text, lower it. `0.30` softens dense typography somewhat, so use the lowest value that comes back clean on the oracle.
 >
-> **For images that survive even high strength, try `--pipeline ctrlregen`.** The default SDXL pass is a light partial-noise img2img; some images (often dense, high-texture composites) keep the watermark through it at any strength. CtrlRegen regenerates the image from near-clean Gaussian noise while holding structure with a Canny ControlNet and a DINOv2 adapter — the approach the research ([CtrlRegen, ICLR 2025](https://github.com/yepengliu/CtrlRegen)) identifies as the lever against watermarks that partial-noise regeneration cannot remove. It defaults to clean-noise strength `1.0`, downloads extra models (~several GB), runs slower, and changes the image more, so reserve it for the stubborn cases. Note: heavier regeneration is also *more* detectable as a removal-processed image (see the forensic note below).
+> **For SynthID in text, also pass `--no-protect-text`.** Text protection preserves text regions, but SynthID hides in them, so on text-heavy images the watermark can survive inside text at `0.30` unless protection is off. This trades text crispness for full removal — a genuine tradeoff, not a bug.
+>
+> **OpenAI / ChatGPT images do not carry Google SynthID** (they use C2PA metadata, stripped by the metadata step), so `0.30` is overkill there; `--strength 0.10` preserves quality and the metadata strip is what matters.
+>
+> **`--pipeline ctrlregen` is experimental and not recommended.** On paper CtrlRegen ([ICLR 2025](https://github.com/yepengliu/CtrlRegen)) regenerates from near-clean Gaussian noise to defeat robust watermarks, but in testing on real images it **destroys content** — smooth and background regions fill with hallucinated micro-text — and it is heavy (several GB of extra models, minutes per image). It has no usable middle setting (too low removes nothing, high enough to remove wrecks the image), so the shippable path is the default SDXL pipeline at `~0.30`. CtrlRegen stays available for experimentation only.
 
 SDXL is the default since May 2026: empirically defeats SynthID v2 on Gemini 3 Pro outputs, where the older SD-1.5 pipeline at 768 px did not. The SD-1.5 path was removed once it was verified not to handle v2. Note the scope: this defeats the SynthID *verifier*, which is not the same as being forensically indistinguishable from a real photo. Recent work ([arXiv:2605.09203](https://arxiv.org/abs/2605.09203)) shows watermark-removal pipelines leave detectable traces, so a separate "this image was processed" classifier can still flag the output.
 

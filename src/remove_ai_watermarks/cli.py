@@ -433,14 +433,14 @@ def cmd_erase(
     "--strength",
     type=float,
     default=None,
-    help="Denoising strength (0.0-1.0). Default: 0.10 (SDXL), 1.0 clean-noise for ctrlregen.",
+    help="Denoising strength (0.0-1.0). Default: 0.30 (SDXL SynthID threshold); ctrlregen uses 1.0.",
 )
 @click.option("--steps", type=int, default=50, help="Number of denoising steps. Default: 50.")
 @click.option(
     "--pipeline",
     type=click.Choice(["default", "ctrlregen"]),
     default="default",
-    help="Pipeline profile (default=SDXL, ctrlregen=CtrlRegen).",
+    help="Pipeline profile (default=SDXL; ctrlregen=CtrlRegen, EXPERIMENTAL/destructive at clean-noise).",
 )
 @click.option(
     "--device",
@@ -680,14 +680,14 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
     "--strength",
     type=float,
     default=None,
-    help="Invisible watermark denoising strength. Default: 0.10 (SDXL), 1.0 clean-noise for ctrlregen.",
+    help="Invisible watermark denoising strength. Default: 0.30 (SDXL); ctrlregen uses 1.0.",
 )
 @click.option("--steps", type=int, default=50, help="Number of denoising steps for invisible removal.")
 @click.option(
     "--pipeline",
     type=click.Choice(["default", "ctrlregen"]),
     default="default",
-    help="Pipeline profile (default=SDXL, ctrlregen=CtrlRegen).",
+    help="Pipeline profile (default=SDXL; ctrlregen=CtrlRegen, EXPERIMENTAL/destructive at clean-noise).",
 )
 @click.option("--model", type=str, default=None, help="HuggingFace model ID for invisible removal.")
 @click.option(
@@ -979,7 +979,7 @@ def _process_batch_image(
     "--pipeline",
     type=click.Choice(["default", "ctrlregen"]),
     default="default",
-    help="Pipeline profile (default=SDXL, ctrlregen=CtrlRegen).",
+    help="Pipeline profile (default=SDXL; ctrlregen=CtrlRegen, EXPERIMENTAL/destructive at clean-noise).",
 )
 @click.option(
     "--device",
