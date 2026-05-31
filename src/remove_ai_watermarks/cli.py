@@ -502,7 +502,7 @@ def cmd_metadata(
             console.print(f"  [yellow]⚠[/] AI metadata detected in {source.name}:")
             meta = get_ai_metadata(source)
             if synthid := meta.get("synthid_watermark"):
-                console.print(f"  [bold yellow]⚠ SynthID pixel watermark {synthid}[/]")
+                console.print(f"  [bold yellow]⚠ SynthID watermark (inferred from C2PA metadata) {synthid}[/]")
             table = Table(show_header=True, header_style="bold")
             table.add_column("Key", style="cyan")
             table.add_column("Value")

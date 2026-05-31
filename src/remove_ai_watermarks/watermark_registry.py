@@ -5,18 +5,22 @@ A single catalog that ties each known visible mark to (a) where it usually sits,
 registry detects every known mark in its usual place and removes the ones
 present.
 
-**Reverse-alpha only.** A known mark is a fixed semi-transparent overlay, so it
+**Reverse-alpha based.** A known mark is a fixed semi-transparent overlay, so it
 is removed by inverting the alpha blend against a captured alpha map
-(``original = (wm - a*logo)/(1-a)``) -- exact recovery of the true pixels, not an
-inpaint guess. Detection is consistent with that: each mark is recognized by
-matching its known shape/template (the thing we invert), not by heuristics. A
-mark is therefore listed here only once a real alpha map has been captured for
-it; everything else (arbitrary logos/objects) is the user-directed
+(``original = (wm - a*logo)/(1-a)``) -- recovering the true pixels rather than
+inpainting a guess. Gemini and Doubao recover exactly with no inpaint at native;
+Jimeng adds a thin residual inpaint over the glyph footprint to clear the outline
+its per-image render variation leaves behind (still seeded by the reverse-alpha
+recovery, not a blind inpaint). Detection is consistent with that: each mark is
+recognized by matching its known shape/template (the thing we invert), not by
+heuristics. A mark is therefore listed here only once a real alpha map has been
+captured for it; everything else (arbitrary logos/objects) is the user-directed
 ``erase --region`` tool, not this catalog.
 
 Entries:
   - ``gemini`` -- Google Gemini / Nano Banana sparkle, bottom-right.
   - ``doubao`` -- ByteDance Doubao "豆包AI生成" text strip, bottom-right.
+  - ``jimeng`` -- ByteDance Jimeng / Dreamina "★ 即梦AI" wordmark, bottom-right.
 """
 
 from __future__ import annotations
@@ -106,6 +110,10 @@ def _engine(key: str) -> Any:
             from remove_ai_watermarks.doubao_engine import DoubaoEngine
 
             _engines[key] = DoubaoEngine()
+        elif key == "jimeng":
+            from remove_ai_watermarks.jimeng_engine import JimengEngine
+
+            _engines[key] = JimengEngine()
         else:  # pragma: no cover - guarded by the registry keys
             raise KeyError(key)
     return _engines[key]
@@ -162,10 +170,31 @@ def _doubao_remove(
     return image.copy(), None
 
 
+def _jimeng_detect(image: NDArray[Any]) -> MarkDetection:
+    d = _engine("jimeng").detect(image)
+    return MarkDetection("jimeng", "Jimeng 即梦AI wordmark", "bottom-right", d.detected, d.confidence, d.region)
+
+
+def _jimeng_remove(
+    image: NDArray[Any], _inpaint_method: InpaintMethod, _inpaint: bool, _strength: float, force: bool
+) -> tuple[NDArray[Any], Region | None]:
+    # Reverse-alpha (with an always-on residual inpaint over the glyph footprint,
+    # see the engine): apply when the mark is present and the alpha asset loads.
+    # Skipped otherwise (no hallucination on a clean corner).
+    engine = _engine("jimeng")
+    det = engine.detect(image)
+    if (det.detected or force) and engine.reverse_alpha_available(image):
+        return engine.remove_watermark_reverse_alpha(image), (det.region if det.detected else None)
+    return image.copy(), None
+
+
 _REGISTRY: tuple[KnownMark, ...] = (
     KnownMark("gemini", "Google Gemini sparkle", "bottom-right", True, "reverse-alpha", _gemini_detect, _gemini_remove),
     KnownMark(
         "doubao", "Doubao 豆包AI生成 text", "bottom-right", True, "reverse-alpha", _doubao_detect, _doubao_remove
+    ),
+    KnownMark(
+        "jimeng", "Jimeng 即梦AI wordmark", "bottom-right", True, "reverse-alpha", _jimeng_detect, _jimeng_remove
     ),
 )
 

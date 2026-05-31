@@ -429,13 +429,13 @@ class TestOpenAiCaveatVendorScoped:
             self._png_chunk(b"tEXt", b"note\x00signed via OpenAI trust chain"),
         )
         r = identify(png, check_visible=False, check_invisible=False)
-        assert any("SynthID pixel watermark (likely present (Google" in w for w in r.watermarks)
+        assert any("SynthID watermark, inferred from C2PA metadata (likely present (Google" in w for w in r.watermarks)
         assert not any("before the rollout" in c for c in r.caveats)
 
     def test_openai_synthid_still_gets_caveat(self, tmp_path: Path):
         png = self._png(tmp_path, "oa.png", self._png_chunk(b"caBX", b"jumbc2pa OpenAI ... trainedAlgorithmicMedia"))
         r = identify(png, check_visible=False, check_invisible=False)
-        assert any("SynthID pixel watermark (likely present (OpenAI" in w for w in r.watermarks)
+        assert any("SynthID watermark, inferred from C2PA metadata (likely present (OpenAI" in w for w in r.watermarks)
         assert any("before the rollout" in c for c in r.caveats)
 
 

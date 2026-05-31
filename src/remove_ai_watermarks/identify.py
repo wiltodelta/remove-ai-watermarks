@@ -429,7 +429,7 @@ def identify(image_path: Path, *, check_visible: bool = True, check_invisible: b
     # and non-PNG (its own synthid_source fallback), so no extra scan is needed.
     synthid = meta.get("synthid_watermark")
     if synthid:
-        watermarks.append(f"SynthID pixel watermark ({synthid})")
+        watermarks.append(f"SynthID watermark, inferred from C2PA metadata ({synthid})")
         caveats.append(_SYNTHID_CAVEAT)
         if _vendor_of(synthid) == "OpenAI":
             caveats.append(_OPENAI_CAVEAT)

@@ -17,7 +17,7 @@ If this tool saves you time, consider [sponsoring its development](https://githu
 
 ## Features
 
-- **Visible watermark removal** — a registry of known marks in their usual places: the Gemini / Nano Banana sparkle and the Doubao "豆包AI生成" text strip. Each is removed by **exact reverse-alpha blending** against a captured alpha map (`original = (wm − α·logo)/(1−α)`), recovering the true pixels rather than inpainting a guess. Fast, offline, no GPU. `visible --mark auto` finds and removes the strongest detected mark. (For arbitrary logos/objects, see `erase`.)
+- **Visible watermark removal** — a registry of known marks in their usual places: the Gemini / Nano Banana sparkle, the Doubao "豆包AI生成" text strip, and the Jimeng "★ 即梦AI" wordmark. Each is removed by **reverse-alpha blending** against a captured alpha map (`original = (wm − α·logo)/(1−α)`), recovering the true pixels rather than inpainting a guess. The Gemini sparkle recovers cleanly on its own; the Doubao and Jimeng text marks re-rasterize slightly per image, so a thin residual inpaint over the glyph footprint clears the leftover edges (the alpha maps are reproducibly rebuilt from controlled captures by `scripts/visible_alpha_solve.py`). Fast, offline, no GPU. `visible --mark auto` finds and removes the strongest detected mark. (For arbitrary logos/objects, see `erase`.)
 - **Universal region eraser (`erase`)** — remove any logo / watermark / object inside boxes you specify, regardless of position or colour. Default cv2 inpainting (CPU, instant); optional big-LaMa via onnxruntime (`lama` extra) for higher quality
 - **Invisible watermark removal** — SynthID, StableSignature, TreeRing via diffusion-based regeneration (needs a local GPU, or run it with no setup on [raiw.cc](https://raiw.cc))
 - **AI metadata stripping** — EXIF, PNG text chunks, C2PA provenance manifests (PNG / JPEG / AVIF / HEIF / JPEG-XL, **MP4 / MOV / M4V / M4A** at the container level, and **WebM / MP3 / WAV / FLAC / OGG** losslessly via ffmpeg), XMP DigitalSourceType
@@ -49,13 +49,14 @@ If this tool saves you time, consider [sponsoring its development](https://githu
 | **xAI Grok (Aurora)** | — | — | ✅ EXIF signature scheme (no C2PA): `Signature:` blob + UUID `Artist` | Detected (`identify`); metadata strip |
 | **Midjourney** | — | — | ✅ EXIF + XMP (prompt, model, seed) | Metadata strip |
 | **Meta AI** | — | — | ✅ IPTC "Made with AI" (digitalSourceType) | Metadata strip (removes the label) |
-| **Doubao** (ByteDance) / China AIGC generators | ✅ "豆包AI生成" text strip (bottom-right) | — | ✅ TC260 AIGC label (`<TC260:AIGC>` XMP, `AIGC` PNG chunk, or EXIF JSON) **+ C2PA** signed by ByteDance Volcano Engine (`volcengine`) | Exact reverse-alpha (captured α map): pixel-exact at native width, NCC-aligned at other resolutions, + metadata strip |
+| **Doubao** (ByteDance) / China AIGC generators | ✅ "豆包AI生成" text strip (bottom-right) | — | ✅ TC260 AIGC label (`<TC260:AIGC>` XMP, `AIGC` PNG chunk, or EXIF JSON) **+ C2PA** signed by ByteDance Volcano Engine (`volcengine`) | Reverse-alpha (captured α map) + thin residual inpaint, NCC-aligned across resolutions, + metadata strip |
+| **Jimeng / Dreamina** (即梦AI, ByteDance) | ✅ "★ 即梦AI" wordmark (bottom-right) | — | ✅ TC260 AIGC label + C2PA (Volcano Engine) | Reverse-alpha (captured α map) + residual inpaint over the glyph footprint, NCC-aligned across resolutions, + metadata strip |
 | **Samsung Galaxy AI** (Generative Edit, Sketch to Image, ...) | — | — | ✅ C2PA (signer "Samsung Galaxy") + `trainedAlgorithmicMedia` / proprietary `genAIType` marker | Detected (`identify`) + metadata strip |
 | **Black Forest Labs** (FLUX API) | — | — | ✅ C2PA (`Black Forest Labs API` + `c2pa.ai_generated_content` + `trainedAlgorithmicMedia`) | Metadata strip |
 | **StableSignature** (Meta) | — | ✅ In-model watermark | — | Diffusion regeneration |
 | **TreeRing** | — | ✅ Latent space watermark | — | Diffusion regeneration |
 
-> Visible overlays are used by Google Gemini / Nano Banana (sparkle logo) and by Doubao / China AIGC generators (the mandated "...AI生成" corner text). Both are removed deterministically on CPU. Other services rely on invisible watermarks and/or metadata; our diffusion-based regeneration works against any invisible watermark in pixel or frequency domain. For a visible mark from any other source (any position, any colour), use the universal `erase --region` command.
+> Visible overlays are used by Google Gemini / Nano Banana (sparkle logo) and by ByteDance's Doubao ("豆包AI生成" corner text) and Jimeng / Dreamina ("★ 即梦AI" wordmark). All are removed on CPU by reverse-alpha against a captured alpha map (Jimeng adds a residual inpaint over the glyph footprint, since its mark re-rasterizes per image). Other services rely on invisible watermarks and/or metadata; our diffusion-based regeneration works against any invisible watermark in pixel or frequency domain. For a visible mark from any other source (any position, any colour), use the universal `erase --region` command.
 
 > **Detection:** `remove-ai-watermarks identify <image>` reports the origin platform and watermark inventory for all the signals above — C2PA issuer, the C2PA soft-binding forensic-watermark vendor (TrustMark / Digimarc / Imatag / ...), IPTC "Made with AI" plus the IPTC 2025.1 `AISystemUsed` field, the China TC260 AIGC label (XMP, PNG chunk, or EXIF), the HuggingFace `hf-job-id` job marker, embedded generation params, EXIF/XMP generator tags, the xAI/Grok EXIF signature, the SynthID metadata proxy, the visible sparkle, and (with the `[detect]` / `[trustmark]` extras) the open SD/SDXL/FLUX and Adobe TrustMark invisible watermarks. SynthID and the proprietary soft-binding watermarks (Digimarc etc.) have no local decoder, so they are reported by metadata proxy / vendor name only.
 
@@ -81,9 +82,18 @@ A three-stage NCC (Normalized Cross-Correlation) detector finds the watermark po
 
 ### Removing the Doubao "豆包AI生成" text watermark
 
-Doubao (ByteDance) stamps every output with a light, semi-transparent "豆包AI生成" text strip in the bottom-right corner — the visible AIGC label mandated by China's TC260 standard. It is a fixed semi-transparent white overlay, so — like the Gemini sparkle — it is removed by **exact reverse-alpha blending**: `original = (watermarked - α·logo) / (1 - α)`, recovering the true pixels instead of hallucinating them. The α map and logo colour were solved from controlled black + gray captures (on black, `captured = α·logo`; the black/gray pair solves α per-pixel). At the captured width the placement is exact, so the recovery is returned untouched (inpainting over exactly-recovered pixels only degrades them). The single capture generalizes to any resolution: off the captured width an NCC scale-and-position search registers the α template to the actual mark, and a light residual inpaint cleans the sub-pixel seam there. Detection is consistent with removal: it matches the same alpha glyph silhouette against the corner (normalized correlation), so it keys on the actual "豆包AI生成" shape, not on textured corners.
+Doubao (ByteDance) stamps every output with a light, semi-transparent "豆包AI生成" text strip in the bottom-right corner — the visible AIGC label mandated by China's TC260 standard. It is a fixed semi-transparent white overlay, so it is removed by **reverse-alpha blending**: `original = (watermarked - α·logo) / (1 - α)`, recovering the true pixels instead of hallucinating them. The α map is solved from controlled black/gray captures (rebuildable with `scripts/visible_alpha_solve.py`). Like the Jimeng mark, Doubao re-rasterizes its text slightly per image, so reverse-alpha is followed by a thin residual inpaint over the glyph footprint to clear the leftover edges, and the α template is NCC-aligned to the actual mark (handling per-image scale/position jitter). Detection matches the same glyph silhouette against the corner (normalized correlation), so it keys on the "豆包AI生成" shape, not on textured corners.
 
-**Speed**: ~0.05s, no GPU needed. Reverse-alpha at the captured resolution recovers the true background pixels exactly.
+**Speed**: ~0.05s, no GPU needed.
+
+### Removing the Jimeng "★ 即梦AI" wordmark
+
+Jimeng / Dreamina (即梦AI, also ByteDance, distinct from Doubao) stamps a "★ 即梦AI" wordmark — a four-point sparkle followed by the 即梦AI characters — in the bottom-right corner. It is a fixed semi-transparent **pure-white** overlay, solved from controlled black / gray / white captures the same way as Doubao. `visible --mark auto` detects and removes it (or force it with `--mark jimeng`). One difference from Doubao: Jimeng re-rasterizes its mark slightly differently per image, so a single alpha map does not cancel it pixel-for-pixel — reverse-alpha knocks the mark down and a residual inpaint over the glyph footprint clears the remaining outline. The two ByteDance marks do not confuse `auto`: detection keys on each mark's own glyph shape (the Jimeng detector scores far below its threshold on a Doubao strip, and vice versa).
+
+```bash
+remove-ai-watermarks visible jimeng.png -o clean.png            # --mark auto picks Jimeng
+remove-ai-watermarks visible jimeng.png --mark jimeng -o clean.png
+```
 
 ### Universal region eraser
 
@@ -104,7 +114,11 @@ image → encode to latent space (VAE) at native resolution
 
 - Native resolution avoids shrinking the input to 1024 px first; that down-then-up round-trip was the main quality loss (issue #10). Use `--max-resolution N` only to cap GPU/MPS memory on very large inputs.
 
+> **If SynthID still verifies after the run, raise `--strength`.** The default `0.10` is the value that clears the watermark today, but SynthID is a moving target: both Google and OpenAI tighten it over time, and a larger image carries a stronger watermark (a 1600x1600 image needs more than a 400x400 one). There is no single permanent number, and there is no local SynthID detector, so the tool cannot self-check and auto-tune. The rule is simple: if the verifier still reads SynthID, step the strength up — try `--strength 0.12`, then `0.15`. Higher strength changes more detail and text, so use the lowest value that comes back clean on the oracle ([openai.com/research/verify](https://openai.com/research/verify/) or the Gemini app's "Verify with SynthID").
+
 SDXL is the default since May 2026: empirically defeats SynthID v2 on Gemini 3 Pro outputs, where the older SD-1.5 pipeline at 768 px did not. The SD-1.5 path was removed once it was verified not to handle v2. Note the scope: this defeats the SynthID *verifier*, which is not the same as being forensically indistinguishable from a real photo. Recent work ([arXiv:2605.09203](https://arxiv.org/abs/2605.09203)) shows watermark-removal pipelines leave detectable traces, so a separate "this image was processed" classifier can still flag the output.
+
+> **Oracle vs `identify` can disagree, and that is expected.** An online verifier reads the actual SynthID *pixel* watermark and detects only its own vendor's content — [openai.com/research/verify](https://openai.com/research/verify/) states "OpenAI generation signals will only be detected if the image was generated with our tools". Our `identify` cannot decode the pixel watermark (no vendor ships a local decoder), so it infers SynthID from the **C2PA metadata** instead. So after the SDXL pass the oracle can read "no SynthID" (pixel watermark gone) while `identify` still reports SynthID from a surviving C2PA manifest. They measure different signals. Run `metadata --remove` (or `all`) to also strip the manifest; note that a quiet metadata proxy is not proof the pixel watermark itself is gone.
 
 **Face Protection**: before diffusion, YOLO detects people in the image and extracts them. After diffusion, the original faces are blended back with a soft elliptical mask to prevent AI distortion of facial features.
 
@@ -240,8 +254,8 @@ remove-ai-watermarks batch ./images/ --mode all
 remove-ai-watermarks identify image.png
 
 # Visible watermark only — fast, offline, CPU. --mark auto (default) finds the
-# strongest known mark (Gemini sparkle / Doubao "豆包AI生成" text); force one
-# with --mark gemini / doubao. Removed by exact reverse-alpha (true-pixel recovery).
+# strongest known mark (Gemini sparkle / Doubao "豆包AI生成" / Jimeng "即梦AI"); force
+# one with --mark gemini / doubao / jimeng. Removed by reverse-alpha (true-pixel recovery).
 remove-ai-watermarks visible image.png -o clean.png
 
 # Erase arbitrary region(s) — universal, any logo/watermark/object, any position.

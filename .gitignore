@@ -36,9 +36,13 @@ yolov8n.pt
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
-# Doubao watermark calibration (local only; ship only the derived alpha-map asset).
-# Synthetic seeds + raw Doubao captures are regenerable and not committed.
-# Non-ours reference artifacts go in any _refs/ dir (already ignored above): usable
-# locally for bootstrap/validation, never redistributed in the repo.
+# Visible-watermark alpha calibration. The solid black/gray/white CAPTURES are
+# committed (content-free: a solid colour + the watermark; the source for
+# scripts/visible_alpha_solve.py so the alpha assets are reproducible). The
+# synthetic seeds (regenerable) and any real-content validation download (a real
+# generated scene, kept local for privacy) are NOT committed.
 data/doubao_capture/seeds/
-data/doubao_capture/captures/
+data/jimeng_capture/seeds/
+data/jimeng_capture/captures/jimeng_content_*.png
+data/gemini_capture/seeds/
+data/gemini_capture/captures/gemini_content_*.png

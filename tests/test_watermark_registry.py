@@ -14,7 +14,7 @@ DOUBAO_SAMPLE = Path(__file__).resolve().parents[1] / "data" / "samples" / "doub
 
 class TestCatalog:
     def test_keys(self):
-        assert reg.mark_keys() == ["gemini", "doubao"]
+        assert reg.mark_keys() == ["gemini", "doubao", "jimeng"]
 
     def test_all_in_auto(self):
         assert all(m.in_auto for m in reg.known_marks())
@@ -27,6 +27,7 @@ class TestCatalog:
         by_key = {m.key: m for m in reg.known_marks()}
         assert by_key["gemini"].location == "bottom-right"
         assert by_key["doubao"].location == "bottom-right"
+        assert by_key["jimeng"].location == "bottom-right"
 
     def test_get_mark_unknown_raises(self):
         with pytest.raises(KeyError):
@@ -37,7 +38,7 @@ class TestScan:
     def test_detect_marks_scans_all(self):
         img = np.zeros((256, 256, 3), np.uint8)
         keys = {d.key for d in reg.detect_marks(img)}
-        assert keys == {"gemini", "doubao"}
+        assert keys == {"gemini", "doubao", "jimeng"}
 
     def test_blank_image_no_auto_mark(self):
         assert reg.best_auto_mark(np.zeros((256, 256, 3), np.uint8)) is None

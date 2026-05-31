@@ -1,10 +1,11 @@
 # Doubao visible watermark capture
 
-> **Status (completed 2026-05-29):** the capture described below was carried out (black + gray
-> Doubao captures) and the exact alpha map was solved. Removal is now **reverse-alpha only**: at the
-> captured native width recovery is pixel-exact and inpaint is OFF; a residual inpaint runs off-native
-> only. See the `doubao_engine.py` notes in the root `CLAUDE.md`. The text below is kept as the
-> historical capture plan.
+> **Status (captured 2026-05-29; alpha rebuilt 2026-05-31):** the black/gray/white captures were
+> taken and are now **committed** in `captures/` (solid colour + watermark, content-free). The alpha
+> map is rebuilt by `scripts/visible_alpha_solve.py doubao` (the careful gray-self solve shared with
+> Jimeng). The first build claimed "pixel-exact" but left a readable outline on the real sample (issue
+> #13 follow-up); removal now reverse-alphas, NCC-aligns, and applies a thin residual inpaint. See the
+> `doubao_engine.py` notes in the root `CLAUDE.md`. The text below is kept as the historical capture plan.
 
 Goal: capture the Doubao "豆包AI生成" visible watermark over known flat backgrounds so we can
 build a per-pixel alpha map and a reverse-alpha-blend remover, the same way the Gemini sparkle
