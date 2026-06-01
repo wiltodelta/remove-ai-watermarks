@@ -125,8 +125,8 @@ class InvisibleEngine:
         guidance_scale: float | None = None,
         seed: int | None = None,
         humanize: float = 0.0,
-        protect_faces: bool = True,
-        protect_text: bool = True,
+        protect_faces: bool = False,
+        protect_text: bool = False,
         max_resolution: int = 0,
     ) -> Path:
         """Remove invisible watermark from an image.
