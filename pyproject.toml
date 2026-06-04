@@ -137,7 +137,7 @@ Repository = "https://github.com/wiltodelta/remove-ai-watermarks"
 # Metadata-Version"), failing the PyPI upload (v0.8.3, 2026-06-01). 1.27.x emits 2.4,
 # which uploads fine (0.8.2 shipped on it). Lift this pin once the publish action's
 # twine is upgraded to >= 6.1.0 (2.5-aware) or the workflow moves to `uv publish`.
-requires = ["hatchling<1.28"]
+requires = ["hatchling<1.31"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
