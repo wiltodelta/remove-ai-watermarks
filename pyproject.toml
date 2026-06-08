@@ -90,7 +90,7 @@ restore = [
     "facexlib>=0.3.0",
     "basicsr>=1.4.2",
     "scipy<1.18",
-    "numba<0.60",
+    "numba<0.66",
 ]
 # Optional PhotoMaker-V2 face-identity restoration (commercial-safe end-to-end:
 # PhotoMaker-V2 weights Apache-2.0 + OpenCLIP-ViT-H/14 MIT, NO InsightFace). Unlike
