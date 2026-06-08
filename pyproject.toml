@@ -92,6 +92,22 @@ restore = [
     "scipy<1.18",
     "numba<0.60",
 ]
+# Optional PhotoMaker-V2 face-identity restoration (commercial-safe end-to-end:
+# PhotoMaker-V2 weights Apache-2.0 + OpenCLIP-ViT-H/14 MIT, NO InsightFace). Unlike
+# the `restore` extra above (which runs GFPGAN on the watermarked ORIGINAL and was
+# oracle-confirmed to re-introduce SynthID), PhotoMaker carries identity in a
+# SEMANTIC EMBEDDING and generates fresh face pixels conditioned on it -- so the
+# pixel watermark is not transported. Empirically validated 2026-06-04: the OpenCLIP
+# embedding changes by cosine 0.002 under SynthID-magnitude pixel noise (an order of
+# magnitude less than JPEG90 drift, which SynthID survives). See
+# docs/synthid-robust-identity-research.md and
+# src/remove_ai_watermarks/photomaker_restore.py. Weights (~3 GB SDXL + ~1 GB
+# PhotoMaker-V2 adapter) download on first use; never bundled. Kept OUT of `all`
+# (heavy + model download), same as `restore`/`esrgan`.
+photomaker = [
+    "photomaker @ git+https://github.com/TencentARC/PhotoMaker.git",
+    "huggingface-hub>=0.20.0",
+]
 # Optional pre-diffusion super-resolution for small inputs (Real-ESRGAN). Loaded via
 # spandrel (MIT) -- a pure model-loader with NO basicsr dependency (it pulls only
 # torch / torchvision / safetensors / numpy / einops), which sidesteps the
@@ -158,6 +174,12 @@ Repository = "https://github.com/wiltodelta/remove-ai-watermarks"
 # `requires = ["hatchling"]` once that release confirms the path.
 requires = ["hatchling<1.31"]
 build-backend = "hatchling.build"
+
+# Allow the `photomaker` extra to reference its upstream git URL directly (the
+# TencentARC/PhotoMaker package is not on PyPI). Apache-2.0; weights download on
+# first use, so this only adds the Python wrapper.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/remove_ai_watermarks"]

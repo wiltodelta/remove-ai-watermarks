@@ -166,6 +166,7 @@ class InvisibleEngine:
         vendor: str | None = None,
         restore_faces: bool = False,
         restore_faces_weight: float = 0.5,
+        restore_faces_method: str = "gfpgan",
         unsharp: float = 0.0,
         adaptive_polish: bool = False,
         upscaler: str = "lanczos",
@@ -185,6 +186,13 @@ class InvisibleEngine:
                 face-restoration post-pass when faces are present (needs the
                 ``restore`` extra). Auto-skips with a debug log when the extra is
                 absent or no face is detected.
+            restore_faces_method: Which face-identity restoration mechanism to run after
+                the diffusion pass: ``"gfpgan"`` (default; cheap, but WARNING the GFPGAN
+                pass runs on the watermarked ORIGINAL and re-introduces SynthID -- see
+                ``face_restore.py``) or ``"photomaker"`` (PhotoMaker-V2; carries identity
+                via a SynthID-invariant OpenCLIP embedding and regenerates fresh face
+                pixels conditioned on it -- SynthID-safe, but heavier and requires the
+                ``photomaker`` extra). See ``docs/synthid-robust-identity-research.md``.
             restore_faces_weight: GFPGAN fidelity weight (0-1); lower = more GAN
                 regeneration (cleaner watermark scrub), higher = closer to input.
             unsharp: Final unsharp-mask sharpening strength (0 = off, default).
@@ -318,7 +326,10 @@ class InvisibleEngine:
             # the cleaned output at its final resolution; auto-skips when faces are
             # absent or the optional extra is not installed.
             if restore_faces:
-                self._restore_faces(out_path, image, restore_faces_weight)
+                if restore_faces_method == "photomaker":
+                    self._restore_faces_photomaker(out_path, image, seed)
+                else:
+                    self._restore_faces(out_path, image, restore_faces_weight)
 
             # Final sharpening, LAST so it crisps the face-restored result too (a
             # pre-GFPGAN sharpen would be smoothed back over by the face pass).
@@ -405,6 +416,51 @@ class InvisibleEngine:
             image_io.imwrite(out_path, restored)
         except Exception as e:
             logger.warning("restore_faces post-pass failed (%s); keeping un-restored output", e)
+
+    def _restore_faces_photomaker(
+        self,
+        out_path: Path,
+        original_image: Any,
+        seed: int | None,
+    ) -> None:
+        """Run the PhotoMaker-V2 SynthID-safe face-identity restoration post-pass.
+
+        Unlike the GFPGAN path (which blends watermarked original face pixels back into
+        the cleaned output and re-introduces SynthID), PhotoMaker carries identity in a
+        SynthID-invariant OpenCLIP embedding and regenerates fresh face pixels conditioned
+        on it. Best-effort: any failure (missing extra, model load, runtime error) logs a
+        warning and leaves the un-restored cleaned output in place. See
+        ``docs/synthid-robust-identity-research.md`` and ``photomaker_restore.py``.
+        """
+        from remove_ai_watermarks import photomaker_restore
+
+        if not photomaker_restore.is_available():
+            logger.debug("restore_faces=photomaker requested but the 'photomaker' extra is not installed; skipping")
+            return
+
+        try:
+            import cv2
+            import numpy as np
+
+            from remove_ai_watermarks import image_io
+
+            cleaned_bgr = image_io.imread(out_path, cv2.IMREAD_COLOR)
+            if cleaned_bgr is None:
+                logger.warning("restore_faces_photomaker: could not read cleaned output %s; skipping", out_path)
+                return
+
+            original_rgb = original_image.convert("RGB")
+            original_bgr = cv2.cvtColor(np.array(original_rgb), cv2.COLOR_RGB2BGR)
+            cleaned_size = (cleaned_bgr.shape[1], cleaned_bgr.shape[0])
+            if (original_bgr.shape[1], original_bgr.shape[0]) != cleaned_size:
+                original_bgr = cv2.resize(original_bgr, cleaned_size, interpolation=cv2.INTER_LANCZOS4)
+
+            if self._progress_callback:
+                self._progress_callback("Restoring face identity (PhotoMaker-V2 post-pass)...")
+            restored = photomaker_restore.restore_faces_photomaker(original_bgr, cleaned_bgr, seed=seed)
+            image_io.imwrite(out_path, restored)
+        except Exception as e:
+            logger.warning("restore_faces_photomaker post-pass failed (%s); keeping un-restored output", e)
 
     def remove_watermark_batch(
         self,
