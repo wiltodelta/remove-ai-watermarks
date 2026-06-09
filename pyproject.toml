@@ -91,7 +91,7 @@ restore = [
     "facexlib>=0.3.0",
     "basicsr>=1.4.2",
     "scipy<1.18",
-    "numba<0.60",
+    "numba<0.66",
 ]
 # Optional pre-diffusion super-resolution for small inputs (Real-ESRGAN). Loaded via
 # spandrel (MIT) -- a pure model-loader with NO basicsr dependency (it pulls only
