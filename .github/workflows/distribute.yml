@@ -1,0 +1,106 @@
+name: Distribute on release
+
+# Fans a published GitHub Release out to the channels that need a nudge.
+# PyPI is handled by publish.yml; conda-forge is handled by its autotick bot.
+# This workflow event-drives the two channels that would otherwise be manual:
+#   - Homebrew tap: rewrite the formula's url + sha256 to the new sdist.
+#   - HF Space: factory-rebuild so it reinstalls the latest sdist from PyPI.
+# Both wait for the freshly published sdist to appear on PyPI first, since the
+# Release event fires in parallel with publish.yml's upload.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to distribute (no leading v), e.g. 0.10.3. Blank = latest on PyPI."
+        required: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      url: ${{ steps.sdist.outputs.url }}
+      sha: ${{ steps.sdist.outputs.sha }}
+    steps:
+      - name: Resolve target version
+        id: v
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            v="${{ github.event.inputs.version }}"
+          else
+            v=$(curl -fsSL https://pypi.org/pypi/remove-ai-watermarks/json \
+              | python3 -c "import sys,json;print(json.load(sys.stdin)['info']['version'])")
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Target version: $v"
+
+      - name: Wait for the sdist on PyPI, capture url + sha256
+        id: sdist
+        run: |
+          set -euo pipefail
+          v="${{ steps.v.outputs.version }}"
+          for i in $(seq 1 30); do
+            if rel=$(curl -fsSL "https://pypi.org/pypi/remove-ai-watermarks/$v/json" 2>/dev/null); then
+              url=$(echo "$rel" | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((u['url'] for u in d['urls'] if u['packagetype']=='sdist'),''))")
+              sha=$(echo "$rel" | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((u['digests']['sha256'] for u in d['urls'] if u['packagetype']=='sdist'),''))")
+              if [ -n "$url" ] && [ -n "$sha" ]; then
+                echo "url=$url" >> "$GITHUB_OUTPUT"
+                echo "sha=$sha" >> "$GITHUB_OUTPUT"
+                echo "Found sdist for $v"
+                exit 0
+              fi
+            fi
+            echo "sdist for $v not on PyPI yet (attempt $i), waiting..."
+            sleep 20
+          done
+          echo "::error::sdist for $v did not appear on PyPI in time"
+          exit 1
+
+  homebrew:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the tap
+        uses: actions/checkout@v4
+        with:
+          repository: wiltodelta/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Bump the formula
+        env:
+          URL: ${{ needs.resolve.outputs.url }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          F=Formula/remove-ai-watermarks.rb
+          sed -i -E "s|url \"[^\"]*\"|url \"$URL\"|" "$F"
+          sed -i -E "s|sha256 \"[^\"]*\"|sha256 \"$SHA\"|" "$F"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$F"
+          git commit -m "remove-ai-watermarks $VERSION" || { echo "Formula already current"; exit 0; }
+          git push
+
+  hf-space:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Factory-rebuild the HuggingFace Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 -m pip install --quiet huggingface_hub
+          python3 - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          HfApi(token=os.environ["HF_TOKEN"]).restart_space(
+              "wiltodelta/remove-ai-watermarks", factory_reboot=True
+          )
+          print("HF Space factory rebuild triggered")
+          PY
