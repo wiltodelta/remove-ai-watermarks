@@ -465,6 +465,13 @@ Won't fix:
 
 - **Nightshade / Glaze / PhotoGuard removal**. These are defensive perturbations used by artists to protect their work from being scraped into AI training sets. Removing them attacks artists, not AI provenance. Out of scope.
 
+## Limitations
+
+- **Visible-mark and metadata removal is lossless.** Reverse-alpha recovers the original pixels under the mark; metadata stripping never touches image data.
+- **The invisible (SynthID) path is lossy and not guaranteed.** It runs a low-strength SDXL img2img regeneration, so it softens fine detail and is content-dependent. There is no public SynthID decoder, so the tool cannot verify removal locally; confirm with the Gemini app's "Verify with SynthID" oracle and raise `--strength` if it still detects. A vendor can change the scheme at any time, so treat this as an arms race, not a permanent fix.
+- **Large images are not tiled yet.** The SynthID path runs at the diffusion model's native resolution and caps or upscales larger inputs instead of tiling them, so very large images lose detail. (Nano Banana 2 is natively 1024px; GPT Image 2 supports 4K experimentally.) Tiled diffusion is the planned fix.
+- **Out of scope:** defeating trained AI-vs-real classifiers like Hive (see [Threat model](#threat-model)), visible-logo removal from video, and any guarantee that a stripped copy is untraceable server-side.
+
 ## Legal
 
 Watermarking and provenance for AI-generated content is now regulated in several jurisdictions. The table below summarises the May 2026 status. None of this is legal advice.
@@ -482,14 +489,14 @@ Watermarking and provenance for AI-generated content is now regulated in several
 
 ## Threat model
 
-This tool defends already-distributed AI imagery against automatic detection systems (social-platform "Made with AI" labels, third-party classifiers, content-policy filters). It does **not** retroactively anonymise generation.
+This tool removes specific, known signals: the embedded SynthID pixel watermark, the visible vendor marks, and the C2PA / EXIF / IPTC provenance metadata that platforms read to apply automatic "Made with AI" labels. It is **not** a general detector-evasion tool. It does **not** defeat trained statistical AI-vs-real classifiers (for example Hive Moderation), and a light diffusion pass will not reliably fool those, so a clean classifier hit after removal is expected, not a bug. It also does **not** retroactively anonymise generation. And watermarking is a weak trust signal in the first place: a marker that is almost always present yet trivially removable can make a cleaned forgery look more trustworthy, not less, which is why durable provenance more likely comes from signing genuine content than from watermarking synthetic content.
 
 In particular, **SynthID** (Google DeepMind) is embedded across Google's generative media stack — Imagen (images), Veo (video), Lyria (audio) — and Gemini app image outputs (Nano Banana / Gemini 3 Pro, which we verified positive via the Gemini app's SynthID oracle); Google reported over 10 billion items watermarked by December 2025. It carries a **multi-bit payload** — the research paper's SynthID-O variant encodes 136-bit payloads in 512x512 images ([arxiv 2510.09263](https://arxiv.org/abs/2510.09263)). The payload is believed to encode a user / session identifier. If the original watermarked file ever passed through a system controlled by the prompt originator (a saved Gemini account history, a screenshot uploaded to a Google product, a backup), Google retains the ability to link that original to the generating account. Stripping the watermark from a copy you possess does not erase Google's server-side record.
 
 Use cases where the threat model fits:
 - You generated the image yourself, want to publish it as your own work, and accept the consequences if Google ever publishes their detector logs.
 - You are running a security / robustness evaluation.
-- You are preserving art or historical record against false-positive "AI-generated" labels.
+- A real photo of yours was lightly AI-edited (a retouch in Gemini or ChatGPT, say) and now carries a SynthID or C2PA label that overstates how AI-generated it is, and you want to clear that label from your own copy.
 
 Use cases where the threat model **does not** fit:
 - Generating an image, expecting that removing the watermark anonymises you to Google. It doesn't.
