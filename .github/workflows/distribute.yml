@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the tap
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: wiltodelta/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
