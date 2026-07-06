@@ -14,14 +14,17 @@ DOUBAO_SAMPLE = Path(__file__).resolve().parents[1] / "data" / "samples" / "doub
 
 class TestCatalog:
     def test_keys(self):
-        assert reg.mark_keys() == ["gemini", "doubao", "jimeng", "samsung"]
+        assert reg.mark_keys() == ["gemini", "doubao", "jimeng", "samsung", "jimeng_pill"]
 
     def test_all_in_auto(self):
         assert all(m.in_auto for m in reg.known_marks())
 
-    def test_recovery_is_reverse_alpha(self):
-        # Every catalogued mark is removed by exact reverse-alpha (no inpaint).
-        assert all(m.recovery == "reverse-alpha" for m in reg.known_marks())
+    def test_recovery(self):
+        # Capture marks recover by reverse-alpha; the capture-less pill is inpaint-only.
+        by_key = {m.key: m for m in reg.known_marks()}
+        assert all(by_key[k].recovery == "reverse-alpha" for k in ("gemini", "doubao", "jimeng", "samsung"))
+        assert by_key["jimeng_pill"].recovery == "inpaint"
+        assert by_key["jimeng_pill"].has_capture is False
 
     def test_locations(self):
         by_key = {m.key: m for m in reg.known_marks()}
@@ -29,6 +32,7 @@ class TestCatalog:
         assert by_key["doubao"].location == "bottom-right"
         assert by_key["jimeng"].location == "bottom-right"
         assert by_key["samsung"].location == "bottom-left"
+        assert by_key["jimeng_pill"].location == "top-left"
 
     def test_get_mark_unknown_raises(self):
         with pytest.raises(KeyError):
@@ -39,7 +43,7 @@ class TestScan:
     def test_detect_marks_scans_all(self):
         img = np.zeros((256, 256, 3), np.uint8)
         keys = {d.key for d in reg.detect_marks(img)}
-        assert keys == {"gemini", "doubao", "jimeng", "samsung"}
+        assert keys == {"gemini", "doubao", "jimeng", "samsung", "jimeng_pill"}
 
     def test_blank_image_no_auto_mark(self):
         assert reg.best_auto_mark(np.zeros((256, 256, 3), np.uint8)) is None

@@ -1,6 +1,6 @@
 [project]
 name = "remove-ai-watermarks"
-version = "0.12.1"
+version = "0.13.0"
 description = "AI watermark remover: strip visible and invisible AI watermarks (Gemini / Nano Banana sparkle, SynthID) and provenance metadata (C2PA, EXIF) from images"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -112,6 +112,15 @@ lama = [
     "onnxruntime>=1.16.0",
     "huggingface-hub>=0.20.0",
 ]
+# Lightweight inpaint backend -- MI-GAN via onnxruntime (andraniksargsyan/migan,
+# MIT). CPU, no torch. Model (~28 MB) downloaded on first use and cached by
+# huggingface_hub; never bundled. ~700-950 MB peak RAM / ~0.19 s/call -- the
+# droplet-friendly tier (vs big-LaMa's ~4.7 GB) and the preferred inpaint backend
+# for the visible-mark fallback when installed. Same runtime as `lama`.
+migan = [
+    "onnxruntime>=1.16.0",
+    "huggingface-hub>=0.20.0",
+]
 # Optional pre-diffusion super-resolution for small inputs (Real-ESRGAN). Loaded via
 # spandrel (MIT) -- a pure model-loader with NO basicsr dependency (it pulls only
 # torch / torchvision / safetensors / numpy / einops).
@@ -136,7 +145,7 @@ dev = [
     "uv-outdated>=0.1.0; python_version >= '3.12'",
     "uv-secure>=0.12.0; python_version >= '3.12'",
 ]
-all = ["remove-ai-watermarks[gpu,detect,trustmark,lama,dev]"]
+all = ["remove-ai-watermarks[gpu,detect,trustmark,lama,migan,dev]"]
 
 # PyTorch Intel-GPU (XPU) wheel index. ``explicit = true`` keeps it inert for
 # the default CPU/CUDA install: uv consults it only when a torch install

@@ -293,6 +293,18 @@ _force_option = click.option(
 )
 
 
+_visible_method_option = click.option(
+    "--method",
+    "removal_method",
+    type=click.Choice(["auto", "reverse-alpha", "inpaint"]),
+    default="auto",
+    help="Visible-mark removal method. auto: reverse-alpha for capture marks (exact "
+    "pixels, lighter), inpaint for the capture-less pill. reverse-alpha recovers "
+    "pixels from a captured alpha map; inpaint erases the footprint (MI-GAN with the "
+    "'migan' extra, else cv2).",
+)
+
+
 def _resolve_auto_polish(auto: bool, adaptive_polish: bool) -> bool:
     """Warn on the retired ``--auto`` flag, returning ``adaptive_polish`` unchanged.
 
@@ -327,9 +339,23 @@ def _warn_if_esrgan_unavailable(upscaler: str) -> None:
         console.print("  Note: --upscaler esrgan needs the 'esrgan' extra; falling back to Lanczos.")
 
 
+def _aigc_metadata_present(path: Path) -> bool:
+    """True when the file carries a China-AIGC (TC260) metadata label. Used to gate
+    the weak-detector 'AI生成' pill: metadata confirms Jimeng-class provenance. NB
+    this is only ONE of two confirmations -- ``remove_auto_marks`` also accepts the
+    bottom-right wordmark, so a metadata-STRIPPED upload can still be handled."""
+    with contextlib.suppress(Exception):
+        from remove_ai_watermarks import metadata
+
+        return bool(metadata.aigc_label(path))
+    return False
+
+
 def _remove_visible_auto(
     image: NDArray[Any],
     *,
+    source_path: Path | None = None,
+    removal_method: str = "auto",
     inpaint: bool = True,
     inpaint_method: str = "ns",
     inpaint_strength: float = 0.85,
@@ -340,19 +366,26 @@ def _remove_visible_auto(
     standalone ``visible`` command uses, so EVERY registered mark is handled (the
     Gemini sparkle AND the Doubao/Jimeng/Samsung text marks), not just the sparkle.
     Returns ``(result, label-or-None)``; when no ``in_auto`` mark fires the image is
-    returned unchanged with ``None``. ``inpaint*`` tune the Gemini edge-residual
-    cleanup only (the text engines ignore them).
+    returned unchanged with ``None``. ``removal_method`` selects reverse-alpha vs the
+    inpaint fallback (see ``KnownMark.remove``); ``inpaint*`` tune the Gemini
+    edge-residual cleanup only (the text engines ignore them).
     """
     from remove_ai_watermarks import watermark_registry
 
-    best = watermark_registry.best_auto_mark(image)
-    if best is None:
-        return image, None
+    rmethod: watermark_registry.RemovalMethod = removal_method  # type: ignore[assignment]
     method: Literal["telea", "ns"] = "ns" if inpaint_method == "ns" else "telea"
-    result, _ = watermark_registry.get_mark(best.key).remove(
-        image, inpaint_method=method, inpaint=inpaint, inpaint_strength=inpaint_strength, force=False
+    pill_md = _aigc_metadata_present(source_path) if source_path is not None else False
+    result, removed = watermark_registry.remove_auto_marks(
+        image,
+        pill_metadata=pill_md,
+        method=rmethod,
+        inpaint_method=method,
+        inpaint=inpaint,
+        inpaint_strength=inpaint_strength,
     )
-    return result, best.label
+    if not removed:
+        return image, None
+    return result, ", ".join(removed)
 
 
 # Exit code for the standalone ``visible`` command when no visible mark was
@@ -535,8 +568,9 @@ def main(ctx: click.Context, verbose: bool) -> None:
     type=click.Choice(["auto", *watermark_registry.mark_keys()]),
     default="auto",
     help="Which known visible mark to target (auto picks the strongest detected). "
-    "All marks are removed by exact reverse-alpha against a captured alpha map.",
+    "Removal method is chosen by --method (default auto).",
 )
+@_visible_method_option
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
 @click.pass_context
 def cmd_visible(
@@ -548,14 +582,17 @@ def cmd_visible(
     inpaint_strength: float,
     detect: bool,
     mark: str,
+    removal_method: str,
     strip_metadata: bool,
 ) -> None:
     """Remove a known visible AI watermark from an image.
 
     Finds a known mark in its usual place (Gemini sparkle / Doubao text) via the
-    watermark registry and removes it by exact reverse-alpha against a captured
-    alpha map -- recovering the true pixels, not an inpaint guess. ``--mark auto``
-    picks the strongest detected mark. For arbitrary logos/objects, use ``erase``.
+    watermark registry and removes it. Default ``--method auto`` recovers the true
+    pixels by exact reverse-alpha for the capture marks, and inpaints only the
+    capture-less "AI生成" pill (MI-GAN with the ``migan`` extra, else cv2).
+    ``--mark auto`` picks the strongest detected mark. For arbitrary logos/objects,
+    use ``erase``.
     """
     from remove_ai_watermarks import watermark_registry as registry
 
@@ -574,41 +611,52 @@ def cmd_visible(
     h, w = image.shape[:2]
     console.print(f"  Input:  {source.name}  ({w}x{h})")
 
-    # Resolve the target mark from the known-watermark registry. ``auto`` scans
-    # every in-auto mark in its usual place and picks the strongest; an explicit
-    # ``--mark <key>`` targets that one (the user asserts its presence).
-    if mark == "auto":
-        best = registry.best_auto_mark(image)
-        if best is None:
-            console.print("  No known visible mark detected (gemini / doubao / jimeng / samsung).")
-            if detect:
-                _no_visible_mark_exit(source)
-            target = "gemini"  # forced (no-detect): fall back to the default mark
-        else:
-            target = best.key
-            console.print(f"  Mark auto: {best.label}  ({best.location}, conf {best.confidence:.2f})")
-    else:
-        target = mark
-
-    chosen = registry.get_mark(target)
-    det = chosen.detect(image)
-    if detect and not det.detected:
-        console.print(f"  {chosen.label} not detected  (conf {det.confidence:.2f}). Use --no-detect to force.")
-        _no_visible_mark_exit(source)
-    if det.detected:
-        console.print(f"  {chosen.label} detected  ({chosen.location}, conf {det.confidence:.2f})")
-
     method: Literal["telea", "ns"] = "ns" if inpaint_method == "ns" else "telea"
-    t0 = time.monotonic()
-    with console.status(f"Removing {chosen.label}... ({chosen.recovery})"):
-        result, _ = chosen.remove(
-            image,
-            inpaint_method=method,
-            inpaint=inpaint,
-            inpaint_strength=inpaint_strength,
-            force=not detect,
-        )
-    elapsed = time.monotonic() - t0
+
+    # ``auto`` removes EVERY detected in_auto mark in one pass (a Jimeng-basic image
+    # carries the top-left pill AND the bottom-right wordmark); an explicit
+    # ``--mark <key>`` targets that one (the user asserts its presence).
+    if mark == "auto" and detect:
+        t0 = time.monotonic()
+        with console.status("Detecting & removing visible marks..."):
+            result, removed = registry.remove_auto_marks(
+                image,
+                pill_metadata=_aigc_metadata_present(source),
+                method=removal_method,  # type: ignore[arg-type]
+                inpaint_method=method,
+                inpaint=inpaint,
+                inpaint_strength=inpaint_strength,
+            )
+        elapsed = time.monotonic() - t0
+        if not removed:
+            console.print("  No known visible mark detected (gemini / doubao / jimeng / jimeng-pill / samsung).")
+            _no_visible_mark_exit(source)
+        console.print(f"  Removed: {', '.join(removed)}")
+    else:
+        target = "gemini" if mark == "auto" else mark  # --no-detect auto: gemini fallback
+        chosen = registry.get_mark(target)
+        det = chosen.detect(image)
+        if detect and not det.detected:
+            console.print(f"  {chosen.label} not detected  (conf {det.confidence:.2f}). Use --no-detect to force.")
+            _no_visible_mark_exit(source)
+        if det.detected:
+            console.print(f"  {chosen.label} detected  ({chosen.location}, conf {det.confidence:.2f})")
+        resolved = registry.resolve_removal_method(removal_method, chosen.has_capture)  # type: ignore[arg-type]
+        if resolved == "inpaint" and not registry.inpaint_model_available():
+            console.print(
+                "  Note: --method inpaint using cv2 (install the 'migan' extra for a lightweight ONNX model)."
+            )
+        t0 = time.monotonic()
+        with console.status(f"Removing {chosen.label}... ({resolved})"):
+            result, _ = chosen.remove(
+                image,
+                method=removal_method,  # type: ignore[arg-type]
+                inpaint_method=method,
+                inpaint=inpaint,
+                inpaint_strength=inpaint_strength,
+                force=not detect,
+            )
+        elapsed = time.monotonic() - t0
 
     # Save (rejoins the original alpha plane unchanged)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -653,9 +701,10 @@ def _parse_region(spec: str) -> tuple[int, int, int, int]:
 )
 @click.option(
     "--backend",
-    type=click.Choice(["cv2", "lama"]),
+    type=click.Choice(["cv2", "migan", "lama"]),
     default="cv2",
-    help="Inpaint backend. cv2: instant, no deps. lama: onnxruntime big-LaMa, better quality (extra 'lama').",
+    help="Inpaint backend. cv2: instant, no deps. migan: light ONNX MI-GAN, ~1 GB RAM, "
+    "near-LaMa quality (extra 'migan'). lama: big-LaMa, best quality but ~4.7 GB RAM (extra 'lama').",
 )
 @click.option("--inpaint-method", type=click.Choice(["telea", "ns"]), default="telea", help="cv2 inpaint method.")
 @click.option("--dilate", type=int, default=3, help="Grow the box by this many px before inpainting.")
@@ -666,7 +715,7 @@ def cmd_erase(
     source: Path,
     regions: tuple[str, ...],
     output: Path | None,
-    backend: Literal["cv2", "lama"],
+    backend: Literal["cv2", "migan", "lama"],
     inpaint_method: str,
     dilate: int,
     strip_metadata: bool,
@@ -999,6 +1048,7 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
 @click.option(
     "--inpaint-method", type=click.Choice(["ns", "telea", "gaussian"]), default="ns", help="Inpainting method."
 )
+@_visible_method_option
 @_strength_option
 @click.option("--steps", type=int, default=50, help="Number of denoising steps for invisible removal.")
 @_pipeline_option
@@ -1036,6 +1086,7 @@ def cmd_all(
     output: Path | None,
     inpaint: bool,
     inpaint_method: Literal["ns", "telea", "gaussian"],
+    removal_method: str,
     strength: float | None,
     steps: int,
     pipeline: str,
@@ -1105,7 +1156,9 @@ def cmd_all(
         console.print(f"    Input: {source.name}  ({w}x{h})")
 
         with console.status("Removing visible watermark..."):
-            result, removed_label = _remove_visible_auto(image, inpaint=inpaint, inpaint_method=inpaint_method)
+            result, removed_label = _remove_visible_auto(
+                image, source_path=source, removal_method=removal_method, inpaint=inpaint, inpaint_method=inpaint_method
+            )
             if removed_label is not None:
                 console.print(f"    Visible watermark removed ({removed_label})")
             else:
@@ -1244,6 +1297,7 @@ def _process_batch_image(
     seed: int | None,
     hf_token: str | None,
     humanize: float,
+    removal_method: str = "auto",
     unsharp: float = 0.0,
     max_resolution: int = 0,
     min_resolution: int = 1024,
@@ -1276,7 +1330,7 @@ def _process_batch_image(
         if image is None:
             raise ValueError("Failed to read image")
 
-        result, _ = _remove_visible_auto(image, inpaint=inpaint)
+        result, _ = _remove_visible_auto(image, source_path=img_path, removal_method=removal_method, inpaint=inpaint)
 
         _write_bgr_with_alpha(out_path, result, alpha)
         saved_alpha = alpha
@@ -1361,6 +1415,7 @@ def _process_batch_image(
 @_strength_option
 @click.option("--steps", type=int, default=50, help="Number of denoising steps (invisible mode).")
 @click.option("--inpaint/--no-inpaint", default=True, help="Apply inpainting (visible mode).")
+@_visible_method_option
 @click.option(
     "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0-6.0)."
 )
@@ -1402,6 +1457,7 @@ def cmd_batch(
     seed: int | None,
     hf_token: str | None,
     inpaint: bool,
+    removal_method: str,
     humanize: float,
     unsharp: float,
     max_resolution: int,
@@ -1468,6 +1524,7 @@ def cmd_batch(
                     seed=seed,
                     hf_token=hf_token,
                     humanize=humanize,
+                    removal_method=removal_method,
                     unsharp=unsharp,
                     max_resolution=max_resolution,
                     min_resolution=min_resolution,

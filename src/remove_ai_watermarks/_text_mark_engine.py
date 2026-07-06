@@ -504,3 +504,44 @@ class TextMarkEngine:
             rm = cv2.dilate(rm, kernel)
             best_out = cv2.inpaint(best_out, rm, c.residual_inpaint_radius, cv2.INPAINT_NS)
         return best_out
+
+    # ── Inpaint footprint (for the inpaint-fallback removal path) ────────
+
+    def footprint_mask(
+        self, image: NDArray[Any], *, force: bool = False, dilate: int | None = None
+    ) -> NDArray[Any] | None:
+        """Full-frame uint8 mask (255 = mark) of the mark footprint, for the
+        inpaint-fallback removal path (LaMa / cv2), or None if no placement fits.
+
+        ``force`` is accepted for a uniform engine signature (the caller passes it to
+        every engine) but ignored here -- the text-mark footprint is always the
+        geometry-placed captured silhouette, present with or without a detection.
+
+        Uses the NCC-ALIGNED captured silhouette, NOT the per-image
+        :meth:`extract_mask` signature: the signature under-segments the glyphs, so
+        inpainting it leaves a residual ghost (corpus-validated 2026-07 -- Doubao
+        left a "三包" remnant). The mask is dilated to absorb alpha-alignment slop
+        (a scale/position mismatch at low detect confidence otherwise leaves a thin
+        residual ring); ``dilate`` defaults to a mark-relative margin.
+
+        The caller gates on detection -- this returns the geometric footprint
+        regardless, so a clean corner would be masked too.
+        """
+        image = image_io.to_bgr(image)
+        h, w = image.shape[:2]
+        if h < 32 or w < 64:
+            return None
+        placed = self._aligned_alpha_map(image) or self._fixed_alpha_map(image)
+        if placed is None:
+            return None
+        block, (ax, ay, gw, gh) = placed
+        sil = (block > self.config.residual_alpha_floor).astype(np.uint8) * 255
+        if int((sil > 0).sum()) == 0:
+            return None
+        mask = np.zeros((h, w), np.uint8)
+        ch, cw = min(gh, h - ay), min(gw, w - ax)
+        mask[ay : ay + ch, ax : ax + cw] = sil[:ch, :cw]
+        d = dilate if dilate is not None else max(9, int(0.05 * gw))
+        if d > 0:
+            mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * d + 1, 2 * d + 1)))
+        return mask

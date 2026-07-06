@@ -9,10 +9,15 @@ deterministic per-generator engines (Gemini sparkle, Doubao) do not cover.
 Backends:
   - ``cv2`` (default): ``cv2.inpaint`` (Telea / Navier-Stokes). Instant, no extra
     dependencies, lower quality on large or textured regions.
+  - ``migan`` (optional, extra ``migan``): MI-GAN via onnxruntime
+    (``andraniksargsyan/migan``, MIT). CPU, ~28 MB model, ~700-950 MB peak RAM,
+    ~0.19 s/call -- the droplet-friendly tier: near-big-LaMa quality on small
+    marks at ~5x less RAM and ~8x faster. Model downloaded on first use.
   - ``lama`` (optional, extra ``lama``): big-LaMa via onnxruntime
-    (``Carve/LaMa-ONNX``, Apache-2.0). CPU, resolution-robust, much better on
-    texture. The model (~200 MB) is downloaded on first use and cached by
-    huggingface_hub; it is never bundled in this repo.
+    (``Carve/LaMa-ONNX``, Apache-2.0). CPU, resolution-robust, best quality on
+    texture but ~200 MB model and ~4.7 GB peak RAM (too heavy for a small host).
+    The model is downloaded on first use and cached by huggingface_hub; it is
+    never bundled in this repo.
 """
 
 # cv2/numpy boundary: cv2 ships no usable type info, so strict pyright cannot know
@@ -32,13 +37,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-Backend = Literal["cv2", "lama"]
+Backend = Literal["cv2", "lama", "migan"]
 
 _LAMA_REPO = "Carve/LaMa-ONNX"
 _LAMA_FILE = "lama_fp32.onnx"
 
-# Cached onnxruntime session (loading is expensive; reuse across calls).
+_MIGAN_REPO = "andraniksargsyan/migan"
+_MIGAN_FILE = "migan.onnx"
+
+# Cached onnxruntime sessions (loading is expensive; reuse across calls).
 _lama_session: object | None = None
+_migan_session: object | None = None
 
 
 def boxes_to_mask(
@@ -167,6 +176,72 @@ def erase_lama(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     return result
 
 
+def migan_available() -> bool:
+    """True when the optional MI-GAN backend can run (onnxruntime installed)."""
+    from .optional_deps import module_available
+
+    return module_available("onnxruntime")
+
+
+def _get_migan_session() -> object:
+    """Load (once) the MI-GAN ONNX session, downloading the model on first use."""
+    global _migan_session
+    if _migan_session is not None:
+        return _migan_session
+
+    import onnxruntime as ort
+    from huggingface_hub import hf_hub_download
+
+    model_path = hf_hub_download(repo_id=_MIGAN_REPO, filename=_MIGAN_FILE)
+    logger.info("Loading MI-GAN ONNX model: %s", model_path)
+    _migan_session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    return _migan_session
+
+
+def erase_migan(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
+    """Inpaint ``mask`` (255 = erase) with MI-GAN via onnxruntime (CPU).
+
+    The MI-GAN ONNX pipeline crops around the mask bbox internally and re-composites,
+    so the full image is fed at native resolution. Only the masked pixels are pasted
+    back, so untouched areas stay pixel-exact.
+
+    Mask polarity: the shipped ``andraniksargsyan/migan`` ONNX expects 0 = hole
+    (inpaint) / 255 = known (keep) -- the INVERSE of this package's 255-erase
+    convention -- so the mask is inverted before feeding the model (corpus-validated
+    2026-07; feeding 255=hole regenerates the whole frame into stripes).
+
+    Like ``erase_lama``, accepts 1-channel (grayscale) and 4-channel (BGRA) input.
+    """
+    if image_bgr.ndim == 2:
+        bgr = erase_migan(cv2.cvtColor(image_bgr, cv2.COLOR_GRAY2BGR), mask)
+        return cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    if image_bgr.ndim == 3 and image_bgr.shape[2] == 4:
+        bgr = erase_migan(np.ascontiguousarray(image_bgr[:, :, :3]), mask)
+        return np.dstack([bgr, image_bgr[:, :, 3]])
+
+    session = _get_migan_session()
+    inp = session.get_inputs()  # type: ignore[attr-defined]
+    img_name, mask_name = inp[0].name, inp[1].name
+    h, w = image_bgr.shape[:2]
+
+    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    img_in = np.transpose(rgb, (2, 0, 1))[None].astype(np.uint8)  # (1,3,H,W)
+    # invert to MI-GAN polarity: 255 where KNOWN (keep), 0 where hole (erase)
+    known = (mask <= 127).astype(np.uint8) * 255
+    mask_in = known[None, None]  # (1,1,H,W)
+
+    out = session.run(None, {img_name: img_in, mask_name: mask_in})[0]  # type: ignore[attr-defined]
+    res = np.transpose(np.asarray(out)[0], (1, 2, 0)).astype(np.uint8)  # (H',W',3) RGB
+    if res.shape[:2] != (h, w):
+        res = cv2.resize(res, (w, h), interpolation=cv2.INTER_LINEAR)
+    out_bgr = cv2.cvtColor(res, cv2.COLOR_RGB2BGR)
+
+    result = image_bgr.copy()
+    hole = mask > 127
+    result[hole] = out_bgr[hole]
+    return result
+
+
 def erase(
     image_bgr: NDArray[Any],
     *,
@@ -191,6 +266,12 @@ def erase(
     if not mask.any():
         return image_bgr.copy()
 
+    if backend == "migan":
+        if not migan_available():
+            raise RuntimeError(
+                "MI-GAN backend requires onnxruntime. Install the extra: pip install 'remove-ai-watermarks[migan]'"
+            )
+        return erase_migan(image_bgr, mask)
     if backend == "lama":
         if not lama_available():
             raise RuntimeError(
