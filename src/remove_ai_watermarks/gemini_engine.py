@@ -603,6 +603,40 @@ class GeminiEngine:
             self._reverse_alpha_blend(result, alpha_map, pos)
         return self._verify_and_repair(result, alpha_map, pos, size)
 
+    def footprint_mask(self, image: NDArray[Any], *, force: bool = False, dilate: int = 13) -> NDArray[Any] | None:
+        """Full-frame uint8 mask (255 = sparkle) of the sparkle footprint, for the
+        inpaint-fallback removal path (LaMa / cv2), or None.
+
+        The footprint is the interpolated captured alpha at the detected scale --
+        the same region reverse-alpha operates on. When ``force`` and nothing is
+        detected, falls back to the default sparkle slot for the image size (the
+        ``--no-detect`` path). The caller gates on the trust-confidence detection.
+        """
+        image = image_io.to_bgr(image)
+        h, w = image.shape[:2]
+        det = self.detect_watermark(image)
+        if det.detected:
+            x, y, scale = det.region[0], det.region[1], det.region[2]
+        elif force:
+            cfg = get_watermark_config(w, h)
+            x, y = cfg.get_position(w, h)
+            scale = cfg.logo_size
+        else:
+            return None
+        alpha = self.get_interpolated_alpha(scale)
+        fp = self._footprint_indices(alpha, (x, y), image.shape)
+        if fp is None:
+            return None
+        aroi, (y1, y2, x1, x2) = fp
+        sil = (aroi > 0.10).astype(np.uint8) * 255
+        if int((sil > 0).sum()) == 0:
+            return None
+        mask = np.zeros((h, w), np.uint8)
+        mask[y1:y2, x1:x2] = sil
+        if dilate > 0:
+            mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate + 1, 2 * dilate + 1)))
+        return mask
+
     def remove_watermark_custom(
         self,
         image: NDArray[Any],
