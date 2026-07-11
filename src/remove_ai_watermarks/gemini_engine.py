@@ -167,6 +167,21 @@ class GeminiEngine:
     # confidence >= 0.65, above the gate).
     _SPARKLE_FP_GRAD = 0.55
 
+    # White-core rescue for the gate above. A real but FAINT sparkle -- a soft white
+    # star on a bright/textured background -- has a high core-ring margin but low
+    # gradient fidelity, the SAME signature the grad gate uses to demote the smooth
+    # colored-corner FP, so faint real sparkles get demoted with it. The separator the
+    # grad gate discards is the CORE COLOR: a real Gemini sparkle core is near-WHITE
+    # (low saturation), while a clean bright corner that shape-matches (sky, sun, a warm
+    # light) is COLORED. So do NOT demote a low-grad match that already clears the trust
+    # confidence (_SPARKLE_KEEP_CONF -- the registry's 0.5 sparkle gate plus a small
+    # margin so the ~0.51 bright-background FPs the grad gate was added for stay demoted)
+    # AND has a bright (margin) near-neutral core (_core_saturation <= _SPARKLE_WHITE_SAT).
+    # Corpus-measured on metadata-stripped faint sparkles: recovers ~14/20 the low-grad
+    # demotion would drop, at ~0.8% clean false-fire vs the ~0.55% baseline.
+    _SPARKLE_KEEP_CONF = 0.52
+    _SPARKLE_WHITE_SAT = 0.20
+
     # Corner promotion (issue #36): the size weight that suppresses tiny-patch
     # false positives also buries a small, near-perfect sparkle when a larger,
     # mediocre match sits elsewhere (e.g. a bright collar in a portrait). A small
@@ -381,18 +396,26 @@ class GeminiEngine:
         # FP (low margin) AND the bright-background smooth-blob FP (high margin but low
         # gradient), which the margin check alone misses. See _SPARKLE_FP_GRAD.
         if confidence < self._SPARKLE_FP_CONF and not trust_provenance:
-            margin = self._core_ring_margin(image, self.get_interpolated_alpha(best_scale), (pos_x, pos_y))
+            alpha = self.get_interpolated_alpha(best_scale)
+            pos = (pos_x, pos_y)
+            margin = self._core_ring_margin(image, alpha, pos)
             low_margin = margin is not None and margin < self._SPARKLE_FP_MARGIN
             low_grad = grad_score < self._SPARKLE_FP_GRAD
             if low_margin or low_grad:
-                logger.debug(
-                    "Sparkle FP gate: conf=%.3f, core-ring margin=%s, grad=%.3f < %.2f; demoting.",
-                    confidence,
-                    f"{margin:.1f}" if margin is not None else "n/a",
-                    grad_score,
-                    self._SPARKLE_FP_GRAD,
-                )
-                confidence = min(confidence, 0.30)
+                # White-core rescue: a real faint sparkle clears the trust confidence,
+                # has a bright core (not low_margin), and a near-WHITE core -- unlike the
+                # colored-corner FP the low-grad demotion targets. See _SPARKLE_WHITE_SAT.
+                core_sat = self._core_saturation(image, alpha, pos)
+                white_core = not low_margin and core_sat is not None and core_sat <= self._SPARKLE_WHITE_SAT
+                if not (confidence >= self._SPARKLE_KEEP_CONF and white_core):
+                    logger.debug(
+                        "Sparkle FP gate: conf=%.3f, margin=%s, grad=%.3f, core_sat=%s; demoting.",
+                        confidence,
+                        f"{margin:.1f}" if margin is not None else "n/a",
+                        grad_score,
+                        f"{core_sat:.2f}" if core_sat is not None else "n/a",
+                    )
+                    confidence = min(confidence, 0.30)
 
         result.confidence = float(max(0.0, min(1.0, confidence)))
         result.detected = result.confidence >= 0.35
@@ -627,6 +650,35 @@ class GeminiEngine:
         """
         cb = self._core_and_bg(image, alpha_map, position)
         return None if cb is None else cb[0] - cb[1]
+
+    def _core_saturation(
+        self,
+        image: NDArray[Any],
+        alpha_map: NDArray[Any],
+        position: tuple[int, int],
+    ) -> float | None:
+        """Median color saturation of the sparkle core (0 = white/neutral, higher =
+        colored). A real Gemini sparkle is a white star, so its core is near-neutral;
+        a clean bright corner that shape-matches (sky, sun, a warm light) is colored,
+        so a high core saturation flags the false positive the brightness/gradient
+        gates miss. Samples the same high-alpha core pixels as :meth:`_core_and_bg`.
+        None when the footprint cannot be placed or the core is empty.
+        """
+        placed = self._footprint_indices(alpha_map, position, image.shape)
+        if placed is None:
+            return None
+        alpha_roi, (y1, y2, x1, x2) = placed
+        a_cap = float(alpha_roi.max())
+        if a_cap < 0.2:
+            return None
+        core = alpha_roi >= a_cap * self._CORE_ALPHA_FRAC
+        box = image[y1:y2, x1:x2]
+        if box.shape[:2] != core.shape or not bool(core.any()):
+            return None
+        px = box[core].astype(np.float32)  # (N, 3) BGR core pixels
+        hi = px.max(axis=1)
+        lo = px.min(axis=1)
+        return float(np.median((hi - lo) / (hi + 1.0)))
 
 
 def detect_sparkle_confidence(image_path: Path, *, image: NDArray[Any] | None = None) -> float | None:
