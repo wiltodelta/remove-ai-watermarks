@@ -751,8 +751,11 @@ def _is_aigc_exif_value(raw: object) -> bool:
     ``UserComment`` / ``ImageDescription`` by China-served generators (Doubao's
     producer schema AND Tencent Cloud's service-provider schema, both keyed under
     ``_TC260_FIELDS``). Gated on both the ``AIGC`` marker and a TC260 field so a
-    coincidental token cannot false-drop a genuine caption/comment.
+    coincidental token cannot false-drop a genuine caption/comment. Accepts a ``str``
+    too (a PNG ``tEXt``/``iTXt`` value), not only EXIF bytes.
     """
+    if isinstance(raw, str):
+        raw = raw.encode("latin-1", "ignore")
     if not isinstance(raw, (bytes, bytearray)):
         return False
     if b"AIGC" not in raw:
@@ -951,25 +954,37 @@ def _jpeg_app_carries_ai(marker: int, payload: bytes) -> bool:
     APP11, an AI XMP packet in APP1, an IPTC "Made with AI" record in APP13). EXIF
     (APP1 ``Exif``) is NOT dropped here -- it is scrubbed tag-by-tag via piexif so
     genuine camera EXIF survives."""
-    if marker == 0xEB:  # APP11: C2PA / JUMBF manifest
-        return c2pa_marker_in(payload) or b"jumb" in payload[:256].lower()
-    if marker == 0xE1 and payload.startswith(b"http://ns.adobe.com/xap/"):  # APP1 XMP
-        return (
+    if not (0xE0 <= marker <= 0xEF):  # only APPn segments carry these
+        return False
+    # C2PA / JUMBF manifest (APP11).
+    if marker == 0xEB and (c2pa_marker_in(payload) or b"jumb" in payload[:256].lower()):
+        return True
+    # AI XMP packet (APP1): C2PA, a China-AIGC token, or an IPTC digitalSourceType /
+    # 2025.1 AI-disclosure marker (which live in XMP, not only the APP13 IIM record).
+    if (
+        marker == 0xE1
+        and payload.startswith(b"http://ns.adobe.com/xap/")
+        and (
             c2pa_marker_in(payload)
             or any(m in payload for m in AIGC_MARKERS)
-            or any(m in payload for m in IPTC_AI_MARKERS)  # digitalSourceType in XMP, not only APP13
-            or any(m in payload for m in IPTC_AI_FIELD_MARKERS)  # IPTC 2025.1 AI-disclosure fields
+            or any(m in payload for m in IPTC_AI_MARKERS)
+            or any(m in payload for m in IPTC_AI_FIELD_MARKERS)
         )
-    if marker == 0xED:  # APP13: Photoshop / IPTC
-        return any(m in payload for m in IPTC_AI_MARKERS) or any(m in payload for m in IPTC_AI_FIELD_MARKERS)
-    # A bare / wrapped China TC260 AIGC block (``AIGC{...}`` or ``{"AIGC":{...}}``) that
-    # some China-served generators glue into a non-standard APP segment near the JFIF
-    # header. ``aigc_label`` detects it anywhere in the scan head, so removal must drop
-    # the carrying segment too (detection<->removal parity). Skip APP1-EXIF (0xE1
-    # ``Exif``): its camera tags are scrubbed tag-by-tag via piexif, and the AIGC-in-
-    # UserComment/ImageDescription placement is handled there, so it must not be dropped
-    # wholesale here.
-    if 0xE0 <= marker <= 0xEF and not (marker == 0xE1 and payload.startswith(b"Exif")):
+    ):
+        return True
+    # IPTC "Made with AI" record (APP13).
+    if marker == 0xED and (
+        any(m in payload for m in IPTC_AI_MARKERS) or any(m in payload for m in IPTC_AI_FIELD_MARKERS)
+    ):
+        return True
+    # A bare / wrapped China TC260 AIGC block (``AIGC{...}`` or ``{"AIGC":{...}}``) glued
+    # into ANY APP segment -- some China gens use APP11, APP1, or a near-JFIF APPn. This
+    # runs for every APP marker the specific checks above did NOT already claim, so a bare
+    # AIGC in APP11 (not a C2PA manifest) is no longer missed by the 0xEB C2PA-only check.
+    # ``aigc_label`` detects it anywhere, so removal must drop the carrying segment too
+    # (detection<->removal parity). Skip APP1-EXIF (0xE1 ``Exif``): its camera tags are
+    # scrubbed tag-by-tag via piexif, not dropped wholesale.
+    if not (marker == 0xE1 and payload.startswith(b"Exif")):
         return _is_aigc_exif_value(payload)
     return False
 
@@ -1171,10 +1186,12 @@ def remove_ai_metadata(
                 continue
             if _is_ai_key(key):
                 continue
-            # Drop a generic text chunk whose VALUE names an AI generator (NovelAI
-            # writes its stamp into Title/Source under non-AI keys) -- keeps removal
-            # in parity with exif_generator's value-based detection.
-            if isinstance(value, str) and _is_ai_value(value):
+            # Drop a text chunk whose VALUE names an AI generator (NovelAI writes its
+            # stamp into Title/Source under non-AI keys) OR carries a China TC260 AIGC
+            # block (some China gens put `{"AIGC":{...}}` in a STANDARD chunk like
+            # Description, which _is_ai_key would keep) -- keeps removal in parity with
+            # exif_generator / aigc_label's value-based detection.
+            if isinstance(value, str) and (_is_ai_value(value) or _is_aigc_exif_value(value)):
                 continue
             if key == "exif":
                 with contextlib.suppress(Exception):

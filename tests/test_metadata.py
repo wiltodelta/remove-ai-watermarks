@@ -1067,16 +1067,19 @@ class TestAIGCLabel:
         assert aigc_label(out) is None
         assert not has_ai_metadata(out)
 
-    def _aigc_bare_jpeg(self, tmp_path: Path, producer: str = "00119144030008867405X210002") -> Path:
+    def _aigc_bare_jpeg(
+        self, tmp_path: Path, producer: str = "00119144030008867405X210002", marker: bytes = b"\xff\xe9"
+    ) -> Path:
         """Some China-served generators glue the TC260 label straight to its JSON
         as a bare ``AIGC{...}`` blob inside a JPEG APP segment (no ``"AIGC":``
         key wrapper, no PNG chunk, no namespaced XMP) -- seen near the JFIF
-        header on real 2026-06 downloads."""
+        header on real 2026-06 downloads. ``marker`` selects the APP segment
+        (default APP9; the real corpus also uses APP11)."""
         p = tmp_path / "aigc_bare.jpg"
         Image.new("RGB", (32, 32)).save(p)
         raw = p.read_bytes()
         blob = b'AIGC{"Label":"1","ContentProducer":"' + producer.encode() + b'","ProduceID":"8F995586"}'
-        segment = b"\xff\xe9" + (len(blob) + 2).to_bytes(2, "big") + blob  # APP9
+        segment = marker + (len(blob) + 2).to_bytes(2, "big") + blob
         p.write_bytes(raw[:2] + segment + raw[2:])  # splice after SOI
         return p
 
@@ -1102,6 +1105,38 @@ class TestAIGCLabel:
         remove_ai_metadata(self._aigc_bare_jpeg(tmp_path), out)
         assert aigc_label(out) is None
         assert not has_ai_metadata(out)
+
+    def test_remove_strips_bare_aigc_in_app11(self, tmp_path: Path):
+        """Regression (real corpus, 19/27 survivors): the bare ``AIGC{...}`` blob lives
+        in APP11 (0xEB) on many China gens. That marker's branch in _jpeg_app_carries_ai
+        only checked for a C2PA/JUMBF manifest and RETURNED, so the AIGC blob slipped past
+        the generic check -> survived the strip. The specific checks must fall through to
+        the generic AIGC check."""
+        from remove_ai_watermarks.metadata import aigc_label, remove_ai_metadata
+
+        src = self._aigc_bare_jpeg(tmp_path, marker=b"\xff\xeb")  # APP11
+        assert aigc_label(src) is not None
+        out = tmp_path / "clean.jpg"
+        remove_ai_metadata(src, out)
+        assert aigc_label(out) is None
+        assert not has_ai_metadata(out)
+
+    def test_remove_strips_aigc_in_png_text_chunk(self, tmp_path: Path):
+        """Regression (real corpus, 2 survivors): the TC260 ``{"AIGC":{...}}`` block in a
+        STANDARD PNG text chunk (Description) -- _is_ai_key keeps that key, so removal
+        must also drop it on the VALUE carrying an AIGC block."""
+        from PIL.PngImagePlugin import PngInfo
+
+        from remove_ai_watermarks.metadata import aigc_label, remove_ai_metadata
+
+        p = tmp_path / "aigc_desc.png"
+        info = PngInfo()
+        info.add_text("Description", '{"AIGC":{"Label":"1","ContentProducer":"00119144030008867405X210002"}}')
+        Image.new("RGB", (32, 32)).save(p, pnginfo=info)
+        assert aigc_label(p) is not None
+        out = tmp_path / "clean.png"
+        remove_ai_metadata(p, out)
+        assert aigc_label(out) is None
 
     def test_bare_aigc_without_tc260_field_ignored(self, tmp_path: Path):
         """A bare ``AIGC{...}`` blob with no TC260 field must not false-positive."""
