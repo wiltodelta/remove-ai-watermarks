@@ -1,6 +1,6 @@
 [project]
 name = "remove-ai-watermarks"
-version = "0.15.1"
+version = "0.15.2"
 description = "AI watermark remover: strip visible and invisible AI watermarks (Gemini / Nano Banana sparkle, SynthID) and provenance metadata (C2PA, EXIF) from images"
 readme = "README.md"
 requires-python = ">=3.10"
