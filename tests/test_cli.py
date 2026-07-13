@@ -949,14 +949,21 @@ def test_visible_backend_runtime_error_exits_cleanly(runner, tmp_path, monkeypat
 )
 @pytest.mark.parametrize("cmd", [["metadata", "--remove"], ["visible", "--backend", "cv2"]])
 def test_unreadable_input_exits_cleanly(runner, tmp_path, name, content, cmd):
-    """Regression: a corrupt / empty / non-image file (real prod uploads include
-    truncated files) must produce a clean 'Error: cannot read/process' + exit 1, NOT a
-    raw PIL.UnidentifiedImageError / OSError / ValueError traceback. Found by the runtime
-    mode fuzz across metadata --remove and visible."""
+    """Regression: a corrupt / empty / non-image file (real prod uploads include ~0.2%
+    truncated files) must NEVER leak a raw PIL/OSError/ValueError traceback. `metadata
+    --remove` is fail-safe -- an undecodable file is copied through unchanged (exit 0),
+    a strip that cannot parse the file is a no-op, not a crash; `visible` must decode to
+    remove a mark, so it is a clean error (exit 1). Found by the runtime mode fuzz."""
     bad = tmp_path / name
     bad.write_bytes(content)
     out = tmp_path / "out.png"
     result = runner.invoke(main, [cmd[0], str(bad), "-o", str(out), *cmd[1:]])
-    assert result.exit_code == 1, result.output
-    assert isinstance(result.exception, SystemExit), f"leaked a raw traceback: {result.exception!r}"
-    assert "Error" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit), (
+        f"leaked a raw traceback: {result.exception!r}"
+    )
+    if cmd[0] == "metadata":
+        assert result.exit_code == 0, result.output  # fail-safe copy-through
+        assert out.read_bytes() == content  # input passed through unchanged
+    else:
+        assert result.exit_code == 1, result.output  # cannot remove a mark from unreadable input
+        assert "Error" in result.output

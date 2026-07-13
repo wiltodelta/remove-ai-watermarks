@@ -226,6 +226,27 @@ class TestHasAiMetadata:
         assert np.array_equal(before, after), "pixels changed: the DCT scan was re-encoded"
         assert not has_ai_metadata(out), "IPTC AI marker in XMP survived the strip"
 
+    def test_remove_ai_metadata_failsafe_on_truncated_png(self, tmp_path: Path):
+        """Regression: a truncated / corrupt image must NOT crash remove_ai_metadata (a
+        direct library caller like a web worker would 500 on a partial upload). PIL raises
+        OSError decoding a truncated PNG; the strip must fail SAFE -- copy the input through
+        unchanged and return, mirroring strip_c2pa_boxes. Real prod corpus: ~0.2% of
+        uploads are truncated."""
+        import cv2
+        import numpy as np
+
+        from remove_ai_watermarks.metadata import remove_ai_metadata
+
+        real = tmp_path / "real.png"
+        cv2.imwrite(str(real), np.random.default_rng(0).integers(0, 256, (128, 128, 3), dtype=np.uint8))
+        truncated = tmp_path / "truncated.png"
+        truncated.write_bytes(real.read_bytes()[: real.stat().st_size // 2])  # chop the IDAT stream
+        out = tmp_path / "out.png"
+        # Must not raise; output is the input copied through (undecodable -> nothing to strip).
+        result = remove_ai_metadata(truncated, out)
+        assert result == out
+        assert out.read_bytes() == truncated.read_bytes()
+
 
 class TestC2paMarkerIn:
     """The C2PA presence check requires a JUMBF wrapper or the C2PA uuid box, so

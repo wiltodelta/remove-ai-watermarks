@@ -1120,6 +1120,23 @@ def remove_ai_metadata(
     ):
         return output_path
 
+    # Fail-safe for a truncated / corrupt image: PIL raises OSError when it decodes a
+    # partial file (`img.copy()` / `img.save()` below), which would crash a direct
+    # library caller (a web worker 500s on a partial upload). Probe decodability first;
+    # if it fails, copy the input through unchanged and return -- we cannot strip what we
+    # cannot parse, but we never raise (mirrors strip_c2pa_boxes' fail-safe).
+    try:
+        with Image.open(source_path) as _probe:
+            _probe.load()
+    except Exception:
+        logger.warning("Could not decode %s to strip metadata (truncated/corrupt); copied through", source_path)
+        if output_path != source_path:
+            import shutil
+
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_path, output_path)
+        return output_path
+
     # Read image and filter metadata
     with Image.open(source_path) as img:
         img = img.copy()
