@@ -14,7 +14,7 @@ DOUBAO_SAMPLE = Path(__file__).resolve().parents[1] / "data" / "samples" / "doub
 
 class TestCatalog:
     def test_keys(self):
-        assert reg.mark_keys() == ["gemini", "doubao", "jimeng", "samsung", "jimeng_pill"]
+        assert reg.mark_keys() == ["gemini", "doubao", "jimeng", "qwen", "samsung", "jimeng_pill"]
 
     def test_all_in_auto(self):
         assert all(m.in_auto for m in reg.known_marks())
@@ -43,7 +43,7 @@ class TestScan:
     def test_detect_marks_scans_all(self):
         img = np.zeros((256, 256, 3), np.uint8)
         keys = {d.key for d in reg.detect_marks(img)}
-        assert keys == {"gemini", "doubao", "jimeng", "samsung", "jimeng_pill"}
+        assert keys == {"gemini", "doubao", "jimeng", "qwen", "samsung", "jimeng_pill"}
 
     def test_blank_image_no_auto_mark(self):
         dets = reg.detect_marks(np.zeros((256, 256, 3), np.uint8), include_explicit=False)
@@ -67,7 +67,7 @@ class TestScan:
         forced remove on a zero-size ndarray crashed (cv2.error on an empty Mat). detect
         already guarded this; footprint_mask must too. Covers the text + gemini engines."""
         empty = np.zeros(shape, np.uint8)
-        for key in ("doubao", "jimeng", "samsung", "gemini"):
+        for key in ("doubao", "jimeng", "qwen", "samsung", "gemini"):
             _result, mask = reg.get_mark(key).remove(empty, force=True)
             assert mask is None
 
@@ -319,6 +319,17 @@ class TestArbiter:
         ]
         keys = self._keys(cands, reg.Context(provenance=frozenset({"jimeng"})))
         assert "doubao" in keys
+        assert "jimeng_pill" not in keys
+
+    def test_pill_dropped_on_qwen(self):
+        # A Qwen frame is TC260 too but is not Jimeng-basic either: a confident
+        # bottom-right 千问AI生成 detection suppresses the pill exactly like Doubao's.
+        cands = [
+            self._c("qwen", strict=True, relaxed=True),
+            self._c("jimeng_pill", strict=True, relaxed=True, flat=True),
+        ]
+        keys = self._keys(cands, reg.Context(provenance=frozenset({"jimeng"})))
+        assert "qwen" in keys
         assert "jimeng_pill" not in keys
 
     def test_pill_metadata_arm_gated_on_flatness(self):

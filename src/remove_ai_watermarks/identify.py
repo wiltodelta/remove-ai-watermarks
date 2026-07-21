@@ -446,12 +446,13 @@ def _visible_sparkle(image_path: Path, *, image: NDArray[Any] | None = None) -> 
 _VISIBLE_MARK_PLATFORM = {
     "doubao": "ByteDance Doubao (visible 豆包AI生成 mark detected)",
     "jimeng": "ByteDance Jimeng / Dreamina (visible 即梦AI mark detected)",
+    "qwen": "Alibaba Tongyi Qianwen (visible 千问AI生成 mark detected)",
     "samsung": "Samsung Galaxy AI (visible 'Contenuti generati dall'AI' mark detected)",
 }
 
 
 def _visible_text_marks(image_path: Path, *, image: NDArray[Any] | None = None) -> list[MarkDetection]:
-    """Detected visible Doubao/Jimeng marks (registry ``MarkDetection`` list).
+    """Detected visible text marks (registry ``MarkDetection`` list).
 
     The Gemini sparkle keeps its own ``_visible_sparkle`` path (file-level
     confidence); these two text marks reuse the registry detectors, which apply

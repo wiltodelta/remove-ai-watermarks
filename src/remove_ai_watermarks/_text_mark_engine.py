@@ -131,6 +131,14 @@ class TextMarkConfig:
     # Which image dimension the mark's size and margins scale with. VENDOR-SPECIFIC,
     # measured, not assumed -- see TextMarkEngine.scale_base. "short" = min(h, w), "width" = w.
     scale_basis: Literal["short", "width"] = "width"
+    # Scale rungs ``_tophat_best`` sweeps (the detection comb). PER-MARK: a vendor
+    # whose stamp sizes do not land on the shared 3-rung comb carries its own ladder
+    # (measured for 千问, whose marks sit in two size modes ~1.6x apart -- one fraction
+    # on 3 rungs covers only ~75% of them). Densifying the SHARED ladder for everyone
+    # was measured and rejected (false fire 2.52% -> 3.05%; see docs/verification-plan.md
+    # B2), so the default stays the shipped 3 rungs and a deviation must be calibrated
+    # per mark on real positives, never ported.
+    ladder: tuple[float, ...] = (0.8, 1.0, 1.25)
     rivals: tuple[str, ...] = ()
     rival_margin: float = 0.10
     # Multiplier applied to detect_ncc_threshold when provenance confirms the vendor.
@@ -345,9 +353,10 @@ class TextMarkEngine:
         """Best TM_CCOEFF_NORMED of a soft template against the continuous response, and
         the ROI-local box (x0, y0, x1, y1) where that best match sits.
 
-        Sweeps a small scale band: the nominal glyph size is derived from the mark's
+        Sweeps the mark's scale ladder: the nominal glyph size is derived from the mark's
         geometry, but a vendor re-rasterization shifts it by a few percent and the
-        continuous response is sharp enough that an exact-size template would miss.
+        continuous response is sharp enough that an exact-size template would miss. The
+        ladder is per-mark (``TextMarkConfig.ladder``), defaulting to the shipped 3 rungs.
 
         Detection and the removal mask BOTH read this one method -- the score gates
         detection, the box bounds the fill. Sharing it is deliberate: the standing rule is
@@ -363,7 +372,7 @@ class TextMarkEngine:
         base = self.scale_base(image)
         best_score = 0.0
         best_box: tuple[int, int, int, int] | None = None
-        for scale in (0.8, 1.0, 1.25):
+        for scale in c.ladder:
             gw = max(c.min_gw, int(c.alpha_width_frac * base * scale))
             gh = max(4, int(c.alpha_height_frac * base * scale))
             if gw >= resp.shape[1] or gh >= resp.shape[0]:

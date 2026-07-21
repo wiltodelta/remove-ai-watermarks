@@ -444,7 +444,8 @@ The machinery exists: `visible_recall_sample.py` -> `visible_sheets.py` ->
 - **Precision** re-runs over the existing 779-cell ground truth; benchmark every detector
   change with `--vs <snapshot>`.
 - **Coverage**, the largest known gap: ~6% of sampled images carry an uncovered vendor's
-  mark (千问 / 百度 / 星绘 / 抖音-class) that no registered detector can fire on. This is a
+  mark (百度 / 星绘 / 抖音-class; 千问 was the first of this class and is registered since
+  2026-07-21) that no registered detector can fire on. This is a
   coverage problem, not a tuning problem, and no threshold work will move it.
 
 Three harness rules are load-bearing and must not be relaxed: score a mark only within its
@@ -550,15 +551,17 @@ Per mark, what actually goes away when metadata is stripped:
   detections corpus-wide (12.5% of the 1,256 lost). That headroom exists but the
   precision trade behind it was deliberate.
 - **The largest gap is metadata-independent by nature**: ~6% of sampled images carry an
-  uncovered vendor's mark (千问 / 百度 / 星绘 / 抖音-class) that no registered detector
-  can fire on at all.
+  uncovered vendor's mark (百度 / 星绘 / 抖音-class; 千问 is registered since 2026-07-21)
+  that no registered detector can fire on at all.
 
 ### Where the evidence points
 
-1. **A generic CJK AI-mark detector.** GB 45438-2025 mandates the shared `AI生成` tail,
-   and 千問 is already measured as non-separable from Doubao (AUC ~0.5) precisely because
-   of it. The right shape is to detect the mark CLASS and treat vendor attribution as
-   optional metadata. Closes the 6% coverage gap and is metadata-free by construction.
+1. ~~A generic CJK AI-mark detector~~ **superseded for 千问 (2026-07-21).** The AUC ~0.5
+   non-separability from Doubao was measured at the WRONG size; at the fitted geometry an
+   exact-size 6-glyph template separates 千问 from 400 doubao-marked frames with ZERO
+   cross-fire at the gate, so per-vendor registration won and shipped. The generic
+   class-detector shape may still be right for the long tail of compliant vendors, but
+   its motivating measurement is gone.
 2. **Port the `tophat` front-end to the remaining marks.** It took Doubao from 89% to 92%
    recall at unchanged 99% precision. But the gate is front-end specific and **must be
    recalibrated, never ported**: a naive 0.40 produced 8 false fires instead of 1 and
@@ -725,27 +728,137 @@ would take, so none of it has to be rediscovered.
 
 ### START HERE next session
 
-The verification campaign is finished for everything that does not need new labelled data.
-In priority order, with the reason each sits where it does:
+Item 1 from the previous session is **DONE (2026-07-21)**: 千问 is registered --
+see "The 千问 harvest (2026-07-21)" below for the decision and the numbers. In
+priority order:
 
-1. **Harvest labelled positives for the uncovered vendors** (`千问`, `百度`, and the
-   `星绘`/`抖音` class). This is the only thing that unblocks anything else. Every cheap
-   detector lever was measured to exhaustion this session and all are dead ends, so the
-   remaining questions -- can 千问 be registered, at what gate, does samsung's residual
-   generalize, is jimeng's 71% real -- all reduce to "we have too few examples to tell".
-   Tool: `scripts/cjk_tail_probe.py` (a harvesting aid, NOT a detector: measured 0.407 for
-   a bold 千问 positive against a clean p99 of 0.298). Target 30+ per vendor, then calibrate.
-2. **Decide the exit-code split** (open defect 2). It is a deliberate product call, not
+1. **Decide the exit-code split** (open defect 2). It is a deliberate product call, not
    research: it is breaking for existing wrappers, so it needs a yes/no rather than more
    measurement.
-3. **The two small correctness items** (open defects 3 and 4) -- both are contained, both
+2. **The two small correctness items** (open defects 3 and 4) -- both are contained, both
    have the fix written out below.
+3. **The bonus vendors from the harvest** (元宝 n=50, 可灵 n=30, cat-logo n=19) repeat
+   the 千问 playbook each: font-rendered silhouette, `--fit-geometry`, gate calibration
+   against the contamination-guarded clean arm, crossfire against doubao/jimeng. 可灵
+   additionally stamps a second mark bottom-LEFT, which no current text-mark config
+   expresses (the pill is top-left; a bottom-left CJK mark needs a `corner="bl"` CJK
+   config -- samsung is `bl` but Latin-script and width-based). 星绘/百度 are NOT in the
+   corpus in labelable quantity -- verified, do not hunt them again.
 
 Do NOT restart the sweeps to "check". Their artifacts are on disk and listed under
 "Completed full runs" below; re-running costs hours and answers nothing new. The fast way
 to confirm the whole surface still works after a change is
 `uv run python scripts/real_examples_e2e.py` (~2 min, real corpus examples through the real
 CLI) plus `uv run python scripts/robustness_suite.py` (~3 min, adversarial inputs).
+
+### The 千问 harvest (2026-07-21) -- RESOLVED, registered the same day
+
+**The unlock: the TC260 label is not anonymous.** Its `ContentProducer` field carries the
+producer's Chinese Unified Social Credit Code (`001191110102MACQD9K64010000` -> USCC
+`91110102MACQD9K640`), which names a legal entity. So carriers partition into per-VENDOR
+cohorts from METADATA ALONE, owing nothing to any pixel detector -- which is exactly what
+broke the previous attempt, whose only way to find 千问 frames was to eyeball the misses of
+a detector that cannot see them. A cohort is a LABEL: eyeball one frame, and every frame in
+it is a labelled example. (CLAUDE.md's "the generic TC260 label names no specific vendor" is
+about the label MARKER; the producer FIELD inside the block is a different thing.)
+
+New tools, both lint-clean, both **uncommitted**:
+- `scripts/vendor_cohort_harvest.py` -- full-corpus metadata scan -> cohorts. Joins which
+  detectors fired from the completed `_visible_positives.jsonl` rather than re-running the
+  pixel pass. Artifact `data/spaces/_vendor_cohorts.jsonl` (**4441 carriers, 46 entities**).
+  `--sheets N` writes full-width top/bottom band crops per cohort for eyeballing.
+- `scripts/vendor_mark_calibrate.py` -- scores a cohort against the 432 hand-labelled
+  `present: []` negatives from the 2026-07-18 round, and writes score-SORTED corner crops so
+  mark presence and the gate are read in one visual pass.
+- `src/.../assets/qwen_alpha.png` + `xinghui_alpha.png` regenerated (they were listed in
+  `render_vendor_silhouettes.py` but had never been committed).
+
+**What the corpus actually contains** (this corrects the previous list of targets):
+
+| Cohort USCC | n | quiet | Visible mark | Verdict |
+|---|---|---|---|---|
+| 91440101MA9Y9T4H7A | 117 | 112 | `千问AI生成` bottom-right | **the target, confirmed by eye** |
+| 91340100MAEB4N8H76 | 73 | 70 | mostly none; one `RunningHub AI生成` | metadata-mostly |
+| 913502007378955153 | 113 | 109 | none seen | metadata-only |
+| 91440300708461136T | 50 | 46 | `元宝AI生成` (Tencent Yuanbao) | bonus vendor, bold |
+| 91441900557262083U | 49 | 45 | none seen | metadata-only |
+| 91110108335469089C | 30 | 28 | `可灵AI 3.0` (Kling) + an `AI生成` pill bottom-LEFT | bonus vendor |
+| 91110108562144110X | 19 | 19 | cat-logo + `AI生成`, in **19/19** | bonus vendor, very clean |
+
+**`百度` and the `星绘`/`抖音` class are NOT in this corpus in labelable quantity.** No brand
+token for them appears in any AIGC label field, and every remaining cohort is <= 16 frames.
+Do not spend another session hunting them here; the previous "one confirmed positive each"
+is all there is. The corpus offers 千问 richly plus three DIFFERENT vendors instead.
+
+Also worth knowing: a cohort is a strong grouping key but names the SIGNING ENTITY, not
+always the consumer brand -- the 千问 cohort contains one `造点AI生成` frame. And TC260
+provenance does NOT imply a visible mark, which is why four large cohorts above are
+metadata-only. The cohort is the candidate pool; the eye settles mark presence.
+
+**RESOLVED 2026-07-21: 千问 is registered** (`qwen_engine.py`, strict-only, no rival
+margin). The ladder trade-off that was the open decision is settled in favor of a
+**per-mark ladder**, not the shared one and not a wider shared one -- and the path there
+found two more geometry defects the "single fraction on the shipped ladder" framing had
+missed.
+
+What the final calibration measured, in the order it happened:
+
+1. **The locate box was clipping the mark.** Scoring with the fitted fractions still
+   collapsed the cohort (p50 0.209). Frame-level diff against the wide-ladder fit showed
+   why: the real mark sits ~0.025 of the short side off the right edge, while doubao's
+   inherited box anchors at 0.004 -- the box's left edge cut into the 千 glyph, and an
+   exact-size template scored 0.26 where the fit's wider box scored 0.73. So the locate
+   fractions are as mark-specific as the template size; `--fit-geometry` now records the
+   absolute match rects and fits the box too (margins ~0.021, width 0.231, height 0.074).
+2. **The size distribution is cleanly BIMODAL.** With the box fixed, frac_short clusters
+   at ~0.124 (13 frames) and ~0.203 (38 frames), nothing between -- two stamp sizes,
+   ratio 1.64, just over the shared ladder's 1.5625 span. That is why no single fraction
+   covers the mark.
+3. **A per-mark 2-rung ladder beats both alternatives.** Candidates, both arms scored on
+   the shipped code path: (A) shipped 3-rung @ frac 0.167 -- cohort p50 0.538; (B1)
+   2-rung (0.78, 1.27) @ frac 0.160, one rung centred on each mode -- cohort p50
+   **0.662**; (B2) 4-rung (0.8, 1.0, 1.25, 1.5625) @ frac 0.155 -- p50 0.449, strictly
+   worse (its big-mode rung sits 4.6% off the mode, and the extra rungs cover nothing).
+   B1 also costs one matchTemplate LESS than the shipped 3. `TextMarkConfig.ladder` was
+   added with the default `(0.8, 1.0, 1.25)`, so every other mark's computation is
+   byte-identical (the full 876-test suite plus e2e + robustness confirm); a shared
+   densification was already ruled out by B2's false-fire measurement. The doubao
+   false-fire check the plan asked for reduces to that equivalence-by-construction --
+   doubao's ladder never changed.
+4. **`alpha_height_frac` measured, not inherited:** aspect fit at the winning width, p50
+   0.260 (tight, p10-p90 0.250-0.270) -> 0.0416. The silhouette's own aspect (0.2219)
+   and doubao's ratio were both measurably off.
+5. **The clean arm was contaminated, and fixing it flipped the verdict.** The 2026-07-18
+   `present: []` labels are in the vocabulary of the REGISTERED marks only -- 146 of the
+   432 "clean" frames sit in a TC260 cohort, including 15 qwen-cohort frames VISIBLY
+   carrying 千问AI生成, and they were the clean arm's entire top tail (clean p99 0.37 ->
+   0.69 with the fitted geometry). `load_sets` now drops every frame in ANY cohort.
+   Final arm: 286 frames, clean p99 0.301 / max 0.316.
+6. **Gate 0.45, strict-only, no rival margin.** Every cohort frame >= 0.45 carries a
+   visible mark (83 of ~96 eyeballed visible marks fire = **86% recall of visible
+   marks**; the misses are white-on-near-white contrast losses); 0/286 clean fires;
+   crossfire at the gate: 0/400 on doubao-marked frames, 0/298 on jimeng-marked frames
+   (the shared `AI生成` tail correlates at p50 0.224, far below gate -- the AUC-0.5
+   attribution fear from 2026-07-18 was a mis-sizing artifact). A 0.10 rival margin
+   would have cost ~10% of genuine qwen detections, so `rivals=()`. The band just below
+   the gate is dominated by non-qwen banners (夸克 anti-forgery strip 0.274, 造点 mark
+   0.253), so a provenance-relaxed arm would be mostly false fills:
+   `provenance_ncc_factor` is pinned at 1.0 and qwen has NO provenance mapping.
+7. **Parity confirmed end to end:** detect -> cv2 fill -> re-detect clean on **83/83**
+   real cohort marks, no empty masks; `real_examples_e2e.py` now drives a live qwen
+   positive through the real CLI (qwen bucket = symlinks under the gitignored
+   `_visible_datasets/`); a confident qwen detection suppresses the jimeng pill exactly
+   like doubao's does.
+
+Method note worth keeping: **the wide ladder flattered the clean arm exactly as
+predicted, but the trap that actually bit was the LABEL vocabulary.** "present: []"
+meant "no registered mark", not "no mark" -- and a calibration clean arm has to be
+re-filtered per candidate, or the gate is read off frames that carry the very mark being
+calibrated.
+
+The bonus vendors (元宝, 可灵, cat-logo) need their own font-rendered silhouettes before
+any of this repeats for them; 可灵 additionally puts a second mark bottom-LEFT, which no
+current text-mark config expresses.
 
 ### Open defects
 
@@ -838,12 +951,13 @@ evidence supports:
    fire at 1.7:1 because the recoveries and the false fires are the same landscape size
    shift. Moving the landscape width fraction is also out -- detected landscape marks
    already sit at the nominal, so it would break more than it fixes. Do not spend here.
-2. **Coverage of uncovered vendors is the largest lever** and is blocked on EVIDENCE, not
-   architecture. `千问` and `百度` marks sit in the same corner we already scan, and the
-   front-end that `render_vendor_silhouettes.py` said was missing now exists. But this
-   session found exactly one confirmed positive per vendor, and the 14 千问 positives that
-   note quotes are not reachable from any current script. Nothing may be registered off a
-   single frame. Harvest 30+ per vendor with `scripts/cjk_tail_probe.py`, then calibrate.
+2. **Coverage of uncovered vendors is the largest lever.** 千问 was the head of this item
+   and is now CLOSED (registered 2026-07-21, see the harvest section above): the blocker
+   turned out to be evidence, and the TC260 producer-USCC cohort trick removed it. The
+   remaining named vendors are 元宝 (n=50), 可灵 (n=30) and cat-logo (n=19) -- each needs
+   a font-rendered silhouette, then the same calibrate-and-crossfire chain. `百度` and the
+   星绘/抖音 class are NOT in the corpus in labelable quantity (verified twice; do not
+   hunt them again). Nothing may be registered off a single frame.
 3. **A generic shared-tail template is not a shortcut.** `AI生成` is guaranteed across
    compliant vendors by GB 45438-2025, so one template covering all of them is the obvious
    idea -- and measured on the tophat front-end it separates a bold 千问 positive from clean

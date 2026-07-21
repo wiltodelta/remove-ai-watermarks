@@ -430,7 +430,7 @@ def _no_visible_mark_exit(source: Path) -> NoReturn:
     """Explain why no visible watermark was removed, then exit non-zero.
 
     The visible registry handles only known visual marks (the Gemini sparkle and
-    the Doubao/Jimeng/Samsung text strips). Most real uploads carry no such mark
+    the Doubao/Jimeng/Qwen/Samsung text strips). Most real uploads carry no such mark
     -- frequently an invisible/metadata watermark instead (e.g. an OpenAI or
     Gemini image whose only signal is C2PA + SynthID). Returning the input
     unchanged with exit 0 reads as success to a caller and re-serves the
@@ -692,7 +692,7 @@ def cmd_visible(
 ) -> None:
     """Remove a known visible AI watermark from an image.
 
-    Finds a known mark in its usual place (Gemini sparkle / Doubao-Jimeng-Samsung
+    Finds a known mark in its usual place (Gemini sparkle / Doubao-Jimeng-Qwen-Samsung
     text) via the watermark registry and removes it by LOCALIZING the mark to a mask
     and filling that mask with the chosen ``--backend`` (auto: best available, LaMa >
     MI-GAN > cv2). ``--mark auto`` removes every detected mark in one

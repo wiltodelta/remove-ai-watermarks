@@ -180,7 +180,7 @@ def check_visible(res: Results, tmp: Path) -> None:
     from remove_ai_watermarks.watermark_registry import detect_marks, get_mark, remove_auto_marks
 
     print("\nvisible --mark auto -- real marked image per mark, product decision then re-detect")
-    for mark in ("doubao", "jimeng", "gemini", "samsung", "jimeng_pill"):
+    for mark in ("doubao", "jimeng", "qwen", "gemini", "samsung", "jimeng_pill"):
         src = find_visible_positive(mark)
         if src is None:
             res.add("visible", mark, True, "no live positive in bucket (skipped, not a failure)")
