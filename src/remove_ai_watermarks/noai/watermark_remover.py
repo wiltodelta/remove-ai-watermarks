@@ -381,8 +381,12 @@ class WatermarkRemover:
         hf_token: str | None = None,
         pipeline: str = "controlnet",
         controlnet_conditioning_scale: float = 1.0,
+        cpu_offload: bool = False,
     ) -> None:
         self.model_id = model_id or self.DEFAULT_MODEL_ID
+        # Stream pipeline submodules to CUDA on demand instead of holding the whole
+        # fp16 pipeline in VRAM -- lets an 8 GB card run SDXL that would otherwise OOM.
+        self.cpu_offload = cpu_offload
         # The pipeline profile is threaded explicitly (not inferred from model_id):
         # both "sdxl" and "controlnet" use the same SDXL base checkpoint. Normalize so
         # the legacy "default" alias resolves to "sdxl".
@@ -469,7 +473,15 @@ class WatermarkRemover:
         """
         self._set_progress(f"Moving model to device: {self.device}")
         try:
-            pipeline = pipeline.to(self.device)
+            # Low-VRAM CUDA cards (e.g. an 8 GB Pascal card) cannot hold the whole SDXL
+            # fp16 pipeline in VRAM. With --cpu-offload, stream submodules to the GPU on
+            # demand (accelerate hooks) instead of a full .to("cuda"): peak VRAM drops to
+            # roughly the largest single submodule, at the cost of per-step transfers.
+            if self.cpu_offload and self.device == "cuda" and hasattr(pipeline, "enable_model_cpu_offload"):
+                self._set_progress("Enabling CUDA model CPU offload (low-VRAM mode)...")
+                pipeline.enable_model_cpu_offload()
+            else:
+                pipeline = pipeline.to(self.device)
         except (RuntimeError, AssertionError) as exc:
             if self.device == "cuda" and not os.environ.get(_CUDA_FIX_ENV_KEY):
                 self._set_progress("CUDA failed. Reinstalling torch with CUDA support...")

@@ -290,6 +290,16 @@ _force_option = click.option(
         "undetectable once its metadata proxy is gone)."
     ),
 )
+_cpu_offload_option = click.option(
+    "--cpu-offload/--no-cpu-offload",
+    default=False,
+    help=(
+        "Stream pipeline submodules to the GPU on demand instead of holding the whole "
+        "fp16 pipeline in VRAM (CUDA only). Lets a low-VRAM card (e.g. 8 GB) run SDXL "
+        "that would otherwise OOM, at the cost of speed. Pair with --pipeline sdxl on "
+        "the tightest cards. No effect on cpu/mps."
+    ),
+)
 
 
 _visible_backend_option = click.option(
@@ -856,6 +866,7 @@ def cmd_erase(
 @_adaptive_polish_option
 @_tile_options
 @_force_option
+@_cpu_offload_option
 @click.pass_context
 def cmd_invisible(
     ctx: click.Context,
@@ -881,6 +892,7 @@ def cmd_invisible(
     tile_size: int,
     tile_overlap: int,
     force: bool,
+    cpu_offload: bool,
 ) -> None:
     """Remove invisible AI watermarks (SynthID, StableSignature, TreeRing).
 
@@ -922,6 +934,7 @@ def cmd_invisible(
         hf_token=hf_token,
         progress_callback=progress_cb,
         controlnet_conditioning_scale=controlnet_scale,
+        cpu_offload=cpu_offload,
     )
 
     # Detect the SynthID vendor from the ORIGINAL (before processing strips C2PA) so the
@@ -1130,6 +1143,7 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
 @_adaptive_polish_option
 @_tile_options
 @_force_option
+@_cpu_offload_option
 @click.pass_context
 def cmd_all(
     ctx: click.Context,
@@ -1157,6 +1171,7 @@ def cmd_all(
     tile_size: int,
     tile_overlap: int,
     force: bool,
+    cpu_offload: bool,
 ) -> None:
     """Remove ALL watermarks: visible + invisible + metadata.
 
@@ -1254,6 +1269,7 @@ def cmd_all(
                 hf_token=hf_token,
                 progress_callback=progress_cb,
                 controlnet_conditioning_scale=controlnet_scale,
+                cpu_offload=cpu_offload,
             )
 
             # Detect the vendor from the pristine ORIGINAL (`source`); `tmp_path` has
@@ -1372,6 +1388,7 @@ class _BatchOptions:
     tile_size: int = 1024
     tile_overlap: int = 128
     force: bool = False
+    cpu_offload: bool = False
 
 
 def _run_batch_invisible(
@@ -1405,6 +1422,7 @@ def _run_batch_invisible(
                 pipeline=options.pipeline,
                 hf_token=options.hf_token,
                 controlnet_conditioning_scale=options.controlnet_scale,
+                cpu_offload=options.cpu_offload,
             )
         engines[options.pipeline].remove_watermark(
             img_path if mode == "invisible" else out_path,
@@ -1552,6 +1570,7 @@ def _process_batch_image(
 @_adaptive_polish_option
 @_tile_options
 @_force_option
+@_cpu_offload_option
 @click.pass_context
 def cmd_batch(
     ctx: click.Context,
@@ -1580,6 +1599,7 @@ def cmd_batch(
     tile_size: int,
     tile_overlap: int,
     force: bool,
+    cpu_offload: bool,
 ) -> None:
     """Process all images in a directory."""
     _banner()
@@ -1622,6 +1642,7 @@ def cmd_batch(
         tile_size=tile_size,
         tile_overlap=tile_overlap,
         force=force,
+        cpu_offload=cpu_offload,
     )
 
     processed = 0
