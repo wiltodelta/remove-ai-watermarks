@@ -1,5 +1,4 @@
 """Collect all raw metadata over a dataset, for later offline analysis.
-
 Read-only; analysis is NOT this script's job. For every image it writes
 one JSONL record containing:
 
@@ -54,6 +53,8 @@ or a plain line loop. One line = one self-contained JSON record.
 Dependencies: pip install pillow piexif c2pa-python pillow-heif
 (pillow-heif is only needed for HEIC/AVIF inputs).
 """
+
+from __future__ import annotations
 
 import base64
 import contextlib
@@ -954,7 +955,7 @@ def _dct_matrix(n: int = 8) -> np.ndarray:
     return m * np.sqrt(2 / n)
 
 
-_DCT_M = _dct_matrix()
+_DCT_M = _dct_matrix() if np is not None else None
 
 
 def dct_features(gray: np.ndarray) -> dict[str, Any]:
