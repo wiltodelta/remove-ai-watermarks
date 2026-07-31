@@ -20,6 +20,10 @@ package (extra: ``detect``), or the torch-free in-tree decoder via PyWavelets
 neither is installed. When both are present, ``detect`` / imwatermark is used.
 """
 
+# imwatermark ships no type stubs (like cv2); its decoder returns are Unknown.
+# Relax the untyped-library diagnostics for this thin wrapper module only.
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+
 from __future__ import annotations
 
 import logging

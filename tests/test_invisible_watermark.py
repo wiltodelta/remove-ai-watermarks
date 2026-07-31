@@ -31,18 +31,14 @@ SAMPLES_DIR = Path(__file__).resolve().parents[1] / "data" / "fixtures" / "prove
 # round-trips (smoke_matrix uses the same file for the re-embed control).
 CARRIER = SAMPLES_DIR / "mj-1.png"
 
-pytestmark = pytest.mark.skipif(
-    not is_available(), reason="neither detect nor detect-pywavelets backend installed"
-)
+pytestmark = pytest.mark.skipif(not is_available(), reason="neither detect nor detect-pywavelets backend installed")
 
 _has_imwatermark = module_available("imwatermark")
 _has_pywt = module_available("pywt")
 requires_imwatermark = pytest.mark.skipif(
     not _has_imwatermark, reason="invisible-watermark (extra detect / dev) not installed"
 )
-requires_pywt = pytest.mark.skipif(
-    not _has_pywt, reason="PyWavelets (extra detect-pywavelets / dev) not installed"
-)
+requires_pywt = pytest.mark.skipif(not _has_pywt, reason="PyWavelets (extra detect-pywavelets / dev) not installed")
 requires_parity_backends = pytest.mark.skipif(
     not (_has_imwatermark and _has_pywt),
     reason="parity requires both imwatermark and PyWavelets (extra dev)",
@@ -55,9 +51,7 @@ def _fixture_images() -> list[Path]:
     if not SAMPLES_DIR.is_dir():
         return []
     return sorted(
-        p
-        for p in SAMPLES_DIR.iterdir()
-        if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} and p.is_file()
+        p for p in SAMPLES_DIR.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} and p.is_file()
     )
 
 
