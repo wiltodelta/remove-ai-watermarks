@@ -3212,6 +3212,8 @@ all = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
+    { name = "pywavelets", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pywavelets", version = "1.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "ruff" },
     { name = "safetensors" },
     { name = "tokenizers" },
@@ -3224,12 +3226,18 @@ all = [
 detect = [
     { name = "invisible-watermark" },
 ]
+detect-pywavelets = [
+    { name = "pywavelets", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pywavelets", version = "1.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
 dev = [
     { name = "invisible-watermark" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
+    { name = "pywavelets", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pywavelets", version = "1.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "ruff" },
     { name = "uv-outdated", marker = "python_full_version >= '3.12'" },
     { name = "uv-secure", marker = "python_full_version >= '3.12'" },
@@ -3292,8 +3300,10 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "pywavelets", marker = "extra == 'detect-pywavelets'", specifier = ">=1.1.1" },
+    { name = "pywavelets", marker = "extra == 'dev'", specifier = ">=1.1.1" },
     { name = "remove-ai-watermarks", extras = ["gpu"], marker = "extra == 'qwen-zimage'" },
-    { name = "remove-ai-watermarks", extras = ["gpu", "detect", "trustmark", "lama", "migan", "dev"], marker = "extra == 'all'" },
+    { name = "remove-ai-watermarks", extras = ["gpu", "detect", "detect-pywavelets", "trustmark", "lama", "migan", "dev"], marker = "extra == 'all'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "safetensors", marker = "extra == 'gpu'" },
     { name = "spandrel", marker = "extra == 'esrgan'", specifier = ">=0.3.0" },
@@ -3305,7 +3315,7 @@ requires-dist = [
     { name = "uv-outdated", marker = "python_full_version >= '3.12' and extra == 'dev'", specifier = ">=0.1.0" },
     { name = "uv-secure", marker = "python_full_version >= '3.12' and extra == 'dev'", specifier = ">=0.12.0" },
 ]
-provides-extras = ["gpu", "qwen-zimage", "detect", "trustmark", "lama", "migan", "esrgan", "dev", "all"]
+provides-extras = ["gpu", "qwen-zimage", "detect", "detect-pywavelets", "trustmark", "lama", "migan", "esrgan", "dev", "all"]
 
 [[package]]
 name = "requests"

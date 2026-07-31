@@ -102,15 +102,18 @@ qwen-zimage = [
     "diffsynth>=2.0.17,<3",
     "torchvision>=0.20.0",
 ]
-# Open invisible-watermark (imwatermark) decoder for detecting the DWT-DCT
-# watermarks embedded by Stable Diffusion / SDXL / FLUX. Optional because it
-# pulls non-headless opencv AND torch (invisible-watermark declares torch a hard
-# dependency, and WatermarkDecoder eagerly imports rivaGan -> torch at import
-# time, so the dwtDct-only detect path still needs torch present even though it
-# never runs on GPU). So `detect` alone pulls torch -- no need to add `gpu` for
-# detection. identify() guards the import and skips the signal when absent.
+# Old open DWT-DCT decoder path: upstream invisible-watermark (imwatermark).
+# Neither this extra nor detect-pywavelets declares opencv-python -- core uses
+# opencv-python-headless -- but invisible-watermark still pulls torch and
+# opencv-python *transitively*. identify() skips the signal when absent.
 detect = [
     "invisible-watermark>=0.2.0",
+]
+# Torch-free open DWT-DCT path: in-tree dwt_dct + PyWavelets only. Uses core
+# opencv-python-headless. Used only when invisible-watermark is NOT installed
+# (``[detect]`` wins when both extras are present). identify() skips when absent.
+detect-pywavelets = [
+    "PyWavelets>=1.1.1",
 ]
 # Adobe TrustMark decoder -- the open, keyless watermark behind Adobe Durable
 # Content Credentials (soft-binding alg ``com.adobe.trustmark.P``). Optional
@@ -154,13 +157,15 @@ dev = [
     "pytest-xdist>=3.5.0",
     "ruff>=0.4.0",
     "pyright>=1.1.0",
+    # Both open-watermark backends so CI always runs imwatermark <-> dwt_dct parity.
     "invisible-watermark>=0.2.0",
+    "PyWavelets>=1.1.1",
     # maintain.sh helpers; they only support newer Pythons, so gate them by
     # marker to keep the py3.10 resolution (and CI matrix) solvable.
     "uv-outdated>=0.1.0; python_version >= '3.12'",
     "uv-secure>=0.12.0; python_version >= '3.12'",
 ]
-all = ["remove-ai-watermarks[gpu,detect,trustmark,lama,migan,dev]"]
+all = ["remove-ai-watermarks[gpu,detect,detect-pywavelets,trustmark,lama,migan,dev]"]
 
 # PyTorch Intel-GPU (XPU) wheel index. ``explicit = true`` keeps it inert for
 # the default CPU/CUDA install: uv consults it only when a torch install

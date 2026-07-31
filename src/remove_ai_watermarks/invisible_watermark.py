@@ -15,21 +15,20 @@ source:
 The watermark is fragile: it does NOT survive JPEG re-encoding or resizing
 (verified -- gone after JPEG q90), so detection works only on pristine PNG
 originals. Absence is never proof. Requires the optional ``invisible-watermark``
-package (extra: ``detect``); ``detect_invisible_watermark`` returns None when it
-is not installed.
+package (extra: ``detect``), or the torch-free in-tree decoder via PyWavelets
+(extra: ``detect-pywavelets``). ``detect_invisible_watermark`` returns None when
+neither is installed. When both are present, ``detect`` / imwatermark is used.
 """
-
-# imwatermark ships no type stubs (like cv2); its decoder returns are Unknown.
-# Relax the untyped-library diagnostics for this thin wrapper module only.
-# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +48,26 @@ _MATCH_SD1_FRAC = 0.92  # fraction of the 136 string bits that must match
 
 
 def is_available() -> bool:
-    """True if the optional imwatermark decoder is installed."""
+    """True if an optional open-watermark decoder is installed (``detect`` or ``detect-pywavelets``)."""
     from .optional_deps import module_available
 
-    return module_available("imwatermark")
+    return module_available("imwatermark") or module_available("pywt")
+
+
+def _decoder_backend() -> Literal["imwatermark", "dwt_dct"] | None:
+    """Which decode implementation will run, or None if no detect extra is present.
+
+    Prefer upstream ``imwatermark`` whenever it is installed so ``[detect]`` keeps
+    the historical decoder (PyWavelets alone is not enough to switch -- it is also
+    a transitive dep of ``invisible-watermark``).
+    """
+    from .optional_deps import module_available
+
+    if module_available("imwatermark"):
+        return "imwatermark"
+    if module_available("pywt"):
+        return "dwt_dct"
+    return None
 
 
 def _bits_match(value: int, ref: int, width: int = 48) -> int:
@@ -68,6 +83,39 @@ def _bytes_match_frac(a: bytes, b: bytes) -> float:
     return 1.0 - diff / (8 * len(b))
 
 
+def _bits_to_int(bits: object) -> int:
+    value = 0
+    for bit in bits:  # type: ignore[attr-defined]
+        value = (value << 1) | (1 if bit else 0)
+    return value
+
+
+def _bits_to_bytes(bits: object, nbytes: int) -> bytes:
+    import struct
+
+    import numpy as np
+
+    packed = np.packbits([1 if b else 0 for b in bits])  # type: ignore[attr-defined]
+    out = b""
+    for i in range(nbytes):
+        out += struct.pack(">B", int(packed[i]))
+    return out
+
+
+def _decode_dwt_dct_bits(img: NDArray[Any], wm_len: int) -> object:
+    """Extract ``wm_len`` bits via the active backend (imwatermark, else dwt_dct)."""
+    backend = _decoder_backend()
+    if backend == "imwatermark":
+        from imwatermark import WatermarkDecoder
+
+        return WatermarkDecoder("bits", wm_len).decode(img, "dwtDct")
+    if backend == "dwt_dct":
+        from remove_ai_watermarks.dwt_dct import decode_dwt_dct
+
+        return decode_dwt_dct(img, wm_len=wm_len)
+    raise RuntimeError("no open-watermark decoder backend available")
+
+
 def detect_invisible_watermark(image_path: Path) -> str | None:
     """Return the embedding scheme name if a known open watermark is decoded.
 
@@ -78,8 +126,6 @@ def detect_invisible_watermark(image_path: Path) -> str | None:
     """
     if not is_available():
         return None
-    from imwatermark import WatermarkDecoder
-
     from remove_ai_watermarks import image_io
 
     img = image_io.imread(image_path)
@@ -88,10 +134,8 @@ def detect_invisible_watermark(image_path: Path) -> str | None:
 
     # 48-bit fixed-message watermarks (SDXL, FLUX.2).
     try:
-        bits = WatermarkDecoder("bits", 48).decode(img, "dwtDct")
-        value = 0
-        for bit in bits:
-            value = (value << 1) | (1 if bit else 0)
+        bits = _decode_dwt_dct_bits(img, wm_len=48)
+        value = _bits_to_int(bits)
         for name, ref in _BITS_48.items():
             if _bits_match(value, ref) >= _MATCH_48:
                 return name
@@ -100,7 +144,8 @@ def detect_invisible_watermark(image_path: Path) -> str | None:
 
     # 136-bit default string watermark (SD 1.x / 2.x).
     try:
-        raw = cast("bytes", WatermarkDecoder("bytes", 8 * len(_SD1_STRING)).decode(img, "dwtDct"))
+        bits = _decode_dwt_dct_bits(img, wm_len=8 * len(_SD1_STRING))
+        raw = _bits_to_bytes(bits, len(_SD1_STRING))
         if _bytes_match_frac(raw, _SD1_STRING) >= _MATCH_SD1_FRAC:
             return "Stable Diffusion 1.x / 2.x"
     except Exception as exc:
