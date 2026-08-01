@@ -55,7 +55,7 @@ dependencies = [
     # synthetic/partial blobs the validator rejects. Binary wheel (Rust), but the
     # import is light (no torch/numpy) so it fits the dependency-light identify
     # host. Prebuilt wheels cover the full CI matrix (linux/macos/windows).
-    "c2pa-python>=0.35.0",
+    "c2pa-python>=0.37.2",
 ]
 
 [project.optional-dependencies]
@@ -134,7 +134,7 @@ trustmark = [
 lama = [
     "remove-ai-watermarks[visible]",
     "onnxruntime>=1.16.0",
-    "huggingface-hub>=0.20.0",
+    "huggingface-hub>=1.25.1",
 ]
 # Lightweight inpaint backend -- MI-GAN via onnxruntime (andraniksargsyan/migan,
 # MIT). CPU, no torch. Model (~28 MB) downloaded on first use and cached by
@@ -144,7 +144,7 @@ lama = [
 migan = [
     "remove-ai-watermarks[visible]",
     "onnxruntime>=1.16.0",
-    "huggingface-hub>=0.20.0",
+    "huggingface-hub>=1.25.1",
 ]
 # Optional pre-diffusion super-resolution for small inputs (Real-ESRGAN). Loaded via
 # spandrel (MIT) -- a pure model-loader with NO basicsr dependency (it pulls only
