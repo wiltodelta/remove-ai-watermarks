@@ -79,7 +79,8 @@ construction and fits the same heads from the pack above.
 2. AND that MLP with the frozen ridge in the probe file. DEFINITELY is both.
 3. Load 124-d vectors. Fit one-vs-rest focal heads for openai, google, tc260,
    meta_muse_image, no_ai. Margin 0.30. The public class for the Muse Image
-   head is `muse-image`.
+   head is `muse-image`. `tc260` is the China AIGC label standard, mixed
+   producers, not one company.
 4. Repeat with the same seeds. Compare bytes.
 
 CLIP-L fine-tune of the last two vision blocks is earlier, seed 20260822, and

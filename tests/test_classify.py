@@ -56,6 +56,10 @@ def test_shipped_operating_point_matches_the_runtime_defaults() -> None:
     assert payload["model2"]["margin"] == PROVIDER_MARGIN
     assert payload["model2"]["runs_only_after"] == "definitely"
     assert payload["model2"]["classes"] == ["openai", "google", "tc260", "muse-image", "no_ai"]
+    assert payload["model2"]["class_kind"]["openai"] == "provider"
+    assert payload["model2"]["class_kind"]["google"] == "provider"
+    assert payload["model2"]["class_kind"]["tc260"] == "label-standard"
+    assert payload["model2"]["class_kind"]["muse-image"] == "model"
     assert payload["model2"]["checkpoint_keys"]["muse-image"] == "meta_muse_image"
 
 

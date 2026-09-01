@@ -161,7 +161,8 @@ print(result.label, result.detector, result.provider)
 `label` is `ai` only on a DEFINITELY detector result (ridge AND freeze MLP).
 POSSIBLY is `unknown`. Camera-like photographs are `human`. `provider` is
 `openai`, `google`, `muse-image`, or `tc260` only when `label` is `ai` and the 124-d
-head beats `no_ai` by the freeze margin. Otherwise it is `None`, including
+head beats `no_ai` by the freeze margin. `tc260` is the China AIGC label
+standard (mixed producers), not a company. Otherwise it is `None`, including
 when 124-d extraction refuses the file.
 
 `device` is a library parameter: `None` / `"auto"` detect, `"cpu"` or `"cuda"`

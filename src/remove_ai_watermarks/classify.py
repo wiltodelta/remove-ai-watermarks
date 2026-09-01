@@ -35,8 +35,9 @@ MLP_THRESHOLD = 5.9586493237495395
 RIDGE_THRESHOLD = 0.3056212276800537
 PROVIDER_MARGIN = 0.30
 CLIP_WIDTH = 768
-# Checkpoint keys in provider.pt. openai/google/tc260 are provider classes;
-# meta_muse_image is Muse Image output. Public names follow that split.
+# Checkpoint keys in provider.pt. openai/google are provider classes;
+# meta_muse_image is Muse Image; tc260 is the China AIGC label standard
+# (mixed producers). Public names follow that split.
 PROVIDER_LABELS = ("openai", "google", "tc260", "meta_muse_image", "no_ai")
 
 DetectorLevel = Literal["definitely", "possibly", "likely_human"]

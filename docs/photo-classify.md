@@ -84,9 +84,10 @@ wrong job on that bank, which is why Model 2 is gated.
 
 Provider names the renderer, not the product UI. Bing Image Creator signed
 Microsoft, OpenAI scores `openai`. Designer signed Microsoft, Google LLC
-scores `google`. There is no Microsoft pixel class. `openai`, `google`, and
-`tc260` are provider classes. `muse-image` is Muse Image output, not a
-general Meta class and not an Instagram `made_with_ai` tag.
+scores `google`. There is no Microsoft pixel class. `openai` and `google` are
+provider classes. `muse-image` is Muse Image output, not a general Meta
+class. `tc260` is the China AIGC label standard, not one producer: Doubao,
+Jimeng, Qwen, Kling, and others share that residual class.
 
 ## Evaluation
 
@@ -98,12 +99,12 @@ Two CPU retrains were byte-identical. DEFINITELY is the shipped cut.
 | Detector DEFINITELY | Open Images fresh | 1.3% (n=3,000) |
 | Detector DEFINITELY | Kodak | 0/24 |
 | Detector DEFINITELY | FLUX hold | 83.0% (n=300) |
-| Provider | OpenAI | 90.8% (345/380 of 381) |
-| Provider | Google | 90.9% (339/373 of 377) |
-| Provider | TC260 | 78.6% (298/379 of 384) |
-| Provider | Meta hold-out v3 | 89.4% (177/198) |
-| Provider | Meta hold-out pooled | 88.4% (243/275 listed 277) |
-| Provider | meme templates, ungated | 29.1% leak |
+| Class | OpenAI | 90.8% (345/380 of 381) |
+| Class | Google | 90.9% (339/373 of 377) |
+| Class | TC260 | 78.6% (298/379 of 384) |
+| Class | Muse Image hold-out v3 | 89.4% (177/198) |
+| Class | Muse Image hold-out pooled | 88.4% (243/275 listed 277) |
+| Class | meme templates, ungated | 29.1% leak |
 
 The ungated meme row is why Model 2 never runs on `human` or `unknown`.
 

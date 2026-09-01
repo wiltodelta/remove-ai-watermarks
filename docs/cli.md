@@ -90,7 +90,8 @@ and does not set `is_ai_generated`.
 
 The contract is AI versus camera. Receipts, UI, and digital art are out of
 scope. Microsoft is not a pixel class: a DALL-E Bing image scores as `openai`,
-an Imagen Designer image as `google`. Weights download on first use from
+an Imagen Designer image as `google`. `tc260` is the China AIGC label
+standard, not one producer. Weights download on first use from
 [`wiltodelta/raiw-models`](https://huggingface.co/wiltodelta/raiw-models),
 or from `RAIW_CLASSIFY_WEIGHTS` if that directory already holds the freeze
 files.

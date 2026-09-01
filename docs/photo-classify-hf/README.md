@@ -89,9 +89,10 @@ remain open. The shipped heads do not include a receipt specialist.
 Provider attribution tracks the **renderer**, not the front-end. Bing Image
 Creator rows signed Microsoft, OpenAI score as `openai`. Designer rows signed
 Microsoft, Google LLC score as `google`. Native Designer is mixed. There is
-no Microsoft pixel class. `openai`, `google`, and `tc260` are provider classes.
+no Microsoft pixel class. `openai` and `google` are provider classes.
 `muse-image` is Muse Image output, not a general Meta class. Instagram
-`made_with_ai` is not that class.
+`made_with_ai` is not that class. `tc260` is the China AIGC label standard,
+not one producer: Doubao, Jimeng, Qwen, Kling, and others share that class.
 
 ## Architecture
 
@@ -117,8 +118,9 @@ no Microsoft pixel class. `openai`, `google`, and `tc260` are provider classes.
 - Decision: a class wins only if it beats `no_ai` by margin 0.30, then argmax
   among those that passed
 - Public name `muse-image` is the Muse Image class. The freeze file still
-  keys that head `meta_muse_image`. `no_ai` is not reported as `human`; it
-  becomes `provider=None` on an `ai` label (for example FLUX)
+  keys that head `meta_muse_image`. `tc260` is the China AIGC label
+  standard (mixed producers), not a company. `no_ai` is not reported as
+  `human`; it becomes `provider=None` on an `ai` label (for example FLUX)
 
 ## Training
 
@@ -158,13 +160,13 @@ DEFINITELY is the shipped operating point.
 | Detector DEFINITELY | Open Images fresh | 1.3% (n=3,000) |
 | Detector DEFINITELY | Kodak | 0/24 |
 | Detector DEFINITELY | FLUX hold | 83.0% (n=300) |
-| Provider | OpenAI test | 90.8% (345/380 of 381) |
-| Provider | Google test | 90.9% (339/373 of 377) |
-| Provider | TC260 test | 78.6% (298/379 of 384) |
-| Provider | Meta hold-out v2 | 85.7% (66/77 listed 79) |
-| Provider | Meta hold-out v3 | 89.4% (177/198) |
-| Provider | Meta hold-out pooled | 88.4% (243/275 listed 277) |
-| Provider | meme templates, ungated | 29.1% leak (86 of 97) |
+| Class | OpenAI test | 90.8% (345/380 of 381) |
+| Class | Google test | 90.9% (339/373 of 377) |
+| Class | TC260 test | 78.6% (298/379 of 384) |
+| Class | Muse Image hold-out v2 | 85.7% (66/77 listed 79) |
+| Class | Muse Image hold-out v3 | 89.4% (177/198) |
+| Class | Muse Image hold-out pooled | 88.4% (243/275 listed 277) |
+| Class | meme templates, ungated | 29.1% leak (86 of 97) |
 
 The ungated meme leak is why Model 2 must not run on every file. Gated on
 DEFINITELY, that leak is not a provider attribution.
