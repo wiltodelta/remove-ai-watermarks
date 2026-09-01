@@ -1,0 +1,36 @@
+{
+  "freeze": "2026-08-31",
+  "task": "photo_ai_versus_camera",
+  "not": ["synthid_decoder", "provenance", "universal_ai_detector"],
+  "seeds": {
+    "sample": 20260821,
+    "detector": 20260940,
+    "provider": 20260956
+  },
+  "model1": {
+    "backbone": "openai/clip-vit-large-patch14",
+    "letterbox": 224,
+    "pad_rgb": [123, 117, 104],
+    "ridge_threshold_key": "thr_oi_1pct",
+    "ridge_threshold": 0.3056212276800537,
+    "mlp_threshold": 5.9586493237495395,
+    "mlp_width": 512,
+    "definitely": "ridge_and_mlp",
+    "public_ai_label": "definitely_only"
+  },
+  "model2": {
+    "feature_width": 124,
+    "margin": 0.3,
+    "classes": ["openai", "google", "tc260", "meta_muse_image", "no_ai"],
+    "public_names": {
+      "meta_muse_image": "meta"
+    },
+    "runs_only_after": "definitely"
+  },
+  "files": [
+    "clip-l-ft.pt",
+    "probe-weights-clip-l-ft.npz",
+    "detector.pt",
+    "provider.pt"
+  ]
+}

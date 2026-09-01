@@ -1,0 +1,72 @@
+name: Publish photo classifier to Hugging Face
+
+# Manual only. Not part of a library release. The Space demo
+# (wiltodelta/remove-ai-watermarks) stays on distribute.yml / raiw-hf-space.
+#
+# Hub model: wiltodelta/raiw-models
+# Secret: HF_TOKEN, write-role Hugging Face token (same secret Space sync uses).
+#
+# Weights are not in git. Full mode downloads them from a GitHub Release
+# of this repository, then uploads with the card from docs/photo-classify-hf/.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type publish"
+        required: true
+      mode:
+        description: "full = card plus weights from the release tag; card = README and operating-point only"
+        type: choice
+        options:
+          - full
+          - card
+        default: full
+      weights_tag:
+        description: "GitHub Release tag that holds clip-l-ft.pt, probe, detector.pt, provider.pt"
+        required: false
+        default: photo-classify-freeze-2026-08-31
+
+jobs:
+  publish:
+    if: ${{ github.event.inputs.confirm == 'publish' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Download freeze weights from the GitHub Release
+        if: ${{ github.event.inputs.mode == 'full' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.weights_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p weights
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir weights
+          ls -l weights
+
+      - name: Publish to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "HF_TOKEN secret is not set" >&2
+            exit 1
+          fi
+          extra=(--message "Photo-classify freeze (GitHub ${SHA:0:7})")
+          if [ "$MODE" = "card" ]; then
+            extra+=(--card-only)
+          else
+            extra+=(--src weights)
+          fi
+          uv run --no-project --with huggingface-hub python scripts/publish_photo_classify_hf.py "${extra[@]}"

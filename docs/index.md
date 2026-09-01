@@ -22,7 +22,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Development](development.md) | Environment setup, dependency recovery, CI behavior, and fixture policy. |
 | [Code provenance](code-provenance.md) | Required notices for licensed derivative work. |
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
-| [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, ComfyUI Registry, and the release workflow. |
+| [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, photo-classify Hub model, ComfyUI Registry, and the release workflow. |
 | [Watermarking landscape](watermarking-landscape.md) | Vendor signals and detection approaches. |
 | [SynthID technical reference](synthid.md) | Mechanism, detector access, robustness, and implications for this project. |
 
@@ -36,6 +36,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [Qwen improvement research](qwen-improvement-research.md)
 - [Doubao reverse-alpha research](research-doubao-distillation.md)
 - [AI-generated image classifiers](ai-generated-image-classifiers.md) (photo AI-versus-camera freeze, not a product verdict)
+- [Photo classifier Hugging Face card](photo-classify-hf/README.md) (Hub publication text of the 2026-08-31 freeze)
 - [SynthID source classifiers](synthid-classifiers.md)
 - [SynthID local detector research](synthid-detector-research.md)
 - [SynthID mark removal research](synthid-removal-research.md)

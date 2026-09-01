@@ -43,6 +43,7 @@ explicitly names a tracked canonical result.
 | `visible_positives.py` | List corpus images carrying a registered visible mark. |
 | `visible_recall_sample.py` | Build an unbiased blinded sample for recall measurement. |
 | `visible_sheets.py` | Build blinded contact sheets for relaxation candidates. |
+| `publish_photo_classify_hf.py` | Upload the photo-classify card and freeze weights to Hugging Face `wiltodelta/raiw-models`. Manual; the Action `publish-photo-classify-hf.yml` is the write-token path. |
 
 ## Research and diagnostic prototypes
 
