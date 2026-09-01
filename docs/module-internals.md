@@ -11,7 +11,8 @@ updated in the same change.
 
 ## Architecture
 
-The package has four main paths:
+The package has four main paths, plus an opt-in pixel classifier that is not
+on the provenance or removal graph:
 
 ```mermaid
 flowchart LR
@@ -19,12 +20,17 @@ flowchart LR
     Input --> Visible[Visible mark removal]
     Input --> Invisible[Diffusion regeneration]
     Input --> Metadata[Metadata stripping]
+    Input --> Classify[classify_pixels]
 
     Identify --> Report[ProvenanceReport]
     Visible --> VisibleOutput[Localized and filled image]
     Invisible --> InvisibleOutput[Regenerated image]
     Metadata --> MetadataOutput[Container with AI metadata removed]
+    Classify --> PixelClassification
 ```
+
+`identify` does not call `classify_pixels`. `has_invisible_target` and `all`
+do not read it.
 
 The `all` command runs visible removal, optional invisible regeneration, and
 metadata stripping in that order.
@@ -575,6 +581,20 @@ It is a separate `forensic_metadata` record type and is deliberately rejected by
 provenance normalizer. Integration code publishes the strict
 `ProvenanceReport.to_dict()` alongside it rather than letting operational fields or
 derived results influence detection.
+
+### Photo pixel classifier
+
+[`classify.py`](../src/remove_ai_watermarks/classify.py) is the 2026-08-31
+photo freeze: CLIP-L-ft ridge AND freeze MLP, then 124-d focal heads only on
+DEFINITELY. The public label is `ai` / `human` / `unknown`. POSSIBLY is
+`unknown`. Provider is `None` unless the label is `ai`. Tests in
+`tests/test_classify.py` pin the gate without downloads and pin that
+`identify` does not import this module.
+
+Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-models`.
+`RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. User guide:
+[photo-classify.md](photo-classify.md). Hub card:
+[photo-classify-hf/README.md](photo-classify-hf/README.md).
 
 ### Pixel forensics
 

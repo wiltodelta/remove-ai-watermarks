@@ -14,6 +14,7 @@ defaults. This page focuses on choosing the right command.
 | Command or signal | Required installation |
 | --- | --- |
 | `metadata` and metadata-only `identify` | Default package |
+| `classify` | `remove-ai-watermarks[classify]` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
 | Adobe TrustMark signals in `identify` on Python 3.11-3.12 | `remove-ai-watermarks[trustmark]` |
@@ -64,6 +65,37 @@ remove-ai-watermarks identify image.png --no-visible
 
 Despite the historical option name, `--no-visible` skips both visible and open
 invisible pixel detectors. Metadata inspection still runs.
+
+## Classify a photograph from pixels
+
+This is not provenance. `identify` never starts it, including after a
+no-signal metadata scan. Install the extra first:
+
+```bash
+uv tool install --force "remove-ai-watermarks[classify]"
+```
+
+Then:
+
+```bash
+remove-ai-watermarks classify image.png
+remove-ai-watermarks classify image.png --json
+```
+
+The command runs the frozen photo detector (CLIP-L-ft ridge AND freeze MLP).
+Only a DEFINITELY result is reported as `ai`. On that result only, the 124-d
+provider head may return `openai`, `google`, `meta`, or `tc260`. POSSIBLY is
+`unknown`. Camera-like photographs are `human`. The call does not run cleanup
+and does not set `is_ai_generated`.
+
+The contract is AI versus camera. Receipts, UI, and digital art are out of
+scope. Microsoft is not a pixel class: a DALL-E Bing image scores as `openai`,
+an Imagen Designer image as `google`. Weights download on first use from
+[`wiltodelta/raiw-models`](https://huggingface.co/wiltodelta/raiw-models),
+or from `RAIW_CLASSIFY_WEIGHTS` if that directory already holds the freeze
+files.
+Guide: [photo pixel classification](photo-classify.md). Hub card:
+[photo-classify-hf/README.md](photo-classify-hf/README.md).
 
 ## Remove known visible marks
 

@@ -142,6 +142,15 @@ trustmark = [
     # wheels. Keep this feature installable only on its real runtime range.
     "trustmark>=0.8.0; python_version < '3.13'",
 ]
+# Metadata-free photo classifier (Model 1 then gated Model 2). CPU torch is
+# enough. identify never imports this extra. Weights download on first use.
+classify = [
+    "remove-ai-watermarks[pixels]",
+    "torch>=2.0.0",
+    "transformers>=5,<6",
+    "tokenizers>=0.22,<0.23",
+    "huggingface-hub>=0.20.0",
+]
 # Universal region eraser backend -- big-LaMa via onnxruntime (Carve/LaMa-ONNX,
 # Apache-2.0). CPU, no torch. Model (~200 MB) is downloaded on first use and
 # cached by huggingface_hub; it is never bundled in this repo. The default cv2
@@ -174,7 +183,7 @@ dev = [
 ]
 # ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
 # independently sufficient for a removal, which it is not.
-all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan]"]
+all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,classify]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"

@@ -6,7 +6,7 @@ and pipeline modules are intended for maintainers and specialized workflows.
 Dependency groups are identical for the CLI and Python API. The default install
 covers metadata extraction, normalization, verdict logic, and stripping.
 Array/pixel APIs use `pixels`; visible removal uses `visible`; DWT-DCT detection
-uses `detect`; invisible image removal uses `qwen-zimage` and an NVIDIA GPU; and
+uses `detect`; pixel photo classification uses `classify`; invisible image removal uses `qwen-zimage` and an NVIDIA GPU; and
 visible video processing uses `video`. Video SynthID removal is a separate VAE
 path that still runs on CPU and combines `video` and `diffusion`. Add `heif`
 independently when path-based pixel APIs must decode HEIC, HEIF, or AVIF. See
@@ -143,6 +143,33 @@ print(summary.invisible_unavailable)   # outputs that still carry the watermark
 
 `mode` is `all`, `visible`, `invisible`, or `metadata`. Pass a constructed
 `InvisibleEngine` as `engine` to load the model once for the whole directory.
+
+## Classify a photograph from pixels
+
+This is not provenance. `identify` does not call it. Install
+`remove-ai-watermarks[classify]` first.
+
+```python
+from pathlib import Path
+
+from remove_ai_watermarks.classify import classify_pixels
+
+result = classify_pixels(Path("input.png"))
+print(result.label, result.detector, result.provider)
+```
+
+`label` is `ai` only on a DEFINITELY detector result (ridge AND freeze MLP).
+POSSIBLY is `unknown`. Camera-like photographs are `human`. `provider` is
+`openai`, `google`, `meta`, or `tc260` only when `label` is `ai` and the 124-d
+head beats `no_ai` by the freeze margin. Otherwise it is `None`, including
+when 124-d extraction refuses the file.
+
+`device` is a library parameter: `None` / `"auto"` detect, `"cpu"` or `"cuda"`
+pin. It is not a CLI option.
+
+Missing extra raises `RuntimeError` with the quoted install command
+`'remove-ai-watermarks[classify]'`. Guide:
+[photo pixel classification](photo-classify.md).
 
 ## Inspect provenance
 

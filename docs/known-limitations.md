@@ -4,6 +4,18 @@ This page describes current product limits. Historical measurements and
 superseded experiments live in the research archive listed in
 [the documentation index](index.md).
 
+## Pixel classification
+
+`classify` / `classify_pixels` is AI versus camera, not a universal AI detector.
+Receipts, UI screenshots, and digital art are out of contract: a thermal receipt
+can score as AI, a photorealistic AI receipt as human. POSSIBLY is reported as
+`unknown`. Provider attribution runs only after DEFINITELY and can abstain when
+124-d extraction refuses the file. Microsoft is not a pixel class.
+
+The command is never started by `identify`. A no-signal provenance result stays
+unknown. This is not a clean verdict and it does not run cleanup. Full guide:
+[photo pixel classification](photo-classify.md).
+
 ## Visible removal
 
 ### Fill quality depends on the background

@@ -112,6 +112,7 @@ application actually uses:
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV | No |
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |
 | `trustmark` | Adobe TrustMark detection on Python 3.11-3.12 | trustmark | Yes |
+| `classify` | Metadata-free photo AI-versus-camera classifier plus gated provider | `pixels`, Torch, Transformers | Yes |
 | `diffusion` | Torch and Diffusers runtime; video SynthID regeneration | `pixels`, Torch, Diffusers | Yes |
 | `migan` | MI-GAN ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
 | `lama` | big-LaMa ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
@@ -137,6 +138,7 @@ flowchart LR
     draft["text-draft"]
     heif
     trustmark
+    classify --> pixels
 ```
 
 `heif`, `trustmark`, and `text-draft` are independent branches. Combine them

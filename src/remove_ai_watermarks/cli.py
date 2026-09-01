@@ -1485,6 +1485,45 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
             console.print(f"  - {c}")
 
 
+# ── Metadata-free photo classification (opt-in, never a tail of identify) ──
+@main.command("classify")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Emit the classification as JSON.")
+def cmd_classify(source: Path, as_json: bool) -> None:
+    """Classify a photograph as AI or camera-like from pixels.
+
+    Runs the frozen photo detector and, only on a DEFINITELY-AI result, the
+    provider head. This is not provenance. identify never starts this command.
+    Install: pip install 'remove-ai-watermarks[classify]'
+    """
+    from remove_ai_watermarks import classify as classify_mod
+
+    if not classify_mod.is_available():
+        console.print(
+            "Error: the pixel-classification dependencies are not installed.\n"
+            f"  Install them with: pip install {classify_mod.CLASSIFY_EXTRA}"
+        )
+        raise SystemExit(1)
+
+    source = _validate_image(source)
+    try:
+        result = classify_mod.classify_pixels(source)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2))
+        return
+
+    _banner()
+    console.print("\n  Pixel classification (not a provenance verdict)")
+    console.print(f"  Label: {result.label}")
+    console.print(f"  Domain: {result.domain}")
+    console.print(f"  Detector: {result.detector}")
+    console.print(f"  Provider: {result.provider or 'none'}")
+    console.print("  identify is unchanged. This command does not run cleanup and does not prove a file is clean.")
+
+
 # ── Combined "all" mode ──
 @main.command("all")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))

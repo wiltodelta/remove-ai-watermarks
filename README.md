@@ -32,6 +32,7 @@ removal.
 | Goal | Command | GPU |
 | --- | --- | --- |
 | Find provenance signals and watermarks | `identify` | No |
+| Classify a photograph from pixels (opt-in, not provenance) | `classify` | No |
 | Remove known visible AI marks | `visible` | No |
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
@@ -54,6 +55,7 @@ its linked C2PA manifest; metadata stripping alone removes only the manifest.
 | Need | Install |
 | --- | --- |
 | Metadata inspection and stripping | `remove-ai-watermarks` |
+| Photograph AI-versus-camera classification | `remove-ai-watermarks[classify]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
@@ -79,6 +81,16 @@ Inspect an image:
 ```bash
 remove-ai-watermarks identify image.png
 ```
+
+To classify a photograph from pixels (AI versus camera, optional provider),
+install the extra and call `classify`. `identify` never starts it:
+
+```bash
+uv tool install --force "remove-ai-watermarks[classify]"
+remove-ai-watermarks classify image.png
+```
+
+Guide: [photo pixel classification](docs/photo-classify.md).
 
 For visible watermark removal, install the pixel dependencies:
 

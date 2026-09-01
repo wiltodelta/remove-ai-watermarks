@@ -71,8 +71,13 @@ def test_trustmark_is_limited_to_its_numpy_compatible_python_range():
 def test_extras_use_capability_names_without_legacy_aliases():
     extras = set(metadata("remove-ai-watermarks").get_all("Provides-Extra") or [])
 
-    assert {"pixels", "heif", "visible", "video", "detect", "diffusion"} <= extras
+    assert {"pixels", "heif", "visible", "video", "detect", "diffusion", "classify"} <= extras
     assert {"gpu", "remove", "detect-pywavelets"}.isdisjoint(extras)
+
+
+def test_classify_extra_owns_the_photo_heads() -> None:
+    names = _requirement_names("classify")
+    assert {"torch", "transformers", "huggingface-hub", "tokenizers"} <= names
 
 
 def test_production_all_does_not_include_development_tools():

@@ -101,7 +101,7 @@ class TestApiReportsFailedWrite:
 
 
 class TestDirectoryInputIsRejected:
-    @pytest.mark.parametrize("cmd", ["identify", "visible", "erase", "metadata", "invisible", "all"])
+    @pytest.mark.parametrize("cmd", ["identify", "classify", "visible", "erase", "metadata", "invisible", "all"])
     def test_directory_as_source_is_a_clean_usage_error(self, tmp_path, cmd):
         """A directory must be refused by argument parsing, never reach the scanners."""
         args = [cmd, str(tmp_path)]

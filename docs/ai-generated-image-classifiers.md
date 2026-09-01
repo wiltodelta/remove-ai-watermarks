@@ -2,7 +2,10 @@
 
 > Research archive for metadata-free `ai_generated` versus
 > `not_ai_generated` classifiers. These are not SynthID detectors and are not
-> shipped product verdicts. Current behavior: [supported signals](supported-signals.md)
+> `identify` verdicts. The 2026-08-31 freeze is consumed only by explicit
+> `classify` / `classify_pixels`. Current behavior:
+> [photo pixel classification](photo-classify.md),
+> [supported signals](supported-signals.md),
 > and [known limitations](known-limitations.md).
 >
 > Sister pages: [SynthID source classifiers](synthid-classifiers.md),
@@ -18,8 +21,11 @@ origin-locked residual bank are different features for different jobs.
 ## Frozen result, 2026-08-31
 
 The freeze is **AI versus camera**, not a universal detector, and it is not
-wired into `identify`. Detector: CLIP-L-ft ridge AND freeze MLP.
-Provider: 124-d focal heads, only after DEFINITELY or POSSIBLY.
+wired into `identify`. The library consumes it only through explicit
+`classify_pixels` / CLI `classify`. Detector: CLIP-L-ft ridge AND freeze MLP.
+Provider: 124-d focal heads, only after DEFINITELY. Library guide:
+[photo-classify.md](photo-classify.md). Hub card:
+[photo-classify-hf/README.md](photo-classify-hf/README.md).
 
 | Cell | Value |
 | --- | ---: |

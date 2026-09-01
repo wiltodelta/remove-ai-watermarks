@@ -74,8 +74,10 @@ pin. Its callback smoke tests run in that repository's CI on every push; they
 are the scenario check for the demo surface.
 
 The Hugging Face **model** `wiltodelta/raiw-models` is not part of that
-release fan-out. It holds the photo-classify freeze weights. Update it only
-with `.github/workflows/publish-photo-classify-hf.yml` (`workflow_dispatch`,
+release fan-out. It holds the photo-classify freeze weights. The library extra
+`classify` downloads that snapshot on first use, or reads
+`RAIW_CLASSIFY_WEIGHTS`. Update the Hub repo only with
+`.github/workflows/publish-photo-classify-hf.yml` (`workflow_dispatch`,
 type `publish`). Full mode downloads the four weight files from the GitHub
 Release tag `photo-classify-freeze-2026-08-31` (or the tag you pass) and
 uploads them with the card in `docs/photo-classify-hf/`. Card mode updates

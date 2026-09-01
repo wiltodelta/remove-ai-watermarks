@@ -3199,6 +3199,15 @@ all = [
     { name = "transformers" },
     { name = "trustmark", marker = "python_full_version < '3.13'" },
 ]
+classify = [
+    { name = "huggingface-hub" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "opencv-python-headless" },
+    { name = "tokenizers" },
+    { name = "torch" },
+    { name = "transformers" },
+]
 detect = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
@@ -3308,6 +3317,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0.0" },
     { name = "diffsynth", marker = "extra == 'qwen-zimage'", specifier = ">=2.0.17,<3" },
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
+    { name = "huggingface-hub", marker = "extra == 'classify'", specifier = ">=0.20.0" },
     { name = "huggingface-hub", marker = "extra == 'lama'", specifier = ">=0.20.0" },
     { name = "huggingface-hub", marker = "extra == 'migan'", specifier = ">=0.20.0" },
     { name = "huggingface-hub", marker = "extra == 'text-draft'", specifier = ">=0.20.0" },
@@ -3331,24 +3341,28 @@ requires-dist = [
     { name = "pywavelets", marker = "extra == 'detect'", specifier = ">=1.1.1" },
     { name = "remove-ai-watermarks", extras = ["detect"], marker = "extra == 'dev'" },
     { name = "remove-ai-watermarks", extras = ["diffusion"], marker = "extra == 'qwen-zimage'" },
+    { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'classify'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'detect'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'diffusion'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'visible'" },
     { name = "remove-ai-watermarks", extras = ["qwen-zimage", "lama"], marker = "extra == 'text-restoration'" },
     { name = "remove-ai-watermarks", extras = ["video"], marker = "extra == 'dev'" },
-    { name = "remove-ai-watermarks", extras = ["video", "heif", "detect", "trustmark", "text-restoration", "migan"], marker = "extra == 'all'" },
+    { name = "remove-ai-watermarks", extras = ["video", "heif", "detect", "trustmark", "text-restoration", "migan", "classify"], marker = "extra == 'all'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'lama'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'migan'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'video'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "safetensors", marker = "extra == 'diffusion'" },
+    { name = "tokenizers", marker = "extra == 'classify'", specifier = ">=0.22,<0.23" },
     { name = "tokenizers", marker = "extra == 'diffusion'", specifier = ">=0.22,<0.23" },
+    { name = "torch", marker = "extra == 'classify'", specifier = ">=2.0.0" },
     { name = "torch", marker = "extra == 'diffusion'", specifier = ">=2.0.0" },
     { name = "torchvision", marker = "extra == 'qwen-zimage'", specifier = ">=0.20.0" },
+    { name = "transformers", marker = "extra == 'classify'", specifier = ">=5,<6" },
     { name = "transformers", marker = "extra == 'diffusion'", specifier = ">=5,<6" },
     { name = "trustmark", marker = "python_full_version < '3.13' and extra == 'trustmark'", specifier = ">=0.8.0" },
 ]
-provides-extras = ["pixels", "heif", "visible", "video", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "lama", "migan", "dev", "all"]
+provides-extras = ["pixels", "heif", "visible", "video", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "classify", "lama", "migan", "dev", "all"]
 
 [[package]]
 name = "requests"
