@@ -326,8 +326,8 @@ _force_option = click.option(
     help=(
         "Run the diffusion scrub even when no invisible AI watermark is locally "
         "detectable. Default: skip it (regeneration only degrades a clean image; a "
-        "skip never claims the image is watermark-free -- a pixel SynthID is "
-        "undetectable once its metadata proxy is gone)."
+        "skip never claims the image is watermark-free -- this package has no local "
+        "SynthID pixel decoder)."
     ),
 )
 _cpu_offload_option = click.option(
@@ -505,18 +505,18 @@ def _no_invisible_signal_exit(source: Path) -> NoReturn:
     :func:`identify` finds no locally-detectable invisible AI signal, running it
     anyway would damage a clean image for nothing -- the dominant paid score-0
     cause on no-watermark uploads. So skip it, but do NOT imply the image is
-    clean: a pixel SynthID is undetectable here once its metadata proxy is gone.
-    Write no output and exit :data:`EXIT_NO_INVISIBLE_SIGNAL`; ``--force`` runs
-    the scrub regardless.
+    clean: Google does not publish the SynthID payload decoder, and this package
+    does not ship one, so a mark can still be present after its metadata proxy
+    is gone. Write no output and exit :data:`EXIT_NO_INVISIBLE_SIGNAL`;
+    ``--force`` runs the scrub regardless.
     """
     console.print(
-        "  No invisible AI watermark detected (no C2PA/SynthID provenance, no open\n"
+        "  No supported invisible AI watermark detected (no provenance or open\n"
         "  watermark). Skipped the diffusion scrub -- regenerating the pixels would\n"
         "  only degrade the image with nothing to remove, so no output was written.\n"
-        "  This does NOT prove the image is clean: a pixel watermark such as SynthID\n"
-        "  cannot be detected here once its metadata proxy is absent (it may have\n"
-        "  been stripped earlier). If you know the image is AI-generated and want the\n"
-        "  pixels regenerated regardless, re-run with --force:\n"
+        "  This does NOT prove the image is clean: this package has no local SynthID\n"
+        "  pixel decoder. If you know the image is AI-generated and want the pixels\n"
+        "  regenerated regardless, re-run with --force:\n"
         f"    remove-ai-watermarks invisible {source.name} --force"
     )
     raise SystemExit(EXIT_NO_INVISIBLE_SIGNAL)
@@ -1410,6 +1410,52 @@ def cmd_video_batch(
         raise SystemExit(1)
 
 
+# ── Official OpenAI SynthID verification ──
+@main.command("verify-openai-synthid")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--acknowledge-upload",
+    is_flag=True,
+    help="Confirm upload of a pixel-identical, AI-metadata-stripped copy to OpenAI.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the verifier result as JSON.")
+def cmd_verify_openai_synthid(source: Path, acknowledge_upload: bool, as_json: bool) -> None:
+    """Use OpenAI's official verifier on pixels, independently of C2PA.
+
+    The command strips AI provenance metadata from a temporary copy, proves the
+    decoded pixels are unchanged, and uploads that copy to OpenAI. It reads only
+    the SynthID result. The source file is never modified.
+    """
+    if not acknowledge_upload:
+        raise click.ClickException(
+            "this command uploads a temporary pixel-identical copy to OpenAI; pass --acknowledge-upload to continue"
+        )
+    from remove_ai_watermarks.openai_provenance import verify_openai_synthid
+
+    source = _validate_image(source)
+    try:
+        result = verify_openai_synthid(source, acknowledge_upload=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2))
+        return
+
+    _banner()
+    console.print(f"\n  OpenAI SynthID pixel watermark: {result.status}")
+    console.print("  Detector: official OpenAI Content Provenance API")
+    if result.model is not None:
+        console.print(f"  Model: {result.model}")
+    if result.generated_at is not None:
+        console.print(f"  Generated at: {result.generated_at}")
+    console.print(
+        "  Input: AI provenance metadata was stripped and decoded pixels were preserved.\n"
+        "  Scope: supported OpenAI SynthID only. A not_detected result is not proof\n"
+        "  that the image is human-created or contains no other watermark."
+    )
+
+
 # ── Provenance identification ──
 @main.command("identify")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
@@ -1461,9 +1507,8 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
     if report.is_ai_generated is None:
         console.print(
             "  No locally-readable AI signal found. This is not the same as 'clean': "
-            "metadata is often stripped by re-encoding, screenshots, or upload, and SynthID-class "
-            "pixel watermarks (Gemini / Nano Banana / gpt-image) have no local detector. "
-            "See caveats below."
+            "metadata is often stripped by re-encoding, screenshots, or upload, and this "
+            "package has no local SynthID pixel decoder. See caveats below."
         )
 
     if report.integrity_clashes:
@@ -1601,8 +1646,8 @@ def cmd_all(
     stage_text = {
         ("invisible", "no-signal"): (
             "Skipped (no invisible AI watermark detected; pixels left intact).\n"
-            "    Not a clean-image guarantee: a pixel SynthID is undetectable once its\n"
-            "    metadata proxy is gone. Re-run with --force to scrub regardless."
+            "    Not a clean-image guarantee: this package has no local SynthID pixel\n"
+            "    decoder. Re-run with --force to scrub regardless."
         ),
         ("invisible", "unavailable"): (
             f"Warning: Skipped - GPU dependencies not installed.\n    Install them with: pip install {INVISIBLE_EXTRA}"

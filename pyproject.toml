@@ -151,6 +151,11 @@ classify = [
     "tokenizers>=0.22,<0.23",
     "huggingface-hub>=0.20.0",
 ]
+# Official remote OpenAI SynthID verification. The command strips AI provenance
+# metadata and proves pixel identity before upload; it is never called implicitly.
+verify = [
+    "openai>=2.52.0",
+]
 # Universal region eraser backend -- big-LaMa via onnxruntime (Carve/LaMa-ONNX,
 # Apache-2.0). CPU, no torch. Model (~200 MB) is downloaded on first use and
 # cached by huggingface_hub; it is never bundled in this repo. The default cv2
@@ -183,7 +188,7 @@ dev = [
 ]
 # ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
 # independently sufficient for a removal, which it is not.
-all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,classify]"]
+all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,classify,verify]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"
@@ -216,13 +221,13 @@ exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "scripts"]
 addopts = "-v --tb=short"
 
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-exclude = ["_refs"]
+exclude = ["_refs", ".local-eval"]
 extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
@@ -233,7 +238,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/*.py" = ["G004", "S108", "S310", "T20"]
+"scripts/**/*.py" = ["G004", "S108", "S310", "T20"]
 "tests/*.py" = ["ANN", "S101", "S105", "S106", "S108"]
 "src/remove_ai_watermarks/_internal/watermark_remover.py" = ["S603", "S606", "S607"]  # nvidia-smi capability probe
 "src/remove_ai_watermarks/_internal/c2pa.py" = ["S110"]  # try-except-pass for corrupt file handling
@@ -245,7 +250,7 @@ indent-style = "space"
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
-exclude = ["_refs"]
+exclude = ["_refs", ".local-eval"]
 
 [[tool.pyright.executionEnvironments]]
 root = "tests"

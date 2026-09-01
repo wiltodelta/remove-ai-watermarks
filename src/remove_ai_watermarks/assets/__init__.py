@@ -1,1 +1,1 @@
-"""Embedded assets for visible watermark removal."""
+"""Embedded runtime assets for watermark detection and removal."""

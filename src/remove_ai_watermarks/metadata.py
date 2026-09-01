@@ -803,8 +803,9 @@ def synthid_source(image_path: Path, *, c2pa_info: dict[str, Any] | None = None)
     None.
 
     The evidence is readable only while the C2PA manifest is intact. Absence is
-    not proof: C2PA can be stripped while the pixel watermark survives, and the
-    pixel watermark itself is not locally detectable (proprietary decoder).
+    not proof: C2PA can be stripped while the pixel watermark survives. This
+    metadata helper does not call the separate, geometry-limited local carrier
+    detector.
 
     Args:
         image_path: Path to the image (PNG, JPEG, WebP, or ISOBMFF container).

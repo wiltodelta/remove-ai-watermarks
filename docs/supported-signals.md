@@ -141,12 +141,23 @@ Current pipeline values, all CUDA-only:
 The `controlnet`, `sdxl`, `qwen` and `default` values were removed. A retired name
 is rejected at parse time rather than remapped onto a surviving profile.
 
-SynthID does not have a public local pixel decoder in this project. The tool
-recognizes presence from supported provenance: Google AI C2PA under Google's
-all-media watermark policy, and current OpenAI C2PA carrying an explicit
-`c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action does not
-assert SynthID. After provenance metadata is removed, a local negative result
-is still inconclusive.
+Google does not publish the SynthID payload decoder. This package does not
+ship a local pixel detector for that watermark. Research on a periodic
+lattice expert is in [synthid-detector-research.md](synthid-detector-research.md)
+and `scripts/synthid_runtime/`.
+
+The tool recognizes presence from supported provenance: Google AI C2PA
+under Google's all-media watermark policy, and current OpenAI C2PA carrying an
+explicit `c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action
+does not assert SynthID.
+
+The optional `verify-openai-synthid` command is a separate official remote
+verifier for supported OpenAI watermarks. It strips AI provenance metadata from
+a temporary PNG, JPEG, or WebP copy, proves that decoded RGBA pixels are
+unchanged, and uses only the API's SynthID result. It is therefore independent
+of C2PA for its decision, but it is not local: the sanitized raster is uploaded
+to OpenAI after explicit acknowledgement. It is intentionally excluded from
+`identify` and its negative result remains inconclusive.
 
 Microsoft Paint can name `com.microsoft.invismark.1` in a C2PA soft-binding
 assertion. Inspection reports both that exact algorithm and its signed `value`,
@@ -219,7 +230,7 @@ not a universal clean verdict.
 
 | Provider or family | Visible | Invisible path | Metadata or provenance |
 | --- | --- | --- | --- |
-| Google Gemini | Sparkle | Diffusion regeneration for SynthID | C2PA and related source signals |
+| Google Gemini | Sparkle | Diffusion regeneration | C2PA and related source signals |
 | Google Veo video | Veo diamond and legacy text | Oracle-certified VAE removal for SynthID | C2PA and related source signals |
 | OpenAI image generators | None registered | Diffusion regeneration for supported invisible signals | C2PA and generator provenance |
 | Meta Muse Image | None on Muse output (legacy `Imagined with AI` unregistered) | Diffusion regeneration for Content Seal, oracle-verified on the default profile | XMP IPTC `trainedAlgorithmicMedia` companion tag; no local Content Seal decoder |

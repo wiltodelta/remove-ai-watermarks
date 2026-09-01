@@ -33,6 +33,7 @@ removal.
 | --- | --- | --- |
 | Find provenance signals and watermarks | `identify` | No |
 | Classify a photograph from pixels (opt-in, not provenance) | `classify` | No |
+| Verify supported OpenAI SynthID from pixels with the official remote API | `verify-openai-synthid` | No |
 | Remove known visible AI marks | `visible` | No |
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
@@ -56,6 +57,7 @@ its linked C2PA manifest; metadata stripping alone removes only the manifest.
 | --- | --- |
 | Metadata inspection and stripping | `remove-ai-watermarks` |
 | Photograph AI-versus-camera classification | `remove-ai-watermarks[classify]` |
+| Official remote OpenAI SynthID verification | `remove-ai-watermarks[verify]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
@@ -91,6 +93,24 @@ remove-ai-watermarks classify image.png
 ```
 
 Guide: [photo pixel classification](docs/photo-classify.md).
+
+Signed provenance is the supported route for SynthID and `identify` reads it.
+There is no local SynthID pixel detector in the package. Research on a
+periodic lattice expert is in `scripts/synthid_runtime/` and
+[synthid-detector-research.md](docs/synthid-detector-research.md).
+
+For supported OpenAI images, the optional official verifier provides a pixel
+watermark verdict:
+
+```bash
+uv tool install --force "remove-ai-watermarks[verify]"
+remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload
+```
+
+The command removes AI provenance metadata from a temporary copy, verifies that
+the decoded pixels are unchanged, uploads only that copy to OpenAI, and consumes
+only the independent SynthID response. It never runs implicitly from `identify`.
+An API key, endpoint access, and explicit upload acknowledgement are required.
 
 For visible watermark removal, install the pixel dependencies:
 
@@ -380,6 +400,9 @@ import remove_ai_watermarks as raiw
 
 result, removed = raiw.remove_visible("watermarked.png", "clean.png")
 print(removed)
+
+openai_synthid = raiw.verify_openai_synthid("image.png", acknowledge_upload=True)
+print(openai_synthid.status)
 
 provenance = raiw.identify_video("input.mp4")
 report = raiw.inspect_video_metadata("input.mp4")

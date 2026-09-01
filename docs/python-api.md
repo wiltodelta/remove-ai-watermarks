@@ -12,6 +12,23 @@ path that still runs on CPU and combines `video` and `diffusion`. Add `heif`
 independently when path-based pixel APIs must decode HEIC, HEIF, or AVIF. See
 the complete [feature-extra matrix](installation.md#feature-extras).
 
+## Verify OpenAI SynthID
+
+```python
+import remove_ai_watermarks as raiw
+
+result = raiw.verify_openai_synthid("input.png", acknowledge_upload=True)
+print(result.status)
+```
+
+Official OpenAI JSON results expose `signal_family`,
+`provider_scope`, `backend`, `metadata_used_for_verdict`, and
+`pixels_preserved`. Remote transport and response failures raise `OpenAIProvenanceError`. Its
+`status_code`, `error_code`, `request_id`, `retry_after`, and `retryable`
+attributes let a caller implement bounded backoff or a circuit breaker without
+turning an API outage into a false `not_detected` result. One function call still
+performs at most one upload.
+
 ## Remove visible marks
 
 Install `remove-ai-watermarks[visible]` before using the visible-removal API.
@@ -372,8 +389,8 @@ Timings and spatial artifacts are opt-in. Artifacts include image-identifying da
 such as a thumbnail and perceptual hash; aggregate feature families do not.
 
 `identify_from_evidence` does not reopen the source file by default: it evaluates
-metadata only, and registered visible marks and pixel-backed invisible watermarks
-remain in the path-based `identify` call.
+metadata only, and the pixel-backed checks remain in the path-based `identify`
+call: registered visible marks and open invisible-watermark decoders.
 
 Pass `image_path` together with `check_visible` or `check_invisible` to add those
 pixel detectors on top of the SAME evidence. That is how a caller asking one file

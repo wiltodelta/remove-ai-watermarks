@@ -18,12 +18,23 @@ CHATGPT = SAMPLES / "chatgpt-1.png"
 
 class TestTopLevelExports:
     def test_lazy_reexports_resolve(self):
+        from remove_ai_watermarks import openai_provenance
+
         assert raiw.remove_visible is api.remove_visible
         assert raiw.visible_provenance is api.visible_provenance
+        assert raiw.verify_openai_synthid is openai_provenance.verify_openai_synthid
+        assert raiw.OpenAIProvenanceError is openai_provenance.OpenAIProvenanceError
+        assert raiw.OpenAISynthIDDetection is openai_provenance.OpenAISynthIDDetection
 
     def test_unknown_attribute_raises(self):
         with pytest.raises(AttributeError):
             _ = raiw.does_not_exist
+
+    def test_local_synthid_detector_is_not_a_package_export(self):
+        with pytest.raises(AttributeError):
+            _ = raiw.detect_synthid
+        with pytest.raises(AttributeError):
+            _ = raiw.SynthIDDetection
 
     def test_bare_import_is_light(self):
         # importing the package must not pull the heavy cv2/torch stack (PEP 562 lazy).

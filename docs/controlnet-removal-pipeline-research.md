@@ -79,8 +79,9 @@ enough yet barely touches flat fills. So the survivors FLIP by content type — 
 choice alone does not guarantee removal.
 
 **2. Seed non-determinism near threshold.** img2img uses a random seed unless `--seed`
-is passed, and there is no local SynthID detector to self-verify. The bracelet survived
-controlnet @0.15 in one run and CLEARED @0.15 in another (same pipeline+strength+res).
+is passed, and these geometries are outside the current local detector's scope.
+The bracelet survived controlnet @0.15 in one run and CLEARED @0.15 in another
+(same pipeline+strength+res).
 So a single clean run does NOT establish a strength as safe — characterizing a reliable
 floor needs a seed-repeatability sweep (N runs, varied seed), not one pass.
 
@@ -144,8 +145,8 @@ Gemini app; the two payloads are vendor-specific and never cross-checked):
   but never recovered original identity precisely — every setting traded one problem
   for another. See `docs/synthid-robust-identity-research-2026-06-08.md`
   "Empirical follow-up" for the full sweep.
-- **No local SynthID detector exists** → the service can't self-verify; bake in strength
-  margin and periodic oracle spot-checks.
+- **No applicable local detector exists for these geometries** → the service
+  can't self-verify; bake in strength margin and periodic oracle spot-checks.
 - **Lesson:** visual-quality / face-identity recovery does NOT prove removal — only the
   oracle does, across MULTIPLE content types; never conclude from a partial result (the
   photoreal-only data first read as "controlnet shields, default removes"; the flat-graphic
@@ -298,8 +299,9 @@ attention-slicing; ~1-2 min/image, so a coarse sweep is a sub-hour background ru
 is needed ONLY for the separate
 native-large-Gemini (2816 px) case, which OOMs even without a ControlNet (that requires a
 GPU task). The genuine external dependency is NOT compute but the **manual SynthID oracle**:
-there is no local SynthID detector, so removal is verified by hand in the Gemini app
-("Verify with SynthID") per image, regardless of where the diffusion runs.
+these geometries are outside the current local detector's scope, so removal is
+verified by hand in the Gemini app ("Verify with SynthID") per image, regardless
+of where the diffusion runs.
 
 Runner: **`scripts/controlnet_sweep.py`** (built 2026-06-02) implements exactly this sweep —
 SDXL base 1.0 + an SDXL-native ControlNet img2img, one output per (control x strength x scale)
@@ -441,8 +443,9 @@ shielding risk; defer to a v2 after the single-canny path is dialed in.
 
 **Hard caveat:** every change that increases preservation (higher scale, denser canny, fuller window,
 softer edges) marginally REDUCES effective regeneration and so raises the chance the watermark
-survives -- exactly the shielding failure mode. There is no local SynthID detector, so each tuning
-change must be re-confirmed on the oracle. These are img2img-context recommendations derived from
+survives -- exactly the shielding failure mode. These geometries are outside the
+current local detector's scope, so each tuning change must be re-confirmed on
+the oracle. These are img2img-context recommendations derived from
 generation-context sources plus our own measurements; treat the playbook as hypotheses to verify, not
 settled defaults.
 

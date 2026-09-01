@@ -26,7 +26,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
 | [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, photo-classify Hub model, ComfyUI Registry, and the release workflow. |
 | [Watermarking landscape](watermarking-landscape.md) | Vendor signals and detection approaches. |
-| [SynthID technical reference](synthid.md) | Mechanism, detector access, robustness, and implications for this project. |
+| [SynthID technical reference](synthid.md) | Mechanism, provenance, robustness, regeneration. |
 
 ## Research archive
 
@@ -39,11 +39,13 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [Doubao reverse-alpha research](research-doubao-distillation.md)
 - [AI-generated image classifiers](ai-generated-image-classifiers.md) (photo AI-versus-camera freeze consumed by `classify_pixels`, not `identify`)
 - [Photo classifier Hugging Face card](photo-classify-hf/README.md) (Hub publication text of the 2026-08-31 freeze)
-- [SynthID source classifiers](synthid-classifiers.md)
+- [SynthID source classifiers](synthid-classifiers.md) (metadata-free OpenAI/Gemini source finding and provider-lineage experiments)
 - [SynthID local detector research](synthid-detector-research.md)
 - [SynthID mark removal research](synthid-removal-research.md)
 - [SynthID identity research](synthid-robust-identity-research.md)
 - [SynthID identity follow-up](synthid-robust-identity-research-2026-06-08.md)
 - [Video SynthID quality research](video-synthid-quality-research.md)
+- [OpenAI SynthID oracle ladders](synthid-oracle-ladders.md) (routing hub)
+- [SynthID detector and removal plan](synthid-detector-removal-plan.md) (chronological mixed archive)
 - [Text protection research](text-protection-research.md)
 - [Chroma1 engine research](chroma1-engine-research.md)

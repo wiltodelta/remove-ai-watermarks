@@ -184,7 +184,7 @@ Three harness rules are load-bearing and must not be relaxed: score a mark only 
 crop's adjudication scope; take provenance from metadata, never from labels; and never
 report recall from the detector-sampled set.
 
-## Tier D -- external oracles (manual, not automatable here)
+## Tier D -- external oracles
 
 Proprietary watermark removal cannot be verified locally by design -- no public decoder
 exists. Each vendor has its own oracle and it covers only that vendor's content:
@@ -194,6 +194,13 @@ for InvisMark. The Microsoft API reports `Watermark` and `C2PA` separately. It t
 needs a pixel-identical metadata-stripped control: the control must lose `C2PA` while
 remaining `Watermark`-positive before a candidate's negative result can be attributed to
 pixel regeneration. A quiet metadata proxy is **not** proof the pixel watermark is gone.
+
+OpenAI's API documentation says not to use repeated queries to reverse-engineer, remove,
+or evade a watermark. Using it as an adaptive research oracle therefore requires explicit
+authorization. Without that authorization it must not become a training loss, search loop,
+or automated removal gate. The provider-specific detector and pixel-only removal research
+protocol is in [`synthid-detector-removal-plan.md`](synthid-detector-removal-plan.md).
+
 
 Scope honestly: this tier certifies strength floors on a handful of images per vendor, and
 that is all it can do. See `docs/synthid.md`.

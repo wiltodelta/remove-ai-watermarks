@@ -54,7 +54,10 @@ versions, or runtime settings.
 Ground-truth quality, strongest first:
 
 - `gemini-app` — checked via the Gemini app "Verify with SynthID" feature. Gold standard for the pixel watermark (Google models).
-- `openai-verify` — checked via openai.com/verify (gold standard for OpenAI ChatGPT/Codex/API images).
+- `openai-verify` — checked through the OpenAI web verifier. This is the
+  historical manifest label for existing rows. OpenAI now also documents a
+  Content Provenance API with a separate SynthID result; add a distinct manifest
+  value before recording API-derived labels rather than silently reusing this one.
 - `synthid-portal` — checked via Google's SynthID Detector portal.
 - `c2pa-metadata` — supported provenance evidence (Google AI C2PA, or OpenAI
   C2PA with an explicit `c2pa.watermarked.*` action). Weaker than a provider

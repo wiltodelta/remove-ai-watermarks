@@ -111,12 +111,14 @@ rates are kept in
 [`text-protection-research.md`](text-protection-research.md) and the
 [`fidelity` evaluation record](../data/evaluations/fidelity/README.md).
 
-### Removal cannot be verified locally for proprietary SynthID
+### There is no local SynthID pixel detector in the package
 
-The project has no public local SynthID pixel decoder. It recognizes presence
-from supported provenance metadata: Google AI C2PA under Google's all-media
-policy, or current OpenAI C2PA with an explicit watermark action. A missing
-provenance signal is not a negative pixel verdict.
+Google does not publish the proprietary SynthID payload decoder, and the
+package does not ship one. Signed provenance is the supported route:
+Google AI C2PA or current OpenAI C2PA with an explicit watermark action.
+`verify-openai-synthid` is the official remote pixel check for OpenAI.
+Research on a periodic lattice expert is in
+[synthid-detector-research.md](synthid-detector-research.md).
 
 For important outputs:
 
@@ -457,9 +459,46 @@ with plain `torch.load`. Bump lightning and cut a patch release when a fix
 ships. The calibration history is in
 [module internals](module-internals.md#metadata-and-provenance).
 
-External AI versus real image classifiers are out of scope. The project
-identifies concrete local provenance signals instead of shipping a generic
-statistical classifier.
+A generic metadata-free AI-generated-image classifier is not shipped. It is a
+separate open research task from provenance detection: the current Model 1
+result is AI-versus-camera and still confuses some conventional graphics, CGI,
+product cutouts, and scans with generation. The OpenAI/Gemini source finder is
+narrower again and cannot substitute for the general classifier. The shipped
+product identifies concrete local provenance signals instead of presenting
+either research classifier as a supported verdict.
+
+Frozen transfers of Community Forensics, SPAI, SAFE, RINE, Nonescape Mini,
+Dual Data Alignment, PGC, and DGS-Net did not close this gap at the required low
+false-positive rate. DDA supplies a complementary representation but its
+independent errors make simple hybrids worse. PGC SD1.4 is strong on OpenAI,
+but its published output and the useful global/residual ablations misclassify
+most or all of the Kodak scan set; removing that branch removes the OpenAI
+gain. DGS-Net is weak at the same operating point and also adds independent
+photo errors. A source-disjoint public-domain museum audit confirmed a separate
+human-art failure: Model 1 called 355/1,050 drawings, prints, manuscripts,
+paintings, textiles, and studio-object or historical-photo rows AI-generated.
+Its error was 0/150 on the historical-photo control, so ordinary camera accuracy
+does not bound accuracy on other human-created visual media. A domain veto
+removed the museum errors in development but failed the existing AI-test and
+fresh-photo core. A second source-disjoint modern-negative audit measured the
+commercial cells: across 421 date-clean Unsplash and CC-licensed Flickr images,
+Model 1 accepted 16.4% as AI, concentrated in logo/graphic design (38.3%),
+retouched fashion photography (34.1% on the Unsplash cell; 2/40 on the Flickr
+replication), and product cutouts (16.0%), while composites
+stayed clean at 0/50 and long exposure near clean at 11/146 after a
+two-part contamination control (a 0/450 provenance-metadata scan and a
+pre-2022-08 date bound that dropped 29 rows, correcting one contaminated
+Flickr fashion cell). The failure pattern therefore spans both historical art
+and modern stylized graphics, not photographic exposure technique. A
+source-disjoint linear veto fit on the date-clean modern cells was then
+rejected one gate earlier: no searched operating point repaired even one
+modern dev error without dropping below the frozen EvalGEN and FLUX floors,
+because modern human graphics and AI generations overlap almost one-to-one in
+the frozen CLIP embedding, at roughly 1.3 to 1.5 AI positives lost per negative
+repaired. Model 1 also lacks a time/device-disjoint negative contract
+for modern computational photography. The measured public protocol, GitHub
+survey, and rejected fusions are recorded in
+[AI-generated image classifier research](ai-generated-image-classifiers.md#general-ai-classifier-github-sweep-2026-08-25).
 
 ## Output and traceability
 
