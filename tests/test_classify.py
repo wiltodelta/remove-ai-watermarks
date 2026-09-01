@@ -55,6 +55,8 @@ def test_shipped_operating_point_matches_the_runtime_defaults() -> None:
     assert payload["model1"]["ridge_threshold"] == RIDGE_THRESHOLD
     assert payload["model2"]["margin"] == PROVIDER_MARGIN
     assert payload["model2"]["runs_only_after"] == "definitely"
+    assert payload["model2"]["classes"] == ["openai", "google", "tc260", "muse-image", "no_ai"]
+    assert payload["model2"]["checkpoint_keys"]["muse-image"] == "meta_muse_image"
 
 
 def test_definitely_is_the_and_of_ridge_and_mlp() -> None:
@@ -74,7 +76,7 @@ def test_provider_requires_margin_over_no_ai() -> None:
     assert provider_from_scores(_scores(openai=1.0, no_ai=0.5)) == "openai"
     assert provider_from_scores(_scores(openai=0.5, no_ai=0.4)) is None
     assert provider_from_scores(_scores(google=2.0, openai=1.5, no_ai=0.0)) == "google"
-    assert provider_from_scores(_scores(meta=1.0, no_ai=0.0)) == "meta"
+    assert provider_from_scores(_scores(meta=1.0, no_ai=0.0)) == "muse-image"
     assert provider_from_scores(_scores(tc260=1.0, no_ai=0.0)) == "tc260"
 
 

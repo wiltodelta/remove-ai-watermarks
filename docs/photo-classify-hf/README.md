@@ -43,8 +43,8 @@ The training catalog is not in this Hub repository and is not on GitHub.
 Use it when you have a photographic still and you want a pixel opinion after
 metadata is gone:
 
-- `label=ai` plus `provider=openai|google|meta|tc260` on a stripped ChatGPT,
-  Gemini, Meta Muse, or TC260 photograph
+- `label=ai` plus `provider=openai|google|muse-image|tc260` on a stripped ChatGPT,
+  Gemini, Muse Image, or TC260 photograph
 - `label=human` on camera photographs at a low false-positive rate
 - `label=unknown` when the detector is only POSSIBLY AI, or when 124-d
   features cannot be extracted
@@ -78,7 +78,7 @@ flowchart TD
   m1 -->|likely_human| human[label human, provider none]
   m1 -->|possibly| unk[label unknown, provider none]
   m1 -->|definitely| m2[Model 2: 124-d one-vs-rest focal]
-  m2 -->|openai google meta tc260| named[label ai plus provider]
+  m2 -->|openai google muse-image tc260| named[label ai plus provider]
   m2 -->|no_ai or extract fail| aiOnly[label ai, provider none]
 ```
 
@@ -89,8 +89,9 @@ remain open. The shipped heads do not include a receipt specialist.
 Provider attribution tracks the **renderer**, not the front-end. Bing Image
 Creator rows signed Microsoft, OpenAI score as `openai`. Designer rows signed
 Microsoft, Google LLC score as `google`. Native Designer is mixed. There is
-no Microsoft pixel class. Instagram `made_with_ai` is not a Meta pixel class.
-Meta requires known-provenance Muse Image output.
+no Microsoft pixel class. `openai`, `google`, and `tc260` are provider classes.
+`muse-image` is Muse Image output, not a general Meta class. Instagram
+`made_with_ai` is not that class.
 
 ## Architecture
 
@@ -115,8 +116,9 @@ Meta requires known-provenance Muse Image output.
   (`openai`, `google`, `tc260`, `meta_muse_image`, `no_ai`)
 - Decision: a class wins only if it beats `no_ai` by margin 0.30, then argmax
   among those that passed
-- Public name `meta` is the Muse Image class. `no_ai` is not reported as
-  `human`; it becomes `provider=None` on an `ai` label (for example FLUX)
+- Public name `muse-image` is the Muse Image class. The freeze file still
+  keys that head `meta_muse_image`. `no_ai` is not reported as `human`; it
+  becomes `provider=None` on an `ai` label (for example FLUX)
 
 ## Training
 

@@ -21,9 +21,9 @@
   "model2": {
     "feature_width": 124,
     "margin": 0.3,
-    "classes": ["openai", "google", "tc260", "meta_muse_image", "no_ai"],
-    "public_names": {
-      "meta_muse_image": "meta"
+    "classes": ["openai", "google", "tc260", "muse-image", "no_ai"],
+    "checkpoint_keys": {
+      "muse-image": "meta_muse_image"
     },
     "runs_only_after": "definitely"
   },

@@ -35,17 +35,19 @@ MLP_THRESHOLD = 5.9586493237495395
 RIDGE_THRESHOLD = 0.3056212276800537
 PROVIDER_MARGIN = 0.30
 CLIP_WIDTH = 768
+# Checkpoint keys in provider.pt. openai/google/tc260 are provider classes;
+# meta_muse_image is Muse Image output. Public names follow that split.
 PROVIDER_LABELS = ("openai", "google", "tc260", "meta_muse_image", "no_ai")
 
 DetectorLevel = Literal["definitely", "possibly", "likely_human"]
 PixelLabel = Literal["ai", "human", "unknown"]
 PixelDomain = Literal["photo"]
-PixelProvider = Literal["openai", "google", "meta", "tc260"]
+PixelProvider = Literal["openai", "google", "muse-image", "tc260"]
 PUBLIC_PROVIDER: dict[str, PixelProvider] = {
     "openai": "openai",
     "google": "google",
     "tc260": "tc260",
-    "meta_muse_image": "meta",
+    "meta_muse_image": "muse-image",
 }
 
 _runtime: _Runtime | None = None
@@ -104,7 +106,7 @@ def label_for(level: DetectorLevel) -> PixelLabel:
 
 
 def provider_from_scores(scores: dict[str, float], *, margin: float = PROVIDER_MARGIN) -> PixelProvider | None:
-    """Argmax among openai/google/tc260/meta that beat ``no_ai`` by ``margin``."""
+    """Argmax among openai/google/tc260/muse-image that beat ``no_ai`` by ``margin``."""
     no_ai = scores["no_ai"]
     ai_names = [name for name in PROVIDER_LABELS if name != "no_ai"]
     passed = [name for name in ai_names if scores[name] > no_ai + margin]

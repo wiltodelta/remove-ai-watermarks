@@ -84,7 +84,7 @@ remove-ai-watermarks classify image.png --json
 
 The command runs the frozen photo detector (CLIP-L-ft ridge AND freeze MLP).
 Only a DEFINITELY result is reported as `ai`. On that result only, the 124-d
-provider head may return `openai`, `google`, `meta`, or `tc260`. POSSIBLY is
+provider head may return `openai`, `google`, `muse-image`, or `tc260`. POSSIBLY is
 `unknown`. Camera-like photographs are `human`. The call does not run cleanup
 and does not set `is_ai_generated`.
 

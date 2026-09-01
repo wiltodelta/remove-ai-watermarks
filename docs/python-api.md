@@ -160,7 +160,7 @@ print(result.label, result.detector, result.provider)
 
 `label` is `ai` only on a DEFINITELY detector result (ridge AND freeze MLP).
 POSSIBLY is `unknown`. Camera-like photographs are `human`. `provider` is
-`openai`, `google`, `meta`, or `tc260` only when `label` is `ai` and the 124-d
+`openai`, `google`, `muse-image`, or `tc260` only when `label` is `ai` and the 124-d
 head beats `no_ai` by the freeze margin. Otherwise it is `None`, including
 when 124-d extraction refuses the file.
 

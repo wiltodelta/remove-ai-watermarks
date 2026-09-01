@@ -587,7 +587,8 @@ derived results influence detection.
 [`classify.py`](../src/remove_ai_watermarks/classify.py) is the 2026-08-31
 photo freeze: CLIP-L-ft ridge AND freeze MLP, then 124-d focal heads only on
 DEFINITELY. The public label is `ai` / `human` / `unknown`. POSSIBLY is
-`unknown`. Provider is `None` unless the label is `ai`. Tests in
+`unknown`. Provider is `openai` / `google` / `muse-image` / `tc260` / `None`.
+The freeze file keys the Muse Image head `meta_muse_image`. Tests in
 `tests/test_classify.py` pin the gate without downloads and pin that
 `identify` does not import this module.
 

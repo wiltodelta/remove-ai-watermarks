@@ -54,7 +54,7 @@ flowchart TD
   m1 -->|likely_human| human["label human, provider none"]
   m1 -->|possibly| unk["label unknown, provider none"]
   m1 -->|definitely| m2[Model 2 124-d focal heads]
-  m2 -->|openai google meta tc260| named["label ai plus provider"]
+  m2 -->|openai google muse-image tc260| named["label ai plus provider"]
   m2 -->|no_ai or extract fail| aiOnly["label ai, provider none"]
 ```
 
@@ -63,7 +63,7 @@ flowchart TD
 | `label` | `ai`, `human`, `unknown` | Public verdict. `ai` only on DEFINITELY |
 | `domain` | `photo` | This freeze is photographic only |
 | `detector` | `definitely`, `possibly`, `likely_human` | Raw Model 1 gate |
-| `provider` | `openai`, `google`, `meta`, `tc260`, or `None` | Model 2, only if `label` is `ai` |
+| `provider` | `openai`, `google`, `muse-image`, `tc260`, or `None` | Model 2, only if `label` is `ai` |
 
 `human` is camera-like under this contract, not a proof of authorship.
 `unknown` is POSSIBLY, or a domain this freeze does not support. `provider=None`
@@ -84,8 +84,9 @@ wrong job on that bank, which is why Model 2 is gated.
 
 Provider names the renderer, not the product UI. Bing Image Creator signed
 Microsoft, OpenAI scores `openai`. Designer signed Microsoft, Google LLC
-scores `google`. There is no Microsoft pixel class. Meta is Muse Image, not
-an Instagram `made_with_ai` tag.
+scores `google`. There is no Microsoft pixel class. `openai`, `google`, and
+`tc260` are provider classes. `muse-image` is Muse Image output, not a
+general Meta class and not an Instagram `made_with_ai` tag.
 
 ## Evaluation
 
