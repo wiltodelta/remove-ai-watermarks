@@ -86,3 +86,10 @@ construction and fits the same heads from the pack above.
 CLIP-L fine-tune of the last two vision blocks is earlier, seed 20260822, and
 is not repeated by the retrain script. The backbone file `clip-l-ft.pt` is an
 inference and embedding dependency, not a retrain-pack input.
+
+## Next retrain
+
+Keep the current `tc260` head until then. The next provider-head fit should
+split that catalog by `ContentProducer` (Doubao, Jimeng, Qwen, Kling, and
+the rest) instead of one label-standard class. Do not treat a `tc260` score
+as a named manufacturer.

@@ -114,6 +114,8 @@ The ungated meme row is why Model 2 never runs on `human` or `unknown`.
 - Not SynthID, not C2PA, not `is_ai_generated`.
 - Images under 256 px cannot yield 124-d features, so provider abstains.
 - FLUX is a hold-out at 83% DEF, not a named provider class.
+- `tc260` is mixed producers under one label standard. A later retrain
+  should split it by manufacturer.
 
 `identify`, `has_invisible_target`, `all`, and `invisible` do not import this
 module. A no-signal provenance result stays unknown until you call `classify`

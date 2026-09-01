@@ -192,6 +192,9 @@ DEF) at a small recall cost.
 - **Open-world generators.** FLUX is a hold-out at 83% DEF, not 100%.
   Unknown generators may land on `ai` with `provider=None`, or miss
   DEFINITELY.
+- **`tc260` is mixed producers.** Doubao, Jimeng, Qwen, Kling, and others
+  share one label-standard head. A later retrain should split by
+  `ContentProducer`. Do not read `tc260` as a named manufacturer.
 
 ## How to use
 
