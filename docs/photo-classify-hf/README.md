@@ -17,7 +17,7 @@ datasets:
   - detection-datasets/coco
 ---
 
-# Photo AI-versus-camera classifier (freeze 2026-08-31)
+# Photo AI-versus-camera classifier
 
 Two heads, one call. Model 1 decides whether a **photograph** looks generated
 or camera-like. Model 2 names a provider only after Model 1 is DEFINITELY AI.
@@ -219,7 +219,7 @@ silently change the heads.
 | `probe-weights-clip-l-ft.npz` | Ridge mean, scale, weights, `thr_oi_1pct` |
 | `detector.pt` | Freeze MLP |
 | `provider.pt` | Focal heads keyed `openai`, `google`, `tc260`, `meta_muse_image`, `no_ai` |
-| `operating-point.json` | Seeds, thresholds, margin, freeze date |
+| `operating-point.json` | Seeds, thresholds, margin |
 
 The image catalog is not in this repository.
 
@@ -232,6 +232,6 @@ here.
 
 ## Citation
 
-Freeze date 2026-08-31, package [`remove-ai-watermarks`](https://github.com/wiltodelta/remove-ai-watermarks).
+Package [`remove-ai-watermarks`](https://github.com/wiltodelta/remove-ai-watermarks).
 Protocol and rejected variants: [docs/ai-generated-image-classifiers.md](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/ai-generated-image-classifiers.md).
 Provider renderer study: [docs/synthid-classifiers.md](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/synthid-classifiers.md).

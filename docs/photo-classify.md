@@ -87,7 +87,7 @@ Microsoft, OpenAI scores `openai`. Designer signed Microsoft, Google LLC
 scores `google`. There is no Microsoft pixel class. Meta is Muse Image, not
 an Instagram `made_with_ai` tag.
 
-## Freeze 2026-08-31
+## Evaluation
 
 Two CPU retrains were byte-identical. DEFINITELY is the shipped cut.
 
