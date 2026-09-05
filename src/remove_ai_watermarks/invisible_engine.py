@@ -111,9 +111,10 @@ class InvisibleEngine:
             controlnet_conditioning_scale: Canny ControlNet structure-preservation
                 strength on the global stage (not used by chroma-zimage).
             cpu_offload: Offload model components to CPU between CUDA calls instead
-                of keeping the whole pipeline in VRAM, at the cost of speed. For
-                qwen-zimage, force the face stack to offload instead of using automatic
-                residency. CUDA only.
+                of keeping the whole pipeline in VRAM, at the cost of speed. Forces
+                the face stack to offload instead of using automatic residency, on
+                every profile; reaches the global stack of qwen-zimage only.
+                CUDA only.
         """
 
         from remove_ai_watermarks._internal.watermark_remover import WatermarkRemover

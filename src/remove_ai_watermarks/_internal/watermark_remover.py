@@ -19,6 +19,7 @@ from remove_ai_watermarks._internal.watermark_profiles import (
     QWEN_ZIMAGE_PROFILE,
     REMOVAL_MODULES,
     SDXL_ZIMAGE_PROFILE,
+    global_offload_supported,
     normalize_profile,
     resolve_auto_profile,
     resolve_seed,
@@ -153,8 +154,26 @@ class WatermarkRemover:
         """Materialize the selected model stack before the first request."""
         self._load_qwen_zimage_pipeline().preload(global_only=global_only)
 
+    def _warn_if_global_offload_unsupported(self) -> None:
+        """Say so when --cpu-offload cannot reach the stack it was asked for.
+
+        Warned here rather than at construction because ``auto`` picks its engine
+        per-image: by the time a stack is built, ``model_profile`` is concrete, and
+        this is still ahead of the model load the user is waiting on.
+        """
+        if not self.cpu_offload or global_offload_supported(self.model_profile):
+            return
+        logger.warning(
+            "--cpu-offload does not reach the global stack of the '%s' pipeline: only "
+            "qwen-zimage streams its global model between CUDA calls. The face stage "
+            "still honours the flag, so below the face-stage residency floor this run "
+            "behaves as if --cpu-offload were absent.",
+            self.model_profile,
+        )
+
     def _load_qwen_zimage_pipeline(self) -> Any:
         if self._qwen_zimage_pipeline is None:
+            self._warn_if_global_offload_unsupported()
             if self.model_profile == SDXL_ZIMAGE_PROFILE:
                 from remove_ai_watermarks._internal.sdxl_zimage_pipeline import (
                     SdxlZImagePipeline as _Pipeline,

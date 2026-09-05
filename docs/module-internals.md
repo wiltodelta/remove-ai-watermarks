@@ -1480,8 +1480,18 @@ Regression coverage:
 
 CPU offload is enabled only when requested. Nothing calls Diffusers'
 `enable_model_cpu_offload` any more -- that belonged to the deleted single-stage
-profiles. `--cpu-offload` now forces **both** stacks of the two-stage profiles out
-of automatic device residency.
+profiles. `--cpu-offload` sets both residency fields, and they do not travel the
+same distance: the face field is read by the shared base and so applies to every
+profile, while the global field is read by `QwenZImagePipeline` alone.
+`ChromaZImagePipeline` and `SdxlZImagePipeline` load their global stack with a
+plain `.to(device)` and never consult it.
+
+`GLOBAL_OFFLOAD_PROFILES` in `watermark_profiles.py` is the list, and
+`global_offload_supported` the question; `WatermarkRemover._warn_if_global_offload_unsupported`
+warns ahead of the model load rather than at construction, because `auto` picks
+its engine per-image. Below `RESIDENT_FACE_MODEL_MIN_VRAM_GIB` the flag is a no-op
+for those two profiles -- the face stack was offloading anyway and the global one
+does not ask -- which is what the warning exists to say before a download starts.
 
 Residency is otherwise chosen from the card's total VRAM, once per stack:
 `resolve_global_model_residency` gates the mandatory Qwen stack at

@@ -308,9 +308,16 @@ global Qwen stage is tiled; the face stage runs after tile blending.
 
 ### CPU offload trades speed for VRAM
 
-`--cpu-offload` forces both stacks of the two-stage profile out of automatic
-device residency, streaming weights instead of pinning them. It reduces CUDA
-memory pressure at the cost of speed.
+`--cpu-offload` forces the shared face stack out of automatic device residency on
+every profile, streaming weights instead of pinning them. It reduces CUDA memory
+pressure at the cost of speed.
+
+It reaches the global stack of `qwen-zimage` only. That stack is each
+profile's own, and `chroma-zimage` and `sdxl-zimage` load theirs with a plain
+`.to(device)`. On a card below the face-stage residency floor, where the face
+stack was already offloading, the flag changes nothing at all for those two: the
+run behaves as if it were absent. The library says so on the way past, as a
+warning ahead of the model load.
 
 Residency is otherwise chosen from the card's total VRAM. On a card large enough
 to hold a stack, offloading is pure waste: DiffSynth drops weights to the meta
