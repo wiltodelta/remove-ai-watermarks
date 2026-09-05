@@ -19,10 +19,10 @@ from remove_ai_watermarks.forensic_metadata import (
     _b64,
     _decode_exif_value,
     _jpeg_forensics_bytes,
-    _png_text_decode,
     _safe_str,
     apple_live_photo_id,
     collect_forensic_metadata,
+    png_text_decode,
     read_full_exif,
     read_isobmff_inventory,
     read_isobmff_provenance_path,
@@ -96,10 +96,10 @@ def test_png_text_and_container_metadata_are_preserved(tmp_path: Path):
 
 
 def test_png_text_decoders_and_direct_chunk_reader(tmp_path: Path):
-    assert "hello" in _png_text_decode("tEXt", b"key\x00hello")
+    assert "hello" in png_text_decode("tEXt", b"key\x00hello")
     compressed = b"prompt\x00\x00" + zlib.compress(b"workflow")
-    assert "workflow" in _png_text_decode("zTXt", compressed)
-    assert "value" in _png_text_decode("iTXt", b"key\x00\x00\x00\x00\x00value")
+    assert "workflow" in png_text_decode("zTXt", compressed)
+    assert "value" in png_text_decode("iTXt", b"key\x00\x00\x00\x00\x00value")
 
     path = tmp_path / "plain.png"
     Image.new("RGB", (8, 8)).save(path)

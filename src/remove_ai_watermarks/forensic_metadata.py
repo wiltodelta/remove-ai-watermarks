@@ -149,7 +149,7 @@ def read_full_exif(
     return out, thumbnail
 
 
-def _png_text_decode(ctype: str, body: bytes) -> str:
+def png_text_decode(ctype: str, body: bytes) -> str:
     """Decode a tEXt/zTXt/iTXt chunk, inflating zlib where used.
 
     The compressed forms are where ComfyUI / Automatic1111 hide the
@@ -209,7 +209,7 @@ def read_png_chunks(data: bytes) -> tuple[list[dict[str, Any]], bytes]:
             body = data[pos + 8 : pos + 8 + length]
             entry: dict[str, Any] = {"type": ctype, "length": length}
             if ctype in ("tEXt", "zTXt", "iTXt"):
-                entry["text"] = _png_text_decode(ctype, body)
+                entry["text"] = png_text_decode(ctype, body)
                 if entry["text"].startswith("XML:com.adobe.xmp"):
                     entry["kind"] = "xmp"
             elif ctype == "tIME" and length == 7:

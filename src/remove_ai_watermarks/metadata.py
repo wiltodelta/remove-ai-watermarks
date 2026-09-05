@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from remove_ai_watermarks._internal.constants import (
+    C2PA_CHUNK_TYPE,
     PNG_METADATA_CHUNKS,
+    PNG_SIGNATURE,
     RIFF_METADATA_CHUNKS,
 )
 
@@ -1371,6 +1373,80 @@ def _strip_jpeg_metadata_lossless(source_path: Path, output_path: Path) -> bool:
     return True
 
 
+def _png_bit_depth(data: bytes) -> int:
+    """Bit depth declared in a PNG's IHDR, or 0 when the bytes are not a PNG.
+
+    IHDR is the first chunk and fixed-width: 8 signature bytes, 4 length, 4 type,
+    then width/height (8) put the depth byte at offset 24.
+    """
+    if not data.startswith(PNG_SIGNATURE) or len(data) < 26 or data[12:16] != b"IHDR":
+        return 0
+    return data[24]
+
+
+def _strip_png_metadata_lossless(source_path: Path, output_path: Path, keep_standard: bool) -> bool:
+    """Remove AI metadata from a PNG by rewriting its chunk list, leaving IDAT alone.
+
+    Exists for the depth Pillow cannot hold: it decodes a 16-bit colour PNG to 8 bits
+    per channel, so the open+save strip below silently halves the precision of a
+    16-bit source (the file goes in at ``Bit Depth 16`` and comes out at 8). Walking
+    the chunks instead copies the pixel stream verbatim, so the depth -- and every
+    non-metadata chunk, ``iCCP`` colour profile included -- survives untouched. This
+    is the PNG analogue of :func:`_strip_jpeg_metadata_lossless`, and it drops the
+    same chunks the PIL path drops: AI-bearing text chunks, ``eXIf`` (PNG output
+    drops EXIF there too) and the ``caBX`` C2PA store.
+
+    Returns False when the bytes are not a walkable PNG, so the caller falls back to
+    the PIL re-save.
+    """
+    from remove_ai_watermarks.forensic_metadata import png_text_decode
+
+    data = source_path.read_bytes()
+    if not data.startswith(PNG_SIGNATURE):
+        return False
+    out = bytearray(PNG_SIGNATURE)
+    pos, n = 8, len(data)
+    while pos + 8 <= n:
+        (length,) = struct.unpack(">I", data[pos : pos + 4])
+        chunk_type = data[pos + 4 : pos + 8]
+        end = pos + 8 + length + 4  # header + payload + CRC
+        if length > n or end > n:
+            return False  # malformed length: defer to the PIL re-encode fallback
+        if not _png_chunk_carries_ai(chunk_type, data[pos + 8 : pos + 8 + length], keep_standard, png_text_decode):
+            out += data[pos:end]
+        if chunk_type == b"IEND":
+            break
+        pos = end
+    else:
+        return False  # ran out of bytes before IEND: not a complete PNG
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(bytes(out))
+    return True
+
+
+def _png_chunk_carries_ai(
+    chunk_type: bytes,
+    payload: bytes,
+    keep_standard: bool,
+    decode: Callable[[str, bytes], str],
+) -> bool:
+    """True when a PNG chunk must be dropped by the lossless strip.
+
+    Mirrors the keep/drop decisions the PIL path makes over ``img.info``: a text
+    chunk survives only when ``keep_standard`` and its keyword is standard and its
+    text names no AI generator; ``eXIf`` and the ``caBX`` C2PA store always go.
+    Everything else -- IHDR, IDAT, iCCP, PLTE, IEND -- is copied through.
+    """
+    if chunk_type == C2PA_CHUNK_TYPE or chunk_type == b"eXIf":
+        return True
+    if chunk_type not in (b"tEXt", b"zTXt", b"iTXt"):
+        return False
+    keyword, _, text = decode(chunk_type.decode("ascii"), payload).partition("\x00")
+    if _is_ai_key(keyword) or _is_ai_value(text) or _is_aigc_exif_value(text):
+        return True
+    return not (keep_standard and keyword in STANDARD_METADATA_KEYS)
+
+
 # Fallback extension -> PIL save format, used only when the content sniff is
 # inconclusive (never for JPEG re-encode of lossless content).
 _EXT_TO_PIL_FORMAT = {".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP", ".png": "PNG"}
@@ -1536,6 +1612,15 @@ def remove_ai_metadata(
     # must use the full re-encode path below instead.
     if keep_standard and true_fmt == "JPEG" and _strip_jpeg_metadata_lossless(source_path, output_path):
         return output_path
+
+    # PNG deeper than 8 bits: Pillow cannot hold 16-bit colour, so the open+save path
+    # below would return the image at half its precision without saying so. Walk the
+    # chunks instead, which copies IDAT verbatim. Only for >8-bit sources: at 8 bits
+    # PIL is not lossy, and this keeps the shipped path for every ordinary PNG.
+    if true_fmt == "PNG" and _png_bit_depth(source_path.read_bytes()) > 8:
+        if _strip_png_metadata_lossless(source_path, output_path, keep_standard):
+            return output_path
+        logger.warning("Could not walk the chunks of 16-bit PNG %s; falling back to an 8-bit re-save", source_path)
 
     # Fail-safe for a truncated / corrupt image: PIL raises OSError when it decodes a
     # partial file (`img.copy()` / `img.save()` below), which would crash a direct

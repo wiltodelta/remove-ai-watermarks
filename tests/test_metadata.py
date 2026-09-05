@@ -2011,3 +2011,92 @@ def test_remove_all_bypasses_lossless_jpeg(tmp_path, monkeypatch):
     calls.clear()
     md.remove_ai_metadata(src, out, keep_standard=False)
     assert not calls, "keep_standard=False must bypass the AI-only lossless JPEG path"
+
+
+class TestSixteenBitPngStrip:
+    """A 16-bit PNG must come out of the strip still 16-bit.
+
+    Pillow cannot hold 16-bit colour, so the open+save path decodes to 8 bits per
+    channel and re-encodes: the file went in at ``Bit Depth 16`` and came out at 8,
+    with no warning. Deeper-than-8-bit PNGs take a chunk walk instead, which copies
+    IDAT verbatim.
+    """
+
+    @staticmethod
+    def _write_png16(path: Path, chunks: list[tuple[bytes, bytes]]) -> None:
+        """A minimal valid 16-bit RGB PNG with ``chunks`` inserted after IHDR."""
+        import zlib
+
+        width = height = 4
+        raw = b"".join(b"\x00" + b"\xab\xcd" * 3 * width for _ in range(height))
+
+        def chunk(ctype: bytes, body: bytes) -> bytes:
+            return struct.pack(">I", len(body)) + ctype + body + struct.pack(">I", zlib.crc32(ctype + body))
+
+        ihdr = struct.pack(">IIBBBBB", width, height, 16, 2, 0, 0, 0)  # 16-bit, truecolour
+        out = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+        for ctype, body in chunks:
+            out += chunk(ctype, body)
+        out += chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+        path.write_bytes(out)
+
+    def test_the_depth_and_the_pixels_survive(self, tmp_path: Path):
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(src, [(b"tEXt", b"parameters\x00masterpiece, best quality")])
+
+        remove_ai_metadata(src, out)
+
+        assert out.read_bytes()[24] == 16  # IHDR bit depth
+        assert b"IDAT" in out.read_bytes()
+        # The pixel stream is copied, not re-encoded.
+        src_idat = src.read_bytes().split(b"IDAT", 1)[1]
+        assert src_idat in out.read_bytes()
+
+    def test_the_ai_chunk_goes_and_a_standard_one_stays(self, tmp_path: Path):
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(
+            src,
+            [
+                (b"tEXt", b"parameters\x00masterpiece, best quality"),
+                (b"tEXt", b"Author\x00A Person"),
+            ],
+        )
+
+        remove_ai_metadata(src, out)
+
+        data = out.read_bytes()
+        assert b"parameters" not in data
+        assert b"A Person" in data
+
+    def test_the_colour_profile_is_not_collateral(self, tmp_path: Path):
+        # The PIL path drops iCCP on a PNG re-save; the chunk walk must not, or the
+        # strip would trade a metadata tag for the image's colour.
+        import zlib
+
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(src, [(b"iCCP", b"ICC\x00\x00" + zlib.compress(b"not-a-real-profile"))])
+
+        remove_ai_metadata(src, out)
+
+        assert b"iCCP" in out.read_bytes()
+
+    def test_a_c2pa_store_still_goes(self, tmp_path: Path):
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(src, [(b"caBX", b"jumbfake")])
+
+        remove_ai_metadata(src, out)
+
+        assert b"caBX" not in out.read_bytes()
+
+    def test_an_eight_bit_png_keeps_the_shipped_path(self, tmp_path: Path):
+        # The chunk walk is scoped to the depth Pillow cannot hold; an ordinary PNG
+        # must keep going through PIL, which rewrites the file.
+        src, out = tmp_path / "src8.png", tmp_path / "out8.png"
+        info = PngInfo()
+        info.add_text("parameters", "masterpiece, best quality")
+        Image.new("RGB", (4, 4), (10, 20, 30)).save(src, pnginfo=info)
+
+        remove_ai_metadata(src, out)
+
+        assert b"parameters" not in out.read_bytes()
+        assert Image.open(out).size == (4, 4)

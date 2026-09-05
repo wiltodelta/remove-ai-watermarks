@@ -1391,6 +1391,18 @@ MI-GAN and LaMa crop around the mask before model inference and paste back only
 masked pixels. Their model sessions are loaded lazily. MI-GAN uses the inverse
 mask polarity expected by its ONNX model.
 
+Depth is the source's, and only the filled pixels can lose it. `cv2.inpaint`
+accepts 16-bit as a single channel only (its colour path is 8-bit) and the shipped
+MI-GAN ONNX declares a uint8 input tensor, so both narrow the frame through
+`_erase_via_uint8`, fill, and write the result back into the original array --
+everything outside the mask stays bit-exact at 16 bits. LaMa is float32 and needs no
+narrowing: it normalises by the source's full scale and returns the source dtype.
+Before that, a 16-bit colour image raised a bare `icvInpaint` "Unsupported format"
+error on the cv2 backend, and LaMa divided the crop by a hardcoded 255 -- feeding the
+model ~235 where it expected ~0.92 and then wrapping the uint8 cast into near-black
+pixels, which is the worse failure of the two because it is silent. A float image is
+now refused by name rather than reaching a backend that cannot take it.
+
 Regression coverage:
 
 - [`test_region_eraser.py`](../tests/test_region_eraser.py)
@@ -1918,6 +1930,17 @@ Contracts:
 - HEIC, HEIF, and AVIF pixel reads fall back to Pillow plus `pillow-heif` from
   the independent `heif` extra. Metadata scanning does not require that plugin.
 - A visible no-op can preserve the original file bytes.
+- `read_bgr_and_alpha` reads with `IMREAD_UNCHANGED`, so a 16-bit source stays
+  16-bit through the pixel path and out through `imwrite`. Anything downstream that
+  needs 8 bits narrows a copy for itself.
+
+The metadata strip is the other half of that contract: Pillow cannot hold 16-bit
+colour, so `remove_ai_metadata`'s open+save path silently returned a 16-bit PNG at
+8 bits. A PNG whose IHDR declares more than 8 bits now goes through
+`_strip_png_metadata_lossless`, which walks the chunk list, drops the AI-bearing
+text chunks plus `eXIf` and `caBX`, and copies IDAT (and `iCCP`) verbatim -- the PNG
+analogue of `_strip_jpeg_metadata_lossless`. The gate is the depth, not the format:
+at 8 bits PIL is not lossy, so ordinary PNGs keep the shipped path.
 
 Regression coverage:
 

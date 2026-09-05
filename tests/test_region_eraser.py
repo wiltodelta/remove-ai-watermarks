@@ -295,3 +295,82 @@ class TestMiganWrapper:
         out = erase(bgra, boxes=[(40, 40, 20, 20)], backend="migan", dilate=0)
         assert out.shape == bgra.shape
         assert np.array_equal(out[..., 3], bgra[..., 3])
+
+
+class TestSixteenBitInputs:
+    """A 16-bit source must survive the fill, whatever the backend can hold.
+
+    cv2.inpaint takes 16-bit only as a single channel (its colour path is 8-bit)
+    and the MI-GAN ONNX declares a uint8 input tensor, so those two fill through an
+    8-bit copy; LaMa is float32 and carries the depth end to end. In every case the
+    pixels OUTSIDE the mask stay bit-exact at the source's depth -- feeding a 16-bit
+    colour image to cv2 used to raise a bare OpenCV "Unsupported format" error.
+    """
+
+    @staticmethod
+    def _gradient16() -> np.ndarray:
+        column = np.linspace(0, 65535, 96, dtype=np.uint16)
+        return np.repeat(np.tile(column, (96, 1))[:, :, None], 3, axis=2).copy()
+
+    def test_cv2_fills_a_16_bit_image_without_raising(self):
+        img = self._gradient16()
+        out = erase(img, boxes=[(20, 20, 30, 30)], backend="cv2", dilate=3)
+        assert out.dtype == np.uint16
+        assert out.shape == img.shape
+
+    def test_cv2_leaves_everything_outside_the_mask_bit_exact(self):
+        img = self._gradient16()
+        mask = boxes_to_mask(img.shape[:2], [(20, 20, 30, 30)], dilate=3)
+        out = erase(img, mask=mask, backend="cv2")
+        keep = mask <= 127
+        assert np.array_equal(out[keep], img[keep])
+        assert not np.array_equal(out[mask > 127], img[mask > 127])
+
+    def test_the_fill_lands_in_the_source_s_range_not_the_8_bit_one(self):
+        # The narrow-then-widen round trip must scale back up: leaving the 8-bit
+        # levels in a uint16 array would paint the mask near-black.
+        img = np.full((96, 96, 3), 40000, np.uint16)
+        mask = boxes_to_mask(img.shape[:2], [(30, 30, 20, 20)], dilate=3)
+        filled = erase(img, mask=mask, backend="cv2")[mask > 127]
+        assert filled.min() > 30000
+
+    def test_a_float_image_says_what_is_wrong(self):
+        img = np.full((64, 64, 3), 0.5, np.float32)
+        with pytest.raises(RuntimeError, match="integer images"):
+            erase(img, boxes=[(10, 10, 20, 20)], backend="cv2")
+
+
+class TestLamaSixteenBit:
+    """LaMa normalises by the SOURCE's full scale, so 16 bits go through intact."""
+
+    @pytest.fixture
+    def fake_lama(self, monkeypatch: pytest.MonkeyPatch):
+        from remove_ai_watermarks import region_eraser
+
+        class _In:
+            def __init__(self, name: str, shape: list[int]):
+                self.name = name
+                self.shape = shape
+
+        seen: dict[str, float] = {}
+
+        class _FakeSession:
+            def get_inputs(self):
+                return [_In("image", [1, 3, 512, 512]), _In("mask", [1, 1, 512, 512])]
+
+            def run(self, _outputs, feeds):
+                seen["max"] = float(feeds["image"].max())
+                return [feeds["image"]]
+
+        monkeypatch.setattr(region_eraser, "lama_available", lambda: True)
+        monkeypatch.setattr(region_eraser, "_get_lama_session", lambda: _FakeSession())
+        return seen
+
+    def test_the_model_sees_a_normalised_tensor_and_the_output_keeps_its_depth(self, fake_lama):
+        img = np.full((96, 96, 3), 60000, np.uint16)
+        out = erase(img, boxes=[(30, 30, 20, 20)], backend="lama")
+        # Dividing a 16-bit crop by 255 fed the model ~235 instead of ~0.92, and the
+        # uint8 cast on the way out then wrapped it into near-black pixels.
+        assert fake_lama["max"] <= 1.0
+        assert out.dtype == np.uint16
+        assert out[45, 45].max() > 30000
