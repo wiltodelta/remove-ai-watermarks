@@ -1891,6 +1891,23 @@ Regression coverage:
 [`humanizer.py`](../src/remove_ai_watermarks/humanizer.py) contains explicit
 grain, unsharp masking, and adaptive polish helpers.
 
+`_apply_postprocessing` in `invisible_engine.py` owns the stage ORDER, and the
+order is a contract: restore the original resolution, unsharp, adaptive polish,
+humanize. Grain runs LAST because `adaptive_polish` measures the image it is given
+against the reference's Laplacian variance, so grain applied first is read as detail
+the image already has. Grain ran first until 0.36.0, and above about `--humanize` 6
+that made the polish a bit-for-bit no-op: measured on a 1092x1440 photo (source
+variance 354.4, blurred stand-in 9.6), `--humanize` 9 and 12 left the polish
+contributing nothing while 0 and 3 let it work. The flag was accepted, the progress
+line still printed, and the run exited 0, so the composition failure was invisible
+from outside. Running the polish first also puts the grain at output resolution
+instead of letting the Lanczos restore smear it.
+
+`adaptive_polish` still self-limits when there is no deficit -- a caller driving the
+helpers directly can reach it, and so can an output already sharper than its source
+-- but it now reports that through its `on_skip` callback instead of returning
+silently.
+
 `upscaler.py` held an optional Real-ESRGAN path, reachable only when enlarging a
 small image to the minimum-resolution floor. That floor existed to lift small
 inputs toward SDXL's ~1024 training size; when the standalone SDXL and ControlNet

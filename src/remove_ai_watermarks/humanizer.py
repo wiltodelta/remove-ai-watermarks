@@ -9,9 +9,17 @@ counters the soft, over-smoothed look that the diffusion pass leaves behind
 # cv2/numpy boundary: third-party libs ship no usable element types; relax the
 # unknown-type rules for this file only.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import cv2
 import numpy as np
-from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from numpy.typing import NDArray
 
 
 def apply_analog_humanizer(image: NDArray, grain_intensity: float = 4.0, chromatic_shift: int = 1) -> NDArray:
@@ -119,7 +127,12 @@ def _smooth_grain_mask(image: NDArray) -> NDArray:
     return cv2.GaussianBlur(mask, (0, 0), sigmaX=1.5)
 
 
-def adaptive_polish(image: NDArray, reference: NDArray, seed: int | None = None) -> NDArray:
+def adaptive_polish(
+    image: NDArray,
+    reference: NDArray,
+    seed: int | None = None,
+    on_skip: Callable[[str], None] | None = None,
+) -> NDArray:
     """Restore the detail level of ``reference`` in a softened ``image``, sparing text.
 
     Diffusion + face restoration leave an over-smoothed "AI-plastic" look, worst on
@@ -130,10 +143,20 @@ def adaptive_polish(image: NDArray, reference: NDArray, seed: int | None = None)
     almost no polish is applied (text legibility is a generation-side concern, not a
     filter one). No-op when the image already meets the reference's detail level.
 
+    That no-op used to be silent, which made ``--humanize`` look like it composed
+    with the polish when it had in fact replaced it: grain raises the measured detail
+    level past the reference's, so the polish sees no deficit and returns the grain
+    untouched. ``on_skip`` reports it instead. (The engine now runs the polish BEFORE
+    the humanizer, so the two compose; a caller driving the helpers directly can
+    still reach the no-op, and an output that is already sharper than its source
+    reaches it whatever the order.)
+
     Args:
         image: the cleaned BGR output (uint8).
         reference: the original input BGR at the same resolution (the detail target).
         seed: optional RNG seed for reproducible grain.
+        on_skip: optional callback invoked with a one-line reason when the polish
+            self-limits to nothing, so the skip is not silent.
 
     Returns:
         Polished BGR image (uint8).
@@ -141,6 +164,11 @@ def adaptive_polish(image: NDArray, reference: NDArray, seed: int | None = None)
     target = _laplacian_variance(reference)
     current = _laplacian_variance(image)
     if target <= 0.0 or current >= target:
+        if on_skip is not None:
+            on_skip(
+                "Adaptive polish: nothing to close -- the image already meets the source's "
+                f"detail level (Laplacian variance {current:.1f} vs {target:.1f})."
+            )
         return image.copy()
 
     deficit = target / max(current, 1.0)

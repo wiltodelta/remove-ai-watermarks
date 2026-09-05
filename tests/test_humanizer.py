@@ -158,6 +158,50 @@ class TestAdaptivePolish:
         b = adaptive_polish(soft, reference, seed=7)
         assert np.array_equal(a, b)
 
+    def test_the_noop_reports_itself_instead_of_returning_silently(self):
+        from remove_ai_watermarks.humanizer import adaptive_polish
+
+        rng = np.random.default_rng(11)
+        sharp = rng.integers(0, 256, (120, 120, 3), dtype=np.uint8)
+        soft_ref = np.full((120, 120, 3), 128, dtype=np.uint8)
+        said: list[str] = []
+        out = adaptive_polish(sharp, soft_ref, on_skip=said.append)
+        assert np.array_equal(out, sharp)
+        assert len(said) == 1
+        assert "Laplacian variance" in said[0]
+
+    def test_a_polish_that_does_something_says_nothing(self):
+        import cv2
+
+        from remove_ai_watermarks.humanizer import adaptive_polish
+
+        rng = np.random.default_rng(12)
+        reference = rng.integers(0, 256, (160, 160, 3), dtype=np.uint8)
+        soft = cv2.GaussianBlur(reference, (0, 0), sigmaX=4.0)
+        said: list[str] = []
+        adaptive_polish(soft, reference, seed=0, on_skip=said.append)
+        assert said == []
+
+    def test_grain_before_the_polish_is_what_silences_it(self):
+        # The composition bug this callback exists for: humanize first raises the
+        # measured detail level past the reference's, so the polish self-limits to
+        # nothing and the grain is all that survives.
+        import cv2
+
+        from remove_ai_watermarks.humanizer import adaptive_polish, apply_analog_humanizer
+
+        rng = np.random.default_rng(13)
+        # A reference with a REAL photo's detail level, not pure noise: a target of
+        # thousands would swallow any grain and hide the interaction.
+        raw = rng.integers(0, 256, (160, 160, 3), dtype=np.uint8)
+        reference = cv2.GaussianBlur(raw, (0, 0), sigmaX=2.0)
+        soft = cv2.GaussianBlur(raw, (0, 0), sigmaX=4.0)
+        grainy = apply_analog_humanizer(soft, grain_intensity=12.0, chromatic_shift=1)
+        said: list[str] = []
+        out = adaptive_polish(grainy, reference, seed=0, on_skip=said.append)
+        assert np.array_equal(out, grainy)  # the polish contributed nothing
+        assert len(said) == 1
+
     def test_all_edges_reference_grain_mask_near_zero(self):
         # An all-high-frequency target: _smooth_grain_mask suppresses edges, so the grain
         # mask is ~all-zero (grain adds nothing) -- adaptive_polish must still return a
