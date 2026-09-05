@@ -31,6 +31,14 @@ You can also install the Homebrew package on macOS or Linux:
 brew install wiltodelta/tap/remove-ai-watermarks
 ```
 
+A formula cannot carry extras, so this installs the default package: metadata
+commands work, and `visible`, `erase`, `all`, `batch` and every `video` command
+stop with an install hint naming the extra that fixes them. `identify` still
+runs, but reports metadata only and says so in its caveats. `metadata --remove`
+also works on a file whose markers survive the first strip: the raster
+normalization that recovery needs is skipped rather than crashing, and the
+survivors are reported. Reinstall with uv or pipx to add the extra.
+
 ## Visible watermark removal
 
 Visible mark detection, OpenCV inpainting, and manual region erasing need the

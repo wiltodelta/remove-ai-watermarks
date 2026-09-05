@@ -1,0 +1,19 @@
+{
+  "name": "remove-ai-watermarks",
+  "owner": {
+    "name": "wiltodelta",
+    "url": "https://github.com/wiltodelta"
+  },
+  "metadata": {
+    "description": "Agent skill and Claude Code plugin for the remove-ai-watermarks CLI.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "remove-ai-watermarks",
+      "description": "Identify and remove AI provenance marks from images and video the user generated or edited. Use when the user asks to strip Gemini sparkles, SynthID, Microsoft InvisMark, Meta Content Seal, C2PA, EXIF/XMP AI metadata, Sora/Veo/Seedance/Doubao/Dola/Hailuo/Kling labels, or other AI watermarks, or asks whether a file was AI-generated. Do not use for stock-agency, marketplace, classifieds, or other third-party paid-asset watermarks.",
+      "source": "./skills",
+      "strict": false
+    }
+  ]
+}

@@ -14,6 +14,10 @@ Read this reference for environment setup, dependency recovery, CI behavior, and
 - On an unreliable connection, sync `dev` plus only the required feature extras, such as `diffusion`, and run the checks directly instead of downloading every optional learned backend.
 - Run `uv` from the repository root or it may create a bare environment without the project dependencies.
 
+`maintain.sh` starts with `uv sync --all-extras`, so a lean environment is replaced whenever the gate runs. Syncing back down can leave `opencv-python-headless` half-removed: `import cv2` then succeeds against an empty namespace while `cv2.INTER_LINEAR` is gone, which surfaces as a suite that stalls or reports hundreds of unrelated failures. Repair it with `uv sync --frozen --extra dev --reinstall-package opencv-python-headless` rather than re-reading the diff.
+
+Pyright is only meaningful with the extras its imports need. Scoped to `src/`, a lean environment reports `TrustMark`, `transformers` and `huggingface_hub` as unresolved, which reads as a type error and is not one; add `--extra trustmark --extra classify` before believing it.
+
 The optional TrustMark decoder downloads weights into its installed package directory. After pruning that extra, a leftover weights directory can make availability checks see an empty namespace package. If Pyright reports an unknown `TrustMark` import and `find_spec("trustmark")` returns a loader-less spec, remove that regenerable remnant from the active virtual environment and resync.
 
 ### Known security-gate blocks

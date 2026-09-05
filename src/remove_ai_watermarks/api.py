@@ -616,6 +616,7 @@ def remove_batch(
     caller driving a progress bar can advance on that alone.
     """
     from remove_ai_watermarks._internal.utils import is_supported_format
+    from remove_ai_watermarks.optional_deps import pixels_available
 
     src_dir, out_dir = Path(directory), Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -632,6 +633,12 @@ def remove_batch(
         try:
             outcome = _run_batch_one(img_path, out_path, mode, backend, sensitivity, invisible, force, engine, say)
         except Exception as exc:
+            # A missing pixel stack is a property of the ENVIRONMENT, not of this
+            # file, and per-file handling turned one absent package into an error
+            # per image -- 84 of them on a directory that needed one install. Let
+            # it out so the caller reports it once, with the extra named.
+            if isinstance(exc, ImportError) and not pixels_available():
+                raise
             failed += 1
             errors.append((img_path, str(exc)))
             say(img_path, "failed", str(exc))

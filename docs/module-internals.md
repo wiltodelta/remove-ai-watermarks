@@ -52,6 +52,19 @@ Important contracts:
   `video metadata`) end by repeating the `identify` limit: the pixel channel is
   untouched and a watermark such as SynthID has no local decoder once its
   metadata proxy is gone, so neither outcome is a clean verdict.
+- `visible`, `erase`, `all` and `batch` report a missing pixel stack as an
+  install hint naming `remove-ai-watermarks[visible]`, not as a traceback. The
+  default package ships without those dependencies and the Homebrew formula
+  installs exactly that build, so a first run following the project's own
+  instructions used to die on `ModuleNotFoundError: No module named 'cv2'`.
+  `_pixels_required` wraps the four image commands (the video ones reach the same
+  build through `video._require_video_runtime`, which names the `video` extra --
+  the one that actually makes them work); `remove_batch` re-raises the same
+  ImportError instead of counting it once per file, because one absent package
+  is not N broken images. All three sites ask `optional_deps.pixels_available()`
+  rather than matching the exception's module name: an ImportError raised inside
+  `cv2/__init__.py` carries `cv2.cv2` and a numpy ABI mismatch carries `None`, so
+  a name match let exactly the tracebacks this guard exists for through.
 - Hard processing and write failures exit with code `1`.
 - `all` can still write the completed visible and metadata stages when the
   diffusion dependencies are unavailable, but exits with code `1` so the
@@ -553,6 +566,15 @@ metadata extraction from verdict logic:
   reported no SynthID for images the file path flagged.
 - `identify` preserves the path-based API and adds the optional registered
   visible-mark and open invisible-watermark detectors after extraction.
+- When the pixel stack is absent, the visible arm still no-ops (that is the
+  historical `get_or_none` contract), but the report now carries a caveat saying
+  the detectors did NOT run. Without it, an install lacking the `visible` extra
+  dropped `Visible Gemini sparkle` from a marked image and read exactly like a
+  clean scan -- a silent false negative on the one install path Homebrew
+  produces. The caveat names WHICH silence happened: an ImportError on a build
+  `pixels_available()` calls incomplete is the absent extra, and anything else is
+  a file that could not be decoded. The two need different fixes, so naming the
+  wrong one sends the user to reinstall a working install.
 
 ### SynthID periodic carrier detector (research only)
 

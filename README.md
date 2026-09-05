@@ -22,6 +22,7 @@ removal.
 [![License](https://img.shields.io/pypi/l/remove-ai-watermarks?color=blue)](LICENSE)
 [![Tests](https://github.com/wiltodelta/remove-ai-watermarks/actions/workflows/test.yml/badge.svg)](https://github.com/wiltodelta/remove-ai-watermarks/actions/workflows/test.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/wiltodelta)
+[![skills.sh](https://skills.sh/b/wiltodelta/remove-ai-watermarks)](https://skills.sh/wiltodelta/remove-ai-watermarks)
 
 > This project is for lawful use on content you own. It does not target stock
 > agency previews or other watermarks that protect third party paid content.
@@ -432,6 +433,24 @@ See the [Python API guide](docs/python-api.md) for visible removal, the full
 `remove_all` and `remove_batch` pipeline, provenance inspection, metadata
 stripping, and diffusion usage.
 
+## Agent skill
+
+Coding agents can install the published skill and drive this CLI:
+
+```bash
+npx skills add wiltodelta/remove-ai-watermarks
+```
+
+Claude Code can add this repository as a plugin marketplace:
+
+```text
+/plugin marketplace add wiltodelta/remove-ai-watermarks
+/plugin install remove-ai-watermarks@remove-ai-watermarks
+```
+
+The skill refuses stock-agency and other third-party paid-asset marks. See
+[the agent skill guide](docs/agent-skill.md).
+
 ## ComfyUI
 
 The separate
@@ -507,6 +526,7 @@ Start with the [documentation index](docs/index.md).
 - [Scope, safety, and legal notes](docs/legal-and-safety.md)
 - [Module internals](docs/module-internals.md)
 - [Release and distribution](docs/release-and-distribution.md)
+- [Agent skill](docs/agent-skill.md)
 
 Research notes and historical experiments are listed separately in the
 [documentation index](docs/index.md). They explain past decisions but do not

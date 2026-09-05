@@ -157,6 +157,16 @@ _C2PA_CLOUD_CAVEAT = (
     "It marks Content Credentials, not AI origin: the cloud manifest may describe a "
     "human edit, and reading it needs a network fetch this tool does not make."
 )
+_PIXEL_DETECTORS_MISSING_CAVEAT = (
+    "The visible-mark detectors did NOT run: this install has no pixel dependencies, so "
+    "a visible AI label may be present and unreported. Install "
+    "'remove-ai-watermarks[visible]' and rerun before reading this scan as complete."
+)
+_PIXEL_DETECTORS_UNDECODABLE_CAVEAT = (
+    "The visible-mark detectors did NOT run: the pixels could not be decoded, so a "
+    "visible AI label may be present and unreported. This says nothing about the image "
+    "itself -- only that this scan could not look at it."
+)
 _SOFT_BINDING_CAVEAT = (
     "Removing the embedded C2PA manifest does not break its soft binding: a named watermark may remain in the pixels "
     "or other media, while a content fingerprint may still be recomputed and re-link the asset to provenance."
@@ -1085,6 +1095,11 @@ class _SharedDecode:
             return None
         return self._image
 
+    @property
+    def error(self) -> Exception | None:
+        """The decode failure, so a caller can tell an absent extra from a bad file."""
+        return self._error
+
 
 def _collect_visible_signals(
     image_path: Path,
@@ -1092,6 +1107,7 @@ def _collect_visible_signals(
     watermarks: list[str],
     platform: str | None,
     decode: _SharedDecode,
+    caveats: list[str],
 ) -> str | None:
     """Append every trusted visible-mark signal and return platform.
 
@@ -1101,6 +1117,15 @@ def _collect_visible_signals(
     """
     image = decode.get_or_none()
     if image is None:
+        # The no-op is deliberate and the verdict is unchanged, but the REPORT used to
+        # stay silent, so a scan that could not look reads exactly like a scan that
+        # looked and found nothing. An absent extra and an unreadable file both land
+        # here and need different fixes, so the caveat names which one happened rather
+        # than sending the user to reinstall a working install.
+        from remove_ai_watermarks.optional_deps import pixels_available
+
+        missing_stack = isinstance(decode.error, ImportError) and not pixels_available()
+        caveats.append(_PIXEL_DETECTORS_MISSING_CAVEAT if missing_stack else _PIXEL_DETECTORS_UNDECODABLE_CAVEAT)
         return platform
 
     sparkle_conf = _visible_sparkle(image_path, image=image)
@@ -1518,7 +1543,7 @@ def _identify_from_evidence(
     )
 
     if check_visible and pixel_path is not None:
-        platform = _collect_visible_signals(pixel_path, signals, watermarks, platform, decode)
+        platform = _collect_visible_signals(pixel_path, signals, watermarks, platform, decode, caveats)
 
     visible_only = any(s.name.startswith("visible_") for s in signals) and not ai_from_metadata
     hf_only = bool(hf_job) and not ai_from_metadata

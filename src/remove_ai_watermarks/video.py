@@ -35,11 +35,16 @@ _EBML_MAGIC = b"\x1aE\xdf\xa3"
 
 
 def _require_video_runtime() -> None:
-    """Raise with the public install command when a video runtime is absent."""
+    """Raise with the public install command when a video runtime is absent.
+
+    Shell-quoted, for the same reason as the other install hints: a bare
+    ``pkg[extra]`` is a glob in zsh, so an unquoted copy-paste dies with
+    "no matches found" before pip ever runs.
+    """
     from remove_ai_watermarks.optional_deps import module_available
 
     if not module_available("cv2", "numpy", "av"):
-        raise RuntimeError("Video pixel processing requires remove-ai-watermarks[video]")
+        raise RuntimeError("Video pixel processing requires 'remove-ai-watermarks[video]'")
 
 
 @dataclass(frozen=True)

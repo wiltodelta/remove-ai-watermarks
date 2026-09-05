@@ -26,3 +26,20 @@ def module_available(*names: str) -> bool:
         if spec is None or spec.loader is None:
             return False
     return True
+
+
+def pixels_available() -> bool:
+    """True when this build can decode and inpaint pixels.
+
+    The default package ships without the ``visible`` extra -- the Homebrew formula
+    installs exactly that build -- so every visible-mark command and the visible arm
+    of ``identify`` has to ask this. It is one predicate rather than three, because
+    the three places that needed it each grew their own ``exc.name in (...)`` test
+    and all three then agreed only by coincidence: an ``ImportError`` raised INSIDE
+    ``cv2/__init__.py`` carries ``name == "cv2.cv2"`` and a numpy ABI mismatch
+    carries ``name is None``, so a name match answered "that is some other import
+    error" and let the traceback through.
+    """
+    from remove_ai_watermarks._internal.watermark_profiles import PIXELS_MODULES
+
+    return module_available(*PIXELS_MODULES)

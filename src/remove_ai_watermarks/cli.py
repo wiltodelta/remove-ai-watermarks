@@ -11,6 +11,7 @@ Provides commands for:
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import logging
 import time
@@ -26,6 +27,7 @@ from remove_ai_watermarks._internal.watermark_profiles import (
     DEFAULT_PROFILE,
     INVISIBLE_EXTRA,
     PROFILE_CHOICES,
+    VISIBLE_EXTRA,
     resolve_strength,
     strength_default_help,
     vendor_for_strength,
@@ -39,7 +41,7 @@ from remove_ai_watermarks.video_synthid import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
 
     from numpy.typing import NDArray
 
@@ -414,6 +416,41 @@ def _parse_sensitivity(value: str) -> watermark_registry.Sensitivity:
 EXIT_NO_VISIBLE_MARK = 2
 
 
+def _pixels_required(func: Callable[..., None]) -> Callable[..., None]:
+    """Report a missing pixel stack as an install hint instead of a traceback.
+
+    The default package installs WITHOUT ``pixels``, and the Homebrew formula ships
+    exactly that build, so a first run that followed this project's own install
+    instructions died mid-command on a bare ``ModuleNotFoundError: No module named
+    'cv2'`` -- the one moment the user needed the extra named, and the only moment
+    they were not told it. ``identify`` and ``metadata`` still answer without the
+    stack, so the guard goes on the commands that cannot, not on the group. The video
+    commands are NOT in that set on purpose: ``video._require_video_runtime`` already
+    stops them and names the ``video`` extra, which is the one that actually makes
+    them work -- wrapping them here would answer with ``visible`` instead.
+
+    Applied innermost, below the click decorators, so the wrapper is what carries
+    the options and what click invokes.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> None:
+        try:
+            func(*args, **kwargs)
+        except ImportError as exc:
+            from remove_ai_watermarks.optional_deps import pixels_available
+
+            if pixels_available():
+                raise
+            console.print(
+                "Error: the visible-mark dependencies are not installed.\n"
+                f"  Install them with: pip install {VISIBLE_EXTRA}"
+            )
+            raise SystemExit(1) from exc
+
+    return wrapper
+
+
 def _write_output_or_exit(output: Path, bgr: NDArray[Any], alpha: NDArray[Any] | None) -> None:
     """Write the final image, or fail with a readable error instead of a traceback.
 
@@ -695,6 +732,7 @@ def _run_visible_explicit(
 @_visible_sensitivity_option
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
 @click.pass_context
+@_pixels_required
 def cmd_visible(
     ctx: click.Context,
     source: Path,
@@ -776,6 +814,7 @@ def _parse_region(spec: str) -> tuple[int, int, int, int]:
 @click.option("--dilate", type=int, default=3, help="Grow the box by this many px before inpainting.")
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
 @click.pass_context
+@_pixels_required
 def cmd_erase(
     ctx: click.Context,
     source: Path,
@@ -1604,6 +1643,7 @@ def cmd_classify(source: Path, as_json: bool) -> None:
 @_text_manifest_option
 @_fidelity_anchor_option
 @click.pass_context
+@_pixels_required
 def cmd_all(
     ctx: click.Context,
     source: Path,
@@ -1799,6 +1839,7 @@ def _batch_engine(mode: str, options: InvisibleOptions) -> object | None:
 @_force_option
 @_cpu_offload_option
 @click.pass_context
+@_pixels_required
 def cmd_batch(
     ctx: click.Context,
     directory: Path,

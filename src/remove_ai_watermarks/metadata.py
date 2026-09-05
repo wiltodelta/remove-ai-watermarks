@@ -1420,9 +1420,17 @@ def strip_and_verify(
     if not remaining:
         return out, {}
 
-    import cv2
+    try:
+        import cv2
 
-    from remove_ai_watermarks import image_io
+        from remove_ai_watermarks import image_io
+    except ImportError:
+        # The raster normalization is a recovery step, not the strip itself, and the
+        # default package ships without the pixel stack. Reporting the survivors is the
+        # documented outcome of "could not normalize"; crashing here made a metadata-only
+        # install fail on exactly the files this branch exists to rescue.
+        logger.warning("AI metadata survived stripping and the pixel stack is absent: path=%s", out)
+        return out, remaining
 
     image = image_io.imread(out, cv2.IMREAD_UNCHANGED)
     if image is None:

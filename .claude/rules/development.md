@@ -1,6 +1,6 @@
 ---
-globs: ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "pyproject.toml", "uv.lock", "maintain.sh", ".github/workflows/*.yml"]
-description: Command contracts, project gate, typing boundaries, model-adjacent test invariants, and the detection-path measurement rule.
+globs: ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "skills/**", "pyproject.toml", "uv.lock", "maintain.sh", ".github/workflows/*.yml"]
+description: Command contracts, project gate, typing boundaries, model-adjacent test invariants, the agent-skill parity seam, and the detection-path measurement rule.
 ---
 
 # Development invariants
@@ -9,11 +9,13 @@ description: Command contracts, project gate, typing boundaries, model-adjacent 
 
 Every single-image command declares `source` with `dir_okay=False`; `batch` declares its directory with `file_okay=False`. Keep `tests/test_cli_robustness.py::TestDirectoryInputIsRejected` as the regression guard.
 
-Exit-code and no-signal behavior is a public contract. Read the command-line section of [`../../docs/module-internals.md`](../../docs/module-internals.md) before changing it.
+Exit-code and no-signal behavior is a public contract. Read the command-line section of [`../../docs/module-internals.md`](../../docs/module-internals.md) before changing it. Keep [`../../skills/remove-ai-watermarks/`](../../skills/remove-ai-watermarks/) in the same change when command routing, extras, exit codes, mark keys, or the intended-use boundary move.
+
+`tests/test_agent_skill.py` enforces that by comparing the skill's prose against the live Click tree. Guard the SET, not the instances: per-flag comparisons only check what the skill already documents, so `--vendor`, `--pipeline auto` and then the whole `classify` and `verify-openai-synthid` commands each shipped with a green suite. `test_every_cli_command_is_named_somewhere_in_the_skill` closes that; raise `MIN_CLI_VERSION` in the skill's probe whenever a reference names a command, flag or value the previous release lacked, or the probe tells an agent its CLI is current right before it types something that build rejects.
 
 Do not add an option whose only outcome is an error. Model id, step count and CFG are fixed by the profile, so none of them is a parameter of the CLI, `InvisibleEngine`, or `WatermarkRemover` -- they were accepted-then-rejected for a while, which moved the failure several frames below the caller and advertised choices the pinned stack cannot honor. If a value cannot vary, delete the knob rather than validating it.
 
-`device` is the deliberate exception and stays a library parameter: `None`/`"auto"` detect, `"cuda"` pins without detecting, and everything else raises at construction. It is not a CLI option, because the only value a user could usefully type is the one auto-detection already finds.
+`device` is the deliberate exception and stays a library parameter: `None`/`"auto"` detect, `"cuda"` pins without detecting, and everything else raises at construction. On the image path it is not a CLI option, because the only value a user could usefully type is the one auto-detection already finds. The video SynthID commands (`video invisible`, `video all`, `video batch`) do expose `--device`, whose VAE runs on cuda, mps, or cpu, so a user can usefully pick one. `test_device_exists_exactly_where_the_skill_says_it_does` pins that split; do not read this paragraph as licence to delete the video flag.
 
 The same rule applies to install hints: name the extra that actually makes the command work (`qwen-zimage`, not `diffusion`), and keep the printed command shell-quoted -- bare `pkg[extra]` is a glob in zsh.
 

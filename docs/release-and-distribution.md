@@ -122,6 +122,33 @@ dispatch is interrupted. The `COMFYUI_RELEASE_TOKEN` repository secret is a
 fine-grained token limited to the ComfyUI node repository, with Actions read and
 write access.
 
+## Agent skill
+
+The Agent Skill and Claude plugin live in this repository:
+
+- [`skills/remove-ai-watermarks/`](../skills/remove-ai-watermarks/) is the
+  portable Agent Skills package;
+- [`skills/.claude-plugin/plugin.json`](../skills/.claude-plugin/plugin.json)
+  is the Claude plugin manifest, with source `./skills` so an install copies
+  only the skill tree;
+- [`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json)
+  makes the repository a Claude Code marketplace.
+
+They are not a fifth required release surface. A CLI change that affects
+command routing, extras, exit codes, mark keys, or the intended-use boundary
+must update the skill in the same commit. User-facing install steps live in
+[`docs/agent-skill.md`](agent-skill.md).
+
+After the skill files reach the default branch:
+
+- `npx skills add wiltodelta/remove-ai-watermarks` installs from GitHub;
+- SkillsMP can index the public `SKILL.md`;
+- Claude Code users can run `/plugin marketplace add wiltodelta/remove-ai-watermarks`.
+
+ClawHub and the Claude community marketplace need a separate authenticated
+publish. Do not treat those listings as complete until the live catalog shows
+the skill.
+
 ## Release verification
 
 Forensic transports are versioned independently from the package. Before publishing
@@ -174,3 +201,6 @@ from the PyPI JSON API (which updates first) but installs the test dependency
 with pip against the simple index, whose CDN edges lag by minutes. Rerun the
 failed `distribute.yml` comfyui job once the simple index lists the release;
 nothing about the release itself is wrong.
+
+If the release changed CLI routing, extras, exit codes, mark keys, or the
+intended-use boundary, confirm `skills/remove-ai-watermarks/` still matches.

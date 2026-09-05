@@ -1,0 +1,23 @@
+{
+  "name": "remove-ai-watermarks",
+  "displayName": "Remove AI Watermarks",
+  "version": "1.0.0",
+  "description": "Identify and remove AI provenance marks from images and video the user generated or edited, using the remove-ai-watermarks CLI.",
+  "author": {
+    "name": "wiltodelta",
+    "url": "https://github.com/wiltodelta"
+  },
+  "homepage": "https://raiw.cc",
+  "repository": "https://github.com/wiltodelta/remove-ai-watermarks",
+  "license": "Apache-2.0",
+  "skills": "./",
+  "keywords": [
+    "ai-watermark",
+    "watermark-removal",
+    "c2pa",
+    "synthid",
+    "provenance",
+    "gemini",
+    "sora"
+  ]
+}

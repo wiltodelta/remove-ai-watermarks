@@ -37,6 +37,8 @@ Command, gate, typing, and model-test invariants auto-load from [`.claude/rules/
 
 Before a release, read [`docs/release-and-distribution.md`](docs/release-and-distribution.md). Treat the release as complete only after PyPI, Homebrew, the Hugging Face Space, and the ComfyUI Registry are verified; conda is not published. Keep the source-distribution public allowlist.
 
+The published Agent Skill is [`skills/remove-ai-watermarks/`](skills/remove-ai-watermarks/). Update it in the same change as any CLI edit that alters commands, extras, exit codes, mark keys, or the intended-use boundary. Install and publish steps: [`docs/agent-skill.md`](docs/agent-skill.md).
+
 ## Module architecture
 
 [`docs/module-internals.md`](docs/module-internals.md) is the canonical per-module map, including design decisions, thresholds, calibration history, incident records, and regression guards. Read the relevant section before changing a subsystem.
@@ -53,4 +55,4 @@ Topic-specific rules live in `.claude/rules/*.md` and are auto-loaded when match
 
 | File | Covers |
 |---|---|
-| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, the docs-coverage seam, and the detection-path measurement rule |
+| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, the docs-coverage and agent-skill parity seams, and the detection-path measurement rule |
