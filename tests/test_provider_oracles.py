@@ -42,14 +42,38 @@ def test_list_json_exposes_scope_and_surface() -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert [row["key"] for row in payload] == [
+        "microsoft-api",
+        "openai-api",
         "gemini-web",
         "meta-web",
-        "microsoft-api",
         "microsoft-web",
-        "openai-api",
         "openai-web",
     ]
     assert next(row for row in payload if row["key"] == "meta-web")["signal_family"] == "content_seal"
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        ("google", ["gemini-web"]),
+        ("meta", ["meta-web"]),
+        ("microsoft", ["microsoft-api", "microsoft-web"]),
+        ("openai", ["openai-api", "openai-web"]),
+    ],
+)
+def test_provider_plan_prefers_api_before_web(provider: str, expected: list[str]) -> None:
+    assert [surface.key for surface in oracles.provider_plan(provider)] == expected
+
+
+def test_plan_json_marks_web_as_an_explicit_fallback_when_api_exists() -> None:
+    result = CliRunner().invoke(oracles.cli, ["plan", "openai", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert [(row["key"], row["preference"]) for row in payload] == [
+        ("openai-api", "primary"),
+        ("openai-web", "fallback"),
+    ]
 
 
 def test_slots_support_multiple_accounts_and_networks(tmp_path: Path) -> None:

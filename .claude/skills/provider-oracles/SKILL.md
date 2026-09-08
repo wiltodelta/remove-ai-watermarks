@@ -18,6 +18,19 @@ Do not optimize candidates adaptively against an external oracle. A retry,
 different account, or different network is a new explicit operator decision,
 not automatic fallback.
 
+## Default surface priority
+
+Prefer an official API adapter whenever that provider, media type, and configured
+slot support it. Use Web only when no usable API route exists or the operator
+explicitly requests the Web surface as a second check. For OpenAI and Microsoft,
+the default plans are API then Web. Google and Meta currently have only usable
+Web routes in this tooling. Inspect the order with `plan PROVIDER`.
+
+The priority is a selection policy, not automatic failover. An API refusal,
+quota response, transport error, or indeterminate verdict must be recorded and
+reported. Do not submit the same artifact to Web unless the operator separately
+authorizes that next surface.
+
 ## Route by surface
 
 ### Google Gemini

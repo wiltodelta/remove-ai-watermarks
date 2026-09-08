@@ -34,6 +34,12 @@ Do not add account or IP rotation, rate-limit failover, or cross-session result 
 Every manual result stays bound to the exact sanitized upload hash and preserves the
 provider response verbatim.
 
+Provider surface selection is API-first. OpenAI and Microsoft use their official API
+adapters before their Web surfaces when the requested media and local configuration are
+supported. Google and Meta currently use Web because this tooling has no usable API route
+for them. Web remains an explicit second surface, never an automatic retry after an API
+refusal, quota response, transport error, or indeterminate verdict.
+
 Google Web oracle automation uses only the user's existing authenticated real Chrome
 session and explicit `/u/N/` account index. OpenAI, Microsoft, and Meta Web automation
 uses isolated Playwright contexts; it must never attach to or copy state from the user's

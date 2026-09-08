@@ -257,6 +257,24 @@ SURFACES: dict[str, OracleSurface] = {
 PROVIDER_KEYS = frozenset(surface.provider_key for surface in SURFACES.values())
 
 
+def _surface_order(surface: OracleSurface) -> tuple[bool, str]:
+    """Sort API surfaces before Web surfaces, then stabilize by key."""
+    return surface.automation != "api", surface.key
+
+
+def provider_plan(provider_key: str) -> list[OracleSurface]:
+    """Return one provider's surfaces in the API-first operator order."""
+    if provider_key not in PROVIDER_KEYS:
+        raise ValueError(f"unknown provider oracle: {provider_key}")
+    surfaces = [surface for surface in SURFACES.values() if surface.provider_key == provider_key]
+    return sorted(surfaces, key=_surface_order)
+
+
+def ordered_surfaces() -> list[OracleSurface]:
+    """Return the catalog with every API surface before every Web surface."""
+    return sorted(SURFACES.values(), key=_surface_order)
+
+
 def _inside(path: Path, parent: Path) -> bool:
     """Return whether resolved PATH is inside resolved PARENT."""
     try:
@@ -820,13 +838,33 @@ def cli() -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
 def list_oracles(as_json: bool) -> None:
     """List provider scope, supported media, and verification surfaces."""
-    definitions = [SURFACES[key] for key in sorted(SURFACES)]
+    definitions = ordered_surfaces()
     if as_json:
         click.echo(json.dumps([definition.to_dict() for definition in definitions], indent=2, sort_keys=True))
         return
     for definition in definitions:
         media = ",".join(definition.media_types)
         click.echo(f"{definition.key}\t{definition.automation}\t{media}\t{definition.surface}\t{definition.url}")
+
+
+@cli.command()
+@click.argument("provider", type=click.Choice(sorted(PROVIDER_KEYS)))
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def plan(provider: str, as_json: bool) -> None:
+    """Show the API-first surface order for one provider."""
+    definitions = provider_plan(provider)
+    rows = []
+    for index, definition in enumerate(definitions):
+        row = definition.to_dict()
+        row["preference"] = "primary" if index == 0 else "fallback"
+        rows.append(row)
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    for row in rows:
+        click.echo(f"{row['preference']}\t{row['key']}\t{row['automation']}\t{row['surface']}")
+    if len(rows) > 1:
+        click.echo("Web fallback requires a separate operator decision; failures do not trigger it automatically.")
 
 
 @cli.command()

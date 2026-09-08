@@ -11,12 +11,32 @@ through the installed CLI or public Python API.
 
 | Surface key | Provider signal | Access | Project evidence |
 | --- | --- | --- | --- |
-| `gemini-web` | Google SynthID | Signed-in Gemini web account | Images and videos |
 | `openai-api` | OpenAI SynthID | Official Content Provenance API | Images |
-| `openai-web` | OpenAI SynthID | Public web verifier | Images |
 | `microsoft-api` | Microsoft InvisMark | Azure Content Provenance Detection API | Images |
-| `microsoft-web` | Microsoft InvisMark | Public Azure AI validation page | Images |
+| `gemini-web` | Google SynthID | Signed-in Gemini web account | Images and videos |
 | `meta-web` | Meta Content Seal | Anonymous Meta identification page | Images |
+| `microsoft-web` | Microsoft InvisMark | Public Azure AI validation page | Images |
+| `openai-web` | OpenAI SynthID | Public web verifier | Images |
+
+## Surface priority
+
+The default selection order is API first, then Web. OpenAI therefore plans
+`openai-api` before `openai-web`, and Microsoft plans `microsoft-api` before
+`microsoft-web`. Google and Meta currently have no usable API adapter in this
+tooling, so their Web surfaces are primary rather than fallback routes.
+
+Inspect the machine-readable order before preparing a batch:
+
+```bash
+uv run python scripts/provider_oracles.py plan openai --json
+uv run python scripts/provider_oracles.py plan microsoft
+```
+
+API-first is a selection policy, not automatic failover. Use Web only when the
+provider, requested media, or local configuration has no usable API route, or
+when the operator explicitly requests a second surface. An API refusal, quota
+response, transport failure, or indeterminate verdict is recorded as-is and
+never silently triggers a Web upload.
 
 The old Google SynthID Detector portal does not work. On 2026-09-07, the
 official `labs.google/synthid` entry point redirected a signed-in browser to a

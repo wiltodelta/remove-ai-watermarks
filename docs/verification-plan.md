@@ -258,7 +258,8 @@ and implemented by `scripts/provider_oracles.py`.
 
 Proprietary watermark removal cannot be verified locally by design -- no public decoder
 exists. Each vendor has its own oracle and it covers only that vendor's content:
-`openai.com/verify` for OpenAI, the Gemini app for Google, and Microsoft's
+the Content Provenance API first and `openai.com/verify` as an explicit fallback for
+OpenAI, the Gemini app for Google, and Microsoft's
 [Content Provenance Detection API](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection)
 for InvisMark. The Microsoft API reports `Watermark` and `C2PA` separately. It therefore
 needs a pixel-identical metadata-stripped control: the control must lose `C2PA` while
