@@ -47,7 +47,7 @@ Research and current constraints are routed through [`docs/index.md`](docs/index
 
 ## Data safety
 
-Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Store each tracked binary once and keep generated evaluation outputs outside the repository.
+Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Real customer uploads never enter this repository: the private `raiw-app` retention checks materialize them under `data/spaces/`, which is gitignored here for that reason, and nothing under it may be committed, quoted, or turned into a fixture. Store each tracked binary once and keep generated evaluation outputs outside the repository.
 
 ## Rules and conventions
 

@@ -23,6 +23,13 @@ Thumbs.db
 # Generated calibration inputs
 data/synthid_corpus/refs/
 
+# Real user uploads pulled from DO Spaces by the private raiw-app retention
+# checks (see raiw-app/.claude/rules/spaces-retention.md). Customer data has
+# no place in this public repository's history. Until 2026-09-07 the only
+# thing keeping 157k of these files out of a commit was an untracked
+# .gitignore inside the directory, which a fresh clone would not have.
+data/spaces/
+
 # Reference materials
 _refs/
 
