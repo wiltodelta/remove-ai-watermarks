@@ -1,12 +1,14 @@
 """Tests for the LiblibAI ("LiblibAI" wordmark) visible-watermark engine.
 
-Every tuned constant in ``liblib_engine`` was measured on the 15-frame vendor
-cohort (2026-07-22); these tests pin the load-bearing ones: the bottom-CENTER
-anchor, the strict-only gate, and the match-box footprint (the blob bbox both
-bled into background structure and did not own the triangle logo).
+The historical wordmark constants were measured on the 15-frame vendor cohort
+(2026-07-22); these tests pin the bottom-CENTER anchor, strict-only gate, and
+match-box footprint. They also cover the newer corroboration-only compact pill
+against its cleared provider output and a synthetic wordmark-plus-pill pair.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -16,11 +18,17 @@ from remove_ai_watermarks import watermark_registry as registry
 from remove_ai_watermarks.liblib_engine import (
     _ALPHA_HEIGHT_FRAC,
     _ALPHA_WIDTH_FRAC,
+    _TOP_LEFT_PILL_MIN_CONFIDENCE,
     LibLibEngine,
     _alpha_template,
 )
+from remove_ai_watermarks.pill_engine import PillEngine
+from scripts.render_visible_examples import stamp_image_mark
 
 _MARK_FRAC = 0.10  # measured wordmark width, fraction of the frame WIDTH
+_CURRENT_PROVIDER_OUTPUT = (
+    Path(__file__).resolve().parents[1] / "data" / "fixtures" / "visible" / "liblib" / "current-provider-output.png"
+)
 
 
 def _compose(w: int, h: int, bg: float = 100.0):
@@ -40,6 +48,14 @@ def _compose(w: int, h: int, bg: float = 100.0):
     a3 = amap[:, :, None]
     wm = (a3 * 255.0 + (1 - a3) * img).clip(0, 255).astype(np.uint8)
     return wm, (ax, ay, gw, gh, lx0)
+
+
+def _compose_with_compact_pill(w: int = 1200, h: int = 1200) -> np.ndarray:
+    """Add the compact top-left AI-generated pill used beside the LiblibAI mark."""
+    image, _ = _compose(w, h, bg=180.0)
+    stamped = stamp_image_mark("liblib_pill", image, alpha_mult=0.5)
+    assert stamped is not None
+    return stamped[0]
 
 
 class TestLocate:
@@ -79,6 +95,9 @@ class TestConfig:
         mark = registry.get_mark("liblib")
         assert mark.location == "bottom-center"
         assert mark.in_auto
+        pill = registry.get_mark("liblib_pill")
+        assert pill.location == "top-left"
+        assert pill.product == mark.product
 
 
 class TestDetectAndMask:
@@ -105,6 +124,38 @@ class TestDetectAndMask:
         assert xs.min() <= lx0 + gh // 2  # covers the logo
         assert xs.max() >= ax + gw - int(0.05 * gw)  # covers the wordmark's right edge
         assert ys.min() >= ay - gh  # does not bleed far above the mark
+
+    def test_mask_also_covers_a_compact_top_left_pill(self):
+        image = _compose_with_compact_pill()
+        pill = PillEngine().detect(image)
+        assert not pill.detected, "the fixture must reproduce the strict pill-detector miss"
+        assert pill.confidence >= _TOP_LEFT_PILL_MIN_CONFIDENCE
+
+        report = registry.remove_auto_marks_detailed(image, backend="cv2")
+
+        assert [mark.key for mark in report.marks] == ["liblib", "liblib_pill"]
+        bottom, top = report.marks
+        assert bottom.mask_bbox[1] > image.shape[0] // 2
+        assert top.mask_bbox[1] < image.shape[0] // 4
+        assert top.mask_bbox[3] < image.shape[0] // 4
+        strict_report = registry.remove_auto_marks_detailed(image, sensitivity="strict", backend="cv2")
+        assert [mark.key for mark in strict_report.marks] == ["liblib"]
+
+    def test_current_provider_pill_is_removed_with_liblib_metadata(self):
+        from remove_ai_watermarks import api, image_io
+
+        image = image_io.imread(_CURRENT_PROVIDER_OUTPUT, cv2.IMREAD_UNCHANGED)
+        provenance = api.visible_provenance(_CURRENT_PROVIDER_OUTPUT)
+        strict = registry.get_mark("liblib_pill").detect(image)
+        corroborated = registry.get_mark("liblib_pill").detect(image, provenance=True)
+
+        assert provenance == frozenset({"liblib"})
+        assert not strict.detected
+        assert corroborated.detected
+        detected = {d.key for d in registry.detect_marks(image, provenance=provenance) if d.detected}
+        assert detected == {"liblib_pill"}
+        report = registry.remove_auto_marks_detailed(image, provenance=provenance, backend="cv2")
+        assert [(mark.key, mark.status) for mark in report.marks] == [("liblib_pill", "cleaned")]
 
     def test_no_mask_on_clean_frame(self):
         eng = LibLibEngine()

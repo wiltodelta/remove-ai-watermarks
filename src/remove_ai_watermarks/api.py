@@ -173,9 +173,9 @@ def remove_visible(
     """Remove every detected known visible AI mark through localize then fill.
 
     The registry currently covers the Gemini visible watermark; Doubao, Jimeng,
-    Qwen, Kling AI, Yuanbao, Samsung, RunningHub, Baidu, and LiblibAI text marks;
-    one Microsoft top-right AI-badge variant; and the Jimeng pill. Returns
-    ``(result_bgr, [labels removed])``.
+    Qwen, Kling AI, Yuanbao, Samsung, RunningHub, and Baidu text marks; the
+    LiblibAI wordmark and compact pill; one Microsoft top-right AI-badge variant;
+    and the Jimeng pill. Returns ``(result_bgr, [labels removed])``.
 
     ``source`` is a file path OR a BGR ndarray. For a PATH, metadata provenance is read
     automatically (so ``sensitivity="auto"`` recovers a moved/faint mark whenever the

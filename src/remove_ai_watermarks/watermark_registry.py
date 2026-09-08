@@ -29,6 +29,7 @@ Entries:
   - ``runninghub`` -- RunningHub "RunningHub AI生成" text, top-left (gray front-end).
   - ``baidu`` -- Baidu "百度 AI生成" text + white tag, bottom-right.
   - ``liblib`` -- LiblibAI "LiblibAI" wordmark, bottom-center.
+  - ``liblib_pill`` -- LiblibAI compact "AI生成" pill, top-left.
   - ``microsoft`` -- one measured Microsoft white AI-badge variant, top-right.
 """
 
@@ -83,31 +84,6 @@ Trust = Literal["strict", "confirmed"]
 
 # Product family per mark now lives on the registry row (``KnownMark.product``);
 # ``_PRODUCT_OF`` is derived from it right after ``_REGISTRY`` is built.
-
-
-# Marks whose own detection is too weak to serve as EVIDENCE for a sibling of the
-# same product, even though they share one. Sibling corroboration grants ``confirmed``
-# trust, which bypasses the sibling's false-positive gate outright -- so a detector
-# that false-fires often must not be able to hand that bypass to anyone.
-#
-# The pill detector has a meaningful raw false-fire rate. Letting it corroborate
-# produced a closed loop
-# on the DEFAULT auto path, no user flag involved:
-#   pill false-fires on a clean non-ByteDance image
-#     -> _PRODUCT_OF maps it to "jimeng", so jimeng resolves to `confirmed`
-#     -> jimeng's NCC gate drops 0.45 -> 0.3825 and it false-fires too
-#     -> _keep_pill now sees "jimeng" in keys and takes the WORDMARK arm, which
-#        removes the pill unrestricted -- skipping the flatness guard that exists
-#        precisely to stop the fill smearing a textured corner.
-# Calibration reproduced the full loop, including a textured footprint. Cutting the
-# pill out of corroboration removed the loop without reducing Jimeng detections, so
-# this is a defect fix, not a recall trade.
-#
-# `_keep_pill` already encodes the same distrust for the pill's own ACTION; this
-# closes the gap that its TESTIMONY was never gated.
-# Regression: tests/test_watermark_registry.py::TestArbiter::
-#   test_weak_pill_detection_does_not_confirm_the_jimeng_wordmark
-_CANNOT_CORROBORATE: frozenset[str] = frozenset({"jimeng_pill"})
 
 
 @dataclass(frozen=True)
@@ -317,6 +293,9 @@ class KnownMark:
     # Optional single-pass dual verdict for the arbiter's perception stage (see
     # `detect_both`). None = fall back to two `_detect` calls.
     _detect_both: Callable[..., tuple[MarkDetection, MarkDetection]] | None = None
+    # False for a weak detector that may be acted on after corroboration but must not
+    # itself grant a sibling the relaxed trust level.
+    can_corroborate: bool = True
 
     def features(self, image: NDArray[Any]) -> dict[str, float]:
         """Physical features the mark reports for the arbiter's gate (empty if none)."""
@@ -467,6 +446,7 @@ _ENGINE_CLASS: dict[str, tuple[str, str]] = {
     "runninghub": ("runninghub_engine", "RunningHubEngine"),
     "baidu": ("baidu_engine", "BaiduEngine"),
     "liblib": ("liblib_engine", "LibLibEngine"),
+    "liblib_pill": ("liblib_engine", "LibLibPillEngine"),
     "microsoft": ("microsoft_engine", "MicrosoftEngine"),
 }
 
@@ -573,13 +553,9 @@ def _gemini_mask(
     return _engine("gemini").footprint_mask(image, force=force, region=region)
 
 
-# The text-mark engines share the TextMarkEngine interface, so one parameterized
-# adapter pair drives all of them -- a new
-# text mark is one `_text_mark(...)` row below, not another copy-paste of these
-# bodies. Detection matches the glyph silhouette; the default mask is the
-# template-free glyph-bbox footprint (see TextMarkEngine.footprint_mask), while an
-# engine may override it when the mark has a measured safer footprint.
-def _text_mark_detect(key: str, label: str, location: str) -> Callable[..., MarkDetection]:
+# Engines with the standard detect/detect_both/footprint_mask interface share
+# parameterized adapters. Each engine still owns its footprint implementation.
+def _engine_mark_detect(key: str, label: str, location: str) -> Callable[..., MarkDetection]:
     def detect(image: NDArray[Any], *, provenance: bool = False) -> MarkDetection:
         d = _engine(key).detect(image, provenance=provenance)
         return MarkDetection(key, label, location, d.detected, d.confidence, d.region, engine_detection=d)
@@ -587,7 +563,7 @@ def _text_mark_detect(key: str, label: str, location: str) -> Callable[..., Mark
     return detect
 
 
-def _text_mark_detect_both(key: str, label: str, location: str) -> Callable[..., tuple[MarkDetection, MarkDetection]]:
+def _engine_mark_detect_both(key: str, label: str, location: str) -> Callable[..., tuple[MarkDetection, MarkDetection]]:
     def detect_both(image: NDArray[Any]) -> tuple[MarkDetection, MarkDetection]:
         strict, relaxed = _engine(key).detect_both(image)
         return (
@@ -602,15 +578,13 @@ def _text_mark_detect_both(key: str, label: str, location: str) -> Callable[...,
     return detect_both
 
 
-def _text_mark_mask(key: str) -> Callable[..., NDArray[Any] | None]:
+def _engine_mark_mask(key: str) -> Callable[..., NDArray[Any] | None]:
     def mask(
         image: NDArray[Any], *, force: bool = False, detection: MarkDetection | None = None
     ) -> NDArray[Any] | None:
-        # Thread the engine's OWN detection into the mask builder: the footprint is
-        # bounded by the ladder sweep the detector already ran, so re-detecting here
-        # repeated locate + extract_mask + an identical sweep. footprint_mask still
-        # re-detects when nothing is threaded (a direct or --no-detect caller) and when
-        # the threaded detection was taken at a relaxed trust level.
+        # Thread the engine's OWN accepted detection into the mask builder. This avoids
+        # repeating its scan and preserves the trust verdict selected by the arbiter.
+        # A direct or --no-detect caller still reaches the engine's fallback path.
         return _engine(key).footprint_mask(
             image, force=force, detection=detection.engine_detection if detection is not None else None
         )
@@ -645,12 +619,12 @@ def _text_mark(
         product or key,
         label_regime,
         platform,
-        _text_mark_detect(key, label, location),
-        _text_mark_mask(key),
+        _engine_mark_detect(key, label, location),
+        _engine_mark_mask(key),
         provenance_signals=provenance_signals,
         tc260_producer_codes=tc260_producer_codes,
         provenance_platform_tokens=provenance_platform_tokens,
-        _detect_both=_text_mark_detect_both(key, label, location),
+        _detect_both=_engine_mark_detect_both(key, label, location),
     )
 
 
@@ -768,6 +742,22 @@ _REGISTRY: tuple[KnownMark, ...] = (
         platform="LiblibAI (visible LiblibAI mark detected)",
         tc260_producer_codes=("91110105MACJ6K1C8A",),
     ),
+    KnownMark(
+        "liblib_pill",
+        "LiblibAI AI生成 pill",
+        "top-left",
+        True,
+        "liblib",
+        "tc260",
+        # The compact pill is generic on its own; the bottom wordmark or LiblibAI
+        # metadata is what makes the relaxed verdict actionable.
+        None,
+        _engine_mark_detect("liblib_pill", "LiblibAI AI生成 pill", "top-left"),
+        _engine_mark_mask("liblib_pill"),
+        provenance_signals=("aigc",),
+        _detect_both=_engine_mark_detect_both("liblib_pill", "LiblibAI AI生成 pill", "top-left"),
+        can_corroborate=False,
+    ),
     # One measured Microsoft visible-mark variant: a white top-right pill with
     # dark internal shapes. Microsoft's documented feature also permits other
     # icon, text, and placement variants, which this detector does not cover.
@@ -795,12 +785,24 @@ _REGISTRY: tuple[KnownMark, ...] = (
         _pill_mask,
         _pill_features,
         _detect_both=_pill_detect_both,
+        can_corroborate=False,
     ),
 )
 
 # Product family per mark, derived from the registry rows so registering a mark is one
 # edit. See KnownMark.product for why Doubao and Jimeng must not cross-relax.
 _PRODUCT_OF: dict[str, str] = {m.key: m.product for m in _REGISTRY}
+
+# Weak pill detectors cannot vouch for sibling marks. Letting the Jimeng pill do so
+# produced a closed false-positive loop: a clean-image pill fire relaxed the wordmark,
+# and that wordmark then bypassed the pill's flatness guard. Keep this policy on each
+# registry row so adding another weak companion cannot silently omit the safeguard.
+_CANNOT_CORROBORATE: frozenset[str] = frozenset(m.key for m in _REGISTRY if not m.can_corroborate)
+
+
+def _provenance_confirms_product(product: str, provenance: frozenset[str]) -> bool:
+    """Whether external provenance names any registered mark of ``product``."""
+    return any(_PRODUCT_OF.get(key) == product for key in provenance)
 
 
 def known_marks() -> tuple[KnownMark, ...]:
@@ -832,8 +834,13 @@ def detect_marks(
     Returns one MarkDetection per scanned mark (``detected`` flags which fired).
     ``include_explicit=False`` scans only the ``in_auto`` marks -- the set used
     by ``--mark auto``. ``provenance`` names the vendor keys that external metadata
-    already confirms, so each named mark's detector may relax its trust gate."""
-    return [m.detect(image, provenance=m.key in provenance) for m in _REGISTRY if include_explicit or m.in_auto]
+    already confirms, so every mark belonging to that product may relax its trust
+    gate."""
+    return [
+        m.detect(image, provenance=_provenance_confirms_product(m.product, provenance))
+        for m in _REGISTRY
+        if include_explicit or m.in_auto
+    ]
 
 
 def resolve_trust(
@@ -847,15 +854,15 @@ def resolve_trust(
 
     The single place that turns the ``sensitivity`` policy + evidence into a per-mark
     level (which the engines consume as ``provenance = level != "strict"``). ``strict``
-    never relaxes. A mark is ``confirmed`` only on same-product evidence -- the vendor
-    confirmed by metadata (``key in provenance``) or a confidently strict-detected
-    sibling of the same product (``_PRODUCT_OF``, minus the marks too weak to vouch,
+    never relaxes. A mark is ``confirmed`` only on same-product evidence -- metadata
+    naming any mark of that product, or a confidently strict-detected sibling
+    (``_PRODUCT_OF``, minus the marks too weak to vouch,
     :data:`_CANNOT_CORROBORATE`). Without that evidence a mark stays ``strict``: there is
     no path that relaxes a gate on anything less than same-product evidence."""
     if sensitivity == "strict":
         return "strict"
     product = _PRODUCT_OF[key]
-    confirmed = key in provenance or any(
+    confirmed = _provenance_confirms_product(product, provenance) or any(
         _PRODUCT_OF[k] == product for k in strict_keys if k != key and k not in _CANNOT_CORROBORATE
     )
     return "confirmed" if confirmed else "strict"

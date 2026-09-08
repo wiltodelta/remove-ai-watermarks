@@ -45,6 +45,7 @@ _DEFAULT_STRENGTH = 238
 _SIZE: dict[str, tuple[int, int]] = {
     "qwen": (1536, 1536),
     "liblib": (1152, 1536),
+    "liblib_pill": (1152, 1536),
     "samsung": (2048, 1536),
     "jimeng_pill": (1152, 1536),
 }
@@ -169,16 +170,40 @@ def _stamp_pill(
     *,
     size_mult: float,
     alpha_mult: float,
+    width_frac: float = 0.161,
+    height_frac: float | None = None,
+    margin_frac: float = 0.03,
 ) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
     h, w = base.shape[:2]
     at = _glyph_asset("jimeng_pill.png")
-    pw = max(24, int(0.161 * w * size_mult))
-    ph = max(8, int(pw * at.shape[0] / at.shape[1]))
-    x, y = int(0.03 * w), int(0.03 * h)
+    pw = max(24, int(width_frac * w * size_mult))
+    ph = (
+        max(8, int(height_frac * w * size_mult))
+        if height_frac is not None
+        else max(8, int(pw * at.shape[0] / at.shape[1]))
+    )
+    x, y = int(margin_frac * w), int(margin_frac * h)
     if x + pw > w or y + ph > h:
         return None
     alpha = cv2.resize(at, (pw, ph)) * alpha_mult
     return _composite_light(base, alpha, x, y, 232), (x, y, pw, ph)
+
+
+def _stamp_liblib_pill(
+    base: np.ndarray,
+    *,
+    size_mult: float,
+    alpha_mult: float,
+) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
+    """Composite LiblibAI's shorter top-left pill variant."""
+    return _stamp_pill(
+        base,
+        size_mult=size_mult,
+        alpha_mult=alpha_mult,
+        width_frac=0.15,
+        height_frac=0.05,
+        margin_frac=0.025,
+    )
 
 
 def stamp_image_mark(
@@ -193,6 +218,8 @@ def stamp_image_mark(
         return _stamp_gemini(base, size_mult=size_mult, alpha_mult=alpha_mult)
     if key == "jimeng_pill":
         return _stamp_pill(base, size_mult=size_mult, alpha_mult=alpha_mult)
+    if key == "liblib_pill":
+        return _stamp_liblib_pill(base, size_mult=size_mult, alpha_mult=alpha_mult)
     return _stamp_text_mark(key, base, size_mult=size_mult, alpha_mult=alpha_mult)
 
 
@@ -323,7 +350,7 @@ def main() -> None:
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / "example.png"
         cv2.imwrite(str(path), img)
-        det = wr.get_mark(key).detect(imread(str(path)), provenance=False)
+        det = wr.get_mark(key).detect(imread(str(path)), provenance=key == "liblib_pill")
         status = "OK " if det.detected else "MISS"
         print(f"{status} {key:12s} conf={det.confidence:.3f} -> {path.relative_to(_ROOT)}")
         if not det.detected:

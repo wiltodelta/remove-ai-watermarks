@@ -21,10 +21,12 @@ remove-ai-watermarks visible image.png --keep-metadata -o clean.png
 ```
 
 Image mark keys: `gemini`, `doubao`, `jimeng`, `qwen`, `kling`, `yuanbao`,
-`samsung`, `runninghub`, `baidu`, `liblib`, `microsoft`, `jimeng_pill`. Default
+`samsung`, `runninghub`, `baidu`, `liblib`, `liblib_pill`, `microsoft`,
+`jimeng_pill`. Default
 `--mark auto` removes every selected match. `microsoft` is the top-right AI
 badge, separate from the invisible InvisMark watermark on the same vendor's
-images. `jimeng_pill` is a weak detector and needs corroboration.
+images. `jimeng_pill` is a weak detector and needs corroboration. The compact
+`liblib_pill` likewise requires LiblibAI metadata or the bottom-center wordmark.
 
 ```bash
 remove-ai-watermarks erase image.png --region 1640,1930,400,100 -o clean.png

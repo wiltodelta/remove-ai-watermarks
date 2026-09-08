@@ -68,6 +68,9 @@ Known examples:
   `Contenuti generati dall'AI` text variant.
 - The Jimeng top-left pill has a weak visual detector and is intentionally
   subject to additional product and background checks.
+- The compact LiblibAI top-left pill is generic on its own. Automatic removal
+  requires LiblibAI metadata or the bottom-center wordmark and a flat footprint;
+  `--sensitivity strict` leaves this corroboration-only component untouched.
 - Kling AI support covers the calibrated variants rather than every Kling AI label.
 
 Use `erase --region` when you can see and select an unsupported or missed mark.

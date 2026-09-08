@@ -20,9 +20,8 @@ engines' recorded calibration evidence.
 The Qwen, Kling, Yuanbao, Baidu, Jimeng, LiblibAI, Microsoft, Sora, Hailuo, and Veo
 directories additionally contain real provider-marked sources. These files
 retain the source bytes and names used here are deliberately distinct from the
-generated canonical examples. The current LiblibAI output is evidence of a
-provider format change, not a positive example for the registered historical
-wordmark detector:
+generated canonical examples. The current LiblibAI output exercises the
+metadata-corroborated compact-pill path, not the historical wordmark detector:
 
 | File | Source | SHA-256 | Expected detector |
 | --- | --- | --- | --- |
@@ -31,7 +30,7 @@ wordmark detector:
 | `yuanbao/provider-original.png` | Authenticated Tencent Yuanbao AI Image generation, downloaded 2026-09-05 | `e4fd856565d0434ef06deb78ff2088e597c4fec98640ad737213c7c0a917c82d` | Yuanbao, confidence 0.49 |
 | `baidu/provider-original.jpeg` | OpenNoMark `examples/baidu/baidu_01.jpeg`, commit `9455d2d` | `52852c528f1a7b8918b665b2fcf883737ecc5016481d9c7683ebe07e152cc9d2` | Baidu, confidence 0.66 |
 | `jimeng_pill/provider-published-example.jpg` | JPEG embedded on page 29 of Zhonglun W&D's 2026 *Bank Finance Legal Newsletter* | `1182fba74d3753785345f8a35d09a8c9b52ea8383ebe9ee999d0d027437f03fd` | Jimeng AI pill, confidence 0.28; Jimeng wordmark, confidence 0.61 |
-| `liblib/current-provider-output.png` | Authenticated LiblibAI Smart Image V2 generation, downloaded 2026-09-05 | `60398d4f06fd50e047d3321c62405dae0a1c4a7070e77ac5e0548c516257d2e3` | No `liblib` detection: current top-left `AI生成` pill differs from the registered bottom-center `LiblibAI` wordmark |
+| `liblib/current-provider-output.png` | Authenticated LiblibAI Smart Image V2 generation, downloaded 2026-09-05 | `60398d4f06fd50e047d3321c62405dae0a1c4a7070e77ac5e0548c516257d2e3` | `liblib_pill`, confidence 0.216 with LiblibAI metadata corroboration; no `liblib` wordmark |
 | `microsoft/provider-original.png` | Authenticated Microsoft Copilot generation, downloaded 2026-09-03 | `0e76fb8aa0540b18fee4d63ac4b5fd63c7eee310474e896d21d27e668403afe7` | Microsoft, confidence 0.54 |
 | `sora/provider-frame.jpg` | Sora 2 video frame from LLinked's Apache-2.0 `sora-watermark-dataset` | `bbcf70b737c30568668572a5bb23e70c52c9687808b0714ca98f9fac073f12c4` | Sora frame localization, confidence 0.69 |
 | `sora/provider-original.mp4` | LLinked's Apache-2.0 `SoraWatermarkCleaner` fixture `resources/puppies.mp4`, commit `ad35ce9` | `7dd8a9d43d43cd5b901946c7ba14e8018e18d47e75f0f774157327ba7e9181c5` | Sora, 300/300 stable frames; Sora C2PA claim |
@@ -141,10 +140,10 @@ The LiblibAI image is the original 2048 x 2048 RGBA PNG generated with Smart
 Image V2 for 18 introductory points from the same neutral prompt. It carries a
 top-left `AI生成` pill and a TC260 AIGC field whose producer code contains
 LiblibAI's registered USCC, but it does not carry the historical bottom-center
-`LiblibAI` wordmark that the registered `liblib` engine detects. This file
-therefore records the current provider behavior without falsely closing the
-historical positive-example gap. The maintainer generated and explicitly
-cleared the output for use under the repository license.
+`LiblibAI` wordmark that the `liblib` engine detects. It is the real-provider
+regression for the metadata-corroborated `liblib_pill` path. The maintainer
+generated and explicitly cleared this output for use under the repository
+license.
 
 - LiblibAI user agreement (generated-output ownership and watermark choices):
   <https://www.liblib.art/activities/468ad794ccc7408d81757fd91be003ec?hideHeader=1>
@@ -182,6 +181,7 @@ detect on its own example, so regeneration is the fix point for drift.
 
 Special cases: `gemini` composites the sparkle alpha map at the provider's
 configured position; `jimeng_pill` uses the measured 3:4 portrait geometry;
+`liblib_pill` uses the shorter compact silhouette and requires product evidence;
 `microsoft` is the opaque white pill with dark text
 holes (the discriminator its detector keys on). Video examples composite the
 detector's own synthetic template on every frame; where two marks share a

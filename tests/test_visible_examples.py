@@ -51,7 +51,7 @@ class TestGallery:
     def test_engine_detects_its_own_example(self, key: str) -> None:
         img = imread(str(_GALLERY / key / "example.png"))
         assert img is not None, key
-        det = wr.get_mark(key).detect(img, provenance=False)
+        det = wr.get_mark(key).detect(img, provenance=key == "liblib_pill")
         assert det.detected, f"{key}: confidence {det.confidence:.3f} on its own example"
 
     def test_gallery_has_no_stray_directories(self) -> None:

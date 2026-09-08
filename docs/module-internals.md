@@ -1297,6 +1297,17 @@ be represented by the shared base:
 - [`liblib_engine.py`](../src/remove_ai_watermarks/liblib_engine.py)
 - [`microsoft_engine.py`](../src/remove_ai_watermarks/microsoft_engine.py)
 
+LiblibAI has two registry entries under one product. `liblib` retains the
+historical bottom-center wordmark detector. `liblib_pill` covers the compact
+top-left `AI生成` pill and never fires at strict trust: the shape is generic, so
+automatic removal requires either LiblibAI TC260 metadata or a confident
+bottom-center sibling detection. The cleared current provider fixture scores
+`0.216367` against the reused synthetic pill silhouette, above the corroborated
+`0.20` gate but below the standalone Jimeng pill's `0.22` gate. A flat-footprint
+check remains mandatory. The pill is a separate action rather than a distant
+component unioned into the bottom mask, keeping LaMa and MI-GAN crops local to
+each mark.
+
 Kling keeps two independently gated silhouettes under one registry key. The
 older measured cohort uses `可灵AI 3.0`; a direct authenticated IMAGE 3.0 export
 on 2026-09-04 uses `KlingAI 3.0`. The Latin template scored 0.429 on that 1024 x

@@ -2,14 +2,15 @@
 
 LiblibAI (哩布哩布AI, USCC 91110105MACJ6K1C8A) stamps its generations with a
 white triangle logo + "LiblibAI" Latin wordmark at **bottom-center** (not a
-corner -- the locate box is horizontally centered). Detection matches the
+corner -- the locate box is horizontally centered). Current outputs can instead
+carry a compact top-left ``AI生成`` pill. The wordmark detector matches the
 bundled font-rendered "LiblibAI" silhouette (the triangle logo is NOT rendered
 -- logos vary, the wordmark discriminates); removal is the shared **localize ->
 fill** (the glyph blob covers logo + wordmark, both bright).
 
-This module supplies only LiblibAI's tuned :class:`TextMarkConfig`
+This module supplies LiblibAI's tuned :class:`TextMarkConfig`
 (``assets/liblib_alpha.png`` from ``scripts/render_vendor_silhouettes.py``,
-never cut from an upload).
+never cut from an upload) and the corroboration-only compact-pill adapter.
 
 The detector uses an Arial-class synthetic silhouette, width-based geometry, a
 strict confidence gate, and a minimum image size. The footprint includes both
@@ -32,6 +33,7 @@ from remove_ai_watermarks._text_mark_engine import (
     TextMarkLocation,
     TextMarkScan,
 )
+from remove_ai_watermarks.pill_engine import PillDetection, PillEngine
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -62,6 +64,16 @@ _ALPHA_HEIGHT_FRAC = 0.026
 
 # Tight ladder: the NCC comb is sharp in size (see runninghub_engine).
 _LADDER = (0.9, 1.0, 1.1)
+
+# LiblibAI's compact top-left ``AI生成`` pill is a separate current-output
+# variant. Its shape scores just below the standalone Jimeng pill gate because
+# the Liblib render is shorter. LiblibAI metadata or the reliable wordmark is the
+# product anchor here, so this lower component gate never acts on its own.
+_TOP_LEFT_PILL_MIN_CONFIDENCE = 0.20
+_TOP_LEFT_PILL_X_FRAC = 0.015
+_TOP_LEFT_PILL_Y_FRAC = 0.015
+_TOP_LEFT_PILL_WIDTH_FRAC = 0.17
+_TOP_LEFT_PILL_HEIGHT_FRAC = 0.08
 
 _CONFIG = TextMarkConfig(
     name="LiblibAI",
@@ -150,4 +162,61 @@ class LibLibEngine(TextMarkEngine):
             max(0, by + gy0 - pad),
             min(w, bx + gx1 + 1 + pad),
             min(h, by + gy1 + 1 + pad),
+        )
+
+
+class LibLibPillEngine:
+    """Detect the compact top-left pill only when LiblibAI is corroborated."""
+
+    def __init__(self) -> None:
+        self._pill = PillEngine()
+
+    def _raw(self, image: NDArray[Any]) -> PillDetection:
+        return self._pill.detect(image)
+
+    def _relaxed_detected(self, image: NDArray[Any], confidence: float) -> bool:
+        return confidence >= _TOP_LEFT_PILL_MIN_CONFIDENCE and self._pill.footprint_is_flat(image)
+
+    def detect(self, image: NDArray[Any], *, provenance: bool = False) -> PillDetection:
+        """Return a verdict; the pill is actionable only with LiblibAI evidence."""
+        raw = self._raw(image)
+        detected = provenance and self._relaxed_detected(image, raw.confidence)
+        return PillDetection(detected, raw.confidence, raw.region)
+
+    def detect_both(self, image: NDArray[Any]) -> tuple[PillDetection, PillDetection]:
+        """Return strict and LiblibAI-corroborated verdicts from one raw match."""
+        raw = self._raw(image)
+        strict = PillDetection(False, raw.confidence, raw.region)
+        relaxed = PillDetection(self._relaxed_detected(image, raw.confidence), raw.confidence, raw.region)
+        return strict, relaxed
+
+    def footprint_mask(
+        self,
+        image: NDArray[Any],
+        *,
+        force: bool = False,
+        detection: PillDetection | None = None,
+    ) -> NDArray[Any] | None:
+        """Mask the compact pill's fixed top-left footprint."""
+        if not image.size:
+            return None
+        if detection is None and not force:
+            raw = self._raw(image)
+            if not raw.detected:
+                return None
+
+        frame_h, frame_w = int(image.shape[0]), int(image.shape[1])
+        x = int(_TOP_LEFT_PILL_X_FRAC * frame_w)
+        y = int(_TOP_LEFT_PILL_Y_FRAC * frame_h)
+        width = int(_TOP_LEFT_PILL_WIDTH_FRAC * frame_w)
+        height = int(_TOP_LEFT_PILL_HEIGHT_FRAC * frame_w)
+        if width <= 0 or height <= 0:
+            return None
+
+        from remove_ai_watermarks import region_eraser
+
+        return region_eraser.boxes_to_mask(
+            (frame_h, frame_w),
+            [(x, y, width, height)],
+            dilate=0,
         )

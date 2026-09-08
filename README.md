@@ -344,7 +344,8 @@ Visible mark support includes:
 
 - Google Gemini and Nano Banana visible sparkle watermark;
 - Doubao, the Jimeng wordmark and top-left `AI生成` pill, Qwen, Kling AI,
-  Yuanbao, Baidu, LiblibAI, and RunningHub labels;
+  Yuanbao, Baidu, LiblibAI's bottom-center wordmark and compact top-left pill,
+  and RunningHub labels;
 - one calibrated Microsoft top-right white AI-badge variant;
 - one calibrated Samsung Galaxy AI label variant.
 

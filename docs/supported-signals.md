@@ -19,7 +19,8 @@ The `visible` command registers these mark keys:
 | `samsung` | `✦ Contenuti generati dall'AI` | Bottom left | Calibrated for the Italian text variant. |
 | `runninghub` | `RunningHub AI生成` | Top left | Strict visual and position gates. |
 | `baidu` | `百度 AI生成` | Bottom right | Detector and extended removal footprint. |
-| `liblib` | `LiblibAI` | Bottom center | Includes a minimum image size gate. A 2026-09-05 Smart Image V2 provider original instead carries a smaller top-left `AI生成` pill and is not detected by this historical-wordmark engine. |
+| `liblib` | `LiblibAI` | Bottom center | Historical wordmark variant; includes a minimum image size gate. |
+| `liblib_pill` | Compact `AI生成` pill | Top left | Auto removal requires LiblibAI metadata or the bottom-center wordmark, plus a flat background under the pill. |
 | `microsoft` | One Microsoft white AI-badge variant | Top right | Strict uses the visual gate; auto can use Microsoft provenance for the measured [relaxed gate](module-internals.md#visible-mark-removal). Other documented icon, text, and position variants are not covered. |
 | `jimeng_pill` | `AI生成` pill | Top left | Weak detector with additional product and background gates. |
 
@@ -38,8 +39,8 @@ originals exercise vendor raster fidelity.
 
 Provider formats can change independently of the registered key. In particular,
 the current LiblibAI sample in the gallery preserves a real new-format output
-and its LiblibAI TC260 producer metadata, but is deliberately not listed as a
-positive detector fixture.
+and its LiblibAI TC260 producer metadata. That metadata corroborates the compact
+pill detector; the generic pill shape does not attribute LiblibAI on its own.
 
 ### Visible video marks
 
@@ -258,7 +259,7 @@ not a universal clean verdict.
 | Kling AI | Kling AI image and video marks | No registered pixel decoder | TC260 AIGC |
 | Hailuo AI / MiniMax video | Hailuo AI composite video label | No registered pixel decoder | TC260 AIGC where present |
 | Baidu | Baidu mark | No registered pixel decoder | TC260 AIGC |
-| LiblibAI | LiblibAI mark | No registered pixel decoder | TC260 AIGC |
+| LiblibAI | LiblibAI wordmark and compact pill | No registered pixel decoder | TC260 AIGC |
 | RunningHub | RunningHub mark | No registered pixel decoder | TC260 AIGC |
 | Samsung Galaxy AI | One locale specific mark | No registered pixel decoder | C2PA and Samsung markers |
 
