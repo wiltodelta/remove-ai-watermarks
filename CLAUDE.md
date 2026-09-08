@@ -31,7 +31,7 @@ Optional features and installation groups are documented in [`docs/installation.
 
 `maintain.sh` runs dependency freshness and security checks, Ruff, Pyright scoped to `src/`, and the parallel test suite. Full-project Pyright is not the project gate because the ML dependency graph can exhaust Node memory.
 
-This gate does NOT pass `--ignore-unfixed` to uv-secure, so a transitive CVE with no released fix stops it before Ruff, Pyright and the tests ever run. That is deliberate and it is not a blocker: run those three separately and report them, per the triage in [`docs/development.md`](docs/development.md). A red gate here is not the same signal as a red gate in a sibling repository that does ignore unfixed findings.
+The gate does not pass `--ignore-unfixed` to uv-secure, so a transitive CVE with no released fix stops it before Ruff, Pyright and the tests run, which a sibling repository that ignores unfixed findings would not do. The global rule applies: run and report those three separately. Current triaged case: `Known security-gate blocks` in [`docs/development.md`](docs/development.md).
 
 Command, gate, typing, and model-test invariants auto-load from [`.claude/rules/development.md`](.claude/rules/development.md). Environment recovery, CI behavior, and fixture policy live in [`docs/development.md`](docs/development.md).
 

@@ -1,5 +1,13 @@
 ---
-globs: ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "skills/**", "pyproject.toml", "uv.lock", "maintain.sh", ".github/workflows/*.yml"]
+paths:
+  - "src/**/*.py"
+  - "tests/**/*.py"
+  - "scripts/**/*.py"
+  - "skills/**"
+  - "pyproject.toml"
+  - "uv.lock"
+  - "maintain.sh"
+  - ".github/workflows/*.yml"
 description: Command contracts, project gate, typing boundaries, model-adjacent test invariants, the agent-skill parity seam, and the detection-path measurement rule.
 ---
 
