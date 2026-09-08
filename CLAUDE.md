@@ -47,7 +47,7 @@ Research and current constraints are routed through [`docs/index.md`](docs/index
 
 ## Data safety
 
-Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Real customer uploads never enter this repository: the private `raiw-app` retention checks materialize them under `data/spaces/`, which is gitignored here for that reason, and nothing under it may be committed, quoted, or turned into a fixture. Store each tracked binary once and keep generated evaluation outputs outside the repository.
+Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Local-only image pulls and research data never enter this repository: `data/spaces/` and `data/research/` are gitignored, and nothing under either may be committed, quoted, or turned into a fixture. Store each tracked binary once and keep generated evaluation outputs outside the repository.
 
 ## Rules and conventions
 
@@ -55,4 +55,4 @@ Topic-specific rules live in `.claude/rules/*.md` and are auto-loaded when match
 
 | File | Covers |
 |---|---|
-| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, the docs-coverage and agent-skill parity seams, and the detection-path measurement rule |
+| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, the docs-coverage and agent-skill parity seams, the detection-path measurement rule, and why cloud GPU harnesses stay out of `scripts/` |

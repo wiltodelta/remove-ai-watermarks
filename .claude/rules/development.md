@@ -42,7 +42,10 @@ From a worktree, `uv run` imports the package from the MAIN checkout -- that is 
 ## Research harnesses stay out of this repository
 
 A research script that needs a cloud GPU account to run is not kept here, and
-`scripts/` carries no `import modal`. Twelve such harnesses were moved out on
+`scripts/` carries no `modal` import; `test_scripts_carry_no_cloud_gpu_harness`
+is the canary. The identifier half of the boundary audit is deliberately not
+mechanized here, because a denylist written into a tracked file publishes the
+strings it exists to keep out. Twelve such harnesses were moved out on
 2026-09-07; the pages that cite their findings
 ([chroma1](../../docs/chroma1-engine-research.md),
 [module internals](../../docs/module-internals.md)) name them as harnesses kept

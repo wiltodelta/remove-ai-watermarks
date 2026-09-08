@@ -23,12 +23,16 @@ Thumbs.db
 # Generated calibration inputs
 data/synthid_corpus/refs/
 
-# Real user uploads pulled from DO Spaces by the private raiw-app retention
-# checks (see raiw-app/.claude/rules/spaces-retention.md). Customer data has
-# no place in this public repository's history. Until 2026-09-07 the only
-# thing keeping 157k of these files out of a commit was an untracked
-# .gitignore inside the directory, which a fresh clone would not have.
+# Local-only image pulls held for analysis. They are not publication-cleared and
+# have no place in this repository's history. Until 2026-09-07 the only thing
+# keeping them out of a commit was an untracked .gitignore inside the directory,
+# which a fresh clone would not have.
 data/spaces/
+
+# Local-only research data: corpora, checkpoints and campaign reports, tens of
+# gigabytes that no clone should be able to commit. The layout is described in
+# data/research/README.md, which is local-only too.
+data/research/
 
 # Reference materials
 _refs/
