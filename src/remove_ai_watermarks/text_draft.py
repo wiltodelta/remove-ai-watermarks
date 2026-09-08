@@ -199,8 +199,8 @@ def _build_engines() -> tuple[Any, dict[str, Any]]:
     from paddleocr import PaddleOCR, TextRecognition
 
     # enable_mkldnn=False is load-bearing on linux: paddle's oneDNN PIR executor
-    # raises NotImplementedError on the text-detection graph there (seen on the
-    # Modal draft container, 2026-08-19), while the reference CPU path runs. The
+    # raises NotImplementedError on the text-detection graph there (seen on a
+    # Linux GPU container, 2026-08-19), while the reference CPU path runs. The
     # eval scripts never hit it because macOS pads take a different path.
     detector = PaddleOCR(
         lang="ch",

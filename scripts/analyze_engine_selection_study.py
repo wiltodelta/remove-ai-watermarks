@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Summarize paired fidelity results from the engine-selection study.
 
-Run from the repository root after ``engine_selection_study.py``:
+Run from the repository root after the ``engine_selection_study.py`` harness has
+written ``out/engine-selection-study/summary.json``:
 
     uv run scripts/analyze_engine_selection_study.py
 

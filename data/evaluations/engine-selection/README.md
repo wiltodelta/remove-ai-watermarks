@@ -49,8 +49,8 @@ strengths. The tracked oracle/carrier inputs remain in their canonical homes:
   `data/contentseal/manifest.csv`.
 
 There is no tracked, publication-cleared Microsoft InvisMark carrier yet. The
-three Paint sources used by the earlier calibration are user uploads and remain
-outside git. A Microsoft row may be added only from a newly generated or
+three Paint sources used by the earlier calibration are not publication-cleared
+and remain outside git. A Microsoft row may be added only from a newly generated or
 otherwise publication-cleared source, with a pixel-identical metadata-stripped
 control that remains positive in Microsoft's detector.
 

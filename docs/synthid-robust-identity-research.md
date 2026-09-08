@@ -228,7 +228,7 @@ from the test set + this doc).
 - New deps: `diffusers` already in the diffusion extra; PhotoMaker ships as a `.bin`
   loaded via `pipeline.load_photomaker_adapter(...)`. The OpenCLIP encoder is the
   same one diffusers already pulls. No new heavy pip dep.
-- Weight download: PhotoMaker-V1 weights are ~3 GB. Add to the Modal HF volume
+- Weight download: PhotoMaker-V1 weights are ~3 GB. Add to the model cache
   alongside SDXL.
 - VRAM: SDXL + canny ControlNet + PhotoMaker-V1 fits comfortably in A100-40GB.
 - Latency: a few extra seconds on cold start (load PhotoMaker), negligible per

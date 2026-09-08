@@ -177,4 +177,4 @@ dimensions.
   `digitalSignature` key usage and subject `CN=Ideogram, Inc`, then
   `c2pa.Builder.from_json(...).sign_file(png, out, Signer.from_info(
   C2paSignerInfo(b"es256", leaf_pem + ca_pem, pkcs8_key, None)))`.
-- No user upload and no Ideogram artifact contributes pixels or bytes.
+- No third-party image and no Ideogram artifact contributes pixels or bytes.

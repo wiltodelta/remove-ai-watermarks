@@ -56,10 +56,8 @@ explicitly names a tracked canonical result.
 
 | Script | Purpose |
 | --- | --- |
-| `chroma_text_restoration_study.py` | Compare verified-text restoration for Qwen and Chroma on H100 without running both engines in production. |
 | `cjk_tail_probe.py` | Test a generic template for otherwise uncovered CJK labels. |
 | `controlnet_sweep.py` | Sweep the historical ControlNet removal prototype. |
-| `engine_selection_study.py` | Run one global engine at a time over the tracked prompt-matched content matrix. |
 | `analyze_engine_selection_study.py` | Reduce engine-study output to paired deltas and exact sign tests. |
 | `infer_text_lines.py` | Draft stable source-text lines without modifying pixels. |
 | `qwen_scrub_prototype.py` | Probe low-strength Qwen regeneration on a GPU. |

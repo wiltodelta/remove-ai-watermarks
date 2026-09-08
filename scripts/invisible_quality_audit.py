@@ -1,6 +1,6 @@
 """Audit invisible-removal output quality by pairing originals with cleaned outputs.
 
-The spaces routine writes ``<hash>_src.<ext>`` originals and ``<hash>_clean.<ext>``
+The private corpus pull writes ``<hash>_src.<ext>`` originals and ``<hash>_clean.<ext>``
 cleaned outputs. For each pair this computes a structural-similarity score plus
 cheap content proxies (detail via Laplacian variance, resolution, aspect), so the
 WORST-preserved images can be surfaced and then visually classified.

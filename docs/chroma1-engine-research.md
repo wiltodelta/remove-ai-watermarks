@@ -32,15 +32,17 @@ Two Flux-family traps found while wiring the prototype:
 - dimensions floor to the /16 latent-patch grid, so the result must be resized
   back to the input size for pixel-exact comparison.
 
-Scripts: `scripts/chroma_scrub_prototype.py` (first sweep),
-`scripts/engine_quality_price_probe.py` (head-to-head with the production
-qwen-zimage path), `scripts/engine_cohort_calibration.py` (the cohort ladders
-below), `scripts/chroma_meta_high_rungs.py` (the Meta rungs above 0.08),
-`scripts/chroma_muse_expansion.py` (harvest-2 Meta API fixtures),
-`scripts/chroma_openai_expansion.py` (extra OpenAI SynthID carriers),
-`scripts/chroma_seed_probes.py` (seed-1/2 at measured first-cleans).
-Generated outputs stay outside the repository (`out/`, gitignored); the durable
-verdicts are the tables on this page.
+Harnesses (Modal GPU scripts kept outside this repository; each mounts this
+library's `src/` and reads its tracked corpora): `chroma_scrub_prototype.py`
+(first sweep), `engine_quality_price_probe.py` (head-to-head with the
+qwen-zimage path), `engine_cohort_calibration.py` (the cohort ladders below),
+`chroma_meta_high_rungs.py` (the Meta rungs above 0.08),
+`chroma_muse_expansion.py` (harvest-2 Meta API fixtures),
+`chroma_openai_expansion.py` (extra OpenAI SynthID carriers),
+`chroma_seed_probes.py` (seed-1/2 at measured first-cleans).
+These harnesses are internal tooling and are not distributed, so a reader outside
+the project cannot rerun them. Generated outputs stay outside the repository
+(`out/`, gitignored); the durable verdicts are the tables on this page.
 
 ## Measured floors
 
@@ -99,7 +101,7 @@ superseded by the 2026-09-07 holdout below):
 - **Microsoft: 0.125**, measured 2026-08-30 on the SAME three valid Paint
   carriers behind the qwen floor (staged under
   `out/cohort-calibration/microsoft/` with pixel-identical metadata-stripped
-  controls; they are real raiw-corpus user uploads and are never committed).
+  controls; they are not publication-cleared and are never committed).
   Controls re-verified `Microsoft AI detected` on the day of the run. Against
   qwen-zimage 0.15: Chroma needs LESS strength on InvisMark.
 
@@ -276,7 +278,8 @@ With the `chroma-zimage` profile implemented
    @synthid oracle. The composited face regions do not re-introduce a
    detectable signal on top of the floor.
 
-Generation script: `scripts/chroma_preship_validation.py`; outputs under
+Generation harness: `chroma_preship_validation.py` (kept outside this
+repository); outputs under
 `out/preship-chroma/` (gitignored).
 
 ## Verdict
@@ -326,7 +329,7 @@ Goal: test whether `flat_ratio` (fraction of 16x16 blocks with luma std < 8)
 predicts Chroma1's first-clean Content Seal boundary well enough to ship a
 Meta arm analogous to Google's face-count split.
 
-**Harvest 1, from a 495-file spaces dump, was not a diverse expansion.**
+**Harvest 1, from a 495-file uncommitted corpus scan, was not a diverse expansion.**
 Seven "unique" files were staged under `out/cohort-calibration/meta/muse-*`
 (gitignored). After control checks on `meta.ai/identification`:
 
@@ -365,7 +368,7 @@ committed five), chosen to span class and `flat_ratio`:
 | illustration_watercolor_botanical | illustration | 0.442 | 0.089 |
 | scene_tokyo_alley | busy scene | 0.258 | 0.175 |
 
-Script: `scripts/chroma_muse_expansion.py`. Outputs under
+Harness: `chroma_muse_expansion.py` (kept outside this repository). Outputs under
 `out/cohort-calibration/meta-api/` (gitignored). Chroma1 ladders (seven
 rungs, seed 0, four effective steps) ran for all six. Oracle
 2026-08-31, anonymous `playwright-isolated` against
@@ -440,12 +443,12 @@ generations (medium, 1024) carry C2PA (`detected`) but SynthID
 "openai" recreations are also SynthID-negative. New ChatGPT-UI downloads
 are not in the tree beyond the three committed files.
 
-**Spaces harvest (one day of `_full_scan`, 2026-07-24):** 41 files with
+**Uncommitted corpus scan (one day, 2026-07-24):** 41 files with
 OpenAI C2PA, of which 7 checked by the provenance API were SynthID
 `DETECTED` (one `NOT_DETECTED`). Four diverse DETECTED files were staged
-under `out/cohort-calibration/openai-expand/` (gitignored; user uploads,
-not committed) and given a Chroma1 ladder (0.04-0.12, seed 0) by
-`scripts/chroma_openai_expansion.py`:
+under `out/cohort-calibration/openai-expand/` (gitignored; not
+publication-cleared) and given a Chroma1 ladder (0.04-0.12, seed 0) by
+`chroma_openai_expansion.py` (a harness kept outside this repository):
 
 | id | faces | flat_ratio |
 |---|---|---|
@@ -577,8 +580,9 @@ there is no coherent input feature that justifies overriding the cohort choice.
 
 Inputs and integrity manifests are under
 `data/evaluations/engine-selection/`. Raw generated outputs remain gitignored
-under `out/engine-selection-study/`; `scripts/engine_selection_study.py`
-reproduces the run and `scripts/analyze_engine_selection_study.py` reproduces
+under `out/engine-selection-study/`; the `engine_selection_study.py` harness
+(kept outside this repository) reproduces the run and
+`scripts/analyze_engine_selection_study.py` reproduces
 the paired statistics. One generation per prompt is a discovery set, not a
 license to fit thresholds. Any future content override must first predict a
 rule here and then survive unused generation indices without changing it.

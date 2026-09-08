@@ -33,7 +33,7 @@ duplicating it and record unsupported gaps and source-specific licensing.
 
 ## Storage rules
 
-Large local-only research data (the 211 GB Spaces corpus and the frozen
+Large local-only research data (the 211 GB private research corpus and the frozen
 checkpoints, research corpora, and campaign reports) lives under gitignored
 paths documented in `data/research/README.md` (ignored via `.git/info/exclude`,
 never committed). Worktree `.local-eval/` directories are scratch copies; the

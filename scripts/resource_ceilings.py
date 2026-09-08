@@ -4,7 +4,7 @@ WHY THIS EXISTS
   The docs describe the backends in CAPABILITY prose -- "MI-GAN is the memory-tight pick",
   "big-LaMa does not fit a minimal droplet", "~0.6-0.9 GB regardless of upload size". Those
   numbers were measured once, informally, and are now load-bearing for a real deployment
-  decision (the free tier runs `migan`, the paid tier runs `lama`). This measures them.
+  decision about which backend each hosting tier can afford. This measures them.
 
 WHAT IT MEASURES
   For each (backend, input size): peak RSS of a FRESH process doing exactly one erase, and

@@ -39,6 +39,18 @@ Boundary modules for cv2, Torch, and Diffusers may carry narrow per-file relaxat
 
 From a worktree, `uv run` imports the package from the MAIN checkout -- that is where the editable install points. A script measuring a worktree's edit must insert that worktree's `src` at `sys.path[0]` and assert `module.__file__` resolves inside it, or it silently compares unmodified code against itself.
 
+## Research harnesses stay out of this repository
+
+A research script that needs a cloud GPU account to run is not kept here, and
+`scripts/` carries no `import modal`. Twelve such harnesses were moved out on
+2026-09-07; the pages that cite their findings
+([chroma1](../../docs/chroma1-engine-research.md),
+[module internals](../../docs/module-internals.md)) name them as harnesses kept
+outside this repository, and the tracked inputs under `data/evaluations/` plus
+the recorded verdicts are the durable record. Keep a new one outside too, and
+leave only its offline analysis step here, the way
+`scripts/analyze_engine_selection_study.py` stayed with its test.
+
 ## Visible-mark example gallery
 
 Every registered mark carries a committed example: `data/fixtures/visible/<key>/example.png`

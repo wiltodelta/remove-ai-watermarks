@@ -30,8 +30,8 @@ _refs/
 yolov8n.pt
 .coverage
 
-# Local prototype and evaluation outputs (scripts/chroma_scrub_prototype.py and
-# friends); the durable record of an oracle verdict lives under data/evaluations/
+# Local prototype and evaluation outputs (research harnesses and probes); the
+# durable record of an oracle verdict lives under data/evaluations/
 out/
 
 # Claude Code local settings

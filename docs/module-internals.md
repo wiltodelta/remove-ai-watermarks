@@ -502,7 +502,7 @@ over the certificate issuer: an application can sign through an upstream model
 provider without becoming that provider's product. Only exact product mappings
 receive this precedence; an unknown claim generator still falls back to issuer
 attribution. An unmapped issuer org reads as unknown-signer C2PA with no platform;
-that is how Ideogram was surfaced (4 corpus uploads signed "Ideogram, Inc",
+that is how Ideogram was surfaced (4 private-corpus files signed "Ideogram, Inc",
 2026-08-08) before its vendor row was added on 2026-08-27.
 
 ### Metadata scanning and stripping
@@ -759,7 +759,7 @@ minimum normalized margin across those gates, so its decision threshold is
 `1.0`.
 
 The earlier single-threshold version produced 68 false positives among 11,273
-symmetrically downscaled Spaces controls. A top-candidate plus period-bin version
+symmetrically downscaled private-corpus controls. A top-candidate plus period-bin version
 removed those but still produced 6 false positives among 1,000 source-independent
 Open Images controls. The high-band gate removed them and then accepted none of
 499 previously untouched Open Images reserve controls. The resulting rule
@@ -841,7 +841,7 @@ A separate half-scale patch-consensus branch initially looked promising. Its
 64-pixel, 90th-percentile patch statistic retained 33 of 49 validation positives
 and zero of 166 controls, then 27 of 52 locked-test positives and zero of 140
 controls. The frozen broad challenge rejected it: 61 of 10,906 symmetrically
-half-scaled Spaces controls and 22 of 1,000 independent Open Images controls
+half-scaled private-corpus controls and 22 of 1,000 independent Open Images controls
 crossed the unchanged threshold. A post-challenge Green negative-phase spread
 gate removed those errors but retained only 2 of 234 later Google rows and zero
 of 689 later controls. Half-scale support therefore remains explicitly absent.
@@ -1416,7 +1416,7 @@ variant is not covered.
 
 `_keep_pill` never removes a metadata-bare pill, and the question "can a bare arm
 (score + footprint-flatness) be opened" was measured to a closed NO over the local
-spaces corpus: 68 OCR-confirmed bare pills (an independent pixel-level label: the
+private corpus: 68 OCR-confirmed bare pills (an independent pixel-level label: the
 band sweep read a flush-left `AI生成`) score p50 0.181 / max 0.317, while 799 clean
 no-signal negatives reach 0.353 and 18 of them already pass the shipped 0.22 raw
 gate. The true-pill and clean distributions overlap completely -- there is no
@@ -1726,7 +1726,8 @@ an unconditional quality claim: Qwen CER stayed 0.074, while Chroma moved from
 stage is therefore implemented and fidelity-positive on both OpenAI sources, but
 not assumed to improve every OCR reading. This is a fidelity check, not a provider
 oracle certification; exact output hashes and per-box metrics are produced by
-`scripts/chroma_text_restoration_study.py` under the gitignored
+the `chroma_text_restoration_study.py` harness (kept outside this repository)
+under the gitignored
 `out/text-restoration-engine-study/` directory.
 
 A matched stage-isolation check on the 18-face Gemini portrait grid confirms the
@@ -1824,7 +1825,8 @@ two-sided sign-test p-values were 3.8e-6 for the OpenAI SSIM and PSNR directions
 and 7.6e-5 for the Meta LPIPS and edge-F1 directions. The tracked discovery
 inputs and manifests are in
 [`data/evaluations/engine-selection/`](../data/evaluations/engine-selection/),
-the run is reproduced by `scripts/engine_selection_study.py`, and paired analysis
+the run is reproduced by the `engine_selection_study.py` harness (kept outside
+this repository), and paired analysis
 by `scripts/analyze_engine_selection_study.py`. These content files were locally
 re-encoded and are not watermark oracles; they validate fidelity at already
 oracle-calibrated floors, not removal by themselves. No content-stratum override
