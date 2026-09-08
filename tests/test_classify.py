@@ -54,7 +54,7 @@ def _scores(
 
 def test_hub_snapshot_is_the_freeze_revision() -> None:
     assert WEIGHTS_REPO == "wiltodelta/raiw-photo-classify"
-    assert WEIGHTS_REVISION == "ffc46db5135ee3a83f51538f2c8f7483b9b8b40c"
+    assert WEIGHTS_REVISION == "4c2763766dd1c8c212d64e01e1cc3f166243c47d"
 
 
 def test_runtime_requests_the_exported_allow_patterns(monkeypatch: pytest.MonkeyPatch) -> None:
