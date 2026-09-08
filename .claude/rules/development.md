@@ -25,6 +25,38 @@ Provider verification services and provenance APIs are development-only oracles.
 their SDKs in the development extra and their adapters out of the installed CLI,
 top-level Python API, and runtime detection/removal pipelines.
 
+The unified maintainer entry point is `scripts/provider_oracles.py`; its workflow and
+slot schema live in `docs/provider-oracles.md`. Multi-account and multi-network work
+selects one named slot explicitly from the gitignored repository-local
+`.oracle-slots.json` by default and snapshots it into the immutable batch manifest.
+Never commit the local slot file.
+Do not add account or IP rotation, rate-limit failover, or cross-session result merging.
+Every manual result stays bound to the exact sanitized upload hash and preserves the
+provider response verbatim.
+
+Google Web oracle automation uses only the user's existing authenticated real Chrome
+session and explicit `/u/N/` account index. OpenAI, Microsoft, and Meta Web automation
+uses isolated Playwright contexts; it must never attach to or copy state from the user's
+real browser. Proxy credentials are read only through a slot's named environment variable
+and never enter a manifest or log. Dotenv interpolation may derive routed proxy URLs from
+one secret key without mutating the process environment. A selected proxy context may
+accept that proxy's TLS interception certificate; direct contexts keep normal TLS checks.
+Upload readiness is surface-specific: OpenAI reaches it at page load but keeps background
+requests alive, while Microsoft and Meta require network idle. Preserve exact provider
+errors as indeterminate evidence rather than retrying or interpreting them as clean.
+
+OpenAI API slots likewise carry only `api_key_env`. Store multiple key values in the
+gitignored `.env`, select one slot explicitly, and never rotate to another token after a
+refusal or rate limit. The process environment may override the matching `.env` value.
+Their SDK transport sets `trust_env=False`; environment proxy variables must not reroute
+an API check.
+
+Microsoft API slots use the Azure Content Safety and private Blob Storage resource
+identities from the gitignored `.env`. The adapter reads resource keys only into memory
+through authenticated Azure CLI, downloads and hashes the private blob before requiring
+equality with the named local source, keeps `trust_env=False`, never retries the submit,
+and reports Watermark independently from C2PA.
+
 Do not add an option whose only outcome is an error. Model id, step count and CFG are fixed by the profile, so none of them is a parameter of the CLI, `InvisibleEngine`, or `WatermarkRemover` -- they were accepted-then-rejected for a while, which moved the failure several frames below the caller and advertised choices the pinned stack cannot honor. If a value cannot vary, delete the knob rather than validating it.
 
 `device` is the deliberate exception and stays a library parameter: `None`/`"auto"` detect, `"cuda"` pins without detecting, and everything else raises at construction. On the image path it is not a CLI option, because the only value a user could usefully type is the one auto-detection already finds. The video SynthID commands (`video invisible`, `video all`, `video batch`) do expose `--device`, whose VAE runs on cuda, mps, or cpu, so a user can usefully pick one. `test_device_exists_exactly_where_the_skill_says_it_does` pins that split; do not read this paragraph as licence to delete the video flag.

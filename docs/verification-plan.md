@@ -252,6 +252,10 @@ report recall from the detector-sampled set.
 
 ## Tier D -- external oracles
 
+The unified maintainer workflow, execution-slot schema, immutable batches, and
+result recorder are documented in [`provider-oracles.md`](provider-oracles.md)
+and implemented by `scripts/provider_oracles.py`.
+
 Proprietary watermark removal cannot be verified locally by design -- no public decoder
 exists. Each vendor has its own oracle and it covers only that vendor's content:
 `openai.com/verify` for OpenAI, the Gemini app for Google, and Microsoft's

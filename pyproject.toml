@@ -184,6 +184,11 @@ dev = [
     # installed CLI, the public Python API, or any runtime pipeline.
     "audioseal>=0.2.0",
     "huggingface-hub>=0.20.0",
+    # Direct Microsoft Content Provenance API transport. The adapter uses an
+    # Azure CLI Entra token and ignores process proxy settings.
+    "httpx>=0.28,<1",
+    # Development-only isolated browser automation for public provider oracles.
+    "playwright>=1.62,<2",
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",

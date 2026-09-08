@@ -48,6 +48,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [SynthID identity follow-up](synthid-robust-identity-research-2026-06-08.md)
 - [Video SynthID quality research](video-synthid-quality-research.md)
 - [OpenAI SynthID oracle ladders](synthid-oracle-ladders.md) (routing hub)
+- [Provider oracle tooling](provider-oracles.md) (Google, OpenAI, Microsoft, and Meta execution surfaces)
 - [SynthID detector and removal plan](synthid-detector-removal-plan.md) (chronological mixed archive)
 - [Text protection research](text-protection-research.md)
 - [Audio provenance experiment](audio-provenance-experiment.md) (local AudioSeal matched-oracle study of video audio tracks across visual cleaning)

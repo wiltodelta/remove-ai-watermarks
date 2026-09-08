@@ -949,10 +949,12 @@ multipart file to `content_provenance_checks.create` and parses exactly one
 used as fallback evidence. Missing, duplicate, or unknown SynthID outcomes are
 errors rather than negative detections.
 
-The default SDK client has a 120-second request timeout and zero automatic
-retries. One upload acknowledgement therefore authorizes at most one media
-transmission rather than inheriting the SDK's retry default. Request logs keep
-the endpoint, temporary basename, media type, byte count, timeout, retry policy,
+The default SDK client has a 120-second request timeout, zero automatic retries,
+and an HTTP transport with `trust_env=False`, so process proxy variables cannot
+reroute it. A caller may provide one explicit API key without mutating the process
+environment. One upload acknowledgement therefore authorizes at most one media
+transmission rather than inheriting the SDK's retry default. Request logs keep the
+endpoint, temporary basename, media type, byte count, timeout, retry policy,
 duration, HTTP status, error code, and request id when available, but omit the
 source path, image bytes, credentials, and decoded-pixel fingerprint.
 

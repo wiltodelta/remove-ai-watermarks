@@ -575,18 +575,20 @@ The SynthID decoder is proprietary and not released:
 > -- Gowal et al., arXiv:2510.09263
 
 There are no released payload-decoder weights or public algorithm. Google
-provides verification in Gemini and a limited SynthID Detector
-portal. OpenAI now documents a synchronous Content Provenance API whose image
-response contains separate C2PA and SynthID outcomes. That API is a remote,
-OpenAI-scoped verifier, not a local decoder. Its documentation also says not to
-use repeated queries to reverse-engineer, remove, or evade a watermark, so an
-adaptive research loop requires separate authorization.
+provides verification in Gemini. The old limited SynthID Detector portal does
+not work: on 2026-09-07, its official `labs.google/synthid` entry point
+redirected a signed-in browser to a Google 404. OpenAI now documents a
+synchronous Content Provenance API whose image response contains separate C2PA
+and SynthID outcomes. That API is a remote, OpenAI-scoped verifier, not a local
+decoder. Its documentation also says not to use repeated queries to
+reverse-engineer, remove, or evade a watermark, so an adaptive research loop
+requires separate authorization.
 
-Google's SynthID Detector service is:
+Google previously described the SynthID Detector service as:
 
 > "a verification portal" in early testing with "journalists and media
 > professionals" on a waitlist
-> -- deepmind.google/models/synthid/
+> -- deepmind.google/models/synthid/ (historical description)
 
 The external variant SynthID-O is available "through partnerships" only. This
 package does not ship a local payload decoder. Research on a periodic lattice

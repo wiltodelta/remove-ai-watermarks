@@ -16,6 +16,9 @@ explicitly names a tracked canonical result.
 | `invisible_quality_audit.py` | Pair originals and invisible-removal outputs for quality review. |
 | `metadata_removal_audit.py` | Check metadata detection/removal parity over a corpus. |
 | `pill_gate_audit.py` | Measure the Jimeng pill detector on the product path. |
+| `provider_oracle_web.py` | Implement isolated Playwright submissions for the unified provider-oracle runner. |
+| `provider_oracle_microsoft.py` | Call Microsoft's Content Provenance API with hash-bound public media and Azure CLI authentication. |
+| `provider_oracles.py` | Drive and validate hash-bound Google, OpenAI, Microsoft, and Meta oracle checks. |
 | `real_examples_e2e.py` | Run end-to-end confidence checks over local examples. |
 | `record_parity_audit.py` | Compare record-based and file-based identification. |
 | `resource_ceilings.py` | Measure peak RSS and runtime for fill backends. |

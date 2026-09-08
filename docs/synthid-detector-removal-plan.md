@@ -3660,6 +3660,10 @@ news-publisher corporate email and required News Publisher and Publisher URL
 fields. The words research, academic and developer do not appear on the form at
 all. Research access is excluded by construction rather than by refusal.
 
+**2026-09-07 operational update:** the old portal no longer works. Its official
+`labs.google/synthid` entry point redirects a signed-in browser to a Google 404;
+Gemini remains the Google verifier route.
+
 The Gemini app therefore stays the only working route, at roughly two checks per
 account per two hours. The Google branch's control shortage has no near-term
 provider-labelled fix.
