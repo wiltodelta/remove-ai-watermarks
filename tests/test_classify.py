@@ -38,14 +38,18 @@ def _scores(
     tc260: float = 0.0,
     meta: float = 0.0,
     no_ai: float = 0.0,
+    bytedance: float | None = None,
 ) -> dict[str, float]:
-    return {
+    scores = {
         "openai": openai,
         "google": google,
         "tc260": tc260,
         "meta_muse_image": meta,
         "no_ai": no_ai,
     }
+    if bytedance is not None:
+        scores["bytedance"] = bytedance
+    return scores
 
 
 def test_hub_snapshot_is_the_freeze_revision() -> None:
@@ -87,11 +91,13 @@ def test_shipped_operating_point_matches_the_runtime_defaults() -> None:
     assert payload["model1"]["ridge_threshold"] == RIDGE_THRESHOLD
     assert payload["model2"]["margin"] == PROVIDER_MARGIN
     assert payload["model2"]["runs_only_after"] == "definitely"
-    assert payload["model2"]["classes"] == ["openai", "google", "tc260", "muse-image", "no_ai"]
+    assert payload["model2"]["classes"] == ["openai", "google", "bytedance", "tc260", "muse-image", "no_ai"]
     assert payload["model2"]["class_kind"]["openai"] == "provider"
     assert payload["model2"]["class_kind"]["google"] == "provider"
-    assert payload["model2"]["class_kind"]["tc260"] == "label-standard"
+    assert payload["model2"]["class_kind"]["bytedance"] == "provider"
+    assert payload["model2"]["class_kind"]["tc260"] == "abstain-veto"
     assert payload["model2"]["class_kind"]["muse-image"] == "model"
+    assert payload["model2"]["public_values"] == ["openai", "google", "bytedance", "muse-image", None]
     assert payload["model2"]["checkpoint_keys"]["muse-image"] == "meta_muse_image"
     assert payload["receipt_gate"]["threshold"] == RECEIPT_GATE_THRESHOLD
     assert payload["receipt_gate"]["asset"] == RECEIPT_GATE_FILE
@@ -117,7 +123,34 @@ def test_provider_requires_margin_over_no_ai() -> None:
     assert provider_from_scores(_scores(openai=0.5, no_ai=0.4)) is None
     assert provider_from_scores(_scores(google=2.0, openai=1.5, no_ai=0.0)) == "google"
     assert provider_from_scores(_scores(meta=1.0, no_ai=0.0)) == "muse-image"
-    assert provider_from_scores(_scores(tc260=1.0, no_ai=0.0)) == "tc260"
+
+
+def test_bytedance_names_the_shared_bytedance_renderer_lineage() -> None:
+    """Doubao and Jimeng render with one ByteDance model family, so the
+    generator class is the union; the value names the lineage."""
+    assert provider_from_scores(_scores(bytedance=1.0, no_ai=0.0)) == "bytedance"
+    assert provider_from_scores(_scores(bytedance=3.0, openai=1.0, no_ai=0.0)) == "bytedance"
+    assert provider_from_scores(_scores(bytedance=1.0, openai=2.0, no_ai=0.0)) == "openai"
+
+
+def test_older_snapshots_without_bytedance_keep_working() -> None:
+    """provider.pt predating bytedance has five heads; the candidate set
+    comes from the LOADED scores, so such snapshots run unchanged and
+    their would-be bytedance rows fall to the tc260 veto."""
+    legacy = _scores(tc260=2.0, openai=1.0, no_ai=0.0)
+    assert "bytedance" not in legacy
+    assert provider_from_scores(legacy) is None
+    assert provider_from_scores(_scores(openai=3.0, no_ai=0.0)) == "openai"
+
+
+def test_tc260_wins_abstain_instead_of_naming_a_provider() -> None:
+    """tc260 is not one class of anything: it covers China's generator
+    ecosystem, providers that are peers of openai/google/meta. No mixed
+    head can honestly name that group, so its argmax win publishes None; a
+    row where a real provider outscores it keeps that provider."""
+    assert provider_from_scores(_scores(tc260=1.0, no_ai=0.0)) is None
+    assert provider_from_scores(_scores(tc260=3.0, openai=1.0, no_ai=0.0)) is None
+    assert provider_from_scores(_scores(tc260=1.0, openai=2.0, no_ai=0.0)) == "openai"
 
 
 def test_definitely_plus_openai_is_ai_openai() -> None:
@@ -219,6 +252,59 @@ def test_receipt_gate_prefers_the_weights_directory(tmp_path: Path) -> None:
         result = classify_from_scores(1.0, 10.0, None, receipt_score=mid, receipt_threshold=gate["threshold"])
         assert result.label == "ai"
         assert classify_from_scores(1.0, 10.0, None, receipt_score=mid).label == "unknown"
+    finally:
+        _receipt_gate_cache.clear()
+
+
+def test_receipt_gate_stable_name_beats_the_legacy_spelling(tmp_path: Path) -> None:
+    """The model-side artifact (stable name) owns the gate: same directory,
+    stable spelling wins, and head plus threshold come from that ONE file.
+    """
+    from remove_ai_watermarks.classify import (
+        RECEIPT_GATE_STABLE_FILE,
+        _load_receipt_gate,
+        _receipt_gate_cache,
+        receipt_gate_score,
+    )
+
+    source = np.load(Path("src/remove_ai_watermarks/assets") / RECEIPT_GATE_FILE)
+    weights = tmp_path / "weights"
+    weights.mkdir()
+    np.savez(weights / RECEIPT_GATE_FILE, **{k: source[k] for k in ("w", "b", "mu", "sd")}, threshold=99.0)
+    np.savez(
+        weights / RECEIPT_GATE_STABLE_FILE,
+        w=np.full(768, 0.5),
+        b=0.0,
+        mu=np.zeros(768),
+        sd=np.ones(768),
+        threshold=-99.0,
+    )
+    _receipt_gate_cache.clear()
+    try:
+        gate = _load_receipt_gate(weights)
+        assert gate["threshold"] == -99.0
+        probe = np.full(768, 1.0 / np.sqrt(768), dtype=np.float64)
+        # The score must come from the SAME stable-name artifact: with its
+        # uniform weights the score is exactly 0.5*sqrt(768), not the legacy
+        # package head's value.
+        assert receipt_gate_score(probe, gate) == pytest.approx(0.5 * np.sqrt(768))
+    finally:
+        _receipt_gate_cache.clear()
+
+
+def test_receipt_threshold_defaults_to_the_artifact_value() -> None:
+    """classify_from_scores without an explicit threshold resolves the
+    operating point from the loaded gate artifact (legacy package fallback
+    here), not from a code constant."""
+    from remove_ai_watermarks.classify import _load_receipt_gate, _receipt_gate_cache
+
+    _receipt_gate_cache.clear()
+    try:
+        artifact_threshold = _load_receipt_gate(None)["threshold"]
+        just_above = classify_from_scores(1.0, 10.0, None, receipt_score=artifact_threshold + 1e-9)
+        just_below = classify_from_scores(1.0, 10.0, None, receipt_score=artifact_threshold - 1e-9)
+        assert just_above.label == "unknown"
+        assert just_below.label == "ai"
     finally:
         _receipt_gate_cache.clear()
 

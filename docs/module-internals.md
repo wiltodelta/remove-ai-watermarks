@@ -1015,13 +1015,19 @@ photo freeze: CLIP-L-ft ridge AND freeze MLP, then 124-d focal heads only on
 DEFINITELY. Since 2026-09-02 a linear receipt-document gate runs first on
 that DEFINITELY path, on the same CLIP vector: a hit publishes `unknown`
 (detector stays `definitely`, provider is not read, 124-d extraction is
-skipped). The head ships with the model: `receipt-gate-2026-09-02.npz` in
-the Hub snapshot or `RAIW_CLASSIFY_WEIGHTS` directory, with the package
-asset `src/remove_ai_watermarks/assets/receipt-gate-2026-09-02.npz` as
+skipped). The head ships with the model: since 2026-09-07 under the
+STABLE name `receipt-gate.npz` in the Hub snapshot or
+`RAIW_CLASSIFY_WEIGHTS` directory, with the legacy dated spelling
+`receipt-gate-2026-09-02.npz` still readable and the package asset
+`src/remove_ai_watermarks/assets/receipt-gate-2026-09-02.npz` as
 the fallback for weights directories frozen before the gate existed (the
 head is fitted on the freeze CLIP-L-ft embedding space, so it versions
-with the model, not with the code); its threshold is pinned in
-`classify.py` and in the operating-point sidecar.
+with the model, not with the code). Head and threshold are read from ONE
+artifact: the threshold travels inside the npz and
+`classify_from_scores` resolves it from the loaded gate, so a model-side
+gate update needs no lib release. `RECEIPT_GATE_THRESHOLD` in
+`classify.py` is only the legacy pinned value for the package fallback
+and its pinned tests.
 Training data and certification live in
 `receipt-gate-shipped-2026-09-02/report.json` in the research tree; positives
 are CORD-v2 train (800, CC BY 4.0, disjoint from the CORD test split the
@@ -1029,10 +1035,16 @@ eval corpus uses) plus regenerable synthetic receipts, negatives are ai_train
 rows. `tests/test_classify.py` pins the asset threshold, the downgrade, and
 that the gate skips forensics. The public label is `ai` / `human` /
 `unknown`. POSSIBLY is `unknown`. The named class is `openai` / `google` /
-`muse-image` / `tc260` / `None`. `tc260` is the China AIGC label standard,
-not one producer. The freeze file keys the Muse Image head
-`meta_muse_image`. Tests in `tests/test_classify.py` pin the gate without
-downloads and pin that `identify` does not import this module.
+`muse-image` / `bytedance` / `None`. `bytedance` is the shared ByteDance
+generator lineage (Doubao and Jimeng render with one model family;
+measured 83.9% on the frozen test cell). `tc260` covers the REST of
+China's generator ecosystem, providers that are peers of
+openai/google/meta; no mixed head can honestly name the group, so its
+argmax win abstains to `None` (measured 2026-09-07: without the veto
+207/379 China test rows would be falsely named openai/google/muse-image). The freeze file keys the Muse
+Image head `meta_muse_image`. Tests in `tests/test_classify.py` pin the
+gate without downloads and pin that `identify` does not import this
+module.
 
 Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-photo-classify`.
 `RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. The runtime
