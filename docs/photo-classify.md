@@ -64,7 +64,8 @@ flowchart TD
   m1 -->|definitely| rg[Receipt gate on the same CLIP vector]
   rg -->|receipt document| rgu["label unknown, detector definitely, provider none"]
   rg -->|not a receipt| m2[Model 2 124-d focal heads]
-  m2 -->|openai google muse-image tc260| named["label ai plus provider"]
+  m2 -->|openai google muse-image bytedance| named["label ai plus provider"]
+  m2 -->|china rest wins| none["label ai, provider none"]
   m2 -->|no_ai or extract fail| aiOnly["label ai, provider none"]
 ```
 
@@ -73,7 +74,7 @@ flowchart TD
 | `label` | `ai`, `human`, `unknown` | Public verdict. `ai` only on DEFINITELY |
 | `domain` | `photo` | This freeze is photographic only |
 | `detector` | `definitely`, `possibly`, `likely_human` | Raw Model 1 gate |
-| `provider` | `openai`, `google`, `muse-image`, `tc260`, or `None` | Model 2, only if `label` is `ai` |
+| `provider` | `openai`, `google`, `bytedance`, `muse-image`, or `None` | Model 2, only if `label` is `ai` |
 
 `unknown` with `detector=definitely` is the receipt-document gate abstaining:
 the file looked AI-generated to Model 1 and like a receipt photograph to the
@@ -98,10 +99,21 @@ wrong job on that bank, which is why Model 2 is gated.
 
 Provider names the renderer, not the product UI. Bing Image Creator signed
 Microsoft, OpenAI scores `openai`. Designer signed Microsoft, Google LLC
-scores `google`. There is no Microsoft pixel class. `openai` and `google` are
+scores `google`. There is no Microsoft pixel class, and that is measured,
+not assumed (2026-09-07: a head trained on 114 Microsoft-brand rows
+recognizes 8% of its own test cell and names a fresh Copilot generation
+`openai`): Microsoft's products render with other vendors' models, so
+Microsoft attribution is metadata, not pixels. `openai` and `google` are
 provider classes. `muse-image` is Muse Image output, not a general Meta
-class. `tc260` is the China AIGC label standard, not one producer: Doubao,
-Jimeng, Qwen, Kling, and others share that residual class.
+class. `tc260` covers the REST of China's generator ecosystem, producers
+that are peers of openai/google/meta, not one producer: Qwen, Yuanbao,
+Kling, and others sit behind that residual class. No mixed head can
+honestly name that group, so its win abstains: China-generated content
+from those producers publishes `provider=None` until per-producer classes
+exist. `bytedance` is the shared ByteDance generator lineage: Doubao and
+Jimeng render with one model family (measured 2026-09-07: separate heads
+cross-fire even at 3.5x train mass, the union holds its cell), so the
+class names the lineage, not the app that signed.
 
 ## Evaluation
 
@@ -115,7 +127,7 @@ Two CPU retrains were byte-identical. DEFINITELY is the shipped cut.
 | Detector DEFINITELY | FLUX hold | 83.0% (n=300) |
 | Class | OpenAI | 90.8% (345/380 of 381) |
 | Class | Google | 90.9% (339/373 of 377) |
-| Class | TC260 | 78.6% (298/379 of 384) |
+| Class | Bytedance (Doubao+Jimeng lineage) | 83.9% (271/323 of 323; 83.6% extended 529/633 with the historical harvest) |
 | Class | Muse Image hold-out v3 | 89.4% (177/198) |
 | Class | Muse Image hold-out pooled | 88.4% (243/275 listed 277) |
 | Class | meme templates, ungated | 29.1% leak |
@@ -138,10 +150,12 @@ publishes `unknown` and skips the 124-d provider pass.
 | CORD photographs (99) | **0/99** false `ai` |
 | ai_test DEFINITELY cost | 7/1,847 (0.38%) |
 
-Artifacts: `receipt-gate-shipped-2026-09-02/report.json` (private research
-tree). The head ships with the model (`receipt-gate-2026-09-02.npz` in the
-Hub snapshot, package asset as the fallback for pre-gate freezes); the
-operating point records it in
+Artifacts: `receipt-gate-shipped-2026-09-02/report.json` and
+`receipt-gate-retrain-2026-09-07/report.json` (private research tree).
+The head ships with the model under the STABLE name `receipt-gate.npz`
+in the Hub snapshot with the threshold inside the artifact (legacy dated
+spelling still readable, package asset as the fallback for pre-gate
+freezes); the operating point records it in
 [photo-classify-hf/operating-point.json](photo-classify-hf/operating-point.json).
 
 ## Limits
@@ -152,8 +166,10 @@ operating point records it in
 - Not SynthID, not C2PA, not `is_ai_generated`.
 - Images under 256 px cannot yield 124-d features, so provider abstains.
 - FLUX is a hold-out at 83% DEF, not a named provider class.
-- `tc260` is mixed producers under one label standard. A later retrain
-  should split it by manufacturer.
+- China's generator ecosystem splits by generator: `bytedance` (the
+  shared Doubao+Jimeng lineage) is named; the rest (Qwen, Yuanbao,
+  Kling, ...) abstains until per-producer train mass holds its own cells
+  (qwen measured at 64 train rows: 27%, stays in the fallback).
 
 `identify`, `has_invisible_target`, `all`, and `invisible` do not import this
 module. A no-signal provenance result stays unknown until you call `classify`

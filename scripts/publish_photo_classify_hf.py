@@ -33,6 +33,7 @@ DETECTOR_FILE = "detector.pt"
 PROVIDER_FILE = "provider.pt"
 WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 GATE_FILE = "receipt-gate-2026-09-02.npz"
+GATE_STABLE_FILE = "receipt-gate.npz"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATE_SOURCE = REPO_ROOT / "src" / "remove_ai_watermarks" / "assets" / GATE_FILE
 CARD_DIR = REPO_ROOT / "docs" / "photo-classify-hf"
@@ -83,6 +84,10 @@ def stage_weights(dest: Path, src: Path) -> None:
     for name, path in weight_paths(src).items():
         _place(path, dest / name)
         log.info("stage %s (%s bytes)", name, path.stat().st_size)
+    stable_gate = src / GATE_STABLE_FILE
+    if stable_gate.is_file():
+        _place(stable_gate, dest / GATE_STABLE_FILE)
+        log.info("stage %s (%s bytes)", GATE_STABLE_FILE, stable_gate.stat().st_size)
 
 
 def publish(stage: Path, *, token: str, message: str) -> str:
@@ -95,7 +100,7 @@ def publish(stage: Path, *, token: str, message: str) -> str:
         repo_id=HUB_REPO,
         repo_type="model",
         commit_message=message,
-        allow_patterns=["README.md", "operating-point.json", *WEIGHT_FILES, GATE_FILE],
+        allow_patterns=["README.md", "operating-point.json", *WEIGHT_FILES, GATE_FILE, GATE_STABLE_FILE],
     )
     return getattr(commit, "oid", "") or ""
 
