@@ -68,8 +68,18 @@ Do these in order after the skill is on the default branch.
    official Anthropic marketplace is
    curated and has no application.
 6. **ClawHub.** `clawhub login` then `clawhub skill publish` from
-   `skills/remove-ai-watermarks/`. The public catalog already has an add-watermark
-   skill; this would be the removal counterpart. Frame it as the user's own
+   `skills/remove-ai-watermarks/`. PUBLISHED 2026-09-07 (1.0.3) and
+   republished 2026-09-08 (1.0.4, identical content) — both sit in
+   `pending.publication` with CLEAN moderation, succeeded scan frameworks,
+   and null ClawScan / VirusTotal / Skillspector verdicts: a recurring
+   ClawHub pipeline defect tracked as openclaw/clawhub#3643 (prior reports:
+   #3624, #3466, #3351, #3284). Release-time publishing is automated through
+   the `clawhub` job in `distribute.yml` (see
+   [release-and-distribution.md](release-and-distribution.md)); do not bump
+   the version again to re-queue until the issue resolves, and re-check the
+   listing before any listing-dependent step such as the awesome-openclaw
+   submission. The public catalog already has an add-watermark
+   skill; this is the removal counterpart, framed as the user's own
    content. ClawHub disallows deception, impersonation, and fake-engagement
    install loops.
 7. **OpenAI ChatGPT / Codex plugin directory.** Skills-only plugins are a
