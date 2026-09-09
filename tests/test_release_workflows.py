@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -51,6 +52,7 @@ def test_registry_check_parses_distribution_and_exact_floor(dependency: str, acc
     assert (result.returncode == 0) == accepted, result.stderr
 
 
+@pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")
 def test_distributed_version_survives_a_newer_pypi_release(tmp_path: Path) -> None:
     producer = _step("distribute.yml", "resolve", "Record distributed release")
     consumer = _step("verify-release.yml", "verify", "Resolve target version")
@@ -133,6 +135,7 @@ def test_distributed_version_survives_a_newer_pypi_release(tmp_path: Path) -> No
     )
 
 
+@pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")
 def test_clawhub_uses_local_install(tmp_path: Path) -> None:
     script = _step("distribute.yml", "clawhub", "Publish the agent skill when its version moved")["run"]
     script = script.replace("${{ github.event.release.name || github.ref_name }}", "test")

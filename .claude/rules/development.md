@@ -289,3 +289,9 @@ cache path survives teardown and later model tests silently attempt downloads.
 Dotenv configuration tests must clear every fixture variable from the invoked
 process environment. Seed conflicting inherited values to prove isolation;
 clearing only some fields lets the remaining host settings override the fixture.
+
+Cross-platform tests must use host-absolute synthetic interpreter paths and
+explicit unchanged decodes when comparing stored pixels. Execute Ubuntu Bash
+workflow harnesses only on POSIX hosts with Bash; keep their pure Python checks
+active on every platform. Round floating-point image output before uint8
+conversion when quantization must preserve constant values across OpenCV builds.

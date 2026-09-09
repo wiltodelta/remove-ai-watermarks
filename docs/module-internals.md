@@ -2082,6 +2082,11 @@ Regression coverage:
 [`humanizer.py`](../src/remove_ai_watermarks/humanizer.py) contains explicit
 grain, unsharp masking, and adaptive polish helpers.
 
+Unsharp masking rounds its floating-point output before clipping to uint8.
+Truncation can turn a flat 128-valued image into 127 on OpenCV builds with
+slightly different floating-point kernels. The explicit rounding regression
+also covers fractional values and saturation at both byte limits.
+
 `_apply_postprocessing` in `invisible_engine.py` owns the stage ORDER, and the
 order is a contract: restore the original resolution, unsharp, adaptive polish,
 humanize. Grain runs LAST because `adaptive_polish` measures the image it is given
@@ -2131,6 +2136,8 @@ Contracts:
 - `read_bgr_and_alpha` reads with `IMREAD_UNCHANGED`, so a 16-bit source stays
   16-bit through the pixel path and out through `imwrite`. Anything downstream that
   needs 8 bits narrows a copy for itself.
+  Lossless-write tests likewise compare explicit unchanged decodes: default
+  color reads may apply EXIF orientation, including for WebP on newer OpenCV builds.
 - `imwrite` accepts `display_tags_from` naming the file whose decode produced the
   pixels, and carries that file's ICC profile and EXIF orientation into the
   re-encoded output (issue #98: cv2's encoders write no container metadata, so a

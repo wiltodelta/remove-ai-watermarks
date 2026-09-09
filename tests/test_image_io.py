@@ -289,12 +289,12 @@ class TestDisplayTagCarry:
         assert icc == source_icc
         assert orient == self.ORIENT
         # The lossless Pillow re-save must stay pixel-identical.
-        back = image_io.imread(out)
+        back = self._stored_raster(out)
         assert back is not None
         assert np.array_equal(back, raster)
 
     def test_webp_source_orientation_travels(self, tmp_path: Path) -> None:
-        # cv2 never rotates a WebP decode, so even a fresh PNG output must be
+        # IMREAD_UNCHANGED preserves stored pixels, so even a fresh PNG output must be
         # tagged, or the portrait source would display sideways.
         src = self._source(tmp_path / "src.webp")
         raster = self._stored_raster(src)
@@ -303,8 +303,7 @@ class TestDisplayTagCarry:
         assert self._tags(out)[1] == self.ORIENT
 
     def test_an_upright_raster_is_not_tagged_into_a_second_rotation(self, tmp_path: Path) -> None:
-        # A raster the decode already turned upright (this cv2 build does that for
-        # JPEG/PNG under IMREAD_COLOR) must not receive the tag again. Stored 96x64
+        # A raster already turned upright must not receive the tag again. Stored 96x64
         # with Orientation 6 displays as 64x96, so the upright raster is 64 wide.
         src = self._source(tmp_path / "src.png")
         source_icc, _ = self._tags(src)

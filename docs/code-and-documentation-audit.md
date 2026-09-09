@@ -31,6 +31,18 @@ inherited Azure settings overrode the test's dotenv fixture. The test now
 clears every fixture variable and seeds conflicting inherited values to verify
 that isolation without making external calls.
 
+The first pushed CI matrix exposed additional portability gaps: newer OpenCV
+builds produced a one-byte darkening when unsharp output was truncated and
+applied WebP orientation during a test's default color decode. Unsharp now
+rounds before byte conversion, and the lossless test compares stored pixels.
+Synthetic interpreter paths are host-absolute; Ubuntu Bash workflow tests run
+only on POSIX hosts with Bash, while their Python checks remain cross-platform.
+
+The accompanying Dependabot update attempt could not resolve Transformers
+5.16.1 against the retained `tokenizers<0.23` compatibility constraint. This is
+an unresolved candidate update, not a failure to install the committed lockfile;
+changing that model-stack constraint requires separate validation.
+
 | Post-repair check | Result |
 | --- | --- |
 | `bash maintain.sh` | Exit 2 at the existing Accelerate/Lightning security findings; versions retained by explicit decision |

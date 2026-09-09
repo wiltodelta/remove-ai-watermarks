@@ -72,7 +72,7 @@ def _pil_read(path: str | Path, flags: int) -> NDArray[Any] | None:
     """Decode via Pillow (HEIC/AVIF and any other Pillow-readable container) into the
     cv2 layout ``flags`` implies: grayscale, 3-channel BGR, or BGRA when the source has
     alpha and ``IMREAD_UNCHANGED`` was requested. Returns None if Pillow (with the
-    optional HEIF plugin) still cannot open it. No EXIF auto-rotation, matching cv2."""
+    optional HEIF plugin) still cannot open it. This fallback does not apply EXIF orientation."""
     import cv2
     import numpy as np
 
@@ -184,9 +184,9 @@ def _read_display_tags(
     The contract is that ``source`` is the file whose decode produced the pixels
     being written, and ``raster_shape`` is that raster's ``(rows, cols)``. Whether the
     decode turned the raster upright cannot be assumed from the container: cv2
-    applies EXIF orientation for JPEG and (build-dependent) PNG -- but only under
-    ``IMREAD_COLOR``, never ``IMREAD_UNCHANGED``, which is what the pixel paths read
-    with -- and the reporter of issue #98 ran a build that left PNG flat too.
+    applies EXIF orientation under ``IMREAD_COLOR`` depending on the codec and
+    build, including for WebP in newer builds. ``IMREAD_UNCHANGED``, which the
+    pixel paths use, never applies orientation.
     ``orientation_applied`` carries that decode state explicitly when known.
     Otherwise the legacy inference uses raster geometry: for the
     transposing orientations (5-8) the tag is carried exactly when the raster still

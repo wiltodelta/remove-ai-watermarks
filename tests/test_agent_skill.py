@@ -637,8 +637,8 @@ def test_probe_video_advice_uses_the_installed_video_runtime(
 def test_video_probe_runs_the_cli_interpreter_without_loading_models(tmp_path: Path, wrapper: bool) -> None:
     probe = _probe_module()
     cli = tmp_path / "remove-ai-watermarks"
-    interpreter = "/synthetic/venv/bin/python3"
-    cli.write_text(f"#!/bin/sh\n'''exec' {interpreter} \"$0\" \"$@\"\n' '''\n" if wrapper else f"#!{interpreter}\n")
+    interpreter = (tmp_path / "venv" / "bin" / "python3").as_posix()
+    cli.write_text(f"#!/bin/sh\n'''exec' '{interpreter}' \"$0\" \"$@\"\n' '''\n" if wrapper else f"#!'{interpreter}'\n")
     calls: list[list[str]] = []
 
     def run(argv: list[str], timeout: float = 8) -> tuple[int, str, str]:
