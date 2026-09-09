@@ -219,6 +219,14 @@ def _read_display_tags(
     in every case: it describes colour, not geometry. Failures read as "no tags":
     the restore is an enhancement, never a reason to fail a write.
 
+    TIFF is the exception on the explicit state: every reader in this module's
+    stack applies the TIFF orientation tag on decode (cv2's libtiff path under
+    ``IMREAD_UNCHANGED`` too, and Pillow's TIFF plugin, identically), so a caller's
+    blanket ``False`` -- which encodes cv2's JPEG/PNG/WebP contract -- is not true
+    for TIFF. For TIFF sources the parameter is ignored and the geometry check
+    decides against the IFD's stored size: a raster that no longer has the stored
+    dimensions was turned by the decode and must not be tagged again (issue #106).
+
     The stored size cannot be read straight off ``Image``: Pillow's TIFF reader
     reports the upright one, so it comes through :func:`_stored_size`.
     """
@@ -231,11 +239,14 @@ def _read_display_tags(
         with Image.open(source) as im:
             icc = im.info.get("icc_profile")
             orient = im.getexif().get(_ORIENT_EXIF_TAG)
+            fmt = im.format
             stored_w, stored_h = _stored_size(im)
     except Exception:
         return None, None
     if not (isinstance(icc, bytes) and icc):
         icc = None
+    if fmt == "TIFF":
+        orientation_applied = None
     if orientation_applied is True:
         orient = None
     elif orientation_applied is False:

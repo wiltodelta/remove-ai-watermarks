@@ -2148,7 +2148,14 @@ Contracts:
   pixels on save. Callers that know the decode state pass
   `orientation_applied=False` for raw pixels and `True` for a transposed
   raster. Dimensions alone cannot distinguish mirrors or 180-degree rotation.
-  The omitted value retains the compatibility shape heuristic. Display tags
+  TIFF is the container exception: every reader in the stack (cv2's libtiff path
+  under `IMREAD_UNCHANGED` too, and Pillow's TIFF plugin, identically) applies
+  the orientation tag on decode, so `_read_display_tags` ignores the explicit
+  claim for TIFF and decides on the IFD's stored `ImageWidth`/`ImageLength`
+  against the raster, via `_stored_size` -- `Image.size` already reports the
+  upright geometry there, which is what let a turned raster be tagged into a
+  second rotation (issue #106). The omitted value retains the compatibility shape
+  heuristic. Display tags
   are captured before encoding, including when source and destination match.
 
 The metadata strip is the other half of that contract: Pillow cannot hold 16-bit

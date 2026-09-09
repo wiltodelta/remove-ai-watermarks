@@ -445,3 +445,20 @@ class TestTiffOrientation:
         out = tmp_path / "out.png"
         assert image_io.imwrite(out, raster, display_tags_from=src) is True
         assert self._out_orientation(out) is None
+
+    def test_the_visible_api_path_does_not_tag_a_turned_tiff(self, tmp_path: Path) -> None:
+        # The visible write passes orientation_applied=False ("raw decode"), which is
+        # a lie for TIFF: both readers turn the raster. _read_display_tags must ignore
+        # that claim for TIFF and let the IFD geometry decide, or a CLI/library user
+        # gets a turned raster TAGGED for the same turn again (issue #106).
+        from PIL import Image
+
+        from remove_ai_watermarks import api
+
+        src = self._tagged(tmp_path / "src.tif", self.ORIENT)
+        out = tmp_path / "out.png"
+        _, removed = api.remove_visible(src, out, strip_metadata=False)
+        assert removed == []  # plain red: no mark, the passthrough write is exercised
+        with Image.open(out) as im:
+            assert im.size == (64, 96)  # the upright raster, not the stored landscape
+            assert im.getexif().get(0x0112) is None  # and no tag asking for another turn
