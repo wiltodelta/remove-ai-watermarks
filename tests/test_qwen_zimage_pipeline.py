@@ -1043,13 +1043,22 @@ def test_chroma_zimage_inherits_the_shared_stages_and_only_swaps_the_global():
     assert ChromaZImagePipeline.profile_name == "chroma-zimage"
 
 
-def test_chroma_requested_steps_compensate_for_the_diffusers_truncation():
-    from remove_ai_watermarks._internal.chroma_zimage_pipeline import CHROMA_STEPS, requested_steps
+@pytest.mark.parametrize(
+    ("strength", "requested", "effective"),
+    [(0.09, 45, 5), (0.20, 20, 4), (0.125, 32, 4), (0.17, 24, 5), (0.40, 10, 4)],
+)
+def test_chroma_preserves_calibrated_requests_and_actual_scheduler_steps(strength, requested, effective):
+    from types import SimpleNamespace
 
-    for strength in (0.20, 0.125, 0.17, 0.40):
-        steps = requested_steps(CHROMA_STEPS, strength)
-        assert int(steps * strength) >= CHROMA_STEPS
-        assert int(CHROMA_STEPS * strength) < CHROMA_STEPS
+    diffusers = pytest.importorskip("diffusers")
+    from remove_ai_watermarks._internal.chroma_zimage_pipeline import CHROMA_NOMINAL_STEPS, requested_steps
+
+    steps = requested_steps(CHROMA_NOMINAL_STEPS, strength)
+    assert steps == requested
+    pipeline = SimpleNamespace(scheduler=SimpleNamespace(timesteps=list(range(steps)), order=1))
+    timesteps, count = diffusers.ChromaImg2ImgPipeline.get_timesteps(pipeline, steps, strength, "cpu")
+    assert count == effective
+    assert len(timesteps) == effective
 
 
 def test_chroma_zimage_uses_its_own_calibrated_prompts():
@@ -1061,12 +1070,12 @@ def test_chroma_zimage_uses_its_own_calibrated_prompts():
     assert chroma_mod.CHROMA_PROMPT != _GLOBAL_PROMPT
     assert chroma_mod.CHROMA_PROMPT == "high quality, sharp, detailed, faithful to the original"
     assert chroma_mod.CHROMA_GUIDANCE == 5.0
-    assert chroma_mod.CHROMA_STEPS == 4
+    assert chroma_mod.CHROMA_NOMINAL_STEPS == 4
 
 
 def test_chroma_global_stage_calls_diffusers_with_the_calibrated_shape(monkeypatch):
     """The calibrated call shape must not drift: prompt, guidance, width/height
-    on the /16 grid, effective-step count, and no Canny conditioning. A silent
+    on the /16 grid, requested-step count, and no Canny conditioning. A silent
     parameter change moves the oracle floors without any test seeing it."""
     # CI's base job installs the library without the qwen-zimage extra.
     diffusers = pytest.importorskip("diffusers")

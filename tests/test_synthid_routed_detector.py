@@ -24,6 +24,8 @@ def test_detect_path_routes_one_scored_record(monkeypatch, tmp_path: Path) -> No
             "width": 1024,
             "height": 1024,
             "observations": [
+                {"name": bank.synthid_detector.OPPONENT_REGISTERED_DETECTOR_ID, "supported": False, "score": None},
+                {"name": bank.synthid_detector.FINE_OPPONENT_REGISTERED_DETECTOR_ID, "supported": False, "score": None},
                 {
                     "name": bank.synthid_detector.DETECTOR_ID,
                     "supported": True,

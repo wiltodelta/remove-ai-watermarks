@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlsplit
 import provider_oracles as oracles
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
     from pathlib import Path
 
     from playwright.sync_api import Browser, BrowserContext, BrowserType, Page, ProxySettings
@@ -241,11 +241,10 @@ def _submit_batch(
     *,
     headed: bool,
     timeout_seconds: float,
-) -> list[WebVerdict]:
+) -> Iterator[WebVerdict]:
     """Submit every row in one isolated session without retries or route changes."""
     from playwright.sync_api import sync_playwright
 
-    verdicts: list[WebVerdict] = []
     with sync_playwright() as playwright:
         browser = _launch_browser(playwright.chromium, proxy, headed=headed)
         context = _new_context(browser, proxy)
@@ -256,13 +255,12 @@ def _submit_batch(
                     log.info("Submitting %s to %s", upload.name, oracles.SURFACES[surface].url)
                     verdict = _check_page(page, surface, upload, timeout_seconds)
                     log.info("Provider response for %s: %s", upload.name, verdict.raw_response)
-                    verdicts.append(verdict)
+                    yield verdict
                 finally:
                     page.close()
         finally:
             context.close()
             browser.close()
-    return verdicts
 
 
 def run_web_batch(
@@ -305,10 +303,8 @@ def run_web_batch(
         headed=headed,
         timeout_seconds=timeout_seconds,
     )
-    if len(verdicts) != len(pending):
-        raise RuntimeError(f"Playwright returned {len(verdicts)} verdicts for {len(pending)} uploads")
-    checked_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
     for (manifest_row, _result), verdict in zip(pending, verdicts, strict=True):
+        checked_at = datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
         oracles.record_result(
             manifest_path,
             artifact_id=manifest_row["artifact_id"],

@@ -42,7 +42,7 @@ Sources verified: the Hugging Face dataset `Shilin-LU/W-Bench` at revision
   card wins.
 - **Code license: NTUITIVE Non-Commercial** (NTU technology transfer;
   commercial use requires contacting the authors). The VINE code cannot be
-  vendored into this MIT-licensed project, and pipeline outputs derived
+  vendored into this Apache-2.0-licensed project, and pipeline outputs derived
   from running it would inherit that restriction. What remains lawful and
   useful: consuming the MIT dataset directly with our own pinned oracles
   and benchmark kernel, adopting the attack taxonomy as protocol

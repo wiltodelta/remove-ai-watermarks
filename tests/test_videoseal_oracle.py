@@ -59,16 +59,17 @@ class TestPins:
 
 class TestCacheOverride:
     def test_cache_dir_env_override_is_honored(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("VIDEOSEAL_CACHE_DIR", str(tmp_path / "cache"))
-
+        original_cache = videoseal_oracle.CACHE_DIR
         import importlib
 
-        importlib.reload(videoseal_oracle)
-
         try:
-            assert tmp_path / "cache" == videoseal_oracle.CACHE_DIR
+            with monkeypatch.context() as environment:
+                environment.setenv("VIDEOSEAL_CACHE_DIR", str(tmp_path / "cache"))
+                importlib.reload(videoseal_oracle)
+                assert tmp_path / "cache" == videoseal_oracle.CACHE_DIR
         finally:
             importlib.reload(videoseal_oracle)
+        assert original_cache == videoseal_oracle.CACHE_DIR
 
 
 class TestAggregationFormulas:

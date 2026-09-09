@@ -1,5 +1,12 @@
 # SynthID source classifiers (research)
 
+> Audit correction, 2026-09-08: multi-period affine-probe results from
+> schema 13 or earlier used confirmation patches during period selection
+> (R04). They require rerunning and recalibration under schema 14; the
+> frozen runtime detector uses separate code and its thresholds are unchanged.
+> External-negative claims admitted without explicit independent evidence
+> (R08) also need an evidence audit before reuse.
+
 > Research archive for metadata-free OpenAI/Gemini source finding and
 > provider-lineage classifiers. These are not SynthID payload decoders and are
 > not shipped product verdicts. Current behavior:

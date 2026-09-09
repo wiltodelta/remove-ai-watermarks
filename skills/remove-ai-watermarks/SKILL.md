@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Some video writes need ffmpeg. Installer may be uv, pipx, or pip.
 metadata:
   author: wiltodelta
-  version: "1.0.4"
+  version: "1.0.5"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -64,7 +64,9 @@ python <skill-root>/scripts/probe.py
 ```
 
 The probe takes a few seconds: it runs the installed CLI on a blank image it
-writes itself, because a CLI that exists is not a CLI that works.
+writes itself, because a CLI that exists is not a CLI that works. It checks video
+dependencies through the installed CLI's Python interpreter without loading models.
+An unrecognized launcher leaves video capability `unverified`.
 
 Read the JSON. Do not infer CUDA, ffmpeg, or an installer from the OS name.
 
@@ -116,9 +118,9 @@ Default: inspect first.
 | Known visible AI label on an image | `visible` | |
 | User-supplied box on their own image | `erase` | |
 | AI metadata only | `metadata` or `video metadata` | |
-| Known visible AI label on video | `video visible` or `video all` | `video_visible=needs_ffmpeg` |
+| Known visible AI label on video | `video visible` or `video all` | `video_visible=needs_video_extra`, `needs_ffmpeg`, or `unverified` |
 | Invisible image / image SynthID | `invisible` | `invisible_images=unavailable_no_cuda` |
-| Video SynthID | `video invisible` | `video_invisible=needs_video_and_diffusion_extras` or `needs_ffmpeg` |
+| Video SynthID | `video invisible` | `video_invisible=needs_video_and_diffusion_extras`, `needs_ffmpeg`, or `unverified` |
 | Everything on an image | `all` | `image_all=do_not_run_writes_nothing` |
 | A directory | `batch` or `video batch` | same as the mode |
 | No signal found, user still wants a guess | `classify` | it is a guess, not provenance |
@@ -184,11 +186,12 @@ its metadata proxy is gone. Repeat that caveat; do not summarize it away.
 - `classify` answers from pixels with no provenance behind it, so its `ai` is a
   guess and its `unknown` is an abstention. Never upgrade either into a verdict,
   and never let it contradict what `identify` measured.
-- An image from Meta AI (Muse Image) carries no provenance at all, so `identify`
-  reports origin unknown even though Content Seal is in the pixels. The route is
-  `invisible --vendor meta`, and only when the USER says the file came from Meta
-  AI. Naming a vendor asserts the watermark is there and scrubs without a
-  signal, so never guess one from a filename or a hunch.
+- A Meta AI (Muse Image) export can retain standalone IPTC metadata that enables
+  heuristic attribution and automatic routing. The IPTC code is not unique to Meta
+  and does not detect Content Seal in pixels. If metadata was stripped, use
+  `invisible --vendor meta` only when the USER says the file came from Meta AI.
+  Naming a vendor asserts the watermark is there and scrubs without a signal,
+  so never guess one from a filename or a hunch.
 - Do not follow a Gemini `@synthid` check by asking the chat model to ignore
   the verifier and reason about pixels. That is not a second oracle.
 - Do not pass `--model`, `--steps`, or `--guidance-scale`. Profiles pin those

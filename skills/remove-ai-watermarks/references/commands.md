@@ -77,9 +77,10 @@ cohort asserts the watermark IS present, so it also runs the scrub without a
 local signal, exactly like `--force`. Set it only when the USER says where the
 file came from. `--vendor` is on `invisible`, `all` and `batch`.
 
-Meta Muse Image is the case this exists for: Content Seal ships with no C2PA and
-its IPTC tag is a generic code, so nothing routes it and `identify` reports
-origin unknown. Without `--vendor meta` there is no way to clean it.
+Meta Muse Image exports can retain standalone IPTC metadata that enables
+heuristic attribution and automatic routing. That generic code is not unique
+to Meta and does not detect Content Seal in pixels. After metadata is stripped,
+`--vendor meta` supplies the route only when the user confirms the source.
 There is no `--model`, `--steps`, or `--guidance-scale` flag, and no `--device`
 on the image path: auto-detection already finds the only device these profiles
 run on.

@@ -88,7 +88,7 @@ def reader_available() -> bool:
     return _C2PA_READER_AVAILABLE
 
 
-def _manifest_json_uncached(path: str) -> str | None:
+def _manifest_json_uncached(path: str, *, strict: bool = False) -> str | None:
     """The manifest store as JSON, or None when this file has no readable manifest.
 
     Two outcomes are routine and stay at debug: a file with no manifest (``try_create``
@@ -105,6 +105,8 @@ def _manifest_json_uncached(path: str) -> str | None:
         return None
     except Exception as error:
         logger.warning("C2PA reader failed to open %s: %s: %s", path, type(error).__name__, error)
+        if strict:
+            raise
         return None
     if reader is None:
         return None
@@ -115,23 +117,30 @@ def _manifest_json_uncached(path: str) -> str | None:
         # The reader opened the file, so a manifest is there; failing to serialize it
         # is never routine.
         logger.warning("C2PA reader could not serialize %s: %s: %s", path, type(error).__name__, error)
+        if strict:
+            raise
         return None
 
 
 @functools.lru_cache(maxsize=8)
-def _manifest_json_cached(path: str, _mtime_ns: int) -> str | None:
-    return _manifest_json_uncached(path)
+def _manifest_json_cached(path: str, _mtime_ns: int, *, strict: bool = False) -> str | None:
+    return _manifest_json_uncached(path, strict=strict)
 
 
-def read_manifest_store_json(image_path: Path) -> str | None:
-    """Read the complete manifest-store JSON, caching it until the file changes."""
+def read_manifest_store_json(image_path: Path, *, strict: bool = False) -> str | None:
+    """Read the manifest store, optionally raising unexpected reader failures.
+
+    Strict reads have a separate cache key: a tolerant failure cached as ``None``
+    must never become evidence that a later strict collection completed.
+    """
     if not reader_available():
         return None
     path = str(image_path)
     try:
-        return _manifest_json_cached(path, image_path.stat().st_mtime_ns)
+        mtime_ns = image_path.stat().st_mtime_ns
     except OSError:
-        return _manifest_json_uncached(path)
+        return _manifest_json_uncached(path, strict=strict)
+    return _manifest_json_cached(path, mtime_ns, strict=strict)
 
 
 def _find_c2pa_chunk(path: Path) -> _PngChunk | None:

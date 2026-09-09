@@ -134,6 +134,7 @@ def audio_cells(out_dir: Path) -> list[dict[str, object]]:
 
 
 def video_cells(out_dir: Path, ffmpeg: str) -> list[dict[str, object]]:
+    from watermark_benchmark import decode_video_artifact
     from watermark_benchmark_video_cohort import encode_clip
 
     model = videoseal_oracle.load_model()
@@ -143,7 +144,8 @@ def video_cells(out_dir: Path, ffmpeg: str) -> list[dict[str, object]]:
     workdir = out_dir / "videoseal"
     workdir.mkdir()
 
-    def measure(label: str, frames: np.ndarray, path: Path) -> dict[str, object]:
+    def measure(label: str, path: Path) -> np.ndarray:
+        frames, digest = decode_video_artifact(path)
         reading = videoseal_oracle.read(model, frames, message=message_a)
         row: dict[str, object] = {
             "scheme": "videoseal",
@@ -151,11 +153,12 @@ def video_cells(out_dir: Path, ffmpeg: str) -> list[dict[str, object]]:
             "bit_accuracy_vs_a": round(reading.bit_accuracy, 6),
             "bit_accuracy_vs_b": round(bit_accuracy(reading.decoded_bits, message_b), 6),
             "detected_by_matched_rule": reading.detected,
-            "sha256": sha256_file(path),
+            "sha256": digest,
+            "measurement_domain": "decoded_artifact",
         }
         rows.append(row)
         log.info("%s", json.dumps(row, sort_keys=True))
-        return row
+        return frames
 
     for carrier_name, clean in (
         ("moving_gradient", synth_video_carrier("moving_gradient")[:CLIP_FRAMES]),
@@ -163,32 +166,27 @@ def video_cells(out_dir: Path, ffmpeg: str) -> list[dict[str, object]]:
     ):
         prefix = f"{carrier_name}-"
         clean_path = encode_clip(ffmpeg, workdir / f"{prefix}clean.mp4", clean)
-        measure(f"{carrier_name}/clean", clean, clean_path)
+        clean = measure(f"{carrier_name}/clean", clean_path)
 
         marked_a = np.asarray(videoseal_oracle.embed(model, clean, message_a), dtype=np.float32)
         marked_a_path = encode_clip(ffmpeg, workdir / f"{prefix}marked_a.mp4", marked_a)
-        measure(f"{carrier_name}/marked_a", marked_a, marked_a_path)
+        marked_a = measure(f"{carrier_name}/marked_a", marked_a_path)
 
         removed_path = apply_crf(ffmpeg, marked_a_path, 23, workdir)
-        from watermark_benchmark import _decode_video
-
-        removed_frames = _decode_video(removed_path)
-        if removed_frames is None:
-            raise SystemExit(f"removed artifact failed to decode: {removed_path}")
-        measure(f"{carrier_name}/removed_crf23", removed_frames, removed_path)
+        removed_frames = measure(f"{carrier_name}/removed_crf23", removed_path)
 
         forged_on_clean = np.asarray(videoseal_oracle.embed(model, clean, message_b), dtype=np.float32)
         path = encode_clip(ffmpeg, workdir / f"{prefix}forged_b_on_clean.mp4", forged_on_clean)
-        measure(f"{carrier_name}/forged_b_on_clean", forged_on_clean, path)
+        measure(f"{carrier_name}/forged_b_on_clean", path)
 
         forged_on_marked = np.asarray(videoseal_oracle.embed(model, marked_a, message_b), dtype=np.float32)
         path = encode_clip(ffmpeg, workdir / f"{prefix}forged_b_on_marked.mp4", forged_on_marked)
-        measure(f"{carrier_name}/forged_b_on_marked_a", forged_on_marked, path)
+        measure(f"{carrier_name}/forged_b_on_marked_a", path)
 
         if removed_frames.shape[0] == marked_a.shape[0]:
             forged_on_removed = np.asarray(videoseal_oracle.embed(model, removed_frames, message_b), dtype=np.float32)
             path = encode_clip(ffmpeg, workdir / f"{prefix}forged_b_on_removed.mp4", forged_on_removed)
-            measure(f"{carrier_name}/forged_b_on_removed_a", forged_on_removed, path)
+            measure(f"{carrier_name}/forged_b_on_removed_a", path)
 
     rows.append(
         {

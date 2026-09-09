@@ -141,8 +141,8 @@ text-draft = [
 # because it pulls torch and downloads model weights on first use. identify()
 # guards the import and skips the TrustMark signal when absent.
 trustmark = [
-    # TrustMark requires NumPy <2, whose last release has no CPython 3.13+
-    # wheels. Keep this feature installable only on its real runtime range.
+    # The supported TrustMark floor includes releases requiring NumPy <2,
+    # without CPython 3.13+ wheels. Keep the established Python support range.
     "trustmark>=0.8.0; python_version < '3.13'",
 ]
 # Metadata-free photo classifier (Model 1 then gated Model 2). CPU torch is
@@ -250,7 +250,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/**/*.py" = ["G004", "S108", "S310", "T20"]
-"tests/*.py" = ["ANN", "S101", "S105", "S106", "S108"]
+"tests/*.py" = ["ANN", "S101", "S105", "S106", "S108"]  # fixture and mock signatures need not annotate every parameter
 "src/remove_ai_watermarks/_internal/watermark_remover.py" = ["S603", "S606", "S607"]  # nvidia-smi capability probe
 "src/remove_ai_watermarks/_internal/c2pa.py" = ["S110"]  # try-except-pass for corrupt file handling
 

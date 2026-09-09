@@ -32,12 +32,12 @@ import json
 import math
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from concurrent.futures import TimeoutError as FutureTimeout
-from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _isolated_image_workers import run_batch
 
 REPO = Path(__file__).resolve().parents[1]
 POSITIVES = REPO / ".local-eval" / "visible-positives.jsonl"
@@ -95,18 +95,8 @@ def _one(path_str: str) -> dict[str, object]:
 
 
 def _batch(paths: list[str], jobs: int, timeout: int) -> list[dict[str, object]]:
-    try:
-        with ProcessPoolExecutor(max_workers=jobs) as ex:
-            futs = [ex.submit(_one, p) for p in paths]
-            return [f.result() for f in as_completed(futs, timeout=timeout)]
-    except (FutureTimeout, BrokenProcessPool, OSError, RuntimeError):
-        out = []
-        for p in paths:
-            try:
-                out.append(_one(p))
-            except BaseException:  # a native crash costs one file, not the sweep
-                out.append({"path": Path(p).name, "status": "crashed"})
-        return out
+    """Bound each image in an independent interpreter, including native failures."""
+    return run_batch(Path(__file__), paths, jobs=jobs, timeout=timeout)
 
 
 def report(rows: list[dict[str, object]]) -> None:

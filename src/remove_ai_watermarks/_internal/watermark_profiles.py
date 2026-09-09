@@ -113,11 +113,10 @@ QWEN_ZIMAGE_OPENAI_STRENGTH = 0.07675
 # measured corpus margin, not a universal InvisMark threshold.
 QWEN_ZIMAGE_MICROSOFT_STRENGTH = 0.15
 
-# Meta Muse Image stamps every output with Content Seal, but no provenance signal
-# survives to route it: the outputs carry no C2PA, and their IPTC
-# trainedAlgorithmicMedia companion tag is a standard code many platforms use, so
-# it cannot key this cohort the way an issuer keys the others. The floor is
-# therefore selected by an explicit --vendor meta override, never by detection.
+# Meta Muse Image's retained standalone IPTC AI tag selects this floor through
+# vendor_for_strength. That shared standard tag is a routing heuristic, not a
+# vendor-unique signature or a Content Seal pixel detection. Stripped outputs
+# need an explicit --vendor meta override when their origin is known.
 # Derivation (oracle meta.ai/identification, 2026-08-26/27, corpus in
 # data/contentseal/): five independent 2.56 MP generations bracketed at
 # lighthouse (0.0525, 0.06], fox (0.03, 0.0375], night_city (0.03, 0.0375],
@@ -146,7 +145,7 @@ _SDXL_ZIMAGE_STRENGTH_BY_VENDOR: dict[str, float] = {
 
 # chroma-zimage floors, from the 2026-08-29/30 four-cohort oracle calibration
 # (docs/chroma1-engine-research.md; ChromaImg2ImgPipeline, neutral prompt,
-# guidance 5.0, four effective steps, seed 0). Flat per-vendor values derived
+# guidance 5.0, ceil(4 / strength) requested steps, seed 0). Flat per-vendor values derived
 # by the same worst-clean-plus-one-spread rule as the other profiles:
 #
 # - OpenAI: the initial three fixtures first cleared at 0.06 / 0.06 / 0.075,

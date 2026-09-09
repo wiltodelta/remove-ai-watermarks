@@ -27,6 +27,7 @@ from synthid_conformal_cascade import (  # noqa: E402
 )
 from synthid_research_manifest import artifact_sha256  # noqa: E402
 from synthid_runtime import synthid_detector  # noqa: E402
+from synthid_runtime_expert_scores import EXPERT_NAMES  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -46,18 +47,18 @@ class RoutedBankResult:
     registered_score: float | None
     large_supported: bool
     large_score: float | None
+    opponent_supported: bool
+    opponent_score: float | None
+    fine_opponent_supported: bool
+    fine_opponent_score: float | None
 
 
 def classify_routed(observations: tuple[ExpertObservation, ...]) -> RoutedBankResult:
-    """Route explicit fixed, registered, and large observations without an OR rule."""
+    """Route fixed, large, and the active registered expert without an OR rule."""
     by_name = {observation.name: observation for observation in observations}
     if len(by_name) != len(observations):
         raise ValueError("observation expert names must be unique")
-    expected = {
-        synthid_detector.DETECTOR_ID,
-        synthid_detector.REGISTERED_DETECTOR_ID,
-        synthid_detector.LARGE_DETECTOR_ID,
-    }
+    expected = set(EXPERT_NAMES)
     if by_name.keys() != expected:
         missing = sorted(expected - by_name.keys())
         unknown = sorted(by_name.keys() - expected)
@@ -66,6 +67,17 @@ def classify_routed(observations: tuple[ExpertObservation, ...]) -> RoutedBankRe
     fixed = by_name[synthid_detector.DETECTOR_ID]
     registered = by_name[synthid_detector.REGISTERED_DETECTOR_ID]
     large = by_name[synthid_detector.LARGE_DETECTOR_ID]
+    opponent = by_name[synthid_detector.OPPONENT_REGISTERED_DETECTOR_ID]
+    fine_opponent = by_name[synthid_detector.FINE_OPPONENT_REGISTERED_DETECTOR_ID]
+    active_registered = [item for item in (registered, opponent, fine_opponent) if item.supported]
+    if len(active_registered) > 1:
+        raise ValueError("registered route must contain at most one active expert")
+    routed_registered = active_registered[0] if active_registered else registered
+    registered_thresholds = {
+        registered.name: synthid_detector.REGISTERED_THRESHOLD,
+        opponent.name: synthid_detector.OPPONENT_REGISTERED_THRESHOLD,
+        fine_opponent.name: synthid_detector.FINE_OPPONENT_REGISTERED_THRESHOLD,
+    }
     if large.supported:
         if large.score is None:
             raise RuntimeError("validated large observation lost its score")
@@ -77,13 +89,13 @@ def classify_routed(observations: tuple[ExpertObservation, ...]) -> RoutedBankRe
             verdict = "abstain"
             reason = "large_below_threshold"
             selected_expert = None
-    elif registered.supported:
-        if registered.score is None:
+    elif routed_registered.supported:
+        if routed_registered.score is None:
             raise RuntimeError("validated registered observation lost its score")
-        if registered.score >= synthid_detector.REGISTERED_THRESHOLD:
+        if routed_registered.score >= registered_thresholds[routed_registered.name]:
             verdict = "detected"
             reason = "registered_threshold_crossed"
-            selected_expert = registered.name
+            selected_expert = routed_registered.name
         else:
             verdict = "abstain"
             reason = (
@@ -115,6 +127,10 @@ def classify_routed(observations: tuple[ExpertObservation, ...]) -> RoutedBankRe
         registered_score=registered.score,
         large_supported=large.supported,
         large_score=large.score,
+        opponent_supported=opponent.supported,
+        opponent_score=opponent.score,
+        fine_opponent_supported=fine_opponent.supported,
+        fine_opponent_score=fine_opponent.score,
     )
 
 
@@ -122,7 +138,7 @@ def classify_routed(observations: tuple[ExpertObservation, ...]) -> RoutedBankRe
 @click.argument("observation_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--report-out", type=click.Path(dir_okay=False, path_type=Path), required=True)
 def main(observation_path: Path, report_out: Path) -> None:
-    """Route a three-expert pixel score manifest from OBSERVATION_PATH."""
+    """Route a versioned runtime expert score manifest from OBSERVATION_PATH."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     counts: dict[RoutedVerdict, int] = {"detected": 0, "abstain": 0}
     rows: list[dict[str, object]] = []
@@ -134,7 +150,7 @@ def main(observation_path: Path, report_out: Path) -> None:
     report_out.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "observation_sha256": artifact_sha256(observation_path),
                 "counts": counts,
                 "records": rows,

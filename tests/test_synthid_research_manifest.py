@@ -250,3 +250,46 @@ def test_rejects_failed_source_control(tmp_path: Path):
     errors = manifest.audit_manifest(path)
 
     assert any("source_control must have a detected" in error for error in errors)
+
+
+def test_external_negatives_require_evidence_for_every_verifier(tmp_path):
+    path = tmp_path / "negative.csv"
+    for target in sorted(manifest._TARGET_PROVIDERS):
+        for source in sorted(manifest._SOURCE_PROVIDERS - {target}):
+            for split in sorted(manifest._FINAL_SPLITS):
+                for verifier in sorted(manifest._VERIFIERS):
+                    row = _row(
+                        "a" * 64,
+                        "b" * 64,
+                        target_provider=target,
+                        source_provider=source,
+                        split=split,
+                        synthid_outcome="not_detected",
+                        verified_via=verifier,
+                        oracle_session="oracle-1",
+                    )
+                    _write_manifest(path, [row])
+                    errors = manifest.audit_manifest(path)
+                    if verifier in manifest._MATCHING_VERIFIERS[target]:
+                        assert errors == []
+                    else:
+                        assert any("evidence_reference" in error for error in errors), (target, source, split, verifier)
+                        row["evidence_reference"] = "https://example.test/original-record"
+                        _write_manifest(path, [row])
+                        assert manifest.audit_manifest(path) == []
+
+
+def test_unlabeled_discovery_may_have_no_oracle(tmp_path):
+    row = _row(
+        "a" * 64,
+        "b" * 64,
+        source_provider="synthetic",
+        split="discovery",
+        synthid_outcome="not_checked",
+        verified_via="none",
+        oracle_session="",
+        oracle_checked_at="",
+    )
+    path = tmp_path / "discovery.csv"
+    _write_manifest(path, [row])
+    assert manifest.audit_manifest(path) == []

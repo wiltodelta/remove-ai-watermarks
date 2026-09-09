@@ -67,7 +67,7 @@ def test_runtime_requests_the_exported_allow_patterns(monkeypatch: pytest.Monkey
     """
     from remove_ai_watermarks.classify import _WEIGHT_FILES, _weights_dir
 
-    captured: dict[str, object] = []
+    captured: list[dict[str, object]] = []
 
     def fake_snapshot_download(**kwargs: object) -> str:
         captured.append(kwargs)

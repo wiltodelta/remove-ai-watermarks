@@ -173,15 +173,9 @@ def _isobmff_regions(image_path: Path, head: bytes) -> bytes:
     from remove_ai_watermarks._internal.isobmff import scan_c2pa_region, tc260_aigc_payloads
 
     out = bytearray(head[:HEAD_WINDOW])
-    try:
-        out += scan_c2pa_region(image_path)
-    except Exception as exc:
-        logger.debug("ISOBMFF C2PA region scan failed on %s: %s", image_path, exc)
-    try:
-        for payload in tc260_aigc_payloads(image_path):
-            out += payload
-    except Exception as exc:
-        logger.debug("ISOBMFF TC260 scan failed on %s: %s", image_path, exc)
+    out += scan_c2pa_region(image_path, strict=True)
+    for payload in tc260_aigc_payloads(image_path, strict=True):
+        out += payload
     return bytes(out)
 
 
@@ -201,9 +195,9 @@ def _container_regions(image_path: Path, head: bytes) -> tuple[str, bytes]:
     if head.startswith(PNG_SIGNATURE):
         # Chunks placed after the pixel stream (an XMP packet at 2.7 MB, say) are
         # past the window; the same seek-past-IDAT reader the file path uses gets them.
-        return "png", _png_regions(head) + png_late_metadata(image_path, HEAD_WINDOW)
+        return "png", _png_regions(head) + png_late_metadata(image_path, HEAD_WINDOW, strict=True)
     if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
-        return "webp", _riff_regions(head) + riff_late_metadata(image_path, HEAD_WINDOW)
+        return "webp", _riff_regions(head) + riff_late_metadata(image_path, HEAD_WINDOW, strict=True)
     if is_isobmff(head):
         return "isobmff", _isobmff_regions(image_path, head)
     return "unknown", head
@@ -211,12 +205,8 @@ def _container_regions(image_path: Path, head: bytes) -> tuple[str, bytes]:
 
 def _raw_head(image_path: Path) -> bytes:
     """The file's first bytes, unmodified -- the input every structural walk needs."""
-    try:
-        with open(image_path, "rb") as handle:
-            return handle.read(HEAD_WINDOW)
-    except OSError as exc:
-        logger.debug("head read failed for %s: %s", image_path, exc)
-        return b""
+    with open(image_path, "rb") as handle:
+        return handle.read(HEAD_WINDOW)
 
 
 def _trailer(image_path: Path, container: str) -> bytes:
@@ -232,28 +222,24 @@ def _trailer(image_path: Path, container: str) -> bytes:
         # RIFF declares its structural end in bytes 4..8. A fixed tail window is
         # normally the last animation/frame payload, not a trailer, so preserve
         # only bytes appended after the declared RIFF container.
-        try:
-            with open(image_path, "rb") as handle:
-                header = handle.read(12)
-                if len(header) < 12 or not header.startswith(b"RIFF"):
-                    return b""
-                declared_end = 8 + struct.unpack("<I", header[4:8])[0]
-                handle.seek(0, 2)
-                file_size = handle.tell()
-                if declared_end < 12 or declared_end >= file_size:
-                    return b""
-                handle.seek(declared_end)
-                return handle.read(min(file_size - declared_end, UNKNOWN_TRAILER_WINDOW))
-        except OSError as exc:
-            logger.debug("RIFF trailer read failed for %s: %s", image_path, exc)
-            return b""
+        with open(image_path, "rb") as handle:
+            header = handle.read(12)
+            if len(header) < 12 or not header.startswith(b"RIFF"):
+                return b""
+            declared_end = 8 + struct.unpack("<I", header[4:8])[0]
+            handle.seek(0, 2)
+            file_size = handle.tell()
+            if declared_end < 12 or declared_end >= file_size:
+                return b""
+            handle.seek(declared_end)
+            return handle.read(min(file_size - declared_end, UNKNOWN_TRAILER_WINDOW))
     if container == "isobmff":
         # ISOBMFF has no out-of-container trailer convention. Its bounded box
         # walkers already collect late provenance while skipping ``mdat``; keeping
         # a blind tail here would carry coded media bytes.
         return b""
 
-    tail = read_file_tail(image_path, TAIL_WINDOW)
+    tail = read_file_tail(image_path, TAIL_WINDOW, strict=True)
     if SAMSUNG_EDITOR_MARKER in tail:
         # Galaxy AI splits its evidence: the marker sits in the post-EOI trailer, but
         # the `genAIType` value it is gated on can sit INSIDE the entropy-coded scan.
@@ -275,14 +261,14 @@ def _decoder_info(image_path: Path) -> dict[str, Any]:
     (the text keys, and the raw EXIF blob), and opening twice repeats the container
     header parse and, for a PNG carrying ``zTXt``, the zlib inflate with it.
     """
-    try:
-        from PIL import Image
+    from PIL import Image, UnidentifiedImageError
 
+    try:
         with Image.open(image_path) as img:
             # PIL types this mapping with a non-string key union (a DPI tuple key
             # exists), so the keys are normalized here rather than assumed.
             return {str(key): value for key, value in img.info.items()}
-    except Exception as exc:  # a container PIL cannot open
+    except (UnidentifiedImageError, ImportError) as exc:  # unsupported optional decoder
         logger.debug("PIL info unavailable for %s: %s", image_path, exc)
         return {}
 
@@ -299,15 +285,11 @@ def _exif_pairs(info: dict[str, Any]) -> dict[str, str]:
     exif_bytes = info.get("exif")
     if not exif_bytes:
         return {}
-    try:
-        import piexif
+    import piexif
 
-        loaded = piexif.load(exif_bytes)
-        tags = loaded.get("0th", {})
-        exif_tags = loaded.get("Exif", {})
-    except Exception as exc:  # malformed EXIF
-        logger.debug("EXIF parse failed: %s", exc)
-        return {}
+    loaded = piexif.load(exif_bytes)
+    tags = loaded.get("0th", {})
+    exif_tags = loaded.get("Exif", {})
 
     pairs = {
         name: text
@@ -375,18 +357,53 @@ def collect_metadata_record(
 
     from remove_ai_watermarks._internal.c2pa import read_manifest_store_json
 
+    status = "complete"
+    issues: list[dict[str, str]] = []
+    container, regions, tail = "unknown", b"", b""
+    info: dict[str, Any] = {}
+    exif: dict[str, str] = {}
+    store = None
     try:
         image_path.stat()
-        status = "complete"
-        issues: list[dict[str, str]] = []
     except OSError as exc:
         logger.debug("metadata source unavailable for %s: %s", image_path, exc)
         status = "error"
-        issues = [{"stage": "source", "code": "unavailable"}]
+        issues.append({"stage": "source", "code": "unavailable"})
 
-    container, regions = _container_regions(image_path, _raw_head(image_path))
+    if status == "complete":
+        try:
+            head = _raw_head(image_path)
+        except OSError as exc:
+            logger.debug("metadata head read failed for %s: %s", image_path, exc)
+            status = "error"
+            issues.append({"stage": "head", "code": "read-failed"})
+        else:
+            # Each stage reports its own failure. Successful earlier regions stay
+            # available for inspection, but the verdict rejects an incomplete record.
+            try:
+                container, regions = _container_regions(image_path, head)
+            except Exception as exc:
+                logger.debug("metadata region collection failed for %s: %s", image_path, exc)
+                issues.append({"stage": "regions", "code": "collection-failed"})
+            try:
+                tail = _trailer(image_path, container)
+            except Exception as exc:
+                logger.debug("metadata trailer collection failed for %s: %s", image_path, exc)
+                issues.append({"stage": "trailer", "code": "collection-failed"})
+            try:
+                info = _decoder_info(image_path)
+                exif = _exif_pairs(info)
+            except Exception as exc:
+                logger.debug("metadata decoder collection failed for %s: %s", image_path, exc)
+                issues.append({"stage": "decoder", "code": "collection-failed"})
+            try:
+                store = read_manifest_store_json(image_path, strict=True)
+            except Exception as exc:
+                logger.debug("C2PA collection failed for %s: %s", image_path, exc)
+                issues.append({"stage": "c2pa", "code": "collection-failed"})
+            if issues:
+                status = "partial"
 
-    info = _decoder_info(image_path)
     record: dict[str, Any] = {
         "schema_version": schema_version,
         "record_type": METADATA_RECORD_TYPE,
@@ -397,13 +414,12 @@ def collect_metadata_record(
         "metadata_base64": base64.b64encode(regions).decode("ascii"),
         # Always collected: Samsung's Galaxy AI marker is a post-EOI trailer, and a
         # record without it loses that verdict outright.
-        "tail_base64": base64.b64encode(_trailer(image_path, container)).decode("ascii"),
+        "tail_base64": base64.b64encode(tail).decode("ascii"),
         # PIL info BEFORE exif: the file path prefers a PNG text tag over an EXIF
         # one, and the normalizer walks the record in insertion order.
         "pil": _pil_info(info),
-        "exif": _exif_pairs(info),
+        "exif": exif,
     }
-    store = read_manifest_store_json(image_path)
     if store is not None:
         record["c2pa_store"] = store
     return record

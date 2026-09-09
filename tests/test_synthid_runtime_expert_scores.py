@@ -20,6 +20,8 @@ def test_unsupported_geometry_emits_no_synthetic_scores() -> None:
         {"name": scorer.FIXED_EXPERT_NAME, "supported": False, "score": None},
         {"name": scorer.REGISTERED_EXPERT_NAME, "supported": False, "score": None},
         {"name": scorer.LARGE_EXPERT_NAME, "supported": False, "score": None},
+        {"name": scorer.OPPONENT_EXPERT_NAME, "supported": False, "score": None},
+        {"name": scorer.FINE_OPPONENT_EXPERT_NAME, "supported": False, "score": None},
     ]
 
 
@@ -35,6 +37,7 @@ def test_supported_image_scores_each_expert_once(monkeypatch) -> None:
             height=1024,
             score=1.5 if register_scale else 0.25,
             threshold=1.0 if register_scale else 0.17,
+            detector=scorer.REGISTERED_EXPERT_NAME if register_scale else scorer.FIXED_EXPERT_NAME,
         )
 
     monkeypatch.setattr(scorer.synthid_detector, "detect_synthid", detect)
@@ -45,6 +48,8 @@ def test_supported_image_scores_each_expert_once(monkeypatch) -> None:
         {"name": scorer.FIXED_EXPERT_NAME, "supported": True, "score": 0.25},
         {"name": scorer.REGISTERED_EXPERT_NAME, "supported": True, "score": 1.5},
         {"name": scorer.LARGE_EXPERT_NAME, "supported": False, "score": None},
+        {"name": scorer.OPPONENT_EXPERT_NAME, "supported": False, "score": None},
+        {"name": scorer.FINE_OPPONENT_EXPERT_NAME, "supported": False, "score": None},
     ]
     assert calls == {"fixed": 1, "registered": 1}
 
@@ -63,12 +68,8 @@ def test_cli_writes_hash_pinned_observation_manifest(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert report["schema_version"] == 1
-    assert report["experts"] == [
-        scorer.FIXED_EXPERT_NAME,
-        scorer.REGISTERED_EXPERT_NAME,
-        scorer.LARGE_EXPERT_NAME,
-    ]
+    assert report["schema_version"] == 2
+    assert report["experts"] == list(scorer.EXPERT_NAMES)
     assert len(report["records"][0]["id"]) == 64
     assert report["records"][0]["width"] == 64
     assert all(not observation["supported"] for observation in report["records"][0]["observations"])
@@ -94,4 +95,6 @@ def test_large_default_is_not_mislabeled_as_fixed(monkeypatch) -> None:
         {"name": scorer.FIXED_EXPERT_NAME, "supported": False, "score": None},
         {"name": scorer.REGISTERED_EXPERT_NAME, "supported": False, "score": None},
         {"name": scorer.LARGE_EXPERT_NAME, "supported": True, "score": 1.2},
+        {"name": scorer.OPPONENT_EXPERT_NAME, "supported": False, "score": None},
+        {"name": scorer.FINE_OPPONENT_EXPERT_NAME, "supported": False, "score": None},
     ]

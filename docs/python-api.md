@@ -657,11 +657,12 @@ combines synthetic multi-scale visual matching with temporal consistency, so an
 isolated lookalike in one frame is not enough to authorize inpainting.
 `mark="auto"` is the default: it evaluates all providers in one decode pass and
 selects the first stable match in specificity order (`sora`, `veo`, `seedance`,
-`dola`, `hailuo`, `kling`). Provider confidence values are calibrated
+`doubao`, `dola`, `hailuo`, `kling`). Provider confidence values are calibrated
 independently and are not compared across detectors. Pass one of those explicit
 values to restrict the scan to a single provider. The Veo detector recognizes
 the current four-point diamond and the
-legacy `Veo` text. Seedance recognizes the boxed `AI` label, Dola recognizes
+legacy `Veo` text. Seedance recognizes the boxed `AI` label, Doubao recognizes
+the fixed `豆包AI生成` label, and Dola recognizes
 its compact text label, Hailuo AI recognizes the composite MINIMAX/Hailuo AI label,
 and Kling AI recognizes its bottom-right logo, wordmark, and version suffix. Each
 variant has an independent synthetic silhouette and calibrated temporal policy.

@@ -7,20 +7,9 @@ uv sync --all-extras
 # inside the project env crashes and, with set -e, aborts the whole gate before
 # ruff/pyright/tests (see CLAUDE.md "Test and lint").
 uvx uv-outdated
-# uv-secure prints its verdict but can then crash in an internal teardown with a
-# NON-ZERO exit -- observed as "annotated-doc raised exception" and later "anyio raised
-# exception"; both are bugs in uv-secure's OWN uvx env, not a project vulnerability. With
-# set -e that teardown crash aborts the whole gate before ruff/pyright/tests. So gate on
-# the VERDICT, not the exit code: capture the output, accept the run when uv-secure
-# reported all-safe (even if it then crashed), but still FAIL on a real finding (no
-# all-safe line) so a genuine CVE is never masked, and fail loud if it never got a
-# verdict at all (so a broken run is never silently skipped).
-secure_out="$(uvx uv-secure uv.lock 2>&1)" || true
-printf '%s\n' "$secure_out"
-if ! grep -qE "No vulnerabilities or maintenance issues detected|All dependencies appear safe" <<<"$secure_out"; then
-    echo "maintain.sh: uv-secure reported a finding or failed before its verdict -- triage before committing." >&2
-    exit 1
-fi
+# Findings and scanner failures both stop the gate, even if a success message
+# preceded a failure. Scan only this lockfile, not sibling worktree copies.
+uvx uv-secure uv.lock
 uv run python scripts/sync_c2pa_soft_bindings.py --check
 uv run ruff check --fix
 uv run ruff format

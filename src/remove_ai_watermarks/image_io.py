@@ -137,7 +137,8 @@ def _register_heif() -> None:
     with contextlib.suppress(Exception):
         import pillow_heif  # pyright: ignore[reportMissingImports]
 
-        pillow_heif.register_heif_opener()
+        # Documented public API; pillow-heif does not mark its typed re-export.
+        pillow_heif.register_heif_opener()  # pyright: ignore[reportPrivateImportUsage]
 
 
 # ── Display-tag carry across re-encodes (issue #98) ─────────────────────────
@@ -175,7 +176,9 @@ def _orientation_exif(orient: int | None, *, prefixed: bool) -> bytes | None:
     return dumped[6:] if dumped.startswith(b"Exif\x00\x00") else dumped
 
 
-def _read_display_tags(source: Path, raster_shape: tuple[int, int]) -> tuple[bytes | None, int | None]:
+def _read_display_tags(
+    source: Path, raster_shape: tuple[int, int], *, orientation_applied: bool | None = None
+) -> tuple[bytes | None, int | None]:
     """Extract ``(icc_profile, orientation)`` from ``source`` for a raster of ``raster_shape``.
 
     The contract is that ``source`` is the file whose decode produced the pixels
@@ -183,8 +186,9 @@ def _read_display_tags(source: Path, raster_shape: tuple[int, int]) -> tuple[byt
     decode turned the raster upright cannot be assumed from the container: cv2
     applies EXIF orientation for JPEG and (build-dependent) PNG -- but only under
     ``IMREAD_COLOR``, never ``IMREAD_UNCHANGED``, which is what the pixel paths read
-    with -- and the reporter of issue #98 ran a build that left PNG flat too. So the
-    decision is made against the ground truth of the raster itself: for the
+    with -- and the reporter of issue #98 ran a build that left PNG flat too.
+    ``orientation_applied`` carries that decode state explicitly when known.
+    Otherwise the legacy inference uses raster geometry: for the
     transposing orientations (5-8) the tag is carried exactly when the raster still
     has the source's STORED dimensions, and dropped when it has the upright ones;
     anything else (a resized pipeline output, the rare mirror/180 values) drops the
@@ -206,7 +210,11 @@ def _read_display_tags(source: Path, raster_shape: tuple[int, int]) -> tuple[byt
         return None, None
     if not (isinstance(icc, bytes) and icc):
         icc = None
-    if orient in _TRANSPOSING_ORIENTATIONS:
+    if orientation_applied is True:
+        orient = None
+    elif orientation_applied is False:
+        orient = orient if isinstance(orient, int) and 1 <= orient <= 8 else None
+    elif orient in _TRANSPOSING_ORIENTATIONS:
         rows, cols = raster_shape
         # Upright dimensions are the stored ones swapped; only a raster still in
         # stored orientation may carry the tag.
@@ -426,7 +434,13 @@ def _pil_write(
         return False
 
 
-def imwrite(path: str | Path, img: NDArray[Any], *, display_tags_from: str | Path | None = None) -> bool:
+def imwrite(
+    path: str | Path,
+    img: NDArray[Any],
+    *,
+    display_tags_from: str | Path | None = None,
+    orientation_applied: bool | None = None,
+) -> bool:
     """Unicode-safe image write that PRESERVES the input format at max quality.
 
     Format is taken from the path extension. HEIC/AVIF (which cv2 cannot encode) go
@@ -439,14 +453,19 @@ def imwrite(path: str | Path, img: NDArray[Any], *, display_tags_from: str | Pat
     the source's ICC profile and EXIF orientation are carried into the re-encoded
     output (issue #98): cv2's encoders write no container metadata, and colour and
     geometry are display fidelity, not provenance. The tags are read BEFORE the write
-    so an in-place rewrite (source == output) still finds them, and orientation is
-    re-tagged only when the raster still has the source's stored dimensions (see
-    :func:`_read_display_tags`), so a decode that already turned the pixels upright
-    is never tagged into a second rotation."""
+    so an in-place rewrite (source == output) still finds them.
+    Set ``orientation_applied=False`` for an unchanged/raw decode, or ``True``
+    when EXIF has already been applied, including mirrors and square images.
+    Without that explicit state, orientation is re-tagged only when the raster
+    still has the source's stored dimensions, using the legacy heuristic in
+    :func:`_read_display_tags`. Pass the known decode state to avoid ambiguous
+    geometry, especially square images and mirrors."""
     import cv2
 
     icc, orient = (
-        _read_display_tags(Path(display_tags_from), (img.shape[0], img.shape[1]))
+        _read_display_tags(
+            Path(display_tags_from), (img.shape[0], img.shape[1]), orientation_applied=orientation_applied
+        )
         if display_tags_from is not None
         else (None, None)
     )
@@ -496,6 +515,7 @@ def write_bgr_with_alpha(
     alpha: NDArray[Any] | None,
     *,
     display_tags_from: str | Path | None = None,
+    orientation_applied: bool | None = None,
 ) -> bool:
     """Write BGR (with optional alpha) to ``path``. Returns ``imwrite``'s success flag.
 
@@ -515,5 +535,7 @@ def write_bgr_with_alpha(
     import numpy as np
 
     if alpha is None or Path(path).suffix.lower() not in ALPHA_FORMATS:
-        return imwrite(path, bgr, display_tags_from=display_tags_from)
-    return imwrite(path, np.dstack([bgr, alpha]), display_tags_from=display_tags_from)
+        return imwrite(path, bgr, display_tags_from=display_tags_from, orientation_applied=orientation_applied)
+    return imwrite(
+        path, np.dstack([bgr, alpha]), display_tags_from=display_tags_from, orientation_applied=orientation_applied
+    )

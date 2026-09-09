@@ -119,7 +119,7 @@ application actually uses:
 
 | Extra | Capability | Automatically includes | Torch or model download |
 | --- | --- | --- | --- |
-| `pixels` | Shared BGR runtime and calibrated-size SynthID carrier detection | NumPy, headless OpenCV | No |
+| `pixels` | Shared BGR image runtime | NumPy, headless OpenCV | No |
 | `heif` | HEIC, HEIF, and AVIF pixel decoding | pillow-heif | No |
 | `visible` | Visible mark detection, OpenCV inpainting, and manual erasing | `pixels` | No |
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV | No |
@@ -157,9 +157,10 @@ flowchart LR
 `heif`, `trustmark`, and `text-draft` are independent branches. Combine them
 explicitly with another feature when required. `text-draft` is excluded from
 `all` because it proposes unverified OCR annotations and is not a production
-removal path. TrustMark requires NumPy 1.x, which has no
-CPython 3.13 or 3.14 wheels, so that branch is available only on Python
-3.11-3.12. The `all` bundle contains every production branch compatible with
+removal path. The TrustMark branch remains available only on Python 3.11-3.12.
+Its supported dependency floor includes releases requiring NumPy 1.x, which has
+no CPython 3.13 or 3.14 wheels; newer TrustMark releases relaxing that requirement
+do not by themselves widen this package's declared support range. The `all` bundle contains every production branch compatible with
 the active Python and never includes `dev`.
 
 Examples:

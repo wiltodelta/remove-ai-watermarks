@@ -39,7 +39,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 import videoseal_oracle  # noqa: E402
 from audioseal_experiment import ffmpeg_version  # noqa: E402
 from videoseal_oracle import read, read_aggregation_matrix  # noqa: E402
-from watermark_benchmark import _decode_video, sha256_file  # noqa: E402
+from watermark_benchmark import _decode_video, decode_video_artifact, sha256_file  # noqa: E402
 from watermark_benchmark_video_cohort import (  # noqa: E402
     FRAME_RATE,
     encode_clip,
@@ -205,21 +205,25 @@ def main() -> int:
         workdir = out_dir / name
         workdir.mkdir()
         clean_path = encode_clip(ffmpeg, workdir / f"{name}-clean.mp4", clean_frames)
+        clean_frames, clean_digest = decode_video_artifact(clean_path)
         record(
             "carrier_clean",
             carrier=name,
-            sha256=sha256_file(clean_path),
+            sha256=clean_digest,
+            measurement_domain="decoded_artifact",
             aggregation_matrix=read_aggregation_matrix(model, clean_frames),
             **provenance,
         )
 
         marked_frames = np.asarray(videoseal_oracle.embed(model, clean_frames, message), dtype=np.float32)
         marked_path = encode_clip(ffmpeg, workdir / f"{name}-marked.mp4", marked_frames)
+        marked_frames, marked_digest = decode_video_artifact(marked_path)
         marked_read = read(model, marked_frames)
         record(
             "carrier_marked",
             carrier=name,
-            sha256=sha256_file(marked_path),
+            sha256=marked_digest,
+            measurement_domain="decoded_artifact",
             bit_accuracy_avg=marked_read.bit_accuracy,
             aggregation_matrix=read_aggregation_matrix(model, marked_frames),
             per_frame_bit_accuracy=[round(v, 4) for v in marked_read.per_frame_bit_accuracy],
@@ -243,15 +247,14 @@ def main() -> int:
             ("fps_half", apply_fps_half(ffmpeg, marked_path, workdir)),
         ]
         for attack, path in attacked:
-            frames = _decode_video(path)
-            if frames is None:
-                raise SystemExit(f"attack artifact failed to decode: {path}")
+            frames, digest = decode_video_artifact(path)
             reading = read(model, frames)
             record(
                 "attack",
                 carrier=name,
                 attack=attack,
-                sha256=sha256_file(path),
+                sha256=digest,
+                measurement_domain="decoded_artifact",
                 frames=frames.shape[0],
                 bit_accuracy_avg=reading.bit_accuracy,
                 aggregation_matrix=read_aggregation_matrix(model, frames),

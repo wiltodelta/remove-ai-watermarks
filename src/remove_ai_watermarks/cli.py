@@ -75,31 +75,6 @@ class _Table:
         return "\n".join(f"  {line}" for line in lines)
 
 
-class _Progress:
-    """No-op stand-in for rich.Progress; results are printed directly instead."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-    def __enter__(self) -> _Progress:
-        return self
-
-    def __exit__(self, *exc: object) -> Literal[False]:
-        # Literal[False], not bool: a plain `bool` tells a type checker this context
-        # manager MAY suppress an exception, which makes every name bound inside a
-        # `with` block conditionally bound afterwards. It never suppresses.
-        return False
-
-    def add_task(self, *args: Any, **kwargs: Any) -> int:
-        return 0
-
-    def advance(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-    def update(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-
 class _Console:
     """Minimal plain-text replacement for rich.Console."""
 
@@ -117,14 +92,8 @@ def _panel(text: str = "", *args: Any, **kwargs: Any) -> str:
     return text
 
 
-def _column(*args: Any, **kwargs: Any) -> None:
-    return None
-
-
 Panel = _panel
 Table = _Table
-Progress = _Progress
-SpinnerColumn = BarColumn = TextColumn = TimeElapsedColumn = _column
 console = _Console()
 
 
@@ -1881,39 +1850,21 @@ def cmd_batch(
         tile_overlap=tile_overlap,
     )
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Processing...", total=len(images))
-        done: set[str] = set()
+    def on_progress(img: Path, stage: str, detail: str) -> None:
+        if ctx.obj.get("verbose"):
+            console.print(f"  {img.name}: {stage}{f' {detail}' if detail else ''}")
 
-        def on_progress(img: Path, stage: str, detail: str) -> None:
-            # `remove_batch` emits exactly one terminal stage per image in EVERY mode,
-            # so the bar advances on that and never on a mode-specific line.
-            progress.update(task, description=img.name)
-            if stage in ("done", "failed") and img.name not in done:
-                done.add(img.name)
-                progress.advance(task)
-            if ctx.obj.get("verbose"):
-                console.print(f"  {img.name}: {stage}{f' {detail}' if detail else ''}")
-
-        summary = api_remove_batch(
-            directory,
-            output_dir,
-            mode=mode,  # type: ignore[arg-type]
-            backend=backend,  # type: ignore[arg-type]
-            sensitivity=_parse_sensitivity(sensitivity),
-            invisible=invisible_options,
-            force=force,
-            engine=_batch_engine(mode, invisible_options),
-            progress=on_progress,
-        )
-        progress.update(task, completed=len(images))
+    summary = api_remove_batch(
+        directory,
+        output_dir,
+        mode=mode,  # type: ignore[arg-type]
+        backend=backend,  # type: ignore[arg-type]
+        sensitivity=_parse_sensitivity(sensitivity),
+        invisible=invisible_options,
+        force=force,
+        engine=_batch_engine(mode, invisible_options),
+        progress=on_progress,
+    )
 
     processed, errors = summary.processed, summary.failed
     synthid_skipped_count = len(summary.invisible_unavailable)

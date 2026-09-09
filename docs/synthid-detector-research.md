@@ -1,5 +1,12 @@
 # SynthID local detector research
 
+> Audit correction, 2026-09-08: multi-period affine-probe results from
+> schema 13 or earlier used confirmation patches during period selection
+> (R04). They require rerunning and recalibration under schema 14; the
+> frozen runtime detector uses separate code and its thresholds are unchanged.
+> External-negative claims admitted without explicit independent evidence
+> (R08) also need an evidence audit before reuse.
+
 > Research archive for the hunt for a local, keyless SynthID pixel detector.
 > Not a statement of current product capability. Shipped behavior:
 > [supported signals](supported-signals.md) and
@@ -29,9 +36,10 @@ contrast on photographs.
 S4, 2026-08-15: the two providers are not doing the same thing. Cross-image
 correlation of the folded residual is high for Google (tile16 pos-pos
 `+0.326`, chance `0.036`) and at chance for OpenAI (`+0.032`). Google
-shares one fixed phase-coherent pattern, also present in its controls at
-about half the amplitude. OpenAI shares nothing, which is what a
-content-dependent post-hoc encoder produces. Comb experts that work on
+has phase-coherent residual structure also correlated with its controls;
+normalized correlations do not establish an absolute amplitude ratio. OpenAI
+shows no shared residual above chance in this measurement, consistent with a
+content-dependent post-hoc encoder. Comb experts that work on
 Google therefore cannot be reused as an OpenAI watermark detector.
 
 M2, 2026-08-15, re-verified 2026-08-16: Google unwatermarked pairs cannot

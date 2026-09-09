@@ -49,8 +49,9 @@ metadata is gone:
   photograph from the rest of China's generators (Qwen, Kling, ...)
   publishes `provider=None` (the residual head abstains)
 - `label=human` on camera photographs at a low false-positive rate
-- `label=unknown` when the detector is only POSSIBLY AI, or when 124-d
-  features cannot be extracted
+- `label=unknown` when the detector is only POSSIBLY AI
+- `label=ai, provider=None` when the detector is DEFINITELY AI but 124-d
+  features cannot be extracted (unless the receipt gate abstains)
 
 Do not use it to assert that a file is clean. Do not use it as a legal
 authorship test. Do not run Model 2 on every image.
@@ -140,7 +141,7 @@ no mixed head can honestly name that group, so its win abstains.
 - Input: 124-d residual vector, or abstain if the image is smaller than
   256 px or the extractor refuses
 - Heads: one-vs-rest focal MLP `124-64-1` per class
-  (`openai`, `google`, `tc260`, `meta_muse_image`, `no_ai`)
+  (`openai`, `google`, `bytedance`, `tc260`, `meta_muse_image`, `no_ai`)
 - Decision: a class wins only if it beats `no_ai` by margin 0.30, then argmax
   among those that passed
 - Public name `muse-image` is the Muse Image class. The freeze file still
@@ -194,10 +195,10 @@ DEFINITELY is the shipped operating point.
 | Class | Muse Image hold-out v2 | 85.7% (66/77 listed 79) |
 | Class | Muse Image hold-out v3 | 89.4% (177/198) |
 | Class | Muse Image hold-out pooled | 88.4% (243/275 listed 277) |
-| Class | meme templates, ungated | 29.1% leak (86 of 97) |
+| Class | meme templates, ungated | Withdrawn: recorded percentage and fraction disagree; source row must be recovered |
 
-The ungated meme leak is why Model 2 must not run on every file. Gated on
-DEFINITELY, that leak is not a provider attribution.
+Model 2 must remain gated on DEFINITELY. The historical ungated meme
+measurement is not usable evidence until its contradictory counts are reconciled.
 
 Ridge-only Model 1 at the earlier 1% Open Images cut (before the AND with
 the freeze MLP) is documented in the research page: Kodak 0/24, fresh 1.7%,
@@ -259,7 +260,7 @@ silently change the heads.
 | `clip-l-ft.pt` | HeadedCLIP state dict (CLIP-L plus unused linear head) |
 | `probe-weights-clip-l-ft.npz` | Ridge mean, scale, weights, `thr_oi_1pct` |
 | `detector.pt` | Freeze MLP |
-| `provider.pt` | Focal heads keyed `openai`, `google`, `tc260`, `meta_muse_image`, `no_ai` |
+| `provider.pt` | Focal heads keyed `openai`, `google`, `bytedance`, `tc260`, `meta_muse_image`, `no_ai` |
 | `operating-point.json` | Seeds, thresholds, margin |
 
 The image catalog is not in this repository.

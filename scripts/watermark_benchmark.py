@@ -523,7 +523,7 @@ def _decode_video(path: Path) -> NDArray[Any] | None:
     if probe.returncode != 0:
         return None
     try:
-        height, width = (int(value) for value in probe.stdout.strip().split(","))
+        width, height = (int(value) for value in probe.stdout.strip().split(","))
     except ValueError:
         return None
     result = subprocess.run(  # noqa: S603 - resolved ffmpeg with fixed arguments
@@ -546,11 +546,24 @@ def _decode_video(path: Path) -> NDArray[Any] | None:
     )
     if result.returncode != 0 or not result.stdout:
         return None
+    if height <= 0 or width <= 0:
+        return None
     frame_size = height * width * 3
     if len(result.stdout) % frame_size != 0:
         return None
     frames = np.frombuffer(result.stdout, dtype=np.uint8).reshape(-1, height, width, 3)
     return frames.astype(np.float32) / 255.0
+
+
+def decode_video_artifact(path: Path) -> tuple[NDArray[Any], str]:
+    """Decode saved bytes and bind the measurement to their unchanged digest."""
+    digest = sha256_file(path)
+    frames = _decode_video(path)
+    if frames is None:
+        raise ValueError(f"video artifact failed to decode: {path}")
+    if sha256_file(path) != digest:
+        raise ValueError(f"video artifact changed during decoding: {path}")
+    return frames, digest
 
 
 def _detect_audioseal(path: Path, samples: NDArray[Any]) -> str | None:

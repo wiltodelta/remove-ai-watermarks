@@ -95,6 +95,9 @@ def graceful(res: Results, case: str, cmd: str, args: list[str], timeout: int = 
     if timed_out:
         res.add(case, cmd, False, f"HUNG (> {timeout}s)", out)
         return
+    if code not in (0, 1, 2):
+        res.add(case, cmd, False, f"unexpected process exit {code}", out)
+        return
     crashed = next((m for m in _CRASH_MARKERS if m in out), None)
     if crashed:
         res.add(case, cmd, False, f"unhandled {crashed} (exit {code})", out)

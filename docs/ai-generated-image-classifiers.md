@@ -723,8 +723,8 @@ must change, not the example selection or the veto geometry.
 
 ### Wild vendor-flagged AI, 2026-08-27
 
-A free wild-AI positive cell came from the stock providers behind the private
-veedma-blog image pipeline. Pixabay exposes a vendor-declared
+A wild-AI positive cell used publicly available stock images. Pixabay exposes
+a vendor-declared
 `isAiGenerated` flag and the query `ai generated` surfaces that pool (3,287
 results); 284 content-hash-unique rows were harvested (300 minus 16 lost to a
 duplicate-download bug, since fixed, manifest repaired to on-disk truth). The
@@ -753,10 +753,11 @@ homogeneous, but the sample was not. A stratified reharvest capped at 15 rows
 per contributor over eight AI-marker queries produced 300 unique images from
 180 contributors (top-10 share 33%) with the same sieves. On the balanced
 cell the frozen numbers are: Model 1 recall 209/300 (69.7%, median score 0.482,
-lowest quartile below 0.144), direct quarter-hard 189/300 repairing 22 Model 1
-misses and losing 2 (the one place the quarter representation still helps),
-conditional routing 210/300 adding one repair and nothing else, provider
-cascade margin 252/300 `no_ai` with 1 `openai` call, and 0/300 metadata
+lowest quartile below 0.144). The direct quarter-hard comparison is withdrawn:
+its recorded candidate total and paired gains/losses are inconsistent, and the
+source rows must be recovered before choosing a correction. The separately
+recorded conditional routing result was 210/300, adding one repair and
+nothing else; provider cascade margin 252/300 `no_ai` with 1 `openai` call, and 0/300 metadata
 signals. The wild-AI recall ceiling under Model 1 therefore settles near
 65-70% rather than 93%, robust to contributor stratification; unknown-renderer
 AI re-encoded by stock pipelines is the largest measured positive-side gap.
@@ -1478,7 +1479,7 @@ After the public UI swap:
 | Provider | Meta hold-out v2 | **85.7%** (66/77 listed 79) |
 | Provider | Meta hold-out v3 | **89.4%** (177/198) |
 | Provider | Meta hold-out pooled | **88.4%** (243/275 listed 277) |
-| Provider | meme_template ungated | 29.1% leak (86 of 97) |
+| Provider | meme_template ungated | Withdrawn: recorded percentage and fraction disagree; source row must be recovered |
 
 A second Meta hold-out (`photo_ai_meta_v3`, 198 of 200 requested; two
 near-duplicates rejected) was generated the same day from 50 new

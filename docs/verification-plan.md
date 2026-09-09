@@ -7,6 +7,10 @@
 
 How we convince ourselves the library actually works, across its whole surface, on real data.
 
+The [2026-09-08 code and documentation audit](code-and-documentation-audit.md)
+records current reproducible defects, documentation discrepancies, review
+coverage, and the checks needed to close them.
+
 This is the pre-release and periodic-audit plan. It is deliberately organized by **oracle
 strength** rather than by module, because the hard part is never "call the function" -- it
 is "know what the right answer was". A sweep with no oracle proves only that nothing threw.

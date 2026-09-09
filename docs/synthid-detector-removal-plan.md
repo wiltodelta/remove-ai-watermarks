@@ -1,5 +1,12 @@
 # SynthID detector and pixel-only removal research plan
 
+> Audit correction, 2026-09-08: multi-period affine-probe results from
+> schema 13 or earlier used confirmation patches during period selection
+> (R04). They require rerunning and recalibration under schema 14; the
+> frozen runtime detector uses separate code and its thresholds are unchanged.
+> External-negative claims admitted without explicit independent evidence
+> (R08) also need an evidence audit before reuse.
+
 > Chronological mixed archive of detector, classifier, and removal work.
 > Not a statement of current product capability. Read the split pages
 > first:
@@ -3689,14 +3696,11 @@ a content-dependent post-hoc neural encoder produces and what the SynthID-Image
 paper describes. The comb experts work on one provider and not the other because
 the providers are not doing the same thing.
 
-The Google numbers say something sharper than "positives correlate more". A
-single shared pattern present in two classes at different amplitudes gives a
-cross-correlation at the geometric mean of the two within-class values, whereas
-two distinct components would fall below it. Observed against predicted:
-`0.224` against `0.227` for tile16, `0.304` against `0.306` for tile8, ratios of
-`0.985` and `0.993`. So it is one pattern, not a watermark carrier layered on a
-separate generator fingerprint, and the controls carry that same pattern at
-roughly half the amplitude of the positives.
+The normalized cross-correlations (`0.224` for tile16 and `0.304` for
+tile8) are close to the geometric means of the corresponding within-class
+correlations (`0.227` and `0.306`). This is consistent with shared structure,
+but normalized correlations discard absolute scale. They do not establish
+one unique component or a control-to-positive carrier amplitude ratio.
 
 Three readings survive that, and L1 decides between them: the controls are
 watermarked after all and the label is wrong; the mark modulates the amplitude of
@@ -4302,8 +4306,7 @@ A full pass over the register against the recorded evidence, closing what the
 log already settles:
 
 - M2 re-verified independently and settled. `imagen-4.0-generate-001` and
-  `imagen-3.0-generate-002` return 404 in us-central1 and us-east1 on both GCP
-  projects (`gen-lang-client-0926942364` and `raiw-cws-publish`);
+  `imagen-3.0-generate-002` returned 404 in the tested regional API calls;
   `gemini-2.5-flash-image` rejects `addWatermark` at request parsing
   (`Unknown name "addWatermark" at 'generation_config': Cannot find field`),
   and the current Gemini API documentation states for both the Gemini-image
@@ -4848,7 +4851,8 @@ Where it is written. Grayscale (PIL `L`, then RGB) stayed `detected`, so the
 decoder reads luminance: stacking `L,L,L` zeroes chroma, and a chroma-only
 carrier would have gone silent. JPEG q20 stayed `detected`, so the carrier
 is not the high-frequency DCT tail that classical DWT-DCT uses. A center
-crop keeping half the area stayed `detected`, so the residual is spatially
+crop keeping half the width and half the height (one quarter of the area)
+stayed `detected`, so the residual is spatially
 redundant rather than a border or a single tile. A two-pixel crop stayed
 `detected` while our origin-locked lattice dies, so the written residual is
 not that lattice. 90-degree rotation and a horizontal flip stayed `detected`,
@@ -5920,11 +5924,13 @@ the ordered pixel-file hash list has SHA-256
 `651f959689e7043989ded09fa4aece5cea2592e7b69e371cc97c35f581d9f57d`.
 All 3,000 decoded hashes were unique and none overlapped the first cohort. The
 unchanged registered-v2 base produced no threshold crossings among 2,996
-supported images, so registered-v3 also produced 0/2,996. Together, the two
-Open Images cohorts give registered-v3 0/5,993 false positives after the
-confirmation rule was applied, with a one-sided 95% zero-error upper bound of
-about 0.050%. They are source-disjoint samples from one source family, not two
-independent acquisition mechanisms.
+supported images, so registered-v3 also produced 0/2,996. Only this second
+cohort was untouched during gate selection. Its one-sided 95% zero-error upper
+bound is `1 - 0.05**(1/2996)`, approximately 0.09994%. The first cohort
+(2,997 supported images) selected the gates and must not enlarge that
+independent denominator. Both cohorts come from one source family. This
+historical holdout result does not validate the later corrected selection-only
+period search; that implementation needs a fresh evaluation.
 
 A second-family challenge used the first 3,000 sorted COCO val2017 files. The
 newline-delimited file-name list has SHA-256
@@ -5935,9 +5941,10 @@ All 3,000 pixel hashes were unique. The unchanged registered base produced
 0/2,366 crossings, with maximum score `0.932964706`; registered-v3 therefore
 also produced zero. COCO predates this confirmation experiment and is not a
 fresh acquisition, but it is a distinct natural-image source family. Across
-both Open Images cohorts and this COCO challenge, registered-v3 has 0/8,359
-supported-control crossings. This qualifies the precision-first positive route;
-it does not turn a miss into proof of absence.
+both Open Images cohorts and this COCO challenge, the historical descriptive
+total is 0/8,359 supported-control crossings. It includes gate-selection data
+and is not an independent qualification denominator. A miss is not proof of
+absence, and corrected period selection requires a new evaluation.
 
 The fixed `0.28` candidate failed the second holdout and is rejected. It
 accepted one of 213 supported images, at score `0.322542963`. The runtime keeps

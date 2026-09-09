@@ -1,4 +1,4 @@
-"""Export fixed, large, and scale-registered SynthID observations for images.
+"""Export correctly named fixed, large, and routed registered observations.
 
 The output is an input manifest for ``synthid_conformal_cascade.py``. All
 experts consume decoded RGB pixels only. Unsupported geometry is recorded
@@ -32,6 +32,15 @@ log = logging.getLogger(__name__)
 FIXED_EXPERT_NAME = synthid_detector.DETECTOR_ID
 REGISTERED_EXPERT_NAME = synthid_detector.REGISTERED_DETECTOR_ID
 LARGE_EXPERT_NAME = synthid_detector.LARGE_DETECTOR_ID
+OPPONENT_EXPERT_NAME = synthid_detector.OPPONENT_REGISTERED_DETECTOR_ID
+FINE_OPPONENT_EXPERT_NAME = synthid_detector.FINE_OPPONENT_REGISTERED_DETECTOR_ID
+EXPERT_NAMES = (
+    FIXED_EXPERT_NAME,
+    REGISTERED_EXPERT_NAME,
+    LARGE_EXPERT_NAME,
+    OPPONENT_EXPERT_NAME,
+    FINE_OPPONENT_EXPERT_NAME,
+)
 
 
 class ExpertScore(TypedDict):
@@ -57,26 +66,21 @@ def _observation(name: str, supported: bool, score: float | None) -> ExpertScore
 
 
 def score_pixels(pixels: NDArray[np.uint8]) -> list[ExpertScore]:
-    """Return explicit fixed, registered, and large observations for RGB PIXELS."""
+    """Return five named slots; inactive registered fallbacks remain unsupported."""
     if pixels.ndim != 3 or pixels.shape[2] != 3 or pixels.dtype != np.uint8:
         raise ValueError("pixels must be an RGB uint8 array")
     bgr_pixels = np.ascontiguousarray(pixels[:, :, ::-1])
     native = synthid_detector.detect_synthid("decoded-image", image=bgr_pixels, register_scale=False)
     registered = synthid_detector.detect_synthid("decoded-image", image=bgr_pixels, register_scale=True)
-    fixed = _observation(FIXED_EXPERT_NAME, False, None)
-    large = _observation(LARGE_EXPERT_NAME, False, None)
-    native_observation = _observation(native.detector, native.status != "unsupported", native.score)
-    if native.detector == FIXED_EXPERT_NAME:
-        fixed = native_observation
-    elif native.detector == LARGE_EXPERT_NAME:
-        large = native_observation
-    else:
-        raise RuntimeError(f"unexpected default SynthID expert: {native.detector}")
-    return [
-        fixed,
-        _observation(REGISTERED_EXPERT_NAME, registered.status != "unsupported", registered.score),
-        large,
-    ]
+    observations = {name: _observation(name, False, None) for name in EXPERT_NAMES}
+    for result, expected in (
+        (native, {FIXED_EXPERT_NAME, LARGE_EXPERT_NAME}),
+        (registered, {REGISTERED_EXPERT_NAME, OPPONENT_EXPERT_NAME, FINE_OPPONENT_EXPERT_NAME}),
+    ):
+        if result.detector not in expected:
+            raise RuntimeError(f"unexpected SynthID expert: {result.detector}")
+        observations[result.detector] = _observation(result.detector, result.status != "unsupported", result.score)
+    return list(observations.values())
 
 
 def score_path(path: Path) -> ScoredImage:
@@ -103,8 +107,8 @@ def main(images: tuple[Path, ...], report_out: Path) -> None:
     report_out.write_text(
         json.dumps(
             {
-                "schema_version": 1,
-                "experts": [FIXED_EXPERT_NAME, REGISTERED_EXPERT_NAME, LARGE_EXPERT_NAME],
+                "schema_version": 2,
+                "experts": list(EXPERT_NAMES),
                 "records": records,
             },
             indent=2,
@@ -112,7 +116,7 @@ def main(images: tuple[Path, ...], report_out: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    log.info("Wrote %d three-expert score records: %s", len(records), report_out)
+    log.info("Wrote %d runtime expert score records: %s", len(records), report_out)
 
 
 if __name__ == "__main__":

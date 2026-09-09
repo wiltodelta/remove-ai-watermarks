@@ -73,6 +73,11 @@ The same rule applies to install hints: name the extra that actually makes the c
 
 Run `bash maintain.sh` from the repository root. The authoritative type gate is scoped to `src/`; full-project Pyright can exhaust Node memory on the ML dependency graph.
 
+The security scanner's exit status is authoritative, including a failure after a success
+message. `tests/test_maintenance.py` checks clean, vulnerable, and broken scanner
+runs through the real shell entry point. Recheck unresolved advisories using the
+procedure in `docs/development.md`; do not revive the old text-matching bypass.
+
 Boundary modules for cv2, Torch, and Diffusers may carry narrow per-file relaxations for unknown third-party types. Keep pure-logic files strict, preserve the local piexif stub, and fix real errors before widening a pragma.
 
 From a worktree, `uv run` imports the package from the MAIN checkout -- that is where the editable install points. A script measuring a worktree's edit must insert that worktree's `src` at `sys.path[0]` and assert `module.__file__` resolves inside it, or it silently compares unmodified code against itself.
@@ -262,3 +267,25 @@ frame-count check cannot see and what
 catch.
 
 Environment setup, dependency recovery, CI behavior, and fixture policy: [`../../docs/development.md`](../../docs/development.md).
+
+## Audit regression contracts
+
+Image output paths must describe the artifact published by the current call,
+including skipped invisible stages and in-place writes. Carry explicit EXIF
+decode state through image staging; equal dimensions do not prove that a
+mirror or 180-degree rotation was applied. Metadata collection must propagate
+late-read failures into an incomplete record, and stream-copy metadata removal
+must map every input stream before atomically publishing the output.
+
+Research observations must describe the decoded, hash-bound saved artifact.
+Keep period selection independent of confirmation patches, require explicit
+negative evidence, and deduplicate source corpora by content identity rather
+than detector-score equality. Use the metric's actual denominator in its name;
+normalized edit distance is not reference-normalized character error rate.
+
+Tests that reload a module after changing environment variables must restore
+the environment before reloading the original state. Otherwise a temporary
+cache path survives teardown and later model tests silently attempt downloads.
+Dotenv configuration tests must clear every fixture variable from the invoked
+process environment. Seed conflicting inherited values to prove isolation;
+clearing only some fields lets the remaining host settings override the fixture.

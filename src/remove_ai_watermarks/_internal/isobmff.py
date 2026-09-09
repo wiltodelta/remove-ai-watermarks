@@ -300,8 +300,8 @@ def _tc260_aigc_regions(
     return regions
 
 
-def tc260_aigc_payloads(path: str | Path) -> tuple[bytes, ...]:
-    """Read native TC260 ``AIGC`` JSON values from an MP4/MOV container."""
+def tc260_aigc_payloads(path: str | Path, *, strict: bool = False) -> tuple[bytes, ...]:
+    """Read native TC260 ``AIGC`` values, optionally propagating I/O failures."""
     try:
         with open(path, "rb") as stream:
             if not is_isobmff(stream.read(8)):
@@ -310,6 +310,8 @@ def tc260_aigc_payloads(path: str | Path) -> tuple[bytes, ...]:
             file_size = stream.tell()
             return tuple(region[3] for region in _tc260_aigc_regions(stream, file_size))
     except OSError:
+        if strict:
+            raise
         return ()
 
 
@@ -342,7 +344,7 @@ def is_isobmff(data: bytes) -> bool:
     return len(data) >= 8 and data[4:8] == b"ftyp"
 
 
-def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024) -> bytes:
+def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024, strict: bool = False) -> bytes:
     """Concatenated payloads of top-level ``uuid`` / ``jumb`` boxes in an ISOBMFF
     file, found by seeking past other boxes (``mdat`` etc.) by size.
 
@@ -352,7 +354,7 @@ def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024) -> b
     walks box headers (8-16 bytes each) and seeks past payloads it does not need,
     so it never loads ``mdat`` into memory and works on multi-GB files. Returns
     the relevant box payloads (capped at ``max_total``), or ``b""`` for a
-    non-ISOBMFF file or on any read error.
+    non-ISOBMFF file or on a read error unless ``strict=True``.
     """
     collected = bytearray()
     try:
@@ -392,6 +394,8 @@ def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024) -> b
                         collected += f.read(to_read)
                 pos += size
     except OSError:
+        if strict:
+            raise
         return b""
     return bytes(collected)
 

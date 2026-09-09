@@ -9,6 +9,7 @@ tmp/
 
 # Environment secrets
 .env
+.mcp.json
 
 # OS files
 .DS_Store

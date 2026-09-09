@@ -277,6 +277,9 @@ uv run python scripts/provider_oracles.py run-web \
 
 The runner reuses one context and one route for the batch, performs a fresh page
 navigation before each upload, does not retry, and stores the settled page text.
+Each completed verdict is persisted immediately with its own observation
+timestamp. A later navigation or upload failure preserves those completed
+rows and leaves unobserved rows unresolved.
 For a selected proxy route it enables certificate handling in that isolated
 Chromium launch and context; direct launches keep Playwright's normal TLS
 verification. A 2026-09-07 preflight sent one read-only request through each

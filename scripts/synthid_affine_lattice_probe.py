@@ -1003,7 +1003,7 @@ def score_lattice(
         for index in rerank_candidates
     ]
     rerank_scores = [
-        min(*whitened_scores[index], amplitude.selection, amplitude.confirmation)
+        min(whitened_scores[index][0], amplitude.selection)
         for index, amplitude in zip(rerank_candidates, rerank_amplitudes, strict=True)
     ]
     rerank_winner = int(np.argmax(rerank_scores))
@@ -1603,7 +1603,8 @@ def main(
     report_out.write_text(
         json.dumps(
             {
-                "schema_version": 13,
+                "schema_version": 14,
+                "period_selection": "selection-only-whitened-amplitude-v1",
                 "template": str(template_path),
                 "periods": [float(value) for value in periods],
                 "rotations_degrees": [float(value) for value in rotations],

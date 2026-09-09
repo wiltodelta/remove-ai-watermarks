@@ -1,5 +1,43 @@
 # VideoSeal temporal evaluation
 
+> Audit correction, 2026-09-08: The historical 2026-09-07 matrix and its
+> conclusions are superseded by the corrected run below. The audit found
+> transposed rectangular video decoding (R01) and
+> observations measured before encoding rather than on the hashed artifact
+> (R12). The table remains an archive, not validated delivered-file evidence.
+
+## Corrected artifact measurements (2026-09-08)
+
+The corrected run measured 32 saved artifacts: four clean controls, four
+marked controls, and 24 attack outputs. Every observation decoded its saved
+MP4, with equal SHA-256 before and after decoding; all 32 recorded hashes
+were also checked against the retained files. The four carriers and attack
+recipes are the same as described in the historical study below.
+
+| Carrier | crf18 | crf23 | crf28 | crf32 | scale .75 | fps .5 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| moving_gradient | 0.879 | 0.559 | 0.520 | 0.512 | 0.711 | 1.000 |
+| moving_texture | 0.582 | 0.547 | 0.535 | 0.562 | 0.879 | 0.969 |
+| real_veo | 1.000 | 0.953 | 0.789 | 0.621 | 0.988 | 1.000 |
+| real_sora | 1.000 | 1.000 | 0.992 | 0.879 | 1.000 | 1.000 |
+
+Under the unchanged average-aggregation threshold of 0.9, frame-rate halving
+retains detection on 4/4 carriers, downscale on 2/4, and CRF 32 on 0/4.
+These are four fixed carriers, not population survival estimates. Norm-weighted
+aggregation changes the moving-texture downscale result from 0.879 to 0.938;
+it does not change the kernel's canonical average-aggregation rule.
+
+This was a local CPU run with two Torch threads, Torch 2.14.0, ffmpeg 9.0.1,
+and the existing pinned checkpoint listed below. Model downloads and provider
+calls were disabled. Study source SHA-256:
+`a440fc95a2712097ef47665eaf8a9e9a370545d7ba05748e961955c5222546a0`.
+Corrected case rows SHA-256:
+`de8d633f4f63ed45e1bd53cc29d30244cd5367034bf602c21baaadaab5ba85af`.
+Artifacts remain outside the repository; this dated verdict and its limits
+are the durable record.
+
+## Historical study (2026-09-07, superseded)
+
 Development-only study, run on 2026-09-07 from
 `scripts/videoseal_temporal_study.py`, answering the three temporal questions
 the case-level benchmark verdict aggregates away: how decoded bit accuracy
@@ -44,9 +82,10 @@ Readings, not verdicts: the benchmark adapter's rule is 0.9 under plain avg.
   scored a perfect 1.000 on both real clips - resize was a training
   augmentation, and the antialias resample appears to help the detector. On
   the synthetic gradient it still costs 0.31.
-- **Frame-rate halving is harmless.** Every carrier kept the message after
-  dropping half the frames: the 256-bit secret repeats across keyframes, so
-  temporal redundancy, not frame count, carries it.
+- **Frame-rate halving was not uniformly above threshold.** Even the
+  historical table puts real Veo at 0.855, below the 0.9 rule; three of four
+  listed carriers exceed it. The corrected artifact-domain run must establish
+  whether that pattern survives.
 - **Aggregation choice matters at the margin.** Norm-weighted averaging
   recovered 2-6 points on damaged arms (moving_texture scale: 0.879 avg
   versus 0.941 l1/l2, crossing the 0.9 rule) but never rescued a collapsed

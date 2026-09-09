@@ -1,5 +1,44 @@
 # Watermark forgery study
 
+> Audit correction, 2026-09-08: The historical VideoSeal results and
+> cross-scheme conclusions are superseded by the corrected video run below.
+> Historical video observations were taken before encoding
+> rather than from the hashed output artifact (R12); rectangular video
+> decoding also required correction (R01). AudioSeal observations remain
+> separate from those invalidated video comparisons.
+
+## Corrected VideoSeal measurements (2026-09-08)
+
+Twelve observations now measure decoded saved artifacts, including controls
+and double embeds. All 12 recorded SHA-256 digests match the retained MP4s;
+the decoder also checks that each file remains unchanged during measurement.
+
+| Cell | Gradient vs A | Gradient vs B | Real Sora vs A | Real Sora vs B |
+| --- | ---: | ---: | ---: | ---: |
+| clean | 0.516 | 0.555 | 0.559 | 0.535 |
+| marked A | 1.000 | 0.469 | 1.000 | 0.469 |
+| removed CRF 23 | 0.559 | 0.496 | 1.000 | 0.469 |
+| forged B on clean | 0.469 | 1.000 | 0.469 | 1.000 |
+| forged B on marked A | 0.469 | 1.000 | 0.473 | 0.996 |
+| forged B on removed A | 0.469 | 1.000 | 0.469 | 1.000 |
+
+Both marked controls meet the fixed-message A rule. All six B-embedding
+outputs fall below its 0.9 threshold, while matching B at 0.996 or above.
+CRF 23 removes the matched A verdict on the gradient but preserves it on
+this Sora carrier. These two fixed carriers support this scoped observation;
+they do not establish complete erasure of every trace of A or a universal
+double-embedding rule. AudioSeal was not rerun in this correction.
+
+The run used the same pinned checkpoint, Torch 2.14.0, ffmpeg 9.0.1, and
+two CPU threads as the corrected [temporal study](videoseal-temporal-evaluation.md#corrected-artifact-measurements-2026-09-08).
+No model downloads or provider calls ran. Study source SHA-256:
+`031d9e0c58af58ab5f9227ea52a500eb86644fc464f9c37be1e894ce0b6b4935`.
+Corrected case rows SHA-256:
+`f8c5a65e5853de0f1ff67c2ef0549fbd81df971e13c79539c85c1b0255eb60a8`.
+Artifacts remain outside the repository.
+
+## Historical study (2026-09-07, superseded video results)
+
 Development-only study, run on 2026-09-07 from
 `scripts/watermark_forgery_study.py`, opening the forgery/remover-forensics
 direction from the original research map. It measures the four-state model

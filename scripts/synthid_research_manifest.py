@@ -208,6 +208,13 @@ def _row_errors(row: dict[str, str], index: int) -> list[str]:
         errors.append(f"{prefix}: source-evidence cannot establish a same-provider negative")
     if verifier == "source-evidence" and not row.get("evidence_reference", "").strip():
         errors.append(f"{prefix}: source-evidence requires evidence_reference")
+    if (
+        synthid == "not_detected"
+        and source != target
+        and verifier not in matching
+        and not row.get("evidence_reference", "").strip()
+    ):
+        errors.append(f"{prefix}: an external negative without a matching verifier requires evidence_reference")
     if verifier in matching and not row.get("oracle_session", "").strip():
         errors.append(f"{prefix}: provider verification requires oracle_session")
     if oracle_role == "source_control" and synthid != "detected":

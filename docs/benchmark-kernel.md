@@ -43,7 +43,7 @@ The fixed fields are:
 | `media_type` | `image`, `audio`, or `video` in schema v1. |
 | `adapter` | `dwt-dct` or `trustmark` for `image`; `audioseal` for `audio`; `videoseal` for `video`. The loader rejects a known adapter named against the wrong media type. |
 | `arm` | `positive`, `matched_negative`, `wrong_key`, or `hard_negative`. |
-| `state` | `clean`, `marked`, `attacked`, `removed`, or `forged`. `forged` names an artifact carrying a watermark with a message different from the adapter oracle's fixed one; the matched verifier's correct answer there is `not_detected` with the forensic detail carried by the study layer, not the verdict. |
+| `state` | `clean`, `marked`, `attacked`, `removed`, or `forged`. `forged` names an artifact carrying a watermark with a message different from the adapter oracle's fixed one. Expected detection depends on the adapter: VideoSeal checks the fixed message, while AudioSeal's presence rule can still report `detected` for a foreign message. The study records message accuracy separately. |
 | `path`, `sha256` | Artifact path and pinned content digest. |
 | `reference_path`, `reference_sha256` | Both strings or both `null`; the fidelity reference. |
 | `source_revision` | Corpus, generator, or acquisition revision. |
@@ -385,7 +385,8 @@ claim. The controlled resource profile below remains the performance evidence.
 frames in [0, 1] as (T, H, W, 3) through the system `ffmpeg`, staying outside
 the detector interval like the image and audio decodes. Video fidelity
 compares decoded frames against the explicit reference clip: mean PSNR over
-frames, a changed-frame fraction, `unbounded_identical` for bit-identical
+frames (`mean_psnr_db`, reported separately from image `psnr_db`), a
+changed-frame fraction, `unbounded_identical` for bit-identical
 pixel sequences, and an explicit `shape_mismatch` state when frame counts or
 geometry differ - which is why geometry-changing attack arms carry no
 reference instead of a fabricated comparison.
@@ -511,8 +512,11 @@ adapters as separate evidence. A repeated `case_id` whose artifact, transform,
 or other case identity changes is rejected rather than merged. Input file
 digests in the final report bind every aggregate to its exact case-level source.
 The runner decodes an artifact used by multiple cases only once per process and
-passes the decoded pixels to both local adapters; the adapter timing therefore
-does not include file decoding.
+passes the decoded pixels to both local adapters. Synthetic recipes record
+the seed actually passed to generation; a manifest seed is not a substitute
+for that generator input. Video observations must decode the saved artifact
+whose digest the row records, including controls and double embeds. Adapter
+timing does not include file decoding.
 
 ## Profile process cost
 

@@ -403,7 +403,8 @@ supported AI provenance metadata without transcoding streams.
 
 `video visible` and `remove_video_visible` additionally support the moving
 Sora 2 mascot and wordmark, the current Veo four-point diamond, the legacy
-`Veo` text, the Seedance boxed `AI` label, the fixed `Dola AI` text, the Hailuo AI
+`Veo` text, the Seedance boxed `AI` label, the fixed Doubao `豆包AI生成`
+label, the fixed `Dola AI` text, the Hailuo AI
 MINIMAX/Hailuo AI composite label, and the bottom-right Kling AI `KLING AI` or
 `KlingAI` label with its version suffix. Detection requires a recurring visual
 candidate across adjacent frames. Fixed-mark candidates must remain anchored rather than
@@ -491,11 +492,13 @@ when `image_io` can still decode the raster by normalizing the container and
 checking again. A truly undecodable file still reports the surviving markers.
 The CLI uses this verified path.
 
-### Sixteen bit PNG output is not preserved
+### Sixteen bit PNG metadata stripping
 
-The Pillow based PNG metadata rewrite uses the normal image save path and may
-reduce a sixteen bit PNG to eight bits. A byte-level PNG metadata stripper
-would be required to preserve that bit depth.
+Sixteen bit PNG metadata stripping uses `_strip_png_metadata_lossless`, which
+preserves the coded pixel chunks and bit depth. Decoder-based normalization
+of malformed files can still reduce precision. Pixel editing and inpainting
+have separate precision limits; lossless metadata stripping does not extend
+those pixel-processing contracts.
 
 ## Detection extras
 

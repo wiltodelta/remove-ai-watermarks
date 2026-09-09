@@ -113,7 +113,12 @@ Write for every harness and a weaker model, not only Claude Opus:
   pixel stack reaches. Reporting a found binary as ready is what sent an agent
   into a missing-cv2 crash on the Homebrew build, which carries no extras. It
   also compares the installed release against `MIN_CLI_VERSION`, so a stale CLI
-  is named instead of being reported as a broken flag;
+  is named instead of being reported as a broken flag. Video capability is
+  checked separately in the installed CLI's Python environment:
+  `video_stacks.pixels` reports `ok`, `missing`, or `unknown`, and
+  `video_stacks.invisible` reports `installed`, `missing`, or `unknown`.
+  These checks load no weights. An unrecognized launcher leaves video
+  guidance unverified rather than inferring readiness from image support;
 - uv, pipx, and pip as installer fallbacks;
 - forward slashes only;
 - no `allowed-tools` (that field is experimental and host-specific).

@@ -17,7 +17,6 @@ at the strength Qwen needs. See ``watermark_profiles.SDXL_ZIMAGE_OPENAI_STRENGTH
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -27,7 +26,9 @@ from remove_ai_watermarks._internal.two_stage_pipeline import (
     _GLOBAL_NEGATIVE,
     _GLOBAL_PROMPT,
     TwoStageZImagePipeline,
+    _target_size,
     build_canny_control_image,
+    requested_steps,
 )
 from remove_ai_watermarks._internal.watermark_profiles import (
     CONTROLNET_CANNY_MODEL,
@@ -49,22 +50,7 @@ SDXL_STEPS = 4
 
 def sdxl_target_size(width: int, height: int) -> tuple[int, int]:
     """Floor dimensions to SDXL's latent grid without changing aspect."""
-    return max(_LATENT_GRID, (width // _LATENT_GRID) * _LATENT_GRID), max(
-        _LATENT_GRID, (height // _LATENT_GRID) * _LATENT_GRID
-    )
-
-
-def requested_steps(effective_steps: int, strength: float) -> int:
-    """Translate "spend N denoising steps" into what Diffusers has to be asked for.
-
-    The two runtimes truncate differently and it is easy to port this wrong.
-    DiffSynth sets ``sigma_start = denoising_strength`` and then runs *every*
-    requested step across the shortened sigma range. Diffusers img2img instead
-    truncates the step *count* (``init_timestep = int(steps * strength)``), so
-    asking it for four steps at strength 0.15 runs **zero** and returns nothing but
-    a VAE round-trip. Ask for enough that ``effective_steps`` actually execute.
-    """
-    return max(1, math.ceil(effective_steps / max(float(strength), 1e-6)))
+    return _target_size(width, height, _LATENT_GRID)
 
 
 @dataclass

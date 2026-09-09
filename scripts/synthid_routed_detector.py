@@ -53,7 +53,7 @@ def main(images: tuple[Path, ...], report_out: Path) -> None:
     report_out.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "counts": {"detected": detected, "abstain": len(records) - detected},
                 "records": records,
             },

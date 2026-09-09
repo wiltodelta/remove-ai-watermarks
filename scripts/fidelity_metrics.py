@@ -32,10 +32,10 @@ Two subcommands:
               Run this on the ORIGINALS, hand-verify/correct the file, and it
               becomes the ground truth for ``compare --ground-truth`` -- the clean
               way to score text, since OCR-vs-OCR is doubly noisy (errors on both
-              images + reading-order differences inflate CER even on identical text).
+              images + reading-order differences inflate NED even on identical text).
 
   compare  -- Score each VARIANT against the ORIGINAL across four groups:
-              1. Text  -- character error rate (CER) of the variant's OCR vs the
+              1. Text  -- normalized edit distance (NED) of the variant's OCR vs the
                  verified ground truth (or the original's OCR if no --ground-truth).
               2. Face identity -- insightface (buffalo_l) ArcFace cosine similarity.
               3. Face texture  -- LPIPS + Laplacian-variance ratio on face crops
@@ -88,7 +88,7 @@ def _match_size(variant: np.ndarray, ref: np.ndarray) -> np.ndarray:
 
 
 def _norm(text: str) -> str:
-    """Normalize for CER: NFC + drop ALL whitespace (segmentation-order agnostic)."""
+    """Normalize for NED: NFC + drop ALL whitespace (segmentation-order agnostic)."""
     return "".join(unicodedata.normalize("NFC", text).split())
 
 
@@ -167,7 +167,8 @@ def _ocr_lines(bgr: np.ndarray, langs: list[str], min_score: float = 0.5) -> lis
     return [t for _, t in kept]
 
 
-def _cer(ref: str, hyp: str) -> float:
+def _text_ned(ref: str, hyp: str) -> float:
+    """Case-sensitive edit distance divided by the longer normalized string."""
     return levenshtein_normalized(_norm(ref), _norm(hyp))
 
 
@@ -334,7 +335,7 @@ def compare(original: str, variants: tuple[str, ...], ocr_langs: str, ground_tru
     lp = _lpips_model()  # AlexNet LPIPS, loaded once and reused for face crops + whole image
 
     # ── text ──
-    ocr_cer: dict[str, float | None] = {label: None for label, _ in parsed}
+    ocr_ned: dict[str, float | None] = {label: None for label, _ in parsed}
     if langs:
         ref_text: str | None = None
         if ground_truth:
@@ -348,7 +349,7 @@ def compare(original: str, variants: tuple[str, ...], ocr_langs: str, ground_tru
         if ref_text:
             console.print(f"  OCR variants ({','.join(langs)})...")
             for label, img in parsed:
-                ocr_cer[label] = _cer(ref_text, "\n".join(_ocr_lines(img, langs)))
+                ocr_ned[label] = _text_ned(ref_text, "\n".join(_ocr_lines(img, langs)))
 
     # ── faces ──
     face_stats: dict[str, FaceStats] = {label: FaceStats() for label, _ in parsed}
@@ -392,14 +393,14 @@ def compare(original: str, variants: tuple[str, ...], ocr_langs: str, ground_tru
 
     # ── report ──
     table = Table(title=f"Fidelity vs {Path(original).name} (reference)")
-    for col in ("variant", "text CER↓", "faces", "ID cos↑", "face LPIPS↓", "lapvar↑", "img LPIPS↓", "SSIM↑", "PSNR↑"):
+    for col in ("variant", "text NED↓", "faces", "ID cos↑", "face LPIPS↓", "lapvar↑", "img LPIPS↓", "SSIM↑", "PSNR↑"):
         table.add_column(col)
     for label, _ in parsed:
         st = face_stats[label]
         wl, ws, wp = whole[label]
         table.add_row(
             label,
-            _fmt(ocr_cer[label]),
+            _fmt(ocr_ned[label]),
             str(st.n_faces),
             _fmt(_mean(st.identity)),
             _fmt(_mean(st.lpips)),
@@ -410,7 +411,7 @@ def compare(original: str, variants: tuple[str, ...], ocr_langs: str, ground_tru
         )
     console.print(table)
     console.print(
-        "  Legend: CER lower=better; ID cos higher=better; face LPIPS lower=better; "
+        "  Legend: NED lower=better; ID cos higher=better; face LPIPS lower=better; "
         "lapvar ratio ~1=detail kept, <1=smoothed/plastic; img LPIPS lower=better; SSIM/PSNR higher=closer."
     )
 

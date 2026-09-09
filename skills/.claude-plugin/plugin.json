@@ -1,7 +1,7 @@
 {
   "name": "remove-ai-watermarks",
   "displayName": "Remove AI Watermarks",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Identify and remove AI provenance marks from images and video the user generated or edited, using the remove-ai-watermarks CLI.",
   "author": {
     "name": "wiltodelta",

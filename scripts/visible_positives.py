@@ -13,8 +13,8 @@ CRASH TOLERANCE IS NOT OPTIONAL AT THIS SCALE
   because results were only written at the end). So this script:
     * writes every result to JSONL as it arrives -- a kill never costs more than a batch;
     * is resumable -- an interrupted run skips what it already recorded;
-    * runs a FRESH pool per batch with a timeout, so one poisoned file costs one batch,
-      and that batch is retried serially to find and record the offender.
+    * runs each image in a fresh interpreter with a per-image timeout and bounded
+      concurrency; a poisoned file is recorded without retrying it in the parent.
 
 Treat input datasets as sensitive and read-only, and keep output gitignored.
 
@@ -29,12 +29,12 @@ import glob
 import json
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from concurrent.futures import TimeoutError as FutureTimeout
-from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _isolated_image_workers import run_batch
 
 # The package's own format set. An inlined copy here silently skipped .heif, which
 # CLAUDE.md documents as supported.
@@ -60,20 +60,8 @@ def _one(path: str) -> dict[str, object]:
 
 
 def _run_batch(batch: list[str], jobs: int, timeout: int) -> list[dict[str, object]]:
-    """One batch in a fresh pool. On a native worker crash or timeout, retry serially so
-    the poisoned file is identified and recorded instead of stalling the whole sweep."""
-    try:
-        with ProcessPoolExecutor(max_workers=jobs) as ex:
-            futs = {ex.submit(_one, p): p for p in batch}
-            return [f.result() for f in as_completed(futs, timeout=timeout)]
-    except (FutureTimeout, BrokenProcessPool, OSError, RuntimeError):
-        out: list[dict[str, object]] = []
-        for p in batch:
-            try:
-                out.append(_one(p))
-            except BaseException:  # a native crash here kills only this file, not the sweep
-                out.append({"path": p, "keys": [], "status": "crashed"})
-        return out
+    """Bound each image in an independent interpreter, including native failures."""
+    return run_batch(Path(__file__), batch, jobs=jobs, timeout=timeout)
 
 
 def main() -> None:
@@ -81,7 +69,7 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 4) - 2))
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--batch", type=int, default=200)
-    ap.add_argument("--timeout", type=int, default=600, help="seconds per batch before falling back to serial")
+    ap.add_argument("--timeout", type=int, default=600, help="seconds per image before terminating its isolated worker")
     ap.add_argument("--out", type=Path, default=OUT)
     ap.add_argument("--restart", action="store_true")
     a = ap.parse_args()

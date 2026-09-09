@@ -22,7 +22,41 @@ The optional TrustMark decoder downloads weights into its installed package dire
 
 ### Known security-gate blocks
 
-`maintain.sh` fails while PyPI ships no fixed release for a transitive CVE. Current case (triaged 2026-08-17): `lightning` 2.6.5, pulled only by the optional `trustmark` extra, carries PYSEC-2026-3624 (RCE via `load_from_checkpoint` on an attacker-crafted checkpoint). The vulnerable API is unreachable here, because the TrustMark decoder loads only its own pinned weights downloaded from the TrustMark release, never a user-supplied checkpoint. The upstream fix is merged but unreleased, and ignores are never added, so run and report the remaining core checks (Ruff, Pyright, tests) separately until a fixed `lightning` release lands; bump it with `uv lock --upgrade-package lightning` as soon as one does. The gate prints the same advisory twice, as PYSEC-2026-3624 and as its alias GHSA-qqmf-gpg7-g8gw (CVE-2026-58659); the `2022.6.15` fix version on the second row belongs to the retired calver line and is not an upgrade from 2.6.5, so neither row is actionable.
+`maintain.sh` treats both vulnerability findings and scanner failures as fatal.
+A success sentence followed by a nonzero scanner exit is still a failed check;
+`tests/test_maintenance.py` exercises that case with isolated command stubs.
+Do not add advisory ignores or suppress the scanner's exit status. Run and
+report Ruff, Pyright scoped to `src/`, and tests separately when security blocks
+the gate.
+
+Rechecked on 2026-09-08 against PyPI release metadata and the advisory sources:
+
+- `lightning`, pulled by the optional `trustmark` extra, remains affected by
+  [PYSEC-2026-3624](https://github.com/pypa/advisory-database/blob/main/vulns/lightning/PYSEC-2026-3624.yaml)
+  and its alias [GHSA-qqmf-gpg7-g8gw](https://github.com/advisories/GHSA-qqmf-gpg7-g8gw).
+  These describe one checkpoint-loading vulnerability. The latest PyPI release
+  is still affected; the advisory's `2022.6.15` fix entry is not a newer release
+  on the supported 2.x line. The adapter selects TrustMark's supplied weights,
+  rather than accepting a caller-supplied Lightning checkpoint.
+- `accelerate`, required by the diffusion stack, is affected by
+  [GHSA-4j2p-28q2-5m79](https://github.com/advisories/GHSA-4j2p-28q2-5m79).
+  The sharded-checkpoint loader accepts unsafe `weight_map` paths; the advisory
+  lists no patched release. The project has no direct call to
+  `load_checkpoint_in_model` or `load_checkpoint_and_dispatch`, but this does
+  not prove indirect model-loading paths are unaffected.
+
+Before carrying either block forward, rerun `uvx uv-secure uv.lock` and check
+PyPI for a fixed release. Upgrade a fixed package with
+`uv lock --upgrade-package <package>` and rerun the gate. Removing either
+current dependency would remove a supported optional feature, so that is not a
+maintenance-only repair.
+
+Minor-only lock refreshes must retain each package's current major and lower
+bound. Use version-qualified `uv lock --upgrade-package` arguments, inspect a
+`--dry-run` first, and compare the resulting package versions. NumPy has two
+Python-dependent branches, so apply separate constraints on either side of
+Python 3.13. A blanket upgrade can both cross a NumPy major and downgrade a
+neighboring OCR package to satisfy the new graph.
 
 ## CI
 

@@ -62,7 +62,9 @@ def carrier(gray: NDArray[np.float64]) -> NDArray[np.float64]:
 
 def ncc(a: NDArray[np.float64], b: NDArray[np.float64]) -> float:
     """Normalized cross-correlation of two carriers (unit-norm zero-mean vectors)."""
-    if a.shape != b.shape or a.size == 0:
+    if a.shape != b.shape:
+        raise ValueError("carrier geometry does not match")
+    if a.size == 0:
         return 0.0
     return float(np.dot(a, b))
 
@@ -88,14 +90,13 @@ def random_baseline(shape: tuple[int, ...], n: int, *, seed: int = 0) -> float:
 
 
 def _load_carriers(paths: tuple[str, ...]) -> list[NDArray[np.float64]]:
-    """Load carriers for same-shaped images; warn and skip mismatched shapes."""
+    """Load carriers only when every image has the same comparable geometry."""
     grays = [(p, load_gray(p)) for p in paths]
     shape = grays[0][1].shape
     carriers: list[NDArray[np.float64]] = []
     for p, g in grays:
         if g.shape != shape:
-            console.print(f"  [yellow]skip[/] {p}: shape {g.shape} != {shape}")
-            continue
+            raise click.ClickException(f"{p}: geometry {g.shape} does not match {shape}")
         carriers.append(carrier(g))
     return carriers
 
@@ -129,8 +130,9 @@ def consistency(images: tuple[str, ...]) -> None:
 )
 def removal(pos: tuple[str, ...], cleaned: tuple[str, ...]) -> None:
     """Does the pipeline drop the carrier correlation toward the random baseline?"""
-    pos_carriers = _load_carriers(pos)
-    cleaned_carriers = _load_carriers(cleaned)
+    carriers = _load_carriers(pos + cleaned)
+    pos_carriers = carriers[: len(pos)]
+    cleaned_carriers = carriers[len(pos) :]
     if not pos_carriers or not cleaned_carriers:
         console.print("[red]Need at least one positive and one cleaned fill of matching shape.[/]")
         raise SystemExit(1)

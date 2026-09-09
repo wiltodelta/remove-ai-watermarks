@@ -1,5 +1,10 @@
 # Chroma1 engine research (2026-08-29/30)
 
+> Metric correction: the OCR metric from `scripts/fidelity_metrics.py` is
+> normalized edit distance (NED), edit distance divided by the longer
+> normalized string. The historical values are unchanged; the earlier CER
+> label incorrectly implied normalization by reference length.
+
 > Research archive. This page records experiments and decisions from the dates
 > above. Current package behavior is defined by the
 > [supported signals](supported-signals.md), [known limitations](known-limitations.md),
@@ -18,9 +23,11 @@ before any integration decision.
 All Chroma1 runs: `lodestones/Chroma1-HD` bf16 on Modal H100, seed 0, the
 neutral scrub prompt (`high quality, sharp, detailed, faithful to the original`
 / `blurry, lowres, distorted text, garbled text, artifacts`), guidance 5.0, and
-**step compensation**: Diffusers truncates the step COUNT (`int(steps *
-strength)`), so the requested count is scaled to always spend 4 effective
-denoising steps, the same semantics as `sdxl_zimage_pipeline.requested_steps`.
+**step compensation**: the calibrated request is `ceil(4 / strength)`.
+Chroma rounds the start index rather than the active step count: this runs
+five effective steps at strengths 0.09 and 0.17, and four at 0.20, 0.125,
+and 0.40. The nominal count is four, not a promise of four effective steps.
+The calibrated requests remain unchanged.
 Without it, strength 0.05 runs a single step and the floor reads artificially
 high (the first, uncompensated sweep put the OpenAI boundary at (0.05, 0.10];
 compensated it is (0.05, 0.06]).
@@ -125,13 +132,13 @@ H100 (production path, both stacks resident, prompt cache warm).
 
 OpenAI typography (chroma 0.06 vs qwen 0.07675):
 
-| | CER | img LPIPS | SSIM | PSNR |
+| | NED | img LPIPS | SSIM | PSNR |
 |---|---|---|---|---|
 | qwen-zimage | 0.241 | 0.083 | 0.834 | 27.7 |
 | chroma1 | **0.138** | **0.049** | **0.881** | **31.2** |
 
 OpenAI full-pipeline fixture (chroma 0.09 vs qwen 0.07675): chroma wins every
-metric (CER 0.155 vs 0.259, LPIPS 0.056 vs 0.094, PSNR 29.6 vs 26.1).
+metric (NED 0.155 vs 0.259, LPIPS 0.056 vs 0.094, PSNR 29.6 vs 26.1).
 
 OpenAI 9-face grid (chroma 0.075 global-only vs qwen 0.07675 with its Z-Image
 face stage):
@@ -149,7 +156,7 @@ measurement, not a given.
 Meta at the respective floors (chroma 0.17 vs qwen 0.1): qwen wins perceptual
 fidelity on textured content (LPIPS: fox 0.163 vs 0.211, lighthouse 0.173 vs
 0.248, night city 0.187 vs 0.277), chroma wins the text poster decisively
-(LPIPS 0.008 vs 0.012, CER 0.000 vs 0.021) and the studio mug is a split. The
+(LPIPS 0.008 vs 0.012, NED 0.000 vs 0.021) and the studio mug is a split. The
 extra 0.07 of strength costs real fidelity on photoreal content.
 
 Google at the respective floors (chroma 0.40 vs qwen 0.27, qwen row includes
@@ -157,20 +164,20 @@ its Z-Image face stage):
 
 | fixture | qwen LPIPS/SSIM/ID cos | chroma LPIPS/SSIM/ID cos |
 |---|---|---|
-| 633uuy | **0.405 / 0.577** / - | 0.499 / 0.576 / - (CER 1.000 vs 0.333) |
-| akdbei | **0.440 / 0.552** / - | 0.540 / 0.557 / - (CER 0.796 vs 0.367) |
+| 633uuy | **0.405 / 0.577** / - | 0.499 / 0.576 / - (NED 1.000 vs 0.333) |
+| akdbei | **0.440 / 0.552** / - | 0.540 / 0.557 / - (NED 0.796 vs 0.367) |
 | y48j3c (18 faces) | **0.436 / 0.608 / 0.801** | 0.560 / 0.548 / 0.279 |
 | 3mc4t9 (5 faces) | **0.422 / 0.529 / 0.921** | 0.562 / 0.461 / 0.143 |
 
 qwen wins every axis that matters on every fixture; at 0.40 the Chroma global
 regeneration itself collapses face identity (0.14-0.28 cosine) and destroys
-dense text (CER up to 1.0). The extra 0.13 of strength is simply too much
+dense text (NED up to 1.0). The extra 0.13 of strength is simply too much
 regeneration. This is the Meta pattern amplified.
 
 Microsoft at the respective floors (chroma 0.125 vs qwen 0.15): chroma wins
 EVERY metric on EVERY source while scrubbing at lower strength --
 
-| source | CER q/ch | img LPIPS q/ch | SSIM q/ch | PSNR q/ch |
+| source | NED q/ch | img LPIPS q/ch | SSIM q/ch | PSNR q/ch |
 |---|---|---|---|---|
 | paint-1 | 0.741 / 0.241 | 0.164 / 0.106 | 0.742 / 0.847 | 24.8 / 29.3 |
 | paint-2 | 0.826 / 0.391 | 0.253 / 0.108 | 0.536 / 0.633 | 22.5 / 25.5 |
@@ -202,7 +209,7 @@ rungs, all oracle-verified above), the picture reverses:
 
 Google (chroma@first-clean vs qwen@0.27):
 
-| fixture | chroma rung | LPIPS q/ch | SSIM q/ch | PSNR q/ch | CER q/ch | ID q/ch |
+| fixture | chroma rung | LPIPS q/ch | SSIM q/ch | PSNR q/ch | NED q/ch | ID q/ch |
 |---|---|---|---|---|---|---|
 | 633uuy | 0.25 | 0.405/**0.375** | 0.577/**0.673** | 18.8/**22.3** | **0.333**/0.667 | - |
 | akdbei | 0.25 | 0.440/**0.409** | 0.552/**0.650** | 18.6/**22.5** | 0.367/**0.163** | - |
@@ -211,7 +218,7 @@ Google (chroma@first-clean vs qwen@0.27):
 
 Meta (chroma@first-clean vs qwen@0.1):
 
-| fixture | chroma rung | LPIPS q/ch | SSIM q/ch | PSNR q/ch | CER q/ch |
+| fixture | chroma rung | LPIPS q/ch | SSIM q/ch | PSNR q/ch | NED q/ch |
 |---|---|---|---|---|---|
 | lighthouse | 0.10 (equal) | 0.173/**0.097** | 0.783/**0.886** | 25.6/**30.8** | - |
 | fox | 0.08 | 0.163/**0.083** | 0.778/**0.907** | 25.6/**31.4** | - |
@@ -370,7 +377,7 @@ committed five), chosen to span class and `flat_ratio`:
 
 Harness: `chroma_muse_expansion.py` (kept outside this repository). Outputs under
 `out/cohort-calibration/meta-api/` (gitignored). Chroma1 ladders (seven
-rungs, seed 0, four effective steps) ran for all six. Oracle
+rungs, seed 0, nominal four-step compensated requests) ran for all six. Oracle
 2026-08-31, anonymous `playwright-isolated` against
 `meta.ai/identification`. All six controls DETECTED (valid carriers).
 

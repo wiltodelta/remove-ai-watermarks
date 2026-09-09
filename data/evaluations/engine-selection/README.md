@@ -48,11 +48,12 @@ strengths. The tracked oracle/carrier inputs remain in their canonical homes:
 - Meta Content Seal: `data/contentseal/originals/` with
   `data/contentseal/manifest.csv`.
 
-There is no tracked, publication-cleared Microsoft InvisMark carrier yet. The
-three Paint sources used by the earlier calibration are not publication-cleared
-and remain outside git. A Microsoft row may be added only from a newly generated or
-otherwise publication-cleared source, with a pixel-identical metadata-stripped
-control that remains positive in Microsoft's detector.
+A publication-cleared Microsoft Paint InvisMark carrier is tracked at
+`data/fixtures/provenance/microsoft-paint-invismark.png`; its source and MIT
+license are recorded in `data/image-watermark-examples.csv` and `data/licenses/`.
+It does not by itself certify an engine-selection row. That requires a fresh
+paired oracle check, including a pixel-identical metadata-stripped control
+that remains positive in Microsoft's detector.
 
 ## Integrity check
 

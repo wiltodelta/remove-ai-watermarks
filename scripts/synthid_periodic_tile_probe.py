@@ -120,8 +120,8 @@ def score_pixels(
         path=path,
         score=score,
         active_support=min(norm / (model.expected_norm + 1e-12), 1.0),
-        row_shift=row_shift,
-        column_shift=column_shift,
+        row_shift=int(row_shift),
+        column_shift=int(column_shift),
         repeat_count=(model.height // model.tile_height) * (model.width // model.tile_width),
     )
 
@@ -172,8 +172,8 @@ def load_model(path: Path) -> PeriodicTileModel:
         )
     if model.height < 1 or model.width < 1 or model.tile_height < 1 or model.tile_width < 1:
         raise ValueError("invalid periodic-tile geometry")
-    if model.height % model.tile_height or model.width % model.tile_width:
-        raise ValueError("image geometry is not divisible by periodic-tile geometry")
+    if model.height < model.tile_height or model.width < model.tile_width:
+        raise ValueError("image geometry must be at least as large as the tile geometry")
     if model.template.shape != (model.tile_height, model.tile_width, 3):
         raise ValueError("invalid periodic-tile template shape")
     if not np.all(np.isfinite(model.template)) or not np.isclose(np.linalg.norm(model.template), 1.0):

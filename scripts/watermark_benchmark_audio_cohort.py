@@ -37,7 +37,10 @@ sys.path.insert(0, str(REPO / "scripts"))
 import audioseal_oracle  # noqa: E402
 from audioseal_experiment import (  # noqa: E402
     FFMPEG_ATTACKS,
+    MESSAGE_SEED,
+    NOISE_ATTACK_SEED,
     SAMPLE_RATE,
+    carrier_seed,
     decode_audio_f32,
     ffmpeg_attack,
     ffmpeg_version,
@@ -52,6 +55,7 @@ log = logging.getLogger("watermark_benchmark_audio_cohort")
 
 RECIPE_VERSION = "watermark-benchmark-audio-cohort-v2"
 FORGED_MESSAGE_SEED = 8
+HARD_NEGATIVE_SEED = 20260907 + 991
 # Carriers the 10 dB additive-noise transform measurably takes below the
 # audioseal decision rule; the synthetic noise carriers survive it.
 REMOVED_BY_NOISE: tuple[str, ...] = ("tone_stack",)
@@ -102,7 +106,7 @@ def benchmark_row(
     transform_name: str,
     transform_revision: str,
     parameters: dict[str, object],
-    seed: int,
+    seed: int | None,
     expected: str,
 ) -> dict[str, object]:
     """Build one strict benchmark-manifest row for a generated artifact."""
@@ -176,7 +180,8 @@ def build_cohort(
     rows: list[dict[str, object]] = []
 
     for name in carriers:
-        clean = synth_carrier(name, duration_s)
+        executed_seed = carrier_seed(name)
+        clean = synth_carrier(name, duration_s, seed=executed_seed)
         clean_path = artifacts / f"{name}-clean.wav"
         clean_path.write_bytes(wav_pcm16_bytes(clean, SAMPLE_RATE))
 
@@ -201,7 +206,7 @@ def build_cohort(
                     "sample_rate": SAMPLE_RATE,
                     "dependencies": dependencies,
                 },
-                seed=20260907,
+                seed=executed_seed,
                 expected="not_detected",
             )
         )
@@ -222,7 +227,7 @@ def build_cohort(
                     "alpha": 1.0,
                     "dependencies": dependencies,
                 },
-                seed=7,
+                seed=MESSAGE_SEED,
                 expected="detected",
             )
         )
@@ -241,7 +246,7 @@ def build_cohort(
                     transform_name=f"attack-{attack}",
                     transform_revision=RECIPE_VERSION,
                     parameters=attack_parameters(attack, dependencies),
-                    seed=7,
+                    seed=NOISE_ATTACK_SEED if attack == "noise_snr10" else None,
                     expected="unresolved",
                 )
             )
@@ -262,14 +267,13 @@ def build_cohort(
                     transform_name="remove-noise-snr10",
                     transform_revision=RECIPE_VERSION,
                     parameters=attack_parameters("noise_snr10", dependencies),
-                    seed=7,
+                    seed=NOISE_ATTACK_SEED,
                     expected="not_detected",
                 )
             )
 
         # The forged row embeds a different message into the same clean
-        # carrier: a watermark is present, just not the oracle's, and the
-        # matched verifier's correct answer is not_detected.
+        # carrier: a watermark is present, with a foreign decoded payload.
         forged_message = message_bits(FORGED_MESSAGE_SEED)
         forged_samples = np.asarray(audioseal_oracle.embed(generator, clean, forged_message), dtype=np.float32)
         forged_path = artifacts / f"{name}-forged.wav"
@@ -321,7 +325,7 @@ def build_cohort(
                 "sample_rate": SAMPLE_RATE,
                 "dependencies": dependencies,
             },
-            seed=20260907 + 991,
+            seed=HARD_NEGATIVE_SEED,
             expected="not_detected",
         )
     )
@@ -390,7 +394,7 @@ def _append_speech_rows(
                 transform_name="synthesize-speech",
                 transform_revision=RECIPE_VERSION,
                 parameters={"tts": tts, "sample_rate": SAMPLE_RATE, "dependencies": dependencies},
-                seed=20260907,
+                seed=None,
                 expected="not_detected",
             )
         )
@@ -412,7 +416,7 @@ def _append_speech_rows(
                     "tts": tts,
                     "dependencies": dependencies,
                 },
-                seed=7,
+                seed=MESSAGE_SEED,
                 expected="detected",
             )
         )
@@ -430,7 +434,7 @@ def _append_speech_rows(
                     transform_name=f"attack-{attack}",
                     transform_revision=RECIPE_VERSION,
                     parameters={**attack_parameters(attack, dependencies), "tts": tts},
-                    seed=7,
+                    seed=NOISE_ATTACK_SEED if attack == "noise_snr10" else None,
                     expected="unresolved",
                 )
             )
@@ -438,7 +442,7 @@ def _append_speech_rows(
 
 def synth_carrier_hard_negative(duration_s: float) -> np.ndarray:
     """A never-embedded white-noise carrier keyed off a distinct seed."""
-    rng = np.random.default_rng(20260907 + 991)
+    rng = np.random.default_rng(HARD_NEGATIVE_SEED)
     n = int(duration_s * SAMPLE_RATE)
     return (rng.normal(0.0, 0.1, n)).astype(np.float32)
 

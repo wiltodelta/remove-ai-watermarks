@@ -244,7 +244,7 @@ def _is_ai_value(value: str) -> bool:
     return provenance is not None or generator is not None or any(token in value_lower for token in AI_GENERATOR_TOKENS)
 
 
-def _png_late_metadata(image_path: Path, window: int) -> bytes:
+def _png_late_metadata(image_path: Path, window: int, *, strict: bool = False) -> bytes:
     """Payloads of PNG metadata chunks that start *beyond* the first ``window``
     bytes, found by seeking past the (large) ``IDAT`` pixel stream.
 
@@ -253,6 +253,7 @@ def _png_late_metadata(image_path: Path, window: int) -> bytes:
     ``iTXt`` chunk at ~2.7 MB). This is the PNG analogue of the ISOBMFF
     late-box scan in :func:`scan_head`. Returns only chunks past ``window`` so
     bytes already in the head are not duplicated; empty when there are none.
+    ``strict=True`` propagates I/O failures to a collection-status owner.
     """
     out = bytearray()
     try:
@@ -283,12 +284,16 @@ def _png_late_metadata(image_path: Path, window: int) -> bytes:
                 # (which would silently skip a genuine AI-label chunk after it).
                 pos = data_start + safe_length + 4  # data + CRC
     except OSError as exc:
+        if strict:
+            raise
         logger.debug("PNG late-metadata scan failed on %s: %s", image_path, exc)
         return b""
     return bytes(out)
 
 
-def _riff_late_metadata(image_path: Path, window: int, *, max_total: int = 4 * 1024 * 1024) -> bytes:
+def _riff_late_metadata(
+    image_path: Path, window: int, *, max_total: int = 4 * 1024 * 1024, strict: bool = False
+) -> bytes:
     """Payloads of RIFF metadata chunks that start *beyond* the first ``window``
     bytes, found by stepping over the (large) coded-image chunk.
 
@@ -332,6 +337,8 @@ def _riff_late_metadata(image_path: Path, window: int, *, max_total: int = 4 * 1
                     out += f.read(min(safe_length, max_total - len(out)))
                 position = start + safe_length + (safe_length & 1)  # chunks are word-aligned
     except OSError as exc:
+        if strict:
+            raise
         logger.debug("RIFF late-metadata scan failed on %s: %s", image_path, exc)
         return b""
     return bytes(out)
@@ -358,11 +365,10 @@ def scan_head(image_path: Path, size: int = 1024 * 1024) -> bytes:
     past large boxes like ``mdat``) and PNG ``tEXt`` / ``iTXt`` / ``eXIf`` chunks
     (seeking past ``IDAT``).
 
-    A file at least ``size`` bytes long additionally gets the metadata text its
-    decoder can reach but a raw read cannot (:func:`_decoder_visible_text`): a
-    compressed PNG ``zTXt`` packet, or a chunk past the window in a container with no
-    late-chunk reader here. A file that fits inside ``size`` is exactly
-    ``f.read(size)``, since the raw read already holds every byte.
+    Decoder-visible text is appended regardless of file size: even a complete
+    raw buffer cannot expose a compressed PNG ``zTXt`` packet without inflation.
+    The decoder also reaches chunks past the window in containers with no
+    late-chunk reader here.
 
     This is the shared input for every C2PA / AIGC / IPTC byte scan. The
     extensions catch a manifest or XMP packet placed AFTER the media data -- a
@@ -406,8 +412,7 @@ def _scan_head_impl(image_path: Path, size: int) -> bytes:
         head += _png_late_metadata(image_path, size)
     elif head[:4] == b"RIFF" and head[8:12] == b"WEBP" and len(head) == size:
         head += _riff_late_metadata(image_path, size)
-    if len(head) >= size:
-        head += _decoder_visible_text(image_path, head)
+    head += _decoder_visible_text(image_path, head)
     return head
 
 
@@ -435,8 +440,8 @@ def _decoder_visible_text(image_path: Path, head: bytes) -> bytes:
     structural reader here knows about yet.
 
     Only text ALREADY MISSING from ``head`` is appended, so the common case adds
-    nothing and no detector sees a value twice. Skipped entirely when the file fits
-    inside the window, since then the raw read already holds every byte.
+    nothing and no detector sees a value twice. Complete small buffers still need
+    this step because compressed metadata does not contain its decoded text.
     """
     try:
         from PIL import Image
@@ -722,8 +727,8 @@ _SAMSUNG_GENAI_RE = re.compile(rb'genAIType"\s*:\s*(-?\d+)')
 _SAMSUNG_EDITOR_MARKER = b"PhotoEditor_Re_Edit_Data"
 
 
-def _read_file_tail(image_path: Path, size: int) -> bytes:
-    """Return the last ``size`` bytes of the file (or the whole file if smaller)."""
+def _read_file_tail(image_path: Path, size: int, *, strict: bool = False) -> bytes:
+    """Read the last ``size`` bytes; optionally propagate I/O failures."""
     try:
         file_size = image_path.stat().st_size
         with open(image_path, "rb") as f:
@@ -731,6 +736,8 @@ def _read_file_tail(image_path: Path, size: int) -> bytes:
                 f.seek(file_size - size)
             return f.read()
     except OSError:
+        if strict:
+            raise
         return b""
 
 
@@ -1249,7 +1256,8 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
             f"ffmpeg is required to strip metadata from {source_path.suffix} files but was not found on "
             "PATH; install ffmpeg (e.g. `brew install ffmpeg`) or re-encode the file with another tool"
         )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    from remove_ai_watermarks.video_encoding import atomic_video_output
+
     cmd = [
         ffmpeg,
         "-y",
@@ -1257,17 +1265,21 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
         "error",
         "-i",
         str(source_path),
+        "-map",
+        "0",
         "-map_metadata",
         "-1",
         "-map_chapters",
         "-1",
         "-c",
         "copy",
-        str(output_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-    if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed to strip metadata from {source_path}: {result.stderr.strip()[:300]}")
+    with atomic_video_output(output_path) as temporary_output:
+        result = subprocess.run(  # noqa: S603
+            [*cmd, str(temporary_output)], capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed to strip metadata from {source_path}: {result.stderr.strip()[:300]}")
     logger.info("Stripped container metadata via ffmpeg -> %s", output_path)
     return output_path
 
@@ -1762,16 +1774,12 @@ def remove_ai_metadata(
             # im.info fallback (PNG has one; the others are not contractual), so
             # the default strip keeps the image's colour for every output format.
             save_kwargs["icc_profile"] = img.info["icc_profile"]
-        if (
-            exif_data
-            and save_kwargs["format"] in ("JPEG", "PNG", "WEBP")
-            and (save_kwargs["format"] == "JPEG" or keep_standard)
-        ):
+        if exif_data and save_kwargs["format"] in ("JPEG", "PNG", "WEBP") and keep_standard:
             # Scrub AI-provenance EXIF tags (xAI/Grok signature, generator tokens)
             # while keeping genuine camera/editor EXIF, orientation included. PNG
             # and WebP outputs used to drop EXIF entirely, which took the display
             # orientation with it: a portrait came back tagged horizontal (issue
-            # #98). --remove-all still drops EXIF wholesale on those two.
+            # #98). --remove-all drops EXIF wholesale in every output format.
             if removed := _scrub_ai_exif(exif_data):
                 logger.info("Scrubbed AI EXIF tag(s): %s", ", ".join(removed))
             with contextlib.suppress(Exception):

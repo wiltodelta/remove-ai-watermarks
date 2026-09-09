@@ -17,11 +17,10 @@ on:
     workflows: ["Distribute on release"]
     types: [completed]
 
-# No step reads the GitHub token any more: the ComfyUI check moved to the
-# registry's public API. Keep the job read-only so it cannot write on a repo
-# whose default token permission is read/write.
+# Read the triggering run's release identity while keeping all permissions read-only.
 permissions:
   contents: read
+  actions: read
 
 jobs:
   verify:
@@ -37,16 +36,51 @@ jobs:
       SPACE_URL: https://wiltodelta-remove-ai-watermarks.hf.space
 
     steps:
+      - name: Download distributed release identity
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@v8
+        with:
+          pattern: distributed-release-*
+          path: distribution-identities
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
       - name: Resolve target version
         id: v
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          DISTRIBUTION_RUN_ID: ${{ github.event.workflow_run.id }}
+          DISTRIBUTION_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            v="${{ github.event.inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            v=$(python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          identities = []
+          for path in Path("distribution-identities").glob("*/release-identity.json"):
+              item = json.loads(path.read_text(encoding="utf-8"))
+              assert path.parent.name == 'distributed-release-' + item['run_attempt'], "Artifact attempt mismatch"
+              identities.append(item)
+          assert identities, "No distributed release identity found"
+          assert all(item["run_id"] == os.environ["DISTRIBUTION_RUN_ID"] for item in identities), "Distribution run mismatch"
+          # Rerunning only failed jobs can reuse resolve from an earlier attempt.
+          eligible = [item for item in identities if
+                      int(item["run_attempt"]) <= int(os.environ["DISTRIBUTION_RUN_ATTEMPT"])]
+          assert eligible, "No identity exists for this distribution attempt"
+          identity = max(eligible, key=lambda item: int(item["run_attempt"]))
+          print(identity["version"])
+          PYTHON
+            )
+          elif [ -n "$INPUT_VERSION" ]; then
+            v="$INPUT_VERSION"
           else
             v=$(curl -fsSL https://pypi.org/pypi/remove-ai-watermarks/json \
               | python3 -c "import sys,json;print(json.load(sys.stdin)['info']['version'])")
           fi
+          # Versions become URL components and step outputs. Reject malformed identities.
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9.+-]*)$ ]]
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Verifying release $v"
 
@@ -116,14 +150,30 @@ jobs:
           # review window a correctly published version looks identical to one
           # that was never uploaded. Those are opposite situations: one is a
           # queue nobody here controls, the other is a broken release.
+          python3 -m pip install --quiet packaging
           versions=$(curl -fsSL "https://api.comfy.org/nodes/remove-ai-watermarks/versions")
           status=$(printf '%s' "$versions" | VERSION="$VERSION" python3 -c "
           import json, os, sys
           version = os.environ['VERSION']
-          floor = f'>={version}'
+          from packaging.requirements import InvalidRequirement, Requirement
+          from packaging.utils import canonicalize_name
+          from packaging.version import Version
+          target = Version(version)
+          def requires_release(value):
+              try:
+                  requirement = Requirement(value)
+              except InvalidRequirement:
+                  return False
+              return (
+                  canonicalize_name(requirement.name) == 'remove-ai-watermarks'
+                  and requirement.url is None
+                  and requirement.marker is None
+                  and target in requirement.specifier
+                  and any(s.operator == '>=' and Version(s.version) == target for s in requirement.specifier)
+              )
           matches = [
               v for v in json.load(sys.stdin)
-              if any(floor in d for d in (v.get('dependencies') or []))
+              if any(requires_release(d) for d in (v.get('dependencies') or []))
           ]
           if not matches:
               sys.exit(f'::error::No ComfyUI node version requires {version}; the sync never published one')

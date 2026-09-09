@@ -62,6 +62,7 @@ FRAME_RATE = 12.0
 FRAME_WIDTH = 840
 FRAME_HEIGHT = 480
 CARRIER_SEED = 20260907
+NOISE_ATTACK_SEED = CARRIER_SEED + 1
 MESSAGE_SEED = 7
 
 
@@ -103,12 +104,12 @@ def carrier_seed(name: str) -> int:
     return CARRIER_SEED + zlib.crc32(name.encode()) % 1000
 
 
-def synth_carrier(name: str, seconds: float) -> np.ndarray:
+def synth_carrier(name: str, seconds: float, *, seed: int | None = None) -> np.ndarray:
     """Synthesize one deterministic carrier by registered name."""
     factory = CARRIERS.get(name)
     if factory is None:
         raise KeyError(f"unknown carrier {name!r}; expected one of {sorted(CARRIERS)}")
-    master = np.random.default_rng(carrier_seed(name))
+    master = np.random.default_rng(carrier_seed(name) if seed is None else seed)
     return np.asarray(factory(int(seconds * SAMPLE_RATE), master), dtype=np.float32)
 
 
@@ -383,7 +384,7 @@ def embed_audio(generator: object, samples: np.ndarray, message: list[int]) -> n
 
 
 def numpy_attacks(samples: np.ndarray) -> dict[str, np.ndarray]:
-    rng = np.random.default_rng(CARRIER_SEED + 1)
+    rng = np.random.default_rng(NOISE_ATTACK_SEED)
     out: dict[str, np.ndarray] = {}
     power = float(np.sum(samples.astype(np.float64) ** 2))
     noise = rng.normal(0.0, 1.0, samples.shape[0]).astype(np.float32)

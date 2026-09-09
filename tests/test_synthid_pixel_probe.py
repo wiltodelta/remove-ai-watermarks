@@ -49,10 +49,11 @@ class TestCarrier:
         c = probe.carrier(_fixed_carrier())
         assert np.isclose(probe.ncc(c, c), 1.0)
 
-    def test_ncc_mismatched_shape_is_zero(self):
+    def test_ncc_mismatched_shape_is_incomparable(self):
         a = probe.carrier(np.random.default_rng(1).standard_normal((8, 8)))
         b = probe.carrier(np.random.default_rng(2).standard_normal((16, 16)))
-        assert probe.ncc(a, b) == 0.0
+        with np.testing.assert_raises_regex(ValueError, "geometry"):
+            probe.ncc(a, b)
 
 
 class TestConsistency:

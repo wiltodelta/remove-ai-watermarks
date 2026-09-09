@@ -1534,6 +1534,15 @@ def has_bytedance_video_provenance(markers: dict[str, str]) -> bool:
     return ("bytedance" in identity or "byteplus" in identity) and "trainedalgorithmicmedia" in source_type
 
 
+def has_doubao_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether the structural TC260 producer identifies registered Doubao provenance."""
+    from remove_ai_watermarks.metadata import uscc_of
+    from remove_ai_watermarks.watermark_registry import get_mark
+
+    producer = uscc_of(markers.get("aigc_producer", "").strip()).casefold()
+    return producer in {code.casefold() for code in get_mark("doubao").tc260_producer_codes}
+
+
 def has_hailuo_video_provenance(markers: dict[str, str]) -> bool:
     """Whether a TC260 label names MiniMax, Hailuo's maker, as the producer.
 

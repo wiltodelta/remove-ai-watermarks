@@ -583,6 +583,9 @@ def test_microsoft_check_uses_named_slot_and_dotenv_configuration(
         calls.append({"path": path, **kwargs})
         return SimpleNamespace(to_dict=lambda: {"status": "not_detected", "provenance_status": "absent"})
 
+    fixture_variables = {line.split("=", 1)[0]: None for line in env_path.read_text(encoding="utf-8").splitlines()}
+    for name in fixture_variables:
+        monkeypatch.setenv(name, "inherited-value")
     monkeypatch.setattr(oracles, "verify_microsoft", verify)
     result = CliRunner().invoke(
         oracles.cli,
@@ -599,7 +602,7 @@ def test_microsoft_check_uses_named_slot_and_dotenv_configuration(
             "--env-file",
             str(env_path),
         ],
-        env={"AZURE_CONTENT_SAFETY_ENDPOINT": "", "AZURE_CONTENT_SAFETY_SUBSCRIPTION_ID": ""},
+        env=fixture_variables,
     )
 
     assert result.exit_code == 0, result.output

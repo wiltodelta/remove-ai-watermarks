@@ -89,9 +89,9 @@ def _carrier_seed(name: str) -> int:
     return CARRIER_SEED + zlib.crc32(name.encode()) % 1000
 
 
-def synth_carrier(name: str, *, seed_offset: int = 0) -> np.ndarray:
+def synth_carrier(name: str, *, seed_offset: int = 0, seed: int | None = None) -> np.ndarray:
     """Render one deterministic clip as float RGB frames in [0, 1]."""
-    rng = np.random.default_rng(_carrier_seed(name) + seed_offset)
+    rng = np.random.default_rng(_carrier_seed(name) + seed_offset if seed is None else seed)
     frames = np.empty((FRAME_COUNT, HEIGHT, WIDTH, 3), dtype=np.float32)
     axis = np.arange(WIDTH, dtype=np.float32)[None, :]
     rows = np.arange(HEIGHT, dtype=np.float32)[:, None]
@@ -192,7 +192,7 @@ def benchmark_row(
     transform_name: str,
     transform_revision: str,
     parameters: dict[str, object],
-    seed: int,
+    seed: int | None,
     expected: str,
 ) -> dict[str, object]:
     return {
@@ -242,7 +242,8 @@ def build_cohort(
     rows: list[dict[str, object]] = []
 
     for name in carriers:
-        clean = synth_carrier(name)
+        executed_seed = _carrier_seed(name)
+        clean = synth_carrier(name, seed=executed_seed)
         clean_path = encode_clip(ffmpeg, artifacts / f"{name}-clean.mp4", clean)
         marked_frames = np.asarray(videoseal_oracle.embed(model, clean, message), dtype=np.float32)
         marked_path = encode_clip(ffmpeg, artifacts / f"{name}-marked.mp4", marked_frames)
@@ -260,7 +261,7 @@ def build_cohort(
                 transform_name="synthesize-clip",
                 transform_revision=RECIPE_VERSION,
                 parameters={"carrier": name, **geometry, "dependencies": dependencies},
-                seed=_carrier_seed(name),
+                seed=executed_seed,
                 expected="not_detected",
             )
         )
@@ -281,7 +282,7 @@ def build_cohort(
                     **geometry,
                     "dependencies": dependencies,
                 },
-                seed=7,
+                seed=videoseal_oracle.MESSAGE_SEED,
                 expected="detected",
             )
         )
@@ -299,7 +300,7 @@ def build_cohort(
                     transform_name=f"attack-{attack}",
                     transform_revision=RECIPE_VERSION,
                     parameters=attack_parameters(attack, dependencies),
-                    seed=7,
+                    seed=None,
                     expected="unresolved",
                 )
             )
@@ -320,7 +321,7 @@ def build_cohort(
                     transform_name="remove-h264-crf23",
                     transform_revision=RECIPE_VERSION,
                     parameters=attack_parameters("h264_crf23", dependencies),
-                    seed=7,
+                    seed=None,
                     expected="not_detected",
                 )
             )
@@ -351,7 +352,8 @@ def build_cohort(
             )
         )
 
-    hard = synth_carrier("moving_texture", seed_offset=991)
+    hard_seed = _carrier_seed("moving_texture") + 991
+    hard = synth_carrier("moving_texture", seed=hard_seed)
     hard_path = encode_clip(ffmpeg, artifacts / f"{HARD_NEGATIVE_CARRIER}.mp4", hard)
     rows.append(
         benchmark_row(
@@ -365,7 +367,7 @@ def build_cohort(
             transform_name="synthesize-clip",
             transform_revision=RECIPE_VERSION,
             parameters={"carrier": "moving_texture", "seed_offset": 991, "dependencies": dependencies},
-            seed=_carrier_seed(HARD_NEGATIVE_CARRIER) + 991,
+            seed=hard_seed,
             expected="not_detected",
         )
     )
