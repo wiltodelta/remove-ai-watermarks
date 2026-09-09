@@ -104,6 +104,35 @@ def test_probe_min_cli_version_never_exceeds_the_package_version() -> None:
         sys.modules.pop("probe", None)
 
 
+def test_probe_floor_covers_every_since_annotation() -> None:
+    """MIN_CLI_VERSION must be at least the newest named "(since CLI X.Y.Z)" value.
+
+    A reference that names a value the previous release lacked has to raise the
+    floor in the same change; this reads the annotations back out of the skill
+    tree so a stale floor fails the suite instead of an agent's CLI.
+    """
+
+    sys.path.insert(0, str(ROOT / "skills" / "remove-ai-watermarks" / "scripts"))
+    try:
+        import probe
+
+        annotated = []
+        for path in (ROOT / "skills" / "remove-ai-watermarks").rglob("*"):
+            if path.suffix not in {".md", ".py"} or not path.is_file():
+                continue
+            for match in re.finditer(r"\(since CLI (\d+)\.(\d+)\.(\d+)\)", path.read_text(encoding="utf-8")):
+                annotated.append(tuple(int(part) for part in match.groups()))
+        assert annotated, "no (since CLI X.Y.Z) annotations found; the floor guard lost its source"
+        highest = max(annotated)
+        assert highest <= probe.MIN_CLI_VERSION, (
+            f"probe.py MIN_CLI_VERSION {probe.MIN_CLI_VERSION} is below {highest}, the newest "
+            "(since CLI X.Y.Z) annotation in the skill; a build that old rejects a named value"
+        )
+    finally:
+        sys.path.remove(str(ROOT / "skills" / "remove-ai-watermarks" / "scripts"))
+        sys.modules.pop("probe", None)
+
+
 @pytest.mark.parametrize(
     "relative",
     [

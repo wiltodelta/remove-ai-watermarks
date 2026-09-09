@@ -26,7 +26,8 @@ Image mark keys: `gemini`, `doubao`, `jimeng`, `qwen`, `kling`, `yuanbao`,
 `--mark auto` removes every selected match. `microsoft` is the top-right AI
 badge, separate from the invisible InvisMark watermark on the same vendor's
 images. `jimeng_pill` is a weak detector and needs corroboration. The compact
-`liblib_pill` likewise requires LiblibAI metadata or the bottom-center wordmark.
+`liblib_pill` likewise requires LiblibAI metadata or the bottom-center wordmark
+(since CLI 0.39.0).
 
 ```bash
 remove-ai-watermarks erase image.png --region 1640,1930,400,100 -o clean.png
@@ -88,8 +89,8 @@ run on.
 Pipeline profiles: `qwen-zimage` (the default), `sdxl-zimage`, `chroma-zimage`,
 `auto`. All are CUDA-only and all install from the same `qwen-zimage` extra.
 `auto` picks the engine from the file's own provenance -- chroma-zimage for
-Microsoft, qwen-zimage for OpenAI, Google, Meta and unknown -- so prefer it
-over naming an engine when the user has no reason to care. `sdxl-zimage` is the
+Microsoft, qwen-zimage for OpenAI (since CLI 0.39.0), Google, Meta and unknown
+-- so prefer it over naming an engine when the user has no reason to care. `sdxl-zimage` is the
 heavier alternative and `chroma-zimage` is the Apache-2.0 global stage.
 
 ```bash
