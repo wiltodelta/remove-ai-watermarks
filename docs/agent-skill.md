@@ -76,9 +76,12 @@ Do these in order after the skill is on the default branch.
    `https://clawhub.ai/api/v1/skills/remove-ai-watermarks` reports
    `tags.latest` 1.0.5 with a single published version. The earlier 1.0.3 and
    1.0.4 submissions never became public and do not appear in that version
-   list, so they were bypassed rather than recovered; the pipeline defect that
-   held them, openclaw/clawhub#3643 (prior reports: #3624, #3466, #3351,
-   #3284), is still open. Release-time publishing is automated (see
+   list, so they were bypassed rather than recovered. The issue that tracked
+   them, openclaw/clawhub#3643, was closed by the reporter on 2026-09-09 once
+   1.0.5 went through; nothing upstream was confirmed fixed, and it is the
+   fifth report of this shape (#3624, #3466, #3351, #3284), so treat a stalled
+   submission as recurring and file a fresh one rather than assuming the
+   pipeline is repaired. Release-time publishing is automated (see
    [release-and-distribution.md](release-and-distribution.md)), and the job
    fires only on a published GitHub Release: a skill version bumped after a
    release, as 1.0.6 was, reaches ClawHub with the next one. Do not publish by
