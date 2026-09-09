@@ -59,9 +59,13 @@ jobs:
           import json, os
           from pathlib import Path
           identities = []
-          for path in Path("distribution-identities").glob("*/release-identity.json"):
+          for path in Path("distribution-identities").rglob("release-identity.json"):
               item = json.loads(path.read_text(encoding="utf-8"))
-              assert path.parent.name == 'distributed-release-' + item['run_attempt'], "Artifact attempt mismatch"
+              # download-artifact@v8 extracts the only matched artifact directly
+              # into the path, with no artifact-name directory; several matches
+              # each get one, so the attempt is name-checked only in that layout.
+              if path.parent.name.startswith('distributed-release-'):
+                  assert path.parent.name == 'distributed-release-' + item['run_attempt'], "Artifact attempt mismatch"
               identities.append(item)
           assert identities, "No distributed release identity found"
           assert all(item["run_id"] == os.environ["DISTRIBUTION_RUN_ID"] for item in identities), "Distribution run mismatch"

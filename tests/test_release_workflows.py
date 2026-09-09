@@ -136,6 +136,35 @@ def test_distributed_version_survives_a_newer_pypi_release(tmp_path: Path) -> No
 
 
 @pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")
+def test_distributed_version_reads_the_flat_single_artifact_layout(tmp_path: Path) -> None:
+    producer = _step("distribute.yml", "resolve", "Record distributed release")
+    consumer = _step("verify-release.yml", "verify", "Resolve target version")
+    env = {
+        **os.environ,
+        "VERSION": "0.37.0",
+        "GITHUB_RUN_ID": "123",
+        "GITHUB_RUN_ATTEMPT": "2",
+        "GITHUB_OUTPUT": str(tmp_path / "output"),
+        "EVENT_NAME": "workflow_run",
+        "INPUT_VERSION": "",
+        "DISTRIBUTION_RUN_ID": "123",
+        "DISTRIBUTION_RUN_ATTEMPT": "2",
+    }
+    subprocess.run(["bash", "-eu", "-c", producer["run"]], cwd=tmp_path, env=env, check=True)
+    # download-artifact@v8 extracts the only pattern-matched artifact directly
+    # into the target path, with no artifact-name directory.
+    artifact = tmp_path / "distribution-identities"
+    artifact.mkdir()
+    (artifact / "release-identity.json").write_bytes((tmp_path / "release-identity.json").read_bytes())
+
+    result = subprocess.run(
+        ["bash", "-eu", "-c", consumer["run"]], cwd=tmp_path, env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert "version=0.37.0" in (tmp_path / "output").read_text()
+
+
+@pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")
 def test_clawhub_uses_local_install(tmp_path: Path) -> None:
     script = _step("distribute.yml", "clawhub", "Publish the agent skill when its version moved")["run"]
     script = script.replace("${{ github.event.release.name || github.ref_name }}", "test")
