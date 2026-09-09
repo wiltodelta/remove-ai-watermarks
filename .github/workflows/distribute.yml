@@ -42,6 +42,27 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Target version: $v"
 
+      - name: Record distributed release
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          Path("release-identity.json").write_text(json.dumps({
+              "version": os.environ["VERSION"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+          }), encoding="utf-8")
+          PYTHON
+
+      - name: Upload distributed release identity
+        uses: actions/upload-artifact@v7
+        with:
+          name: distributed-release-${{ github.run_attempt }}
+          path: release-identity.json
+          if-no-files-found: error
+
       - name: Wait for the sdist on PyPI, capture url + sha256
         id: sdist
         run: |
@@ -130,15 +151,15 @@ jobs:
           print(m.group(1))
           PY
           )
-          clawhub login --token "$CLAWHUB_TOKEN" >/dev/null
-          published=$(clawhub inspect remove-ai-watermarks --file SKILL.md 2>/dev/null \
+          ./node_modules/.bin/clawhub login --token "$CLAWHUB_TOKEN" >/dev/null
+          published=$(./node_modules/.bin/clawhub inspect remove-ai-watermarks --file SKILL.md 2>/dev/null \
             | python3 -c 'import re,sys; t=sys.stdin.read(); m=re.search(r"(?m)^  version:\s*[\"'"'"']?([^\"'"'"'\s]+)", t); print(m.group(1) if m else "")' || true)
           if [ "$published" = "$skill_version" ]; then
             echo "ClawHub already at $skill_version; nothing to publish."
             exit 0
           fi
           echo "ClawHub at ${published:-<none>}; publishing skill $skill_version."
-          clawhub skill publish skills/remove-ai-watermarks \
+          ./node_modules/.bin/clawhub skill publish skills/remove-ai-watermarks \
             --slug remove-ai-watermarks \
             --name "Remove AI Watermarks" \
             --version "$skill_version" \

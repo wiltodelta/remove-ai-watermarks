@@ -1,5 +1,13 @@
 ---
-globs: ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "skills/**", "pyproject.toml", "uv.lock", "maintain.sh", ".github/workflows/*.yml"]
+paths:
+  - "src/**/*.py"
+  - "tests/**/*.py"
+  - "scripts/**/*.py"
+  - "skills/**"
+  - "pyproject.toml"
+  - "uv.lock"
+  - "maintain.sh"
+  - ".github/workflows/*.yml"
 description: Command contracts, project gate, typing boundaries, model-adjacent test invariants, the agent-skill parity seam, and the detection-path measurement rule.
 ---
 
@@ -17,6 +25,44 @@ Provider verification services and provenance APIs are development-only oracles.
 their SDKs in the development extra and their adapters out of the installed CLI,
 top-level Python API, and runtime detection/removal pipelines.
 
+The unified maintainer entry point is `scripts/provider_oracles.py`; its workflow and
+slot schema live in `docs/provider-oracles.md`. Multi-account and multi-network work
+selects one named slot explicitly from the gitignored repository-local
+`.oracle-slots.json` by default and snapshots it into the immutable batch manifest.
+Never commit the local slot file.
+Do not add account or IP rotation, rate-limit failover, or cross-session result merging.
+Every manual result stays bound to the exact sanitized upload hash and preserves the
+provider response verbatim.
+
+Provider surface selection is API-first. OpenAI and Microsoft use their official API
+adapters before their Web surfaces when the requested media and local configuration are
+supported. Google and Meta currently use Web because this tooling has no usable API route
+for them. Web remains an explicit second surface, never an automatic retry after an API
+refusal, quota response, transport error, or indeterminate verdict.
+
+Google Web oracle automation uses only the user's existing authenticated real Chrome
+session and explicit `/u/N/` account index. OpenAI, Microsoft, and Meta Web automation
+uses isolated Playwright contexts; it must never attach to or copy state from the user's
+real browser. Proxy credentials are read only through a slot's named environment variable
+and never enter a manifest or log. Dotenv interpolation may derive routed proxy URLs from
+one secret key without mutating the process environment. A selected proxy context may
+accept that proxy's TLS interception certificate; direct contexts keep normal TLS checks.
+Upload readiness is surface-specific: OpenAI reaches it at page load but keeps background
+requests alive, while Microsoft and Meta require network idle. Preserve exact provider
+errors as indeterminate evidence rather than retrying or interpreting them as clean.
+
+OpenAI API slots likewise carry only `api_key_env`. Store multiple key values in the
+gitignored `.env`, select one slot explicitly, and never rotate to another token after a
+refusal or rate limit. The process environment may override the matching `.env` value.
+Their SDK transport sets `trust_env=False`; environment proxy variables must not reroute
+an API check.
+
+Microsoft API slots use the Azure Content Safety and private Blob Storage resource
+identities from the gitignored `.env`. The adapter reads resource keys only into memory
+through authenticated Azure CLI, downloads and hashes the private blob before requiring
+equality with the named local source, keeps `trust_env=False`, never retries the submit,
+and reports Watermark independently from C2PA.
+
 Do not add an option whose only outcome is an error. Model id, step count and CFG are fixed by the profile, so none of them is a parameter of the CLI, `InvisibleEngine`, or `WatermarkRemover` -- they were accepted-then-rejected for a while, which moved the failure several frames below the caller and advertised choices the pinned stack cannot honor. If a value cannot vary, delete the knob rather than validating it.
 
 `device` is the deliberate exception and stays a library parameter: `None`/`"auto"` detect, `"cuda"` pins without detecting, and everything else raises at construction. On the image path it is not a CLI option, because the only value a user could usefully type is the one auto-detection already finds. The video SynthID commands (`video invisible`, `video all`, `video batch`) do expose `--device`, whose VAE runs on cuda, mps, or cpu, so a user can usefully pick one. `test_device_exists_exactly_where_the_skill_says_it_does` pins that split; do not read this paragraph as licence to delete the video flag.
@@ -27,9 +73,29 @@ The same rule applies to install hints: name the extra that actually makes the c
 
 Run `bash maintain.sh` from the repository root. The authoritative type gate is scoped to `src/`; full-project Pyright can exhaust Node memory on the ML dependency graph.
 
+The security scanner's exit status is authoritative, including a failure after a success
+message. `tests/test_maintenance.py` checks clean, vulnerable, and broken scanner
+runs through the real shell entry point. Recheck unresolved advisories using the
+procedure in `docs/development.md`; do not revive the old text-matching bypass.
+
 Boundary modules for cv2, Torch, and Diffusers may carry narrow per-file relaxations for unknown third-party types. Keep pure-logic files strict, preserve the local piexif stub, and fix real errors before widening a pragma.
 
 From a worktree, `uv run` imports the package from the MAIN checkout -- that is where the editable install points. A script measuring a worktree's edit must insert that worktree's `src` at `sys.path[0]` and assert `module.__file__` resolves inside it, or it silently compares unmodified code against itself.
+
+## Research harnesses stay out of this repository
+
+A research script that needs a cloud GPU account to run is not kept here, and
+`scripts/` carries no `modal` import; `test_scripts_carry_no_cloud_gpu_harness`
+is the canary. The identifier half of the boundary audit is deliberately not
+mechanized here, because a denylist written into a tracked file publishes the
+strings it exists to keep out. Twelve such harnesses were moved out on
+2026-09-07; the pages that cite their findings
+([chroma1](../../docs/chroma1-engine-research.md),
+[module internals](../../docs/module-internals.md)) name them as harnesses kept
+outside this repository, and the tracked inputs under `data/evaluations/` plus
+the recorded verdicts are the durable record. Keep a new one outside too, and
+leave only its offline analysis step here, the way
+`scripts/analyze_engine_selection_study.py` stayed with its test.
 
 ## Visible-mark example gallery
 
@@ -186,7 +252,11 @@ path exempt from the gate it exists to feed, which is exactly backwards.
 Prove a video-path refactor the same way the detection path is proven, and without
 needing an oracle carrier: build a clip from a tracked fixture with ffmpeg, run the
 engine before and after, and require an identical output sha256. Keep the generated
-media outside the repository.
+media outside the repository. Bind that comparison to one synced environment: a
+full-extras `uv sync` was observed to change re-encoded H.264 packet bytes with
+no code change while every detection stayed identical
+(`docs/audio-provenance-experiment.md`), so a moved video hash across an
+environment change is not by itself a regression signal.
 
 Frame sampling is compared as `timestamp + 1e-9 >= next_sample_time`, so mutating
 that `>=` to `>` changes nothing and a green suite proves nothing. Mutate the phase
@@ -197,3 +267,31 @@ frame-count check cannot see and what
 catch.
 
 Environment setup, dependency recovery, CI behavior, and fixture policy: [`../../docs/development.md`](../../docs/development.md).
+
+## Audit regression contracts
+
+Image output paths must describe the artifact published by the current call,
+including skipped invisible stages and in-place writes. Carry explicit EXIF
+decode state through image staging; equal dimensions do not prove that a
+mirror or 180-degree rotation was applied. Metadata collection must propagate
+late-read failures into an incomplete record, and stream-copy metadata removal
+must map every input stream before atomically publishing the output.
+
+Research observations must describe the decoded, hash-bound saved artifact.
+Keep period selection independent of confirmation patches, require explicit
+negative evidence, and deduplicate source corpora by content identity rather
+than detector-score equality. Use the metric's actual denominator in its name;
+normalized edit distance is not reference-normalized character error rate.
+
+Tests that reload a module after changing environment variables must restore
+the environment before reloading the original state. Otherwise a temporary
+cache path survives teardown and later model tests silently attempt downloads.
+Dotenv configuration tests must clear every fixture variable from the invoked
+process environment. Seed conflicting inherited values to prove isolation;
+clearing only some fields lets the remaining host settings override the fixture.
+
+Cross-platform tests must use host-absolute synthetic interpreter paths and
+explicit unchanged decodes when comparing stored pixels. Execute Ubuntu Bash
+workflow harnesses only on POSIX hosts with Bash; keep their pure Python checks
+active on every platform. Round floating-point image output before uint8
+conversion when quantization must preserve constant values across OpenCV builds.

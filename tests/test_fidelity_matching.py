@@ -42,8 +42,8 @@ def _load_assign():
     return _load_module().assign_faces_one_to_one
 
 
-def test_cer_remains_case_sensitive() -> None:
-    assert _load_module()._cer("A", "a") == 1.0
+def test_text_ned_remains_case_sensitive() -> None:
+    assert _load_module()._text_ned("A", "a") == 1.0
 
 
 def test_distinct_faces_match_nearest() -> None:

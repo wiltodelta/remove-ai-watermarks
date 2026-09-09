@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import struct
 import subprocess
@@ -23,13 +24,14 @@ from typing import Any
 _GPU_MARKERS = ("GPU ", "gpu:")
 # Below this, the CLI predates flags and behavior this skill documents. Raise it in
 # the same change as any reference that names a flag the previous release lacked:
-# 0.37.0 is here because `classify` arrived with it (`--pipeline auto` needed
-# 0.36.0; chroma-zimage and the doubao video mark 0.35.0;
-# the `microsoft` mark 0.34.0; `--vendor` 0.32.0), and a stale floor told an agent
-# its CLI was current right before it typed a value that build rejects.
-# tests/test_agent_skill.py pins it against the package version, so it can never
-# advertise a release that does not exist.
-MIN_CLI_VERSION = (0, 38, 0)
+# 0.39.0 is here because the `liblib_pill` mark and `auto` routing OpenAI
+# provenance to qwen-zimage arrived with it; 0.38.0 added the receipt gate;
+# `classify` needed 0.37.0 (`--pipeline auto` 0.36.0; chroma-zimage and the
+# doubao video mark 0.35.0; the `microsoft` mark 0.34.0; `--vendor` 0.32.0),
+# and a stale floor told an agent its CLI was current right before it typed a
+# value that build rejects. tests/test_agent_skill.py pins it against the
+# package version and against every "(since CLI X.Y.Z)" annotation in the skill.
+MIN_CLI_VERSION = (0, 39, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # Homebrew formula ships exactly such a build.
@@ -161,6 +163,72 @@ def _invisible_stack(cli_path: str) -> str:
     return "installed" if code == 2 else "unknown"
 
 
+def _video_stacks(cli_path: str) -> dict[str, str]:
+    """Ask the CLI's own Python runtime, without constructing or downloading a model.
+
+    pip/uv entry points name their interpreter. Unrecognized launchers (including
+    native Windows executables) remain unverified; this probe's Python is never a
+    substitute for the environment running the installed CLI.
+    """
+    unknown = {"pixels": "unknown", "invisible": "unknown"}
+    try:
+        with Path(cli_path).open(encoding="utf-8") as stream:
+            lines = [stream.readline() for _ in range(3)]
+        command = shlex.split(lines[0][2:].strip()) if lines[0].startswith("#!") else []
+        if command == ["/bin/sh"] and lines[1].startswith("'" * 3 + "exec' "):
+            command = shlex.split(lines[1][len("'" * 3 + "exec' ") :])
+            if command[-2:] != ["$0", "$@"]:
+                return unknown
+            command = command[:-2]
+        if (
+            len(command) != 1
+            or not Path(command[0]).is_absolute()
+            or not re.fullmatch(r"python(?:[0-9]+(?:\.[0-9]+)?)?", Path(command[0]).name)
+        ):
+            return unknown
+    except (OSError, UnicodeError, ValueError):
+        return unknown
+    code, stdout, _stderr = _run([command[0], "-c", _VIDEO_RUNTIME_CHECK], timeout=60.0)
+    if code != 0:
+        return unknown
+    try:
+        result = json.loads(stdout)
+    except ValueError:
+        return unknown
+    if not isinstance(result, dict):
+        return unknown
+    return {
+        "pixels": result.get("pixels") if result.get("pixels") in {"ok", "missing"} else "unknown",
+        "invisible": result.get("invisible") if result.get("invisible") in {"installed", "missing"} else "unknown",
+    }
+
+
+_VIDEO_RUNTIME_CHECK = """
+import json
+import sys
+result = {"pixels": "unknown", "invisible": "unknown"}
+try:
+    from remove_ai_watermarks.video import _require_video_runtime
+    _require_video_runtime()
+    import av
+    result["pixels"] = "ok"
+except RuntimeError:
+    result["pixels"] = "missing"
+except ImportError:
+    result["pixels"] = "missing"
+try:
+    from remove_ai_watermarks.video_invisible import is_available
+    if is_available():
+        from diffusers import AutoencoderKL
+        result["invisible"] = "installed"
+    else:
+        result["invisible"] = "missing"
+except ImportError:
+    result["invisible"] = "missing"
+sys.stdout.write(json.dumps(result))
+"""
+
+
 def _has_cuda() -> bool:
     exe = _which("nvidia-smi")
     if exe is None:
@@ -208,6 +276,7 @@ def _advice(
     installer: str | None,
     outdated: bool | None,
     invisible: str,
+    video: dict[str, str],
 ) -> dict[str, str]:
     host = "https://raiw.cc"
     if not cli_found:
@@ -228,18 +297,30 @@ def _advice(
     # video routes. Reporting pixel commands as "ok" is what sent an agent into a
     # missing-cv2 crash on a machine the probe had just called ready.
     no_pixels = pixels == "missing"
+    if no_pixels or video["pixels"] == "missing":
+        video_visible = "needs_video_extra"
+    elif video["pixels"] != "ok":
+        video_visible = "unverified"
+    else:
+        video_visible = "ok" if ffmpeg else "needs_ffmpeg"
+
+    if no_pixels or "missing" in video.values():
+        video_invisible = "needs_video_and_diffusion_extras"
+    elif video != {"pixels": "ok", "invisible": "installed"}:
+        video_invisible = "unverified"
+    else:
+        video_invisible = "ok_cpu_or_gpu" if ffmpeg else "needs_ffmpeg"
+
     advice = {
         "identify": "metadata_only_no_pixels" if no_pixels else "ok",
         "visible": "needs_visible_extra" if no_pixels else "ok",
         "metadata": "ok",
         "video_identify": "metadata_only_no_pixels" if no_pixels else "ok",
         "video_metadata": "ok",
-        "video_visible": "needs_video_extra" if no_pixels else ("ok" if ffmpeg else "needs_ffmpeg"),
+        "video_visible": video_visible,
         "invisible_images": "unavailable_no_cuda" if not cuda else ("needs_visible_extra" if no_pixels else "ok"),
         "image_all": _image_all(no_pixels=no_pixels, cuda=cuda, invisible=invisible),
-        "video_invisible": (
-            "needs_video_and_diffusion_extras" if no_pixels else ("ok_cpu_or_gpu" if ffmpeg else "needs_ffmpeg")
-        ),
+        "video_invisible": video_invisible,
         "no_cuda_fallback": host,
     }
     if no_pixels:
@@ -271,6 +352,7 @@ def build_report() -> dict[str, Any]:
     ffmpeg = _which("ffmpeg") is not None
     pixels = _pixel_stack(str(cli["path"])) if cli["found"] else "unknown"
     invisible = _invisible_stack(str(cli["path"])) if cli["found"] else "unknown"
+    video = _video_stacks(str(cli["path"])) if cli["found"] else {"pixels": "unknown", "invisible": "unknown"}
     return {
         "os": os.name,
         "platform": sys.platform,
@@ -280,6 +362,7 @@ def build_report() -> dict[str, Any]:
         "ffmpeg": ffmpeg,
         "pixel_stack": pixels,
         "invisible_stack": invisible,
+        "video_stacks": video,
         "installers": {name: path is not None for name, path in installers.items()},
         "preferred_installer": installer,
         "advice": _advice(
@@ -290,6 +373,7 @@ def build_report() -> dict[str, Any]:
             installer=installer,
             outdated=cli["outdated"],
             invisible=invisible,
+            video=video,
         ),
     }
 

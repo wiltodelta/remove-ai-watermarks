@@ -16,6 +16,9 @@ explicitly names a tracked canonical result.
 | `invisible_quality_audit.py` | Pair originals and invisible-removal outputs for quality review. |
 | `metadata_removal_audit.py` | Check metadata detection/removal parity over a corpus. |
 | `pill_gate_audit.py` | Measure the Jimeng pill detector on the product path. |
+| `provider_oracle_web.py` | Implement isolated Playwright submissions for the unified provider-oracle runner. |
+| `provider_oracle_microsoft.py` | Call Microsoft's Content Provenance API with hash-bound public media and Azure CLI authentication. |
+| `provider_oracles.py` | Plan API-first and drive hash-bound Google, OpenAI, Microsoft, and Meta oracle checks. |
 | `real_examples_e2e.py` | Run end-to-end confidence checks over local examples. |
 | `record_parity_audit.py` | Compare record-based and file-based identification. |
 | `resource_ceilings.py` | Measure peak RSS and runtime for fill backends. |
@@ -56,10 +59,8 @@ explicitly names a tracked canonical result.
 
 | Script | Purpose |
 | --- | --- |
-| `chroma_text_restoration_study.py` | Compare verified-text restoration for Qwen and Chroma on H100 without running both engines in production. |
 | `cjk_tail_probe.py` | Test a generic template for otherwise uncovered CJK labels. |
 | `controlnet_sweep.py` | Sweep the historical ControlNet removal prototype. |
-| `engine_selection_study.py` | Run one global engine at a time over the tracked prompt-matched content matrix. |
 | `analyze_engine_selection_study.py` | Reduce engine-study output to paired deltas and exact sign tests. |
 | `infer_text_lines.py` | Draft stable source-text lines without modifying pixels. |
 | `qwen_scrub_prototype.py` | Probe low-strength Qwen regeneration on a GPU. |

@@ -152,7 +152,9 @@ def _write_visible_result(
         # and surfaced as a confusing "cannot read image <INPUT>" naming the OUTPUT path
         # (Tier E, 2026-07-20). Raise here so a library caller and the CLI both get an
         # accurate message about the write.
-        if not image_io.write_bgr_with_alpha(out_path, result, loaded.alpha, display_tags_from=source_path):
+        if not image_io.write_bgr_with_alpha(
+            out_path, result, loaded.alpha, display_tags_from=source_path, orientation_applied=False
+        ):
             raise OSError(f"failed to write output (is the destination writable?): {out_path}")
 
     if strip_metadata:
@@ -173,9 +175,9 @@ def remove_visible(
     """Remove every detected known visible AI mark through localize then fill.
 
     The registry currently covers the Gemini visible watermark; Doubao, Jimeng,
-    Qwen, Kling AI, Yuanbao, Samsung, RunningHub, Baidu, and LiblibAI text marks;
-    one Microsoft top-right AI-badge variant; and the Jimeng pill. Returns
-    ``(result_bgr, [labels removed])``.
+    Qwen, Kling AI, Yuanbao, Samsung, RunningHub, and Baidu text marks; the
+    LiblibAI wordmark and compact pill; one Microsoft top-right AI-badge variant;
+    and the Jimeng pill. Returns ``(result_bgr, [labels removed])``.
 
     ``source`` is a file path OR a BGR ndarray. For a PATH, metadata provenance is read
     automatically (so ``sensitivity="auto"`` recovers a moved/faint mark whenever the
@@ -495,11 +497,24 @@ def remove_all(
         result, removed = visible.image, visible.labels
         visible_label = ", ".join(removed) if removed else None
         say("visible", visible_label or "")
-        if not image_io.write_bgr_with_alpha(staged, result, alpha):
+        if not image_io.write_bgr_with_alpha(staged, result, alpha, display_tags_from=src, orientation_applied=False):
             raise OSError(f"failed to write the staged intermediate: {staged}")
 
         # ── 2. Invisible watermark ──
         outcome = _run_invisible(src, staged, staged, opts, engine, say, evidence, force)
+
+        if alpha is not None and outcome == "removed":
+            # Diffusion bakes EXIF into its RGB pixels. Apply the same transform to
+            # the original alpha before recombining, including mirrored images.
+            import numpy as np
+            from PIL import Image, ImageOps
+
+            with Image.open(src) as original:
+                orientation = original.getexif().get(274, 1)
+            if orientation in range(2, 9):
+                alpha_image = Image.fromarray(alpha)
+                alpha_image.getexif()[274] = orientation
+                alpha = np.asarray(ImageOps.exif_transpose(alpha_image))
 
         # ── 3. AI metadata ──
         # Read the pristine ORIGINAL for provenance above and the STAGED file here:
@@ -511,12 +526,14 @@ def remove_all(
         say("metadata", "stripped")
 
         # The invisible stage (and the cv2.IMREAD_COLOR paths under it) drops alpha, so
-        # re-attach the ORIGINAL alpha plane unchanged for transparent formats.
+        # re-attach the original alpha in the same orientation for transparent formats.
         final_bgr, _ = image_io.read_bgr_and_alpha(staged)
         if final_bgr is None:
             raise OSError(f"failed to read back the staged intermediate: {staged}")
         out.parent.mkdir(parents=True, exist_ok=True)
-        if not image_io.write_bgr_with_alpha(out, final_bgr, alpha):
+        if not image_io.write_bgr_with_alpha(
+            out, final_bgr, alpha, display_tags_from=staged, orientation_applied=False
+        ):
             raise OSError(f"failed to write output (is the destination writable?): {out}")
     finally:
         if staged.exists():
@@ -668,7 +685,6 @@ def remove_batch(
         if progress is not None:
             progress(path, stage, detail)
 
-    processed = failed = 0
     unavailable: list[Path] = []
     errors: list[tuple[Path, str]] = []
     items: list[BatchItemResult] = []
@@ -683,13 +699,11 @@ def remove_batch(
             # it out so the caller reports it once, with the extra named.
             if isinstance(exc, ImportError) and not pixels_available():
                 raise
-            failed += 1
             message = str(exc)
             errors.append((img_path, message))
             items.append(BatchItemResult(img_path, None, mode, error=message))
             say(img_path, "failed", message)
             continue
-        processed += 1
         items.append(result)
         if result.invisible == "unavailable":
             unavailable.append(img_path)
@@ -697,7 +711,7 @@ def remove_batch(
         # advances on this and nothing else. Keying it off a mode-specific stage line
         # left `visible` and `metadata` runs sitting at 0% for the whole batch.
         say(img_path, "done", result.invisible or "")
-    return BatchSummary(processed, failed, unavailable, errors, tuple(items))
+    return BatchSummary(len(items) - len(errors), len(errors), unavailable, errors, tuple(items))
 
 
 def _run_batch_one(
@@ -757,7 +771,9 @@ def _run_batch_one(
             provenance=loaded.provenance,
             backend=backend,
         )
-        if not image_io.write_bgr_with_alpha(out_path, visible.image, loaded.alpha):
+        if not image_io.write_bgr_with_alpha(
+            out_path, visible.image, loaded.alpha, display_tags_from=img_path, orientation_applied=False
+        ):
             raise OSError(f"failed to write output (is the destination writable?): {out_path}")
         return BatchItemResult(img_path, out_path, mode, visible.status, visible.marks)
 
@@ -767,8 +783,9 @@ def _run_batch_one(
             raise MetadataStripIncomplete(set(leftover))
         return BatchItemResult(img_path, out_path, mode)
 
-    # invisible-only: no preceding visible pass, so out_path does not exist yet, and
-    # the input IS the pristine original for both the gate and the vendor probe.
+    # Invisible-only has no preceding visible pass. An output from an earlier run
+    # may already exist; only the current outcome decides whether to copy through.
+    # The input IS the pristine original for both the gate and the vendor probe.
     outcome = _run_invisible(
         img_path,
         img_path,
@@ -779,10 +796,12 @@ def _run_batch_one(
         _SourceEvidence(img_path),
         force,
     )
-    if not out_path.exists():
+    if outcome != "removed" and out_path.resolve() != img_path.resolve():
         # Keep the output directory COMPLETE even when the pixels are deliberately
         # left alone; a hole the caller cannot see is worse than an unchanged copy.
         src_bgr, src_alpha = image_io.read_bgr_and_alpha(img_path)
-        if src_bgr is None or not image_io.write_bgr_with_alpha(out_path, src_bgr, src_alpha):
+        if src_bgr is None or not image_io.write_bgr_with_alpha(
+            out_path, src_bgr, src_alpha, display_tags_from=img_path, orientation_applied=False
+        ):
             raise OSError(f"failed to copy input through to output: {out_path}")
     return BatchItemResult(img_path, out_path, mode, invisible=outcome)

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -325,3 +327,73 @@ def test_report_refuses_overwrite_and_preserves_interpretation_caveat(tmp_path: 
     assert "not evidence that a watermark is absent" in report
     with pytest.raises(FileExistsError, match="refusing to overwrite"):
         MODULE.write_report(output, report)
+
+
+def test_report_accepts_audio_rows_and_reports_snr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("audio rows decode through the system ffmpeg")
+    import sys
+
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    from audioseal_experiment import wav_pcm16_bytes
+
+    samples = np.linspace(-0.5, 0.5, 16000, dtype=np.float32)
+    artifact = tmp_path / "marked.wav"
+    reference = tmp_path / "clean.wav"
+    artifact.write_bytes(wav_pcm16_bytes(samples, 16_000))
+    reference.write_bytes(wav_pcm16_bytes(samples * 0.9, 16_000))
+
+    def sha(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "case_id": "audio-1",
+                "pair_id": "audio-1",
+                "media_type": "audio",
+                "adapter": "audioseal",
+                "arm": "positive",
+                "state": "marked",
+                "path": artifact.name,
+                "sha256": sha(artifact),
+                "reference_path": reference.name,
+                "reference_sha256": sha(reference),
+                "source_revision": "fixture@1",
+                "transform": {"name": "embed", "revision": "v1", "parameters": {}},
+                "seed": 1,
+                "expected": "detected",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    case = BENCHMARK.load_manifest(manifest)[0]
+    monkeypatch.setattr(
+        BENCHMARK,
+        "default_adapters",
+        lambda: {"audioseal": _FakeAdapter("detected")},
+    )
+    record = BENCHMARK.evaluate_case(
+        case,
+        adapters=BENCHMARK.default_adapters(),
+        repository={"commit": "abc", "dirty": False},
+    )
+
+    result_path = tmp_path / "run.jsonl"
+    BENCHMARK.write_jsonl(result_path, [record])
+
+    summary = MODULE.summarize(MODULE.load_results([result_path]))
+    fidelity = next(row for row in summary["fidelity"] if row["adapter"] == "audioseal")
+
+    assert fidelity["measured"] == 1
+    assert fidelity["finite_snr"] == 1
+    assert fidelity["p50_snr_db"] is not None
+    assert fidelity["finite_psnr"] == 0
+
+    markdown = MODULE.render_markdown(summary)
+    assert "p50 SNR dB" in markdown

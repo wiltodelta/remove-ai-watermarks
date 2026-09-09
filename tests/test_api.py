@@ -175,10 +175,10 @@ class TestVisibleProvenance:
         keys = set(mark_keys())
         assert set(tc260_producer_vendors().values()) <= keys
         assert keys >= TC260_FALLBACK_VENDORS
-        # Every TC260 mark should name its producer, or it silently falls back to the
-        # ByteDance pair on an image carrying that mark.
+        # Primary TC260 marks name their producer. Companion pills inherit the primary
+        # mark's product-level provenance rather than duplicating an external identity.
         unmapped = {m.key for m in known_marks() if m.label_regime == "tc260" and not m.tc260_producer_codes}
-        assert unmapped == {"jimeng_pill"}, f"TC260 marks with no producer code: {unmapped}"
+        assert unmapped == {"jimeng_pill", "liblib_pill"}, f"TC260 marks with no producer code: {unmapped}"
 
     @pytest.mark.skipif(not CHATGPT.exists(), reason="chatgpt sample not present")
     def test_openai_image_has_no_visible_vendor(self):

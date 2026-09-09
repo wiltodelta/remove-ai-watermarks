@@ -280,6 +280,7 @@ def _visible_removal_plan(
     from remove_ai_watermarks.video_visible import (
         VISIBLE_MARK_POLICIES,
         has_bytedance_video_provenance,
+        has_doubao_video_provenance,
         has_hailuo_video_provenance,
         has_sora_provenance,
         has_veo_provenance,
@@ -290,6 +291,7 @@ def _visible_removal_plan(
         "sora": has_sora_provenance,
         "veo": has_veo_provenance,
         "seedance": has_bytedance_video_provenance,
+        "doubao": has_doubao_video_provenance,
         "dola": has_bytedance_video_provenance,
         "hailuo": has_hailuo_video_provenance,
     }.get(selected_mark)

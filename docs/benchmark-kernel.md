@@ -1,11 +1,15 @@
 # Watermark benchmark kernel
 
 `scripts/watermark_benchmark.py` is a development-only runner for reproducible
-image-watermark experiments. It calls the existing local DWT-DCT and TrustMark
-detectors through thin adapters. It does not add a runtime command, download a
-corpus, or contact a provenance oracle or provider API. The optional TrustMark
-package can fetch its official Adobe model weights when its local package cache
-is incomplete; prepare that dependency before an offline run.
+image-, audio-, and video-watermark experiments. It calls the existing local
+DWT-DCT and TrustMark detectors plus the revision-pinned AudioSeal and
+VideoSeal oracles through thin adapters. It does not add a runtime command,
+download a corpus, or contact a provenance oracle or provider API. The
+optional TrustMark package can fetch its official Adobe model weights when its
+local package cache is incomplete, the audioseal adapter fetches its pinned
+checkpoints the same way, and the videoseal adapter downloads one pinned
+TorchScript file into a user cache; prepare those dependencies before an
+offline run.
 
 The kernel answers three different questions and never merges their answers:
 
@@ -36,10 +40,10 @@ The fixed fields are:
 | `schema_version` | Integer `1`. |
 | `case_id` | Unique case identity. |
 | `pair_id` | Groups related clean, marked, attacked, and removed cases. |
-| `media_type` | `image` in schema v1. |
-| `adapter` | `dwt-dct` or `trustmark`. |
+| `media_type` | `image`, `audio`, or `video` in schema v1. |
+| `adapter` | `dwt-dct` or `trustmark` for `image`; `audioseal` for `audio`; `videoseal` for `video`. The loader rejects a known adapter named against the wrong media type. |
 | `arm` | `positive`, `matched_negative`, `wrong_key`, or `hard_negative`. |
-| `state` | `clean`, `marked`, `attacked`, or `removed`. |
+| `state` | `clean`, `marked`, `attacked`, `removed`, or `forged`. `forged` names an artifact carrying a watermark with a message different from the adapter oracle's fixed one. Expected detection depends on the adapter: VideoSeal checks the fixed message, while AudioSeal's presence rule can still report `detected` for a foreign message. The study records message accuracy separately. |
 | `path`, `sha256` | Artifact path and pinned content digest. |
 | `reference_path`, `reference_sha256` | Both strings or both `null`; the fidelity reference. |
 | `source_revision` | Corpus, generator, or acquisition revision. |
@@ -85,10 +89,110 @@ pixels produce `psnr_db: null` with
 `psnr_status: unbounded_identical`, never a misleading numeric zero. Missing or
 incomparable references remain explicit states rather than fabricated metrics.
 
-Schema v1 deliberately has no aggregate score, confidence interval, video
-adapter, automatic attack generator, removal runner, or provider oracle. Add
-those only after the case-level evidence is large enough to define and test the
-corresponding statistical or media contract.
+Schema v1 deliberately has no aggregate score, confidence interval, automatic
+attack generator, removal runner, or provider oracle. Add those only after the
+case-level evidence is large enough to define and test the corresponding
+statistical or media contract.
+
+## Audio rows
+
+`media_type: audio` rows decode every artifact and reference to mono 16 kHz
+float32 through the system `ffmpeg` before any adapter runs, mirroring the
+image path where decoding also stays outside the detector interval. Audio rows
+therefore require `ffmpeg` on `PATH`; a missing or failing decode is the same
+explicit `error` status as an undecodable image.
+
+The `audioseal` adapter reads the shared revision-pinned oracle in
+`scripts/audioseal_oracle.py` (Meta AudioSeal, MIT license, Hugging Face
+revision and checkpoint SHA-256 pinned and verified at load). Its `detected`
+status is the detector's own documented rule: the fraction of per-sample
+probabilities above 0.5 reaching 0.5. The `label` is the decoded 16-bit message
+as a binary string, so a case whose payload differs from the embedded one is
+still `detected` with a different label, never `not_detected`. A `wrong_key`
+arm for this adapter is therefore a different-message row, not a clean row.
+
+Audio fidelity compares the decoded sample arrays against the explicit
+reference: identical decoded samples produce `snr_db: null` with
+`snr_status: unbounded_identical`, never a misleading numeric zero; a silent
+reference reports `zero_reference_power`; a length mismatch stays an explicit
+`incomparable` state. SNR here is reference signal power over error power, the
+sample-domain analogue of the image PSNR contract.
+
+## Audio cohort v1
+
+`scripts/watermark_benchmark_audio_cohort.py` builds the audio analogue of the
+synthetic image cohort: three deterministic synthetic carriers (AM tone stack,
+smoothed noise, white noise), the pinned AudioSeal message, matched clean
+negatives, MP3 128k, gapless M4A AAC 128k, and deterministic 10 dB additive
+noise attacks, plus one never-embedded white-noise hard negative. Since v2
+the audio cohort also carries the four-state arms: a `removed` row where the
+noise transform measurably destroys the mark (the tone stack only - the
+synthetic noise carriers survive 10 dB noise, so their noise rows stay open
+`attacked` measurements), and `forged` rows embedding a foreign message with
+`expected: detected`, because the audioseal rule is watermark presence and
+the decoded label is what exposes the foreign payload. 20 cases in total,
+everything hashed into a strict manifest validated through the
+benchmark loader.
+
+```bash
+uv run --extra dev python scripts/watermark_benchmark_audio_cohort.py \
+  --output-dir .local-eval/watermark-benchmark-audio-cohort-v1
+uv run --extra dev python scripts/watermark_benchmark.py \
+  .local-eval/watermark-benchmark-audio-cohort-v1/manifest.jsonl \
+  --output .local-eval/audio-cohort-v1-results.jsonl
+```
+
+### Development baseline, 2026-09-06
+
+The first local run used kernel
+`sha256:2216169ab7c33f7439720f0934e8ac6ba8379e510bfaeabe008f820c7658701d`,
+oracle `sha256:bd67e2b1be5c486384ab1f64709f661241451ab1ea7592cc56f0eefb91c415ab`,
+and recipe `sha256:f361163b4fbf23b885c026751c544e97be0bf054906c1aad455276992a2768d2`,
+producing manifest `sha256:b6c48684f0c85e882159f6d5c4fbeea2f43c3b24d3a2c3a034209c6f531ba73d`
+and case rows `sha256:66ac23bd926925dc5baf7216c03f8a7246eeb473315a17701358a3803ab7b0d1`.
+Dependencies were audioseal 0.2.0, torch 2.13.0, and ffmpeg 9.0.1.
+
+| State and transform | Cases | Detected | Not detected |
+| --- | ---: | ---: | ---: |
+| clean matched negatives + hard negative | 4 | 0 | 4 |
+| marked, audioseal embed | 3 | 3 | 0 |
+| attacked, MP3 128k | 3 | 3 | 0 |
+| attacked, AAC 128k (gapless M4A) | 3 | 3 | 0 |
+| attacked, 10 dB additive noise | 3 | 2 | 1 |
+
+Every clean and never-embedded negative stayed below the decision rule. All
+codecs retained detection with the full message on the tone-stack and
+white-noise carriers; the pinkish-noise carrier decoded one flipped payload bit
+while remaining detected, matching the experiment's per-carrier bit-accuracy
+observation. The 10 dB noise arm destroyed the tone-stack detection but not
+white or pinkish noise: carrier-dependent robustness is exactly what the
+matched arms exist to expose. Nearest-rank adapter timing: cold first call
+405.1 ms, warm median 124.2 ms, warm max 157.4 ms for 8-second clips on this
+host. As with the image baselines, these are diagnostic host rows, not a
+certified profile.
+
+### Speech extension
+
+`--with-speech` adds fifteen more rows: three system-voice speech carriers
+(Samantha, Daniel, Milena) rendered by the local macOS `say` tool - no
+network, byte-deterministic per voice on a fixed macOS version - each with a
+matched clean negative, a marked positive, and the same three attacks. Every
+speech row's transform parameters carry the full TTS provenance (tool, macOS
+version, voice, text digest, duration). The builder verifies the configured
+voices render distinct bytes and refuses an aliased set, because macOS 26.6.2
+renders `Alex` and `Samantha` byte-identically and a name is not a carrier
+identity.
+
+The first `--with-speech` run (2026-09-06, 31 cases total, recipe
+`sha256:3f291f49ab9ef2499085708fb614e3723ebee6d35f0b509fc36f017ec5a86c3b`,
+manifest
+`sha256:b9baa79066deb002402cc20166835887d67a5158ff9ce7bbc1963e5d603db3a5`,
+case rows
+`sha256:abc68590f59fbddab1c086371d2854622b41ea756ba61a7a87b76cb6df64c386`)
+kept every synthetic verdict and added: speech clean 0/3 detected, speech
+marked 3/3 with the full message, codecs 3/3, and full-clip 10 dB noise 0/3 -
+unlike the synthetic white and pinkish carriers, speech has quiet moments
+where the noise dominates. Speech marked fidelity sat at 27.9-32.2 dB SNR.
 
 ## Synthetic cohort v1
 
@@ -275,6 +379,117 @@ uncommitted. The exact inputs and implementations are therefore bound by hash:
 The local timing rows were host-contended and are not used for a new latency
 claim. The controlled resource profile below remains the performance evidence.
 
+## Video rows
+
+`media_type: video` rows decode every artifact and reference to float RGB
+frames in [0, 1] as (T, H, W, 3) through the system `ffmpeg`, staying outside
+the detector interval like the image and audio decodes. Video fidelity
+compares decoded frames against the explicit reference clip: mean PSNR over
+frames (`mean_psnr_db`, reported separately from image `psnr_db`), a
+changed-frame fraction, `unbounded_identical` for bit-identical
+pixel sequences, and an explicit `shape_mismatch` state when frame counts or
+geometry differ - which is why geometry-changing attack arms carry no
+reference instead of a fabricated comparison.
+
+The `videoseal` adapter loads Meta's standalone TorchScript release of
+VideoSeal (MIT license) from `scripts/videoseal_oracle.py` - one pinned file,
+no `videoseal` package, whose wheel pulls a research dependency chain without
+macOS arm64 wheels and whose loader resolves cards relative to the working
+directory. The upstream video evaluation ignores the model's detection head
+(it prepends a constant) and scores the aggregated 256-bit message decode, so
+the adapter's `detected` is its own explicit rule: bit accuracy of the
+averaged decode against the oracle's fixed message at or above 0.9. The
+`label` is the decoded message as 64 hex characters. Because the rule is
+message accuracy, a different-message row reads `not_detected` - the matched
+verifier rejects the foreign payload - unlike the audioseal presence rule
+above. Every videoseal detection record
+carries a `temporal` block - frame count, min/mean/max and the full per-frame
+bit-accuracy series - and the aggregation is computed in the oracle from raw
+per-frame logits, because the TorchScript build ignores the aggregation
+argument of `detect_video_and_aggregate`. The aggregation matrix itself
+(avg versus norm-weighted) is evaluated in
+[VideoSeal temporal evaluation](videoseal-temporal-evaluation.md), not in the
+kernel, which keeps plain avg as its canonical rule.
+
+## Video cohort v1
+
+`scripts/watermark_benchmark_video_cohort.py` builds the video analogue of
+the other cohorts: two deterministic synthetic 64-frame 256x256 clips (moving
+gradient, moving texture), the pinned 256-bit message, matched clean
+negatives, one never-embedded hard negative, and three attacks - a realistic
+H.264 re-encode at crf 23, a 75 percent downscale, and a frame-rate halving
+that drops half the keyframes. Since v2 the video cohort also carries the
+four-state arms: `removed` rows reusing the crf 23 re-encode that measurably
+takes both synthetic carriers below the rule, and `forged` rows embedding a
+foreign message with `expected: not_detected`, because the videoseal rule is
+message accuracy and the matched verifier rejects a foreign payload. 15
+cases in total.
+
+```bash
+uv run --extra dev python scripts/watermark_benchmark_video_cohort.py \
+  --output-dir .local-eval/watermark-benchmark-video-cohort-v1
+uv run --extra dev python scripts/watermark_benchmark.py \
+  .local-eval/watermark-benchmark-video-cohort-v1/manifest.jsonl \
+  --output .local-eval/video-cohort-v1-results.jsonl
+```
+
+### Development baseline, 2026-09-07
+
+The first local run used kernel
+`sha256:7a3906cebc3c7cacbac7e204c014d1d6281615e7acbbc5b3a8fcecc939ca68c7`,
+oracle `sha256:6c889bf399e8e3bada439eee4a1e9c0b04177be78dfee756d5daa79e73db71b3`,
+recipe `sha256:dd06ae1c40ef7d7f6fd2b258b20444a3250254a5ef258542a4eaf43cc501342b`,
+manifest
+`sha256:bb6a7dda6b3897794f2fbfe47291329bb7b9ff7ee57c0634ebb386e58acd5e7a`,
+and case rows
+`sha256:5793b8ba33c55e135e5bef43f33fd2699bb57bae6ca8ead38b1dab0123d1dd12`.
+The checkpoint is the TorchScript build `y_256b_img.jit`
+`sha256:5c7a4581c36fc6090aafdcfb3999123bae5172a4847f22e2da4e7fd1a39d1e1b`
+pinned to upstream commit `870ca7f`.
+
+| State and transform | Cases | Detected | Not detected |
+| --- | ---: | ---: | ---: |
+| clean matched negatives + hard negative | 3 | 0 | 3 |
+| marked, videoseal embed (crf 8 artifact) | 2 | 2 | 0 |
+| attacked, H.264 crf 23 | 2 | 0 | 2 |
+| attacked, 75 percent downscale + crf 18 | 2 | 0 | 2 |
+| attacked, frame rate halved | 2 | 2 | 0 |
+
+Direct oracle readings fill in what the threshold hides: the marked clips
+decode at 0.992-0.996 bit accuracy (48.5 and 41.4 dB mean PSNR against their
+clean carriers), the crf 23 re-encode collapses to 0.56-0.57, the downscale
+to 0.69, and the halved frame rate keeps 0.996. Two cautions travel with
+these numbers: the watermark survives H.264 only at generous quality - a
+realistic crf 23 re-encode erases it on these smooth synthetic carriers,
+while a high-bitrate uniform-noise carrier survived crf 18 in the isolated
+probe, so retention is carrier- and quality-dependent - and dropping half
+the frames does not touch the message because the secret repeats across
+keyframes. These are first-baseline observations on synthetic carriers, not
+robustness curves; a sweep across crf values and real-content carriers is
+the natural follow-up.
+
+### Four-state baseline, 2026-09-07 (v2 cohorts)
+
+The v2 runs used kernel
+`sha256:22f2c1dd5c3b7aeb96090c4c578c6d1841ee62d90958dd1c5c7ad7db71835eec`
+with audio recipe
+`sha256:31c021144212a43565fb3746fadc835bfc37ea8ac98998fad9bba9e72410e82c`
+(manifest
+`sha256:43c7f77f1d4537c00d4b0dd5128e9becc6c860cdd196a7ba2f7541f4276784ec`,
+case rows
+`sha256:c73d7dddfdb90262e96be4d67ec1567d9046812661928cc816cb9f97f4a01a7e`)
+and video recipe
+`sha256:8f25929304ef4f94721667968ee4bb89ebf584a2108de7e02db36c855dc2ddc8`
+(manifest
+`sha256:b5659848c0d05e205f80ab36480e70fdf7e5f9df4d8ada6ffadec42c97b88998`,
+case rows
+`sha256:c9ad56848bb7efe200aaf1189a8eb03f7571567e6702edd195a62f812fa05815`).
+Every v1 verdict was unchanged; the new arms read: audio removed 0/1
+detected, audio forged 3/3 detected under the presence rule, video removed
+0/2, video forged 0/2 under the message rule - zero expected mismatches.
+The mechanism underneath these rows, including double embedding, is measured
+in [Watermark forgery study](watermark-forgery-study.md).
+
 ## Aggregate repeated runs
 
 `scripts/watermark_benchmark_report.py` turns one or more result JSONL files
@@ -297,8 +512,11 @@ adapters as separate evidence. A repeated `case_id` whose artifact, transform,
 or other case identity changes is rejected rather than merged. Input file
 digests in the final report bind every aggregate to its exact case-level source.
 The runner decodes an artifact used by multiple cases only once per process and
-passes the decoded pixels to both local adapters; the adapter timing therefore
-does not include file decoding.
+passes the decoded pixels to both local adapters. Synthetic recipes record
+the seed actually passed to generation; a manifest seed is not a substitute
+for that generator input. Video observations must decode the saved artifact
+whose digest the row records, including controls and double embeds. Adapter
+timing does not include file decoding.
 
 ## Profile process cost
 

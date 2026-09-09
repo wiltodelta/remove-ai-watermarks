@@ -218,9 +218,11 @@ print(result.label, result.detector, result.provider)
 
 `label` is `ai` only on a DEFINITELY detector result (ridge AND freeze MLP).
 POSSIBLY is `unknown`. Camera-like photographs are `human`. `provider` is
-`openai`, `google`, `muse-image`, or `tc260` only when `label` is `ai` and the 124-d
-head beats `no_ai` by the freeze margin. `tc260` is the China AIGC label
-standard (mixed producers), not a company. Otherwise it is `None`, including
+`openai`, `google`, `bytedance`, or `muse-image` only when `label` is `ai`
+and the 124-d head beats `no_ai` by the freeze margin. `bytedance` names
+the shared Doubao+Jimeng generator lineage; the rest of China's
+generators (Qwen, Kling, ...) have no honest class yet and their residual
+head abstains to `None`. Otherwise it is `None`, including
 when 124-d extraction refuses the file.
 
 `device` is a library parameter: `None` / `"auto"` detect, `"cpu"` or `"cuda"`
@@ -655,11 +657,12 @@ combines synthetic multi-scale visual matching with temporal consistency, so an
 isolated lookalike in one frame is not enough to authorize inpainting.
 `mark="auto"` is the default: it evaluates all providers in one decode pass and
 selects the first stable match in specificity order (`sora`, `veo`, `seedance`,
-`dola`, `hailuo`, `kling`). Provider confidence values are calibrated
+`doubao`, `dola`, `hailuo`, `kling`). Provider confidence values are calibrated
 independently and are not compared across detectors. Pass one of those explicit
 values to restrict the scan to a single provider. The Veo detector recognizes
 the current four-point diamond and the
-legacy `Veo` text. Seedance recognizes the boxed `AI` label, Dola recognizes
+legacy `Veo` text. Seedance recognizes the boxed `AI` label, Doubao recognizes
+the fixed `豆包AI生成` label, and Dola recognizes
 its compact text label, Hailuo AI recognizes the composite MINIMAX/Hailuo AI label,
 and Kling AI recognizes its bottom-right logo, wordmark, and version suffix. Each
 variant has an independent synthetic silhouette and calibrated temporal policy.

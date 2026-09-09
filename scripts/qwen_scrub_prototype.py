@@ -23,7 +23,8 @@ invisible pipeline onto Qwen-Image-Edit). It is DELIBERATELY standalone:
   * Qwen-Image is ~20B, so it needs a real GPU (CUDA) -- it will not fit on MPS.
 
 Run (on a GPU box / Modal), then eyeball the outputs AND submit them to the
-matching oracle (openai.com/verify for OpenAI, the Gemini app for Google):
+matching oracle (the Content Provenance API first for OpenAI, the Gemini app for
+Google; inspect the current order with ``provider_oracles.py plan PROVIDER``):
 
     uv run scripts/qwen_scrub_prototype.py INPUT.png -o out/ --strengths 0.1,0.2,0.3,0.4
 
@@ -119,8 +120,9 @@ def main(
 
     log.info(
         "\nDone. Eyeball text/face fidelity, then submit each output to the matching oracle "
-        "(openai.com/verify / Gemini app). The smallest strength that clears the oracle while "
-        "keeping fidelity is the number to compare against the SDXL floors (OpenAI 0.10 / Google 0.15)."
+        "(OpenAI Content Provenance API first / Gemini app). The smallest strength that clears "
+        "the oracle while keeping fidelity is the number to compare against the SDXL floors "
+        "(OpenAI 0.10 / Google 0.15)."
     )
 
 

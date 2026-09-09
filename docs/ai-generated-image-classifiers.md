@@ -723,8 +723,8 @@ must change, not the example selection or the veto geometry.
 
 ### Wild vendor-flagged AI, 2026-08-27
 
-A free wild-AI positive cell came from the stock providers behind the private
-veedma-blog image pipeline. Pixabay exposes a vendor-declared
+A wild-AI positive cell used publicly available stock images. Pixabay exposes
+a vendor-declared
 `isAiGenerated` flag and the query `ai generated` surfaces that pool (3,287
 results); 284 content-hash-unique rows were harvested (300 minus 16 lost to a
 duplicate-download bug, since fixed, manifest repaired to on-disk truth). The
@@ -753,10 +753,11 @@ homogeneous, but the sample was not. A stratified reharvest capped at 15 rows
 per contributor over eight AI-marker queries produced 300 unique images from
 180 contributors (top-10 share 33%) with the same sieves. On the balanced
 cell the frozen numbers are: Model 1 recall 209/300 (69.7%, median score 0.482,
-lowest quartile below 0.144), direct quarter-hard 189/300 repairing 22 Model 1
-misses and losing 2 (the one place the quarter representation still helps),
-conditional routing 210/300 adding one repair and nothing else, provider
-cascade margin 252/300 `no_ai` with 1 `openai` call, and 0/300 metadata
+lowest quartile below 0.144). The direct quarter-hard comparison is withdrawn:
+its recorded candidate total and paired gains/losses are inconsistent, and the
+source rows must be recovered before choosing a correction. The separately
+recorded conditional routing result was 210/300, adding one repair and
+nothing else; provider cascade margin 252/300 `no_ai` with 1 `openai` call, and 0/300 metadata
 signals. The wild-AI recall ceiling under Model 1 therefore settles near
 65-70% rather than 93%, robust to contributor stratification; unknown-renderer
 AI re-encoded by stock pipelines is the largest measured positive-side gap.
@@ -906,6 +907,143 @@ Shipped 2026-09-02 in `classify.py` as a DEFINITELY-path gate on the same
 CLIP vector (asset `receipt-gate-2026-09-02.npz`, operating point updated);
 train corpus `cord-train-2026-09-02/`, artifacts
 `receipt-gate-shipped-2026-09-02/report.json`.
+
+The retrain tail closed 2026-09-07, and the gate moved MODEL-SIDE. The
+59 field receipts entered train (owner-approved; the eval cell is spent,
+out-of-sample expectation stays the LOO record), phone positives
+duplicated 3x against the CORD-dominated pool (an exact unweighted
+logistic on the expanded set, shipped update rule; at 1x the harder miss
+stays 0.056 below the certified floor even as a train row, at 2x its
+leave-one-out score misses by 0.002). Threshold re-certified on CORD
+validation + synthetic holdout, no phone pixels: 2.0109 (synthetic floor
+binds). Frozen eval: **59/59 field receipts gated, false `ai` 19/59 ->
+0/59, CORD 99/99, synth holdout 99/100, ai_test DEFINITELY cost 5/1,847
+(0.27%, better than shipped)**; full leave-one-out over all 59 phone
+rows at the certified threshold: **59/59**. The artifact ships under the
+STABLE name `receipt-gate.npz` with the threshold inside, the lib loads
+head and threshold from one artifact (legacy dated spelling and package
+fallback stay readable), so gate updates ride the model version, not a
+lib release. Artifacts:
+`receipt-gate-retrain-2026-09-07/report.json`, `weight-sweep.json`.
+
+The tc260 producer split was then measured directly, 2026-09-07, and is
+rejected at current mass. The premise that blocked it was false in one
+half and true in the other: ContentProducer IS beside the pixels, not
+only in the app database. All 1,114 tc260 catalog rows sit in the local
+freeze mirror with matching sha256, and `aigc_label` parses a producer
+for 1,107 of them (doubao 815, jimeng 144, qwen 24, yuanbao 13,
+runninghub 13, kling 5, baidu 5, liblib 4, unmapped USCC tail, 6
+dual-payload Tencent rows whose producer sits in a second AIGC block,
+1 escaped-attribute row). The fit harness reproduced `run1/provider.pt`
+byte-identically and all four card cells exactly, then refit two split
+designs with the public recipe verbatim. A flat split into per-producer
+one-vs-rest heads (doubao/jimeng/rest, with and without qwen) collapses
+its own cells: doubao test recall 235/265 to 162-168, jimeng 38/58 to
+4-7, while google pays 339/373 to 325-304 and meta v3 rises 177/198 to
+186-194, the same shared-negative-pool trade the drift campaign
+measured, in the opposite direction. Mapped-China recall barely moves
+(298 to 300-302/379). A hierarchical second stage that leaves the five
+frozen heads untouched and discriminates producer only inside
+collective-tc260 predictions cannot regress siblings by construction,
+but attributes correctly only 215/298 (72.1%): doubao 75.7%, jimeng
+39.5%, rest 88.0%. A company-level class fares no better: replacing the
+tc260 bank with a `bytedance` bank (doubao+jimeng hold 628 of 730 train
+rows; both products are ByteDance) keeps doubao at 86-87% but drops
+jimeng to 55-59%, fires a false company attribution on 41 of 56
+non-ByteDance China test rows (bytedance 16, openai 14, google 4,
+meta 4; the cross-fire survives using those rows as train negatives),
+recognizes only 17-21% of other ByteDance-family hold-out content, and
+a margin sweep trades cross-fire against recall with no viable point
+(margin 2.0: cross-fire 1/56 but doubao 30.6%, jimeng 10.3%). At
+current mass there is no honest provider class for the China segment in
+the 124-d space: `tc260` must stop being a provider VALUE, and the
+collective head survives only as a family signal (rows it names report
+`provider=None` plus a China-AIGC family hint, weights byte-identical;
+every other row's behavior is unchanged by construction). Named China
+classes return only with measured train mass. The 124-d residual space
+does not separate China producers at current train mass, so "do not
+treat a tc260 score as a named manufacturer" is a measured property,
+not only contract hygiene. The split precondition is China train mass
+(the producer join is banked as
+`tc260-producer-split-2026-09-07/producer-join.json`), not metadata
+access. Artifacts: `tc260-producer-split-2026-09-07/report.json`,
+`stage2-report.json`.
+
+Product decision, 2026-09-07: `tc260` stops being a provider VALUE. It
+was never one class of anything: it covers China's generator ecosystem,
+producers (Doubao, Jimeng, Qwen, Kling, Yuanbao, ...) that are peers of
+openai/google/meta, and the 2026-09-07 split campaign measured that no
+mixed head can honestly name the group at current mass (flat split:
+collapsing own cells and google -14/-35; company-level bytedance bank:
+cross-fire on 41/56 non-ByteDance China rows, no margin with a viable
+point; hierarchical second stage: 72.1% attribution). Shipping the
+removal needed one measurement first: deleting the head from the argmax
+falsely names 207/379 China test rows openai/google/muse-image (153 of
+them muse-image). So the head stays in the checkpoint and in the argmax
+as a GROUP VETO: when it wins, `provider=None` is published. Every other
+cell is byte-identical (openai 345/380, google 339/373, meta v3 177/198);
+China content publishes 350/379 None (the 29 residual misnamings are the
+pre-existing ones, unchanged from shipped behavior). Public values are
+`openai` / `google` / `muse-image` / `None`. Named China provider classes
+return when their train mass holds their own cells; the producer join is
+banked as `tc260-producer-split-2026-09-07/producer-join.json`.
+
+The microsoft class was measured the same day and rejected for a
+structural reason, not a mass one. Owner decision had been to add
+microsoft as a fourth named class; the fit (family-microsoft bank, 114
+train rows with features freshly extracted from the mirror, 9 sub-256px
+rows refused; microsoft appended last so the five original heads keep
+seed alignment) recognizes its own test cell at **10/125 (8%)**: 71 of
+those rows name `openai`, 9 `google`, and the genuinely fresh Copilot
+generation of 2026-09-03 names `openai` too. The 124-d space encodes the
+RENDERER, and Microsoft's products render with other vendors' models
+(Bing with DALL-E, Designer with Imagen, Copilot with gpt-image), so a
+microsoft pixel class cannot exist at any mass; Microsoft attribution is
+a metadata job (C2PA signer) that `identify` already surfaces. Side
+effect measured and accepted as rejection grounds: google pays 17 test
+rows to the reshuffled negative pools. "Provider names the renderer, not
+the product UI" is now a measured property. Artifacts:
+`microsoft-provider-2026-09-07/report.json`.
+
+Generator-taxonomy pivot, 2026-09-07. The provider semantics is now
+explicitly GENERATOR-based: the class names the model that rendered the
+pixels; brands stay metadata. Ground truth exists per file: C2PA
+`c2pa.created` `softwareAgent` names the creating software, read by raw
+byte scan (uncompressed manifests; compressed-CBOR rows count as
+unreadable). Findings: (1) 144 of the 253 microsoft-bank rows name an
+OpenAI model as their generator (98 `Azure OpenAI ImageGen`, 46
+`gpt-image` 2.0) and none names a Microsoft first-party renderer;
+(2) the entire ChatGPT drift corpus, May 30 through Aug 9, is `gpt-image`
+-- the "renderer drift" is WITHIN-generator drift, not a model switch;
+(3) 2,498 new unique China rows already sit on the local disk from
+historical uploads the freeze never sampled (doubao 1,791, jimeng 310,
+qwen 60, yuanbao 46, runninghub 48, kling 15), exceeding the measured
+per-producer preconditions roughly twofold, so the generator split for
+China is fittable now from local data. Artifacts:
+`generator-taxonomy-2026-09-07/generator-labels.json`,
+`tc260-producer-split-2026-09-07/historical-harvest.json`.
+
+The generator split then fitted, 2026-09-07, and shipped as a SURGICAL
+candidate. Mass alone did not fix per-producer heads: with the harvest
+(jimeng 85 to 351 train rows, 3.5x) separate doubao/jimeng heads still
+collapse (jimeng 30/95; the confusion is mutual: jimeng->doubao 32,
+doubao->jimeng 22) because Doubao and Jimeng render with ONE ByteDance
+model family. The union class fixes it: a `bytedance` bank (doubao+jimeng,
+2,394 train rows with the harvest) holds its cell, and the shipped
+variant retrains ONLY the bytedance and tc260-fallback heads while
+openai/google/meta/no_ai stay byte-identical to run1, so google cannot
+regress (a full refit trades google -19 through the shared negative
+pools). Numbers, frozen test cells: bytedance 271/323 = 83.9% (extended
+529/633 = 83.6% with the harvest; qwen folded into the fallback at 64
+train rows / 27%), google 339/373 unchanged, openai 345->344, meta
+177->176 (one row each lost to the new argmax candidate). Gated through
+the DEFINITELY path: bytedance names 266/317, openai 318/351 (-1),
+google 310/337 identical. Deterministic across refits. The loader
+tolerates snapshots predating bytedance (five heads load, their rows
+fall to the veto). Public value approved by the owner: `bytedance`.
+Artifacts: `provider-bytedance-surgical.pt`, `generator-split-report.json`,
+`bytedance-union-report.json`, `bytedance-surgical-report.json`,
+`gated-eval.json`, feature cache `china-harvest-124d.npz`.
 
 Open tails from the same day, all measured. (1) The two field misses sit
 at gate scores -0.15 and -0.09 against the certified 2.043 threshold;
@@ -1341,7 +1479,7 @@ After the public UI swap:
 | Provider | Meta hold-out v2 | **85.7%** (66/77 listed 79) |
 | Provider | Meta hold-out v3 | **89.4%** (177/198) |
 | Provider | Meta hold-out pooled | **88.4%** (243/275 listed 277) |
-| Provider | meme_template ungated | 29.1% leak (86 of 97) |
+| Provider | meme_template ungated | Withdrawn: recorded percentage and fraction disagree; source row must be recovered |
 
 A second Meta hold-out (`photo_ai_meta_v3`, 198 of 200 requested; two
 near-duplicates rejected) was generated the same day from 50 new

@@ -9,6 +9,7 @@ tmp/
 
 # Environment secrets
 .env
+.mcp.json
 
 # OS files
 .DS_Store
@@ -23,6 +24,17 @@ Thumbs.db
 # Generated calibration inputs
 data/synthid_corpus/refs/
 
+# Local-only image pulls held for analysis. They are not publication-cleared and
+# have no place in this repository's history. Until 2026-09-07 the only thing
+# keeping them out of a commit was an untracked .gitignore inside the directory,
+# which a fresh clone would not have.
+data/spaces/
+
+# Local-only research data: corpora, checkpoints and campaign reports, tens of
+# gigabytes that no clone should be able to commit. The layout is described in
+# data/research/README.md, which is local-only too.
+data/research/
+
 # Reference materials
 _refs/
 
@@ -30,8 +42,8 @@ _refs/
 yolov8n.pt
 .coverage
 
-# Local prototype and evaluation outputs (scripts/chroma_scrub_prototype.py and
-# friends); the durable record of an oracle verdict lives under data/evaluations/
+# Local prototype and evaluation outputs (research harnesses and probes); the
+# durable record of an oracle verdict lives under data/evaluations/
 out/
 
 # Claude Code local settings
@@ -52,6 +64,7 @@ gfpgan/
 
 # Local evaluation data
 .local-eval/
+/.oracle-slots.json
 
 # Other harnesses' generated config. Claude's sync owns these; a committed copy
 # is a second source nobody reconciles. Anchored so a same-named source file

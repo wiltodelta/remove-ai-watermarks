@@ -49,6 +49,8 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from robustness_suite import _CRASH_MARKERS
+
 REPO = Path(__file__).resolve().parents[1]
 SAMPLES = REPO / "data" / "fixtures" / "provenance"
 CORPUS = REPO / ".local-eval" / "originals"
@@ -61,6 +63,8 @@ def _capture(args: list[str]) -> str:
     p = subprocess.run(  # noqa: S603
         [exe, "run", "remove-ai-watermarks", *args], capture_output=True, text=True, cwd=REPO, check=False
     )
+    if p.returncode != 0:
+        raise RuntimeError(f"CLI capture failed (exit {p.returncode}): {p.stderr}")
     return p.stdout
 
 
@@ -77,7 +81,7 @@ class Runner:
     tmp: Path
     results: list[Result] = field(default_factory=list)
 
-    def run(self, name: str, args: list[str], *, expect_exit: int | None = 0, timeout: int = 180) -> Result:
+    def run(self, name: str, args: list[str], *, expect_exit: int | tuple[int, ...] = 0, timeout: int = 180) -> Result:
         exe = shutil.which("uv") or "uv"
         cmd = [exe, "run", "remove-ai-watermarks", *args]
         try:
@@ -88,7 +92,10 @@ class Runner:
             r = Result(name, "FAIL", f"timeout after {timeout}s", " ".join(args))
             self.results.append(r)
             return r
-        ok = expect_exit is None or p.returncode == expect_exit
+        acceptable = (expect_exit,) if isinstance(expect_exit, int) else expect_exit
+        output = p.stdout + p.stderr
+        crashed = any(marker in output for marker in _CRASH_MARKERS)
+        ok = p.returncode in acceptable and not crashed
         detail = "" if ok else f"exit {p.returncode} (want {expect_exit}): {(p.stderr or p.stdout).strip()[-200:]}"
         r = Result(name, "pass" if ok else "FAIL", detail, " ".join(args))
         self.results.append(r)
@@ -293,7 +300,7 @@ def main() -> None:
         r.run(
             f"batch --mode {mode}",
             ["batch", str(bd), "--mode", mode, "-o", str(tmp / f"batch_{mode}")],
-            expect_exit=None,
+            expect_exit=0,
         )
 
     # ---- diffusion: argument handling always; the model body under --diffusion ----
@@ -319,8 +326,8 @@ def main() -> None:
             r.run(
                 f"visible auto real {label}",
                 ["visible", str(p), "-o", str(tmp / f"r_{label}_{p.stem[:8]}.png")],
-                expect_exit=None,
-            )  # 0 or 2 are both correct; a CRASH is not
+                expect_exit=(0, EXIT_NO_VISIBLE_MARK),
+            )  # Successful removal or the documented no-mark outcome.
 
         # unicode + misnamed extension + truncated: the documented real-world traps
         if picks:
@@ -333,7 +340,7 @@ def main() -> None:
             r.run("misnamed extension", ["identify", str(mis), "--json"])
             trunc = tmp / "truncated.png"
             trunc.write_bytes((SAMPLES / "chatgpt-1.png").read_bytes()[:4096])
-            r.run("truncated file does not crash", ["identify", str(trunc), "--json"], expect_exit=None)
+            r.run("truncated file does not crash", ["identify", str(trunc), "--json"], expect_exit=(0, 1))
 
     # ---- report --------------------------------------------------------------
     bad = [x for x in r.results if x.status == "FAIL"]
@@ -470,9 +477,12 @@ def _media_rows(r: Runner, tmp: Path) -> None:
             r.skip(f"{name} metadata strip", "ffmpeg could not synthesize the fixture")
             continue
         out = tmp / f"media_clean.{name}"
-        r.run(f"{name} metadata strip runs", ["metadata", str(src), "--remove", "-o", str(out)], expect_exit=None)
-        if out.exists():
-            r.check(f"{name} strip produced a non-empty file", out.stat().st_size > 0, "empty output")
+        r.run(f"{name} metadata strip runs", ["metadata", str(src), "--remove", "-o", str(out)], expect_exit=0)
+        r.check(
+            f"{name} strip produced a non-empty file",
+            out.is_file() and out.stat().st_size > 0,
+            "missing or empty output",
+        )
 
 
 def _sdxl_watermark_bits(img: object) -> float:
@@ -557,7 +567,7 @@ def _diffusion_rows(r: Runner, tmp: Path, doubao: Path) -> None:
     res = r.run(
         "batch --mode invisible runs (512px)",
         ["batch", str(bd), "--mode", "invisible", "-o", str(bout), *small],
-        expect_exit=None,
+        expect_exit=0,
         timeout=3600,
     )
     if res.status == "pass":
@@ -569,7 +579,7 @@ def _diffusion_rows(r: Runner, tmp: Path, doubao: Path) -> None:
     r.run(
         "batch --mode all runs (512px)",
         ["batch", str(bd), "--mode", "all", "-o", str(aout), *small],
-        expect_exit=None,
+        expect_exit=0,
         timeout=3600,
     )
 

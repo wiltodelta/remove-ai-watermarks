@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 CLASSIFY_EXTRA = "'remove-ai-watermarks[classify]'"
 WEIGHTS_ENV = "RAIW_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-photo-classify"
-WEIGHTS_REVISION = "ffc46db5135ee3a83f51538f2c8f7483b9b8b40c"
+WEIGHTS_REVISION = "4c2763766dd1c8c212d64e01e1cc3f166243c47d"
 CLIP_FILE = "clip-l-ft.pt"
 PROBE_FILE = "probe-weights-clip-l-ft.npz"
 DETECTOR_FILE = "detector.pt"
@@ -36,6 +36,14 @@ _WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 # holdout; no field-receipt pixels were used for training or the threshold.
 # The head versions with the model (Hub snapshot or RAIW_CLASSIFY_WEIGHTS
 # directory); the package asset is the fallback for pre-gate freezes.
+# 2026-09-07: the gate is MODEL-SIDE. The weights directory carries the
+# artifact under the STABLE name ``receipt-gate.npz`` with the threshold
+# inside; the dated name below stays readable as the legacy spelling, and
+# the bundled package asset is the last-resort fallback. Head and
+# threshold always come from ONE artifact, so a model-side gate update
+# needs no lib release; ``RECEIPT_GATE_THRESHOLD`` is only the legacy
+# pinned value kept for the package-asset fallback and its pinned tests.
+RECEIPT_GATE_STABLE_FILE = "receipt-gate.npz"
 RECEIPT_GATE_FILE = "receipt-gate-2026-09-02.npz"
 RECEIPT_GATE_THRESHOLD = 2.0432573877459697
 
@@ -48,6 +56,7 @@ RECEIPT_GATE_THRESHOLD = 2.0432573877459697
 WEIGHTS_ALLOW_PATTERNS: tuple[str, ...] = (
     *_WEIGHT_FILES,
     OPERATING_POINT_FILE,
+    RECEIPT_GATE_STABLE_FILE,
     RECEIPT_GATE_FILE,
 )
 
@@ -57,19 +66,32 @@ MLP_THRESHOLD = 5.9586493237495395
 RIDGE_THRESHOLD = 0.3056212276800537
 PROVIDER_MARGIN = 0.30
 CLIP_WIDTH = 768
-# Checkpoint keys in provider.pt. openai/google are provider classes;
-# meta_muse_image is Muse Image; tc260 is the China AIGC label standard
-# (mixed producers). Public names follow that split.
-PROVIDER_LABELS = ("openai", "google", "tc260", "meta_muse_image", "no_ai")
+# Checkpoint keys in provider.pt, the SUPERSET across snapshot generations.
+# openai/google are provider classes; meta_muse_image is Muse Image;
+# bytedance is the shared ByteDance generator lineage (Doubao and Jimeng
+# render with the same model family -- measured 2026-09-07: separate heads
+# cross-fire 32/22 ways even at 3.5x train mass, the union holds 83.9%
+# on the frozen test cell). tc260 is NOT one class of anything: it covers
+# the REST of China's generator ecosystem (Qwen, Yuanbao, Kling, ...,
+# producers that are peers of openai/google/meta), whose heads do not
+# exist yet at honest mass, so its argmax win abstains (provider=None).
+# The loader tolerates older snapshots that predate bytedance: a head
+# absent from provider.pt is skipped, and those rows fall to the veto.
+# Measured on the shipped weights: deleting the veto from the argmax
+# would falsely name 207/379 China test rows openai/google/muse-image
+# (153 of them muse-image); the veto leaves every other cell
+# byte-identical (openai 345/380, google 339/373, meta v3 177/198).
+PROVIDER_LABELS = ("openai", "google", "bytedance", "tc260", "meta_muse_image", "no_ai")
 
 DetectorLevel = Literal["definitely", "possibly", "likely_human"]
 PixelLabel = Literal["ai", "human", "unknown"]
 PixelDomain = Literal["photo"]
-PixelProvider = Literal["openai", "google", "muse-image", "tc260"]
-PUBLIC_PROVIDER: dict[str, PixelProvider] = {
+PixelProvider = Literal["openai", "google", "muse-image", "bytedance"]
+PUBLIC_PROVIDER: dict[str, PixelProvider | None] = {
     "openai": "openai",
     "google": "google",
-    "tc260": "tc260",
+    "bytedance": "bytedance",
+    "tc260": None,
     "meta_muse_image": "muse-image",
 }
 
@@ -81,18 +103,21 @@ _receipt_gate_cache: dict[str, dict[str, Any]] = {}
 def _load_receipt_gate(folder: Path | None = None) -> dict[str, Any]:
     """Load the receipt-gate head, preferring the weights directory.
 
-    Model-side first (the Hub snapshot and ``RAIW_CLASSIFY_WEIGHTS`` carry
-    ``receipt-gate-2026-09-02.npz``), with the bundled package asset as the
-    fallback for weights directories frozen before the gate existed. The
-    head is fitted on the freeze CLIP-L-ft embedding space, which is why it
-    versions with the model, not with the code.
+    Model-side first: the stable ``receipt-gate.npz`` in the Hub snapshot
+    or ``RAIW_CLASSIFY_WEIGHTS`` directory wins, then the legacy dated
+    spelling, with the bundled package asset as the fallback for weights
+    directories frozen before the gate existed. The head is fitted on the
+    freeze CLIP-L-ft embedding space, which is why it versions with the
+    model, not with the code; the threshold travels inside the artifact.
     """
     import numpy as np
 
     key = str(folder) if folder is not None else "<package>"
     if key in _receipt_gate_cache:
         return _receipt_gate_cache[key]
-    source: Path | None = _find_weight(folder, RECEIPT_GATE_FILE) if folder is not None else None
+    source: Path | None = None
+    if folder is not None:
+        source = _find_weight(folder, RECEIPT_GATE_STABLE_FILE) or _find_weight(folder, RECEIPT_GATE_FILE)
     if source is None:
         source = Path(__file__).parent / "assets" / RECEIPT_GATE_FILE
     payload = np.load(source)
@@ -107,11 +132,17 @@ def _load_receipt_gate(folder: Path | None = None) -> dict[str, Any]:
     return gate
 
 
-def receipt_gate_score(clip_vector: Any) -> float:
-    """Receipt-document score of a CLIP-L-ft vector; higher is more receipt-like."""
+def receipt_gate_score(clip_vector: Any, gate: dict[str, Any] | None = None) -> float:
+    """Receipt-document score of a CLIP-L-ft vector; higher is more receipt-like.
+
+    ``gate`` must be the SAME artifact whose threshold decides the hit
+    (``classify_pixels`` passes the weights-directory gate, so head and
+    threshold can never come from different files); the default loads the
+    package-fallback artifact for standalone probing.
+    """
     import numpy as np
 
-    g = _load_receipt_gate()
+    g = _load_receipt_gate() if gate is None else gate
     v = np.asarray(clip_vector, dtype=np.float64).ravel()
     v = v / (np.linalg.norm(v) + 1e-12)
     return float((((v - g["mu"]) / g["sd"]) @ g["w"]) + g["b"])
@@ -169,9 +200,18 @@ def label_for(level: DetectorLevel) -> PixelLabel:
 
 
 def provider_from_scores(scores: dict[str, float], *, margin: float = PROVIDER_MARGIN) -> PixelProvider | None:
-    """Argmax among openai/google/tc260/muse-image that beat ``no_ai`` by ``margin``."""
+    """Argmax among the named classes that beat ``no_ai`` by ``margin``.
+
+    Candidates are the heads the LOADED snapshot actually carries, so
+    older provider.pt files without a generation's newest class keep
+    working (their rows fall to the tc260 veto and abstain). The tc260
+    head joins the argmax only as a group veto: it covers the rest of
+    China's generator ecosystem, producers that are peers of
+    openai/google/meta, so until per-producer classes exist its win
+    abstains and ``None`` is published instead of a false company claim.
+    """
     no_ai = scores["no_ai"]
-    ai_names = [name for name in PROVIDER_LABELS if name != "no_ai"]
+    ai_names = [name for name in scores if name != "no_ai"]
     passed = [name for name in ai_names if scores[name] > no_ai + margin]
     if not passed:
         return None
@@ -188,14 +228,18 @@ def classify_from_scores(
     mlp_threshold: float = MLP_THRESHOLD,
     provider_margin: float = PROVIDER_MARGIN,
     receipt_score: float | None = None,
-    receipt_threshold: float = RECEIPT_GATE_THRESHOLD,
+    receipt_threshold: float | None = None,
 ) -> PixelClassification:
     """Pure gate: detector AND provider, no file I/O.
 
     A DEFINITELY verdict whose ``receipt_score`` meets ``receipt_threshold``
     downgrades the public label to ``unknown`` (document-domain abstain):
     the raw detector level stays ``definitely`` and no provider is read.
+    ``receipt_threshold=None`` (the default) resolves from the loaded gate
+    artifact, so the operating point versions with the model.
     """
+    if receipt_threshold is None:
+        receipt_threshold = float(_load_receipt_gate()["threshold"])
     level = detector_level(
         ridge_score,
         mlp_score,
@@ -234,7 +278,7 @@ def classify_pixels(path: Path, *, device: str | None = None) -> PixelClassifica
             mlp_threshold=runtime.mlp_threshold,
         )
         gate = _load_receipt_gate(runtime.weights_dir)
-        r_score = receipt_gate_score(clip_vector) if level == "definitely" else None
+        r_score = receipt_gate_score(clip_vector, gate) if level == "definitely" else None
         provider_scores = None
         if r_score is not None and r_score < gate["threshold"]:
             forensic = _forensic(rgb)
@@ -388,6 +432,9 @@ def _load_runtime(device: Any) -> _Runtime:
     packed = torch.load(_weight_path(folder, PROVIDER_FILE), map_location="cpu", weights_only=True)
     heads = {}
     for name in PROVIDER_LABELS:
+        if name not in packed:
+            log.info("provider head %s absent from this snapshot; rows it would name abstain", name)
+            continue
         head = _build_provider_head()
         head.load_state_dict(packed[name])
         heads[name] = head.to(device).eval()

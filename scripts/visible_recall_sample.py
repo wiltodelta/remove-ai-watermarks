@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -64,6 +65,16 @@ def corner_strip(img: NDArray[Any]) -> NDArray[Any] | None:
     return strip
 
 
+def unique_content_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one row per file digest, independently of detector observations."""
+    unique: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        with Path(row["path"]).open("rb") as source:
+            digest = hashlib.file_digest(source, "sha256").hexdigest()
+        unique.setdefault(digest, row)
+    return list(unique.values())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scan", type=Path, help="JSONL corpus scan produced by the visible evaluation harness")
@@ -78,10 +89,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     recs = [json.loads(line) for line in scan.open() if '"marks"' in line]
-    seen: dict[tuple, dict] = {}
-    for r in recs:  # exact-duplicate uploads share the whole NCC vector
-        seen.setdefault(tuple(r.get("shape", ())) + tuple(sorted((k, m["conf"]) for k, m in r["marks"].items())), r)
-    uniq = list(seen.values())
+    uniq = unique_content_rows(recs)
 
     tc = [r for r in uniq if r["cls"] == "tc260"]
     goog = [r for r in uniq if r["cls"] == "neg" and "Google" in r.get("platform", "")]

@@ -96,6 +96,6 @@ uv run python scripts/contentseal_transforms.py /tmp/contentseal-derived
 The Meta API generations and remote GPU outputs are not reproducible from this
 repository alone. Their prompts, exact output hashes, model/profile settings,
 and oracle results are recorded in `manifest.csv`, but the generation API is
-stochastic and the private worker environment is not tracked. `MUSE_API_KEY` and
+stochastic and the GPU environment that produced them is not tracked. `MUSE_API_KEY` and
 the anonymous detector session are deliberately absent. A new calibration must
 therefore create new manifest rows rather than claiming to recreate these bytes.

@@ -309,55 +309,55 @@ def test_deskew_bank_recovers_small_rotation(periodic_fixture: tuple[np.ndarray,
 def test_registered_period_mode_uses_runtime_selected_period(
     periodic_fixture: tuple[np.ndarray, np.ndarray],
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     pixels, template = periodic_fixture
     runner = CliRunner()
-    with runner.isolated_filesystem():
-        np.savez("template.npz", template=template)
-        Image.fromarray(pixels).save("image.png")
-        components = probe.RegisteredComponents(
-            raw_score=0.4,
-            amplitude_threshold=0.2,
-            selected_period=16.0,
-            spectral_period=16.0,
-            high_band_score=0.15,
-            confirmation=RegisteredConfirmationComponents(
-                period=16.0,
-                joint_coherence=0.5,
-                joint_amplitude=0.2,
-                unknown_codeword_fixed_confirmation=0.5,
-                selection_patches=8,
-                confirmation_patches=8,
-            ),
-        )
-        monkeypatch.setattr(probe, "registered_components", lambda *_args: components)
+    np.savez(tmp_path / "template.npz", template=template)
+    Image.fromarray(pixels).save(tmp_path / "image.png")
+    components = probe.RegisteredComponents(
+        raw_score=0.4,
+        amplitude_threshold=0.2,
+        selected_period=16.0,
+        spectral_period=16.0,
+        high_band_score=0.15,
+        confirmation=RegisteredConfirmationComponents(
+            period=16.0,
+            joint_coherence=0.5,
+            joint_amplitude=0.2,
+            unknown_codeword_fixed_confirmation=0.5,
+            selection_patches=8,
+            confirmation_patches=8,
+        ),
+    )
+    monkeypatch.setattr(probe, "registered_components", lambda *_args: components)
 
-        result = runner.invoke(
-            probe.main,
-            [
-                "template.npz",
-                "image.png",
-                "--registered-period",
-                "--same-image-null",
-                "--patch-shift-consensus",
-                "--opponent-registered",
-                "--report-out",
-                "report.json",
-            ],
-        )
+    result = runner.invoke(
+        probe.main,
+        [
+            str(tmp_path / "template.npz"),
+            str(tmp_path / "image.png"),
+            "--registered-period",
+            "--same-image-null",
+            "--patch-shift-consensus",
+            "--opponent-registered",
+            "--report-out",
+            str(tmp_path / "report.json"),
+        ],
+    )
 
-        assert result.exit_code == 0, result.output
-        report = json.loads(Path("report.json").read_text(encoding="utf-8"))
-        assert report["registered_period"] is True
-        assert report["same_image_null"] is True
-        assert report["patch_shift_consensus"] is True
-        assert report["opponent_registered"] is True
-        assert report["records"][0]["registered"]["selected_period"] == 16.0
-        assert report["records"][0]["registered"]["decision_score"] == 2.0
-        assert report["records"][0]["score"]["selected_period"] == 16.0
-        assert report["records"][0]["same_image_null"]["joint_excess"] > 0.2
-        assert report["records"][0]["patch_shift_consensus"]["joint_support_fraction"] == 1.0
-        assert report["records"][0]["opponent_registered"]["decision_score"] > 1.0
+    assert result.exit_code == 0, result.output
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["registered_period"] is True
+    assert report["same_image_null"] is True
+    assert report["patch_shift_consensus"] is True
+    assert report["opponent_registered"] is True
+    assert report["records"][0]["registered"]["selected_period"] == 16.0
+    assert report["records"][0]["registered"]["decision_score"] == 2.0
+    assert report["records"][0]["score"]["selected_period"] == 16.0
+    assert report["records"][0]["same_image_null"]["joint_excess"] > 0.2
+    assert report["records"][0]["patch_shift_consensus"]["joint_support_fraction"] == 1.0
+    assert report["records"][0]["opponent_registered"]["decision_score"] > 1.0
 
 
 def test_registered_confirmation_uses_frozen_period_aware_gates(

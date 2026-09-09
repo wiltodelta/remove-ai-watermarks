@@ -21,17 +21,22 @@
   "model2": {
     "feature_width": 124,
     "margin": 0.3,
-    "classes": ["openai", "google", "tc260", "muse-image", "no_ai"],
+    "classes": ["openai", "google", "bytedance", "tc260", "muse-image", "no_ai"],
     "class_kind": {
       "openai": "provider",
       "google": "provider",
-      "tc260": "label-standard",
+      "bytedance": "provider",
+      "tc260": "abstain-veto",
       "muse-image": "model",
       "no_ai": "negative"
     },
+    "public_values": ["openai", "google", "bytedance", "muse-image", null],
+    "bytedance_note": "Doubao and Jimeng render with one ByteDance model family; the class names that shared generator lineage. Measured 2026-09-07 on the frozen test cell: 83.9% (271/323), extended with the historical harvest 83.6% (529/633).",
+    "tc260_note": "the head covers the REST of China's generator ecosystem -- producers (Qwen, Yuanbao, Kling, ...) that are peers of openai/google/meta, not one vendor. No mixed head can honestly name the group, so its argmax win abstains (provider=None). Measured 2026-09-07: without the veto 207/379 China test rows would be falsely named openai/google/muse-image. Per-producer classes return when their train mass holds their own cells (qwen measured at 64 train rows: 27% -- stays in the fallback).",
     "checkpoint_keys": {
       "muse-image": "meta_muse_image"
     },
+    "snapshot_tolerance": "provider.pt snapshots predating bytedance load with five heads; absent heads are skipped and their rows fall to the tc260 veto",
     "runs_only_after": "definitely"
   },
   "receipt_gate": {

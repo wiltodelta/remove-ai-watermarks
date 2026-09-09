@@ -68,6 +68,9 @@ Known examples:
   `Contenuti generati dall'AI` text variant.
 - The Jimeng top-left pill has a weak visual detector and is intentionally
   subject to additional product and background checks.
+- The compact LiblibAI top-left pill is generic on its own. Automatic removal
+  requires LiblibAI metadata or the bottom-center wordmark and a flat footprint;
+  `--sensitivity strict` leaves this corroboration-only component untouched.
 - Kling AI support covers the calibrated variants rather than every Kling AI label.
 
 Use `erase --region` when you can see and select an unsupported or missed mark.
@@ -206,6 +209,15 @@ The public video results make that boundary explicit without decoding audio:
 `visual_invisible_action` records whether video pixels were regenerated, while
 the nested audio status reports `copied_if_present` and `unverified`. CLI output
 uses the same terms. These fields add no media pass or model inference.
+
+A local matched-oracle study has now measured the boundary concretely:
+[Audio provenance experiment](audio-provenance-experiment.md) embeds AudioSeal
+into synthetic carriers, runs the visible video-cleaning path, and shows the
+audio packets byte-identical and the watermark verdict invariant across
+cleaning, while additive noise on the audio path is the effective lever. The
+boundary above still stands for provider marks: this tool still does not
+decode them, and a `copied_if_present` audio track remains `unverified` in
+runtime output.
 
 The shipped engine streams sampled frames in bounded batches, computes its
 fidelity metrics incrementally, and pipes regenerated pixels directly to
@@ -346,6 +358,18 @@ Memory needs depend on the profile, input size, dtype, and card.
 
 ## Metadata and formats
 
+### Identification never resolves anything over the network
+
+C2PA soft bindings can be resolved to manifests through vendor endpoints
+(the registry carries eight of them), and querying one always tells the
+vendor that someone is inspecting the specific content - directly through
+the asset digest for fingerprint lookups, through the watermark payload for
+payload-based ones. This tool deliberately has no resolution mode, tier, or
+opt-in: identification reports only locally decoded evidence, and the
+watermark decoders in this repository run offline against pinned weights.
+The contracts, the privacy gradient, and the reasoning are recorded in
+[the resolution research](c2pa-resolution-research.md).
+
 ### Missing metadata does not mean clean
 
 Screenshots, social platforms, and re-encoding can remove metadata while a
@@ -379,7 +403,8 @@ supported AI provenance metadata without transcoding streams.
 
 `video visible` and `remove_video_visible` additionally support the moving
 Sora 2 mascot and wordmark, the current Veo four-point diamond, the legacy
-`Veo` text, the Seedance boxed `AI` label, the fixed `Dola AI` text, the Hailuo AI
+`Veo` text, the Seedance boxed `AI` label, the fixed Doubao `豆包AI生成`
+label, the fixed `Dola AI` text, the Hailuo AI
 MINIMAX/Hailuo AI composite label, and the bottom-right Kling AI `KLING AI` or
 `KlingAI` label with its version suffix. Detection requires a recurring visual
 candidate across adjacent frames. Fixed-mark candidates must remain anchored rather than
@@ -467,11 +492,13 @@ when `image_io` can still decode the raster by normalizing the container and
 checking again. A truly undecodable file still reports the surviving markers.
 The CLI uses this verified path.
 
-### Sixteen bit PNG output is not preserved
+### Sixteen bit PNG metadata stripping
 
-The Pillow based PNG metadata rewrite uses the normal image save path and may
-reduce a sixteen bit PNG to eight bits. A byte-level PNG metadata stripper
-would be required to preserve that bit depth.
+Sixteen bit PNG metadata stripping uses `_strip_png_metadata_lossless`, which
+preserves the coded pixel chunks and bit depth. Decoder-based normalization
+of malformed files can still reduce precision. Pixel editing and inpainting
+have separate precision limits; lossless metadata stripping does not extend
+those pixel-processing contracts.
 
 ## Detection extras
 

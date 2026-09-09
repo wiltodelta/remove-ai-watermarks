@@ -235,11 +235,12 @@ def glyph_silhouette(asset_name: str) -> NDArray[Any] | None:
 _RIVAL_MODULES = {
     "doubao_alpha.png": "remove_ai_watermarks.doubao_engine",
     "jimeng_alpha.png": "remove_ai_watermarks.jimeng_engine",
+    "qwen_alpha.png": "remove_ai_watermarks.qwen_engine",
     "samsung_alpha.png": "remove_ai_watermarks.samsung_engine",
 }
 
 
-def _rival_config(asset_name: str, fallback: TextMarkConfig) -> TextMarkConfig:
+def _rival_config(asset_name: str) -> TextMarkConfig | None:
     """The rival mark's own config, for scoring its template on a shared blob.
 
     Looked up LAZILY by asset name: a rival's template geometry
@@ -249,14 +250,14 @@ def _rival_config(asset_name: str, fallback: TextMarkConfig) -> TextMarkConfig:
     """
     mod_path = _RIVAL_MODULES.get(asset_name)
     if mod_path is None:
-        return fallback
+        return None
     from importlib import import_module
 
     try:
         return import_module(mod_path)._CONFIG
     except Exception:  # a missing/renamed engine must not break detection
         logger.debug("rival config %s unavailable; skipping its margin check.", asset_name)
-        return fallback
+        return None
 
 
 def _template_match_best(
@@ -335,7 +336,9 @@ class TextMarkEngine:
         if not c.rivals:
             return True
         for rival_asset in c.rivals:
-            rival = _rival_config(rival_asset, c)
+            rival = _rival_config(rival_asset)
+            if rival is None:
+                continue
             if score - template_match_score(box_mask, scale_base, rival) < c.rival_margin:
                 logger.debug("%s detect: loses the %s rival margin; rejecting.", c.name, rival_asset)
                 return False

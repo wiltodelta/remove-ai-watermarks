@@ -289,7 +289,11 @@ def test_client_configuration_error_is_actionable(
         raise ValueError("OPENAI_API_KEY is missing")
 
     monkeypatch.setattr(provenance, "is_available", lambda: True)
-    monkeypatch.setattr(provenance.importlib, "import_module", lambda _name: SimpleNamespace(OpenAI=fail))
+    monkeypatch.setattr(
+        provenance.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(OpenAI=fail, DefaultHttpxClient=lambda **_kwargs: object()),
+    )
 
     with pytest.raises(RuntimeError, match=r"could not initialize.*OPENAI_API_KEY"):
         _verify(tmp_clean_png)
@@ -297,6 +301,7 @@ def test_client_configuration_error_is_actionable(
 
 def test_default_client_bounds_one_acknowledged_upload(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
+    http_client = object()
     expected = SimpleNamespace(content_provenance_checks=object())
 
     def factory(**kwargs: Any) -> Any:
@@ -304,15 +309,70 @@ def test_default_client_bounds_one_acknowledged_upload(monkeypatch: pytest.Monke
         return expected
 
     monkeypatch.setattr(provenance, "is_available", lambda: True)
-    monkeypatch.setattr(provenance.importlib, "import_module", lambda _name: SimpleNamespace(OpenAI=factory))
+    monkeypatch.setattr(
+        provenance.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(OpenAI=factory, DefaultHttpxClient=lambda **_kwargs: http_client),
+    )
 
     assert provenance._default_client() is expected
     assert calls == [
         {
             "timeout": provenance.REQUEST_TIMEOUT_SECONDS,
             "max_retries": 0,
+            "http_client": http_client,
         }
     ]
+
+
+def test_default_client_accepts_one_explicit_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    http_client = object()
+    expected = SimpleNamespace(content_provenance_checks=object())
+
+    def factory(**kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(provenance, "is_available", lambda: True)
+    monkeypatch.setattr(
+        provenance.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(OpenAI=factory, DefaultHttpxClient=lambda **_kwargs: http_client),
+    )
+
+    assert provenance._default_client(api_key="test-research-key") is expected
+    assert calls == [
+        {
+            "api_key": "test-research-key",
+            "timeout": provenance.REQUEST_TIMEOUT_SECONDS,
+            "max_retries": 0,
+            "http_client": http_client,
+        }
+    ]
+
+
+def test_default_client_ignores_environment_proxy_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    client_calls: list[dict[str, Any]] = []
+    transport_calls: list[dict[str, Any]] = []
+    transport = object()
+    expected = SimpleNamespace(content_provenance_checks=object())
+
+    def client_factory(**kwargs: Any) -> Any:
+        client_calls.append(kwargs)
+        return expected
+
+    def transport_factory(**kwargs: Any) -> object:
+        transport_calls.append(kwargs)
+        return transport
+
+    module = SimpleNamespace(OpenAI=client_factory, DefaultHttpxClient=transport_factory)
+    monkeypatch.setattr(provenance, "is_available", lambda: True)
+    monkeypatch.setattr(provenance.importlib, "import_module", lambda _name: module)
+
+    assert provenance._default_client(api_key="test-research-key") is expected
+    assert transport_calls == [{"trust_env": False}]
+    assert client_calls[0]["http_client"] is transport
 
 
 @pytest.mark.parametrize(

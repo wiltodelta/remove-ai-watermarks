@@ -104,6 +104,35 @@ def test_probe_min_cli_version_never_exceeds_the_package_version() -> None:
         sys.modules.pop("probe", None)
 
 
+def test_probe_floor_covers_every_since_annotation() -> None:
+    """MIN_CLI_VERSION must be at least the newest named "(since CLI X.Y.Z)" value.
+
+    A reference that names a value the previous release lacked has to raise the
+    floor in the same change; this reads the annotations back out of the skill
+    tree so a stale floor fails the suite instead of an agent's CLI.
+    """
+
+    sys.path.insert(0, str(ROOT / "skills" / "remove-ai-watermarks" / "scripts"))
+    try:
+        import probe
+
+        annotated = []
+        for path in (ROOT / "skills" / "remove-ai-watermarks").rglob("*"):
+            if path.suffix not in {".md", ".py"} or not path.is_file():
+                continue
+            for match in re.finditer(r"\(since CLI (\d+)\.(\d+)\.(\d+)\)", path.read_text(encoding="utf-8")):
+                annotated.append(tuple(int(part) for part in match.groups()))
+        assert annotated, "no (since CLI X.Y.Z) annotations found; the floor guard lost its source"
+        highest = max(annotated)
+        assert highest <= probe.MIN_CLI_VERSION, (
+            f"probe.py MIN_CLI_VERSION {probe.MIN_CLI_VERSION} is below {highest}, the newest "
+            "(since CLI X.Y.Z) annotation in the skill; a build that old rejects a named value"
+        )
+    finally:
+        sys.path.remove(str(ROOT / "skills" / "remove-ai-watermarks" / "scripts"))
+        sys.modules.pop("probe", None)
+
+
 @pytest.mark.parametrize(
     "relative",
     [
@@ -604,3 +633,99 @@ def test_every_cli_command_is_named_somewhere_in_the_skill() -> None:
     missing = sorted(" ".join(path) for path in _cli_commands() if " ".join(path) not in text)
 
     assert not missing, f"the CLI grew commands the skill never mentions: {missing}"
+
+
+@pytest.mark.parametrize(
+    ("video", "invisible", "visible_advice", "invisible_advice"),
+    [
+        ("missing", "installed", "needs_video_extra", "needs_video_and_diffusion_extras"),
+        ("ok", "missing", "ok", "needs_video_and_diffusion_extras"),
+        ("ok", "installed", "ok", "ok_cpu_or_gpu"),
+        ("unknown", "unknown", "unverified", "unverified"),
+    ],
+)
+def test_probe_video_advice_uses_the_installed_video_runtime(
+    video: str,
+    invisible: str,
+    visible_advice: str,
+    invisible_advice: str,
+) -> None:
+    probe = _probe_module()
+    probe._video_stacks = lambda _cli: {"pixels": video, "invisible": invisible}
+    probe._which = lambda _name: "/synthetic/executable"
+    probe._has_cuda = lambda: False
+    probe._cli = lambda: {"found": True, "path": "/synthetic/cli", "outdated": False}
+    probe._pixel_stack = lambda _cli: "ok"
+    probe._invisible_stack = lambda _cli: "missing"
+    report = probe.build_report()
+    assert report["advice"]["video_visible"] == visible_advice
+    assert report["advice"]["video_invisible"] == invisible_advice
+
+
+@pytest.mark.parametrize("wrapper", [False, True])
+def test_video_probe_runs_the_cli_interpreter_without_loading_models(tmp_path: Path, wrapper: bool) -> None:
+    probe = _probe_module()
+    cli = tmp_path / "remove-ai-watermarks"
+    interpreter = (tmp_path / "venv" / "bin" / "python3").as_posix()
+    cli.write_text(f"#!/bin/sh\n'''exec' '{interpreter}' \"$0\" \"$@\"\n' '''\n" if wrapper else f"#!'{interpreter}'\n")
+    calls: list[list[str]] = []
+
+    def run(argv: list[str], timeout: float = 8) -> tuple[int, str, str]:
+        calls.append(argv)
+        return 0, json.dumps({"pixels": "ok", "invisible": "installed"}), ""
+
+    probe._run = run
+    assert probe._video_stacks(str(cli)) == {"pixels": "ok", "invisible": "installed"}
+    assert len(calls) == 1
+    assert calls[0][:2] == [interpreter, "-c"]
+    # Execute the exact child code against the real package's availability seams.
+    # The loader is forbidden even when the optional stack is present.
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from remove_ai_watermarks import video_invisible
+
+    with (
+        patch.dict(sys.modules, {"av": SimpleNamespace(), "diffusers": SimpleNamespace(AutoencoderKL=object)}),
+        patch("remove_ai_watermarks.video._require_video_runtime"),
+        patch.object(video_invisible, "is_available", return_value=True),
+        patch.object(video_invisible, "load_video_vae_runtime", side_effect=AssertionError("model load")),
+    ):
+        exec(calls[0][2], {})  # noqa: S102 - Execute the probe's own child code at the real seam.
+
+
+@pytest.mark.parametrize(("video_missing", "diffusion_missing"), [(True, False), (False, True), (False, False)])
+def test_video_runtime_probe_reports_both_real_availability_seams(
+    video_missing: bool,
+    diffusion_missing: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from remove_ai_watermarks import video, video_invisible
+
+    probe = _probe_module()
+    guard = RuntimeError("missing video") if video_missing else None
+    with (
+        patch.dict(sys.modules, {"av": SimpleNamespace(), "diffusers": SimpleNamespace(AutoencoderKL=object)}),
+        patch.object(video, "_require_video_runtime", side_effect=guard) as checked_video,
+        patch.object(video_invisible, "is_available", return_value=not diffusion_missing) as checked_diffusion,
+        patch.object(video_invisible, "load_video_vae_runtime", side_effect=AssertionError("model load")),
+    ):
+        exec(probe._VIDEO_RUNTIME_CHECK, {})  # noqa: S102 - Execute repository-owned probe code.
+    result = json.loads(capsys.readouterr().out)
+    checked_video.assert_called_once()
+    checked_diffusion.assert_called_once()
+    assert result == {
+        "pixels": "missing" if video_missing else "ok",
+        "invisible": "missing" if diffusion_missing else "installed",
+    }
+
+
+def test_unrecognized_cli_launcher_is_unverified(tmp_path: Path) -> None:
+    probe = _probe_module()
+    cli = tmp_path / "launcher"
+    cli.write_text('#!/bin/sh\nexec unrecognized-wrapper "$@"\n')
+    probe._run = lambda *_a, **_kw: pytest.fail("unknown launcher must not run")
+    assert probe._video_stacks(str(cli)) == {"pixels": "unknown", "invisible": "unknown"}

@@ -11,7 +11,7 @@ def normalize_text(text: str) -> str:
 
 
 def levenshtein_normalized(left: str, right: str) -> float:
-    """Return normalized Levenshtein distance without changing either input."""
+    """Return Levenshtein distance divided by the longer input length (not CER)."""
     if not left and not right:
         return 0.0
     previous = list(range(len(right) + 1))

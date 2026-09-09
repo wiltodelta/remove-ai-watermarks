@@ -56,7 +56,7 @@ def test_manifest_rows_are_well_formed() -> None:
 def test_default_pipeline_clearance_is_recorded() -> None:
     """The verified claim that the default profile clears Content Seal must stay."""
     rows = {row["name"]: row for row in _manifest_rows()}
-    for name in ("fox_modal_invisible", "text_modal_invisible"):
+    for name in ("fox_default_invisible", "text_default_invisible"):
         assert rows[name]["oracle_verdict"] == "not_detected", name
 
 

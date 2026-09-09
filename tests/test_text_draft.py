@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from PIL import Image
 
 from remove_ai_watermarks.text_draft import (
@@ -77,15 +78,13 @@ class _FakeEngine:
 
 
 class _JitterEngine:
-    """Changes its answer with the crop height - exactly what the gate rejects."""
+    """Changes its answer with the supplied crop dimensions - exactly what the gate rejects."""
 
     def __init__(self, texts: list[str]) -> None:
         self._texts = texts
-        self._calls = 0
 
     def predict(self, crop: Any) -> Any:
-        text = self._texts[self._calls % len(self._texts)]
-        self._calls += 1
+        text = self._texts[(crop.shape[1] // 8) % len(self._texts)]
         yield {"rec_text": text, "rec_score": 0.97}
 
 
@@ -154,5 +153,38 @@ class TestDraftTextLines:
             engines={"en": jitter, "ru": stable, "ch": stable},
         )
         (line,) = draft.accepted
-        assert line.text == "Hello"
+        assert line.text == "Hallo"
         assert line.min_score >= 0.75
+
+
+class TestActualCropJitter:
+    @pytest.mark.parametrize(("language", "prefix"), [("en", "Latin"), ("ru", "Кириллица"), ("ch", "中文")])
+    def test_changes_real_crops_and_rejects_content_dependent_reads(self, tmp_path, language, prefix):
+        import numpy as np
+
+        path = tmp_path / "gradient.png"
+        image = np.broadcast_to(np.arange(240, dtype=np.uint8)[:, None, None], (240, 400, 3)).copy()
+        Image.fromarray(image).save(path)
+
+        class CropReader:
+            def __init__(self):
+                self.crops = []
+
+            def predict(self, crop):
+                self.crops.append(crop.copy())
+                # A deterministic function of the supplied crop, never invocation order.
+                yield {"rec_text": f"{prefix}{int(crop[0, 0, 0])}", "rec_score": 0.99}
+
+        reader = CropReader()
+        engines = {key: _FakeEngine("hello") for key in ("en", "ru", "ch")}
+        engines[language] = reader
+        draft = draft_text_lines(
+            path,
+            detector=_FakeDetector([(80, 80, 300, 180)]),
+            engines=engines,
+        )
+        assert len(reader.crops) == 4  # Language probe plus three stability crops.
+        assert len({crop.tobytes() for crop in reader.crops[1:]}) == 3
+        assert draft.accepted == ()
+        assert len(draft.rejected) == 1
+        assert draft.rejected[0].language == language

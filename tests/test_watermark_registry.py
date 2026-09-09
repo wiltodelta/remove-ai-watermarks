@@ -25,6 +25,7 @@ class TestCatalog:
             "runninghub",
             "baidu",
             "liblib",
+            "liblib_pill",
             "microsoft",
             "jimeng_pill",
         ]
@@ -46,6 +47,7 @@ class TestCatalog:
         assert by_key["jimeng"].location == "bottom-right"
         assert by_key["yuanbao"].location == "bottom-right"
         assert by_key["samsung"].location == "bottom-left"
+        assert by_key["liblib_pill"].location == "top-left"
         assert by_key["jimeng_pill"].location == "top-left"
 
     def test_get_mark_unknown_raises(self):
@@ -114,6 +116,7 @@ class TestScan:
             "runninghub",
             "baidu",
             "liblib",
+            "liblib_pill",
             "microsoft",
             "jimeng_pill",
         }
@@ -406,6 +409,18 @@ class TestSensitivity:
             == "confirmed"
         )
 
+    def test_auto_relaxes_liblib_pill_via_wordmark(self):
+        assert (
+            reg.resolve_trust("liblib_pill", sensitivity="auto", provenance=frozenset(), strict_keys={"liblib"})
+            == "confirmed"
+        )
+
+    def test_auto_relaxes_liblib_pill_via_product_metadata(self):
+        assert (
+            reg.resolve_trust("liblib_pill", sensitivity="auto", provenance=frozenset({"liblib"}), strict_keys=set())
+            == "confirmed"
+        )
+
     def test_auto_no_cross_mark_across_products(self):
         # a detected Jimeng wordmark must NOT relax Doubao (distinct products, same corner)
         assert (
@@ -563,6 +578,12 @@ class TestArbiter:
         # removal of a textured footprint on content nothing confirmed.
         assert "jimeng_pill" not in fired
 
+    def test_weak_liblib_pill_does_not_confirm_the_wordmark(self):
+        assert (
+            reg.resolve_trust("liblib", sensitivity="auto", provenance=frozenset(), strict_keys={"liblib_pill"})
+            == "strict"
+        )
+
     def test_real_jimeng_wordmark_still_corroborates_the_pill(self):
         """The fix removes only the pill's TESTIMONY, not the wordmark's."""
         cands = [
@@ -655,10 +676,14 @@ class TestMarkKnowledgeIsOnTheRow:
 
         assert {m.key: m.platform for m in reg.known_marks() if m.platform is not None} == _VISIBLE_MARK_PLATFORM
 
-    def test_the_platformless_marks_are_the_two_with_their_own_paths(self):
+    def test_platformless_marks_do_not_attribute_a_product_on_their_own(self):
         """Gemini has the higher-confidence sparkle path; the pill is too weak to
         attribute. Everything else must name a platform or `identify` reports none."""
-        assert {m.key for m in reg.known_marks() if m.platform is None} == {"gemini", "jimeng_pill"}
+        assert {m.key for m in reg.known_marks() if m.platform is None} == {
+            "gemini",
+            "jimeng_pill",
+            "liblib_pill",
+        }
 
     def test_platform_scan_order_follows_the_registry(self):
         """`identify` takes the FIRST platform match, so the order is load-bearing and
@@ -717,6 +742,7 @@ class TestPillSuppressors:
     def test_product_map_is_derived_from_the_rows(self):
         assert {m.key: m.product for m in reg.known_marks()} == reg._PRODUCT_OF
         assert reg._PRODUCT_OF["jimeng_pill"] == "jimeng"  # the one shared product
+        assert {m.key for m in reg.known_marks() if not m.can_corroborate} == reg._CANNOT_CORROBORATE
 
 
 class TestProvenanceMaskThreading:

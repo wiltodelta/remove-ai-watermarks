@@ -33,11 +33,8 @@ duplicating it and record unsupported gaps and source-specific licensing.
 
 ## Storage rules
 
-Large local-only research data (the 211 GB Spaces corpus and the frozen
-checkpoints, research corpora, and campaign reports) lives under gitignored
-paths documented in `data/research/README.md` (ignored via `.git/info/exclude`,
-never committed). Worktree `.local-eval/` directories are scratch copies; the
-durable store is `data/research/` in the main checkout.
+Use only publication-cleared inputs in tracked data paths. Keep generated
+evaluation outputs outside the repository.
 
 1. Store each binary image once. Evaluation manifests and documentation point
    to its canonical location.

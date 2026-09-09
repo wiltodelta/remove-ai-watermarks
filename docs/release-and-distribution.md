@@ -149,7 +149,9 @@ After the skill files reach the default branch:
 
 ClawHub publishes automatically: the `clawhub` job in `distribute.yml` compares
 the `SKILL.md` version with the published one on every GitHub Release and
-submits an update when they differ. It needs the `CLAWHUB_TOKEN` secret
+submits an update when they differ. After its local npm installation, the
+job invokes `./node_modules/.bin/clawhub` explicitly. It needs the
+`CLAWHUB_TOKEN` secret
 (create a dedicated token on clawhub.ai, not a device-flow one); without
 the secret the job skips with a notice. A submission waits for ClawHub
 security scans before the listing goes public, so a green job means
@@ -170,12 +172,22 @@ release must never silently substitute its latest schema when a caller explicitl
 requests an older supported one.
 
 After publication, the `verify-release.yml` workflow runs automatically once
-`distribute.yml` completes and checks every surface below. It can also be
-dispatched manually with a specific version. Every check fails the job; none of
+`distribute.yml` completes and checks every surface below. The automatic
+run downloads `distributed-release-*` from the exact triggering distribution
+run, verifies the run ID and artifact attempt, and selects the highest recorded
+attempt no later than the triggering attempt. This also handles reruns of
+failed jobs that reuse an earlier successful version-resolution job. A newer
+PyPI release cannot silently change the recorded target.
+Manual dispatch accepts an explicit version, or uses PyPI latest when omitted.
+Every check fails the job; none of
 them warns and continues, because a surface nobody can confirm is not a verified
 surface, with one deliberate exception noted below. The ComfyUI check reads the
 registry's JSON API and asserts that some published node version declares this
-library release. It deliberately does NOT proxy through the sync workflow's run
+library release. Dependencies are parsed as packaging requirements: the
+canonical package name must be `remove-ai-watermarks`, an exact `>=` floor
+must name the target release, and the full constraint must admit it. URL
+and environment-conditional requirements do not satisfy that contract.
+It deliberately does NOT proxy through the sync workflow's run
 status: the node repository also runs that workflow on a daily schedule, so a
 green nightly run says nothing about whether this release was synced.
 

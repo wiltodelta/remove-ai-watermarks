@@ -31,7 +31,7 @@ Optional features and installation groups are documented in [`docs/installation.
 
 `maintain.sh` runs dependency freshness and security checks, Ruff, Pyright scoped to `src/`, and the parallel test suite. Full-project Pyright is not the project gate because the ML dependency graph can exhaust Node memory.
 
-This gate does NOT pass `--ignore-unfixed` to uv-secure, so a transitive CVE with no released fix stops it before Ruff, Pyright and the tests ever run. That is deliberate and it is not a blocker: run those three separately and report them, per the triage in [`docs/development.md`](docs/development.md). A red gate here is not the same signal as a red gate in a sibling repository that does ignore unfixed findings.
+The gate does not pass `--ignore-unfixed` to uv-secure, so a transitive CVE with no released fix stops it before Ruff, Pyright and the tests run, which a sibling repository that ignores unfixed findings would not do. The global rule applies: run and report those three separately. Scanner failures are fatal too. Triaged blockers and the recheck procedure: `Known security-gate blocks` in [`docs/development.md`](docs/development.md).
 
 Command, gate, typing, and model-test invariants auto-load from [`.claude/rules/development.md`](.claude/rules/development.md). Environment recovery, CI behavior, and fixture policy live in [`docs/development.md`](docs/development.md).
 
@@ -43,11 +43,11 @@ The published Agent Skill is [`skills/remove-ai-watermarks/`](skills/remove-ai-w
 
 [`docs/module-internals.md`](docs/module-internals.md) is the canonical per-module map, including design decisions, thresholds, calibration history, incident records, and regression guards. Read the relevant section before changing a subsystem.
 
-Research and current constraints are routed through [`docs/index.md`](docs/index.md), especially [`docs/known-limitations.md`](docs/known-limitations.md), [`docs/supported-signals.md`](docs/supported-signals.md), [`docs/synthid.md`](docs/synthid.md), and [`docs/watermarking-landscape.md`](docs/watermarking-landscape.md). Pixel photo classification is [`docs/photo-classify.md`](docs/photo-classify.md); it is not `identify`. Classifier research is split between general [`AI-generated image classifiers`](docs/ai-generated-image-classifiers.md) and [`SynthID source classifiers`](docs/synthid-classifiers.md). Other SynthID campaign logs are [`docs/synthid-detector-research.md`](docs/synthid-detector-research.md) and [`docs/synthid-removal-research.md`](docs/synthid-removal-research.md). The pre-split chronological archive is [`docs/synthid-detector-removal-plan.md`](docs/synthid-detector-removal-plan.md).
+Research and current constraints are routed through [`docs/index.md`](docs/index.md), especially [`docs/known-limitations.md`](docs/known-limitations.md), [`docs/supported-signals.md`](docs/supported-signals.md), [`docs/synthid.md`](docs/synthid.md), and [`docs/watermarking-landscape.md`](docs/watermarking-landscape.md). Pixel photo classification is [`docs/photo-classify.md`](docs/photo-classify.md); it is not `identify`. Classifier research is split between general [`AI-generated image classifiers`](docs/ai-generated-image-classifiers.md) and [`SynthID source classifiers`](docs/synthid-classifiers.md). Other SynthID campaign logs are [`docs/synthid-detector-research.md`](docs/synthid-detector-research.md) and [`docs/synthid-removal-research.md`](docs/synthid-removal-research.md). The pre-split chronological archive is [`docs/synthid-detector-removal-plan.md`](docs/synthid-detector-removal-plan.md). The benchmark kernel and its pinned local oracles (AudioSeal, VideoSeal) cover the audio/video watermark cohorts and research studies: [`docs/benchmark-kernel.md`](docs/benchmark-kernel.md).
 
 ## Data safety
 
-Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Store each tracked binary once and keep generated evaluation outputs outside the repository.
+Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Use only publication-cleared inputs in tracked data paths. Store each tracked binary once and keep generated evaluation outputs outside the repository.
 
 ## Rules and conventions
 
@@ -55,4 +55,4 @@ Topic-specific rules live in `.claude/rules/*.md` and are auto-loaded when match
 
 | File | Covers |
 |---|---|
-| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, the docs-coverage and agent-skill parity seams, and the detection-path measurement rule |
+| `development.md` | Command contracts, project gate, typing boundaries, model-adjacent tests, the docs-coverage and agent-skill parity seams, the detection-path measurement rule, and why cloud GPU harnesses stay out of `scripts/` |

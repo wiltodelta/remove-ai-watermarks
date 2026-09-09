@@ -44,11 +44,14 @@ The training catalog is not in this Hub repository and is not on GitHub.
 Use it when you have a photographic still and you want a pixel opinion after
 metadata is gone:
 
-- `label=ai` plus `provider=openai|google|muse-image|tc260` on a stripped ChatGPT,
-  Gemini, Muse Image, or TC260 photograph
+- `label=ai` plus `provider=openai|google|bytedance|muse-image` on a stripped ChatGPT,
+  Gemini, ByteDance (Doubao/Jimeng), or Muse Image photograph; a stripped
+  photograph from the rest of China's generators (Qwen, Kling, ...)
+  publishes `provider=None` (the residual head abstains)
 - `label=human` on camera photographs at a low false-positive rate
-- `label=unknown` when the detector is only POSSIBLY AI, or when 124-d
-  features cannot be extracted
+- `label=unknown` when the detector is only POSSIBLY AI
+- `label=ai, provider=None` when the detector is DEFINITELY AI but 124-d
+  features cannot be extracted (unless the receipt gate abstains)
 
 Do not use it to assert that a file is clean. Do not use it as a legal
 authorship test. Do not run Model 2 on every image.
@@ -66,9 +69,12 @@ ridge trained on that embedding at a 1% Open Images false-positive cut is
 the strongest Model 1 we measured. A small MLP on the same vectors, ANDed
 with the ridge, is the freeze DEFINITELY gate.
 
-The receipt gate (`receipt-gate-2026-09-02.npz`) ships in this repository
-alongside the freeze files, so it versions with the embedding space it was
-fitted on; the Python package carries a fallback copy for weights
+The receipt gate ships in this repository alongside the freeze files, so
+it versions with the embedding space it was fitted on. Since 2026-09-07
+the artifact carries the STABLE name `receipt-gate.npz` with the
+threshold inside, so head and operating point move together and a gate
+update needs no library release; the legacy dated spelling stays
+readable, and the Python package carries a fallback copy for weights
 directories frozen before the gate existed.
 
 The 124-d bank is a different feature: patch-local residual ratios (FFT band
@@ -88,7 +94,8 @@ flowchart TD
   m1 -->|definitely| rg[Receipt gate on the same CLIP vector]
   rg -->|receipt document| rgu[label unknown, detector definitely]
   rg -->|not a receipt| m2[Model 2: 124-d one-vs-rest focal]
-  m2 -->|openai google muse-image tc260| named[label ai plus provider]
+  m2 -->|openai google muse-image bytedance| named[label ai plus provider]
+  m2 -->|china group wins| none2[label ai, provider none]
   m2 -->|no_ai or extract fail| aiOnly[label ai, provider none]
 ```
 
@@ -103,10 +110,16 @@ it is not a receipt-versus-rest specialist and adds no provider class.
 Provider attribution tracks the **renderer**, not the front-end. Bing Image
 Creator rows signed Microsoft, OpenAI score as `openai`. Designer rows signed
 Microsoft, Google LLC score as `google`. Native Designer is mixed. There is
-no Microsoft pixel class. `openai` and `google` are provider classes.
+no Microsoft pixel class -- measured 2026-09-07: a head trained on
+Microsoft-brand rows recognizes 8% of its own test cell, and Microsoft
+attribution stays a metadata (C2PA) job. `openai` and `google` are provider classes.
 `muse-image` is Muse Image output, not a general Meta class. Instagram
-`made_with_ai` is not that class. `tc260` is the China AIGC label standard,
-not one producer: Doubao, Jimeng, Qwen, Kling, and others share that class.
+`made_with_ai` is not that class. `bytedance` names the shared
+ByteDance generator lineage: Doubao and Jimeng render with one model
+family (separate heads cross-fire even at 3.5x train mass; the union
+holds 83.9% on the frozen test cell). `tc260` covers the REST of China's
+generator ecosystem -- producers that are peers of openai/google/meta;
+no mixed head can honestly name that group, so its win abstains.
 
 ## Architecture
 
@@ -128,12 +141,14 @@ not one producer: Doubao, Jimeng, Qwen, Kling, and others share that class.
 - Input: 124-d residual vector, or abstain if the image is smaller than
   256 px or the extractor refuses
 - Heads: one-vs-rest focal MLP `124-64-1` per class
-  (`openai`, `google`, `tc260`, `meta_muse_image`, `no_ai`)
+  (`openai`, `google`, `bytedance`, `tc260`, `meta_muse_image`, `no_ai`)
 - Decision: a class wins only if it beats `no_ai` by margin 0.30, then argmax
   among those that passed
 - Public name `muse-image` is the Muse Image class. The freeze file still
-  keys that head `meta_muse_image`. `tc260` is the China AIGC label
-  standard (mixed producers), not a company. `no_ai` is not reported as
+  keys that head `meta_muse_image`. `bytedance` is the shared
+  Doubao+Jimeng generator lineage. `tc260` covers the rest of China's
+  generator ecosystem; no mixed head can honestly name the group, so its
+  argmax win publishes `provider=None`. `no_ai` is not reported as
   `human`; it becomes `provider=None` on an `ai` label (for example FLUX)
 
 ## Training
@@ -176,14 +191,14 @@ DEFINITELY is the shipped operating point.
 | Detector DEFINITELY | FLUX hold | 83.0% (n=300) |
 | Class | OpenAI test | 90.8% (345/380 of 381) |
 | Class | Google test | 90.9% (339/373 of 377) |
-| Class | TC260 test | 78.6% (298/379 of 384) |
+| Class | Bytedance test (Doubao+Jimeng) | 83.9% (271/323; 83.6% extended with the historical harvest) |
 | Class | Muse Image hold-out v2 | 85.7% (66/77 listed 79) |
 | Class | Muse Image hold-out v3 | 89.4% (177/198) |
 | Class | Muse Image hold-out pooled | 88.4% (243/275 listed 277) |
-| Class | meme templates, ungated | 29.1% leak (86 of 97) |
+| Class | meme templates, ungated | Withdrawn: recorded percentage and fraction disagree; source row must be recovered |
 
-The ungated meme leak is why Model 2 must not run on every file. Gated on
-DEFINITELY, that leak is not a provider attribution.
+Model 2 must remain gated on DEFINITELY. The historical ungated meme
+measurement is not usable evidence until its contradictory counts are reconciled.
 
 Ridge-only Model 1 at the earlier 1% Open Images cut (before the AND with
 the freeze MLP) is documented in the research page: Kodak 0/24, fresh 1.7%,
@@ -209,9 +224,12 @@ DEF) at a small recall cost.
 - **Open-world generators.** FLUX is a hold-out at 83% DEF, not 100%.
   Unknown generators may land on `ai` with `provider=None`, or miss
   DEFINITELY.
-- **`tc260` is mixed producers.** Doubao, Jimeng, Qwen, Kling, and others
-  share one label-standard head. A later retrain should split by
-  `ContentProducer`. Do not read `tc260` as a named manufacturer.
+- **`bytedance` is one lineage, not two products.** Doubao and Jimeng
+  render with one ByteDance model family, so the class names the lineage.
+  The residual China head (`tc260`: Qwen, Yuanbao, Kling, ...) never
+  publishes a value; per-producer classes return by `ContentProducer`
+  when their train mass holds its own cells (qwen at 64 train rows:
+  27%, stays in the fallback).
 
 ## How to use
 
@@ -242,7 +260,7 @@ silently change the heads.
 | `clip-l-ft.pt` | HeadedCLIP state dict (CLIP-L plus unused linear head) |
 | `probe-weights-clip-l-ft.npz` | Ridge mean, scale, weights, `thr_oi_1pct` |
 | `detector.pt` | Freeze MLP |
-| `provider.pt` | Focal heads keyed `openai`, `google`, `tc260`, `meta_muse_image`, `no_ai` |
+| `provider.pt` | Focal heads keyed `openai`, `google`, `bytedance`, `tc260`, `meta_muse_image`, `no_ai` |
 | `operating-point.json` | Seeds, thresholds, margin |
 
 The image catalog is not in this repository.

@@ -642,7 +642,7 @@ def detect_doubao_frame(
 
     The ByteDance Doubao mark registered for IMAGES also appears burned into the
     bottom-right of Doubao VIDEO exports; this detector reuses the image engine's
-    synthetic alpha as the template. Search profile measured on the local spaces
+    synthetic alpha as the template. Search profile measured on the local private
     corpus (48 TC260-confirmed Doubao videos, 2026-08-28): the run sits at
     cx 0.83-0.90 / bottom-flush, heights swept 3.2-6.0 percent of the short side.
     """
@@ -1007,7 +1007,7 @@ VISIBLE_MARK_POLICIES: dict[str, VisibleMarkPolicy] = {
     "doubao": VisibleMarkPolicy(
         # One floor at either trust level (seedance-style: the TC260 producer
         # confirms the vendor inside the arbiter; the confidence bar does not
-        # move). Floors measured 2026-08-28 on the local spaces corpus with
+        # move). Floors measured 2026-08-28 on the local private corpus with
         # sequential decode: a >=0.35 stable run of 12+ frames accepts 33/39
         # TC260-confirmed Doubao videos and 0/25 no-Doubao negatives; 0.30
         # already accepted 1 negative, so the bar stays at 0.35.
@@ -1532,6 +1532,15 @@ def has_bytedance_video_provenance(markers: dict[str, str]) -> bool:
     ).lower()
     source_type = markers.get("source_type", "").lower()
     return ("bytedance" in identity or "byteplus" in identity) and "trainedalgorithmicmedia" in source_type
+
+
+def has_doubao_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether the structural TC260 producer identifies registered Doubao provenance."""
+    from remove_ai_watermarks.metadata import uscc_of
+    from remove_ai_watermarks.watermark_registry import get_mark
+
+    producer = uscc_of(markers.get("aigc_producer", "").strip()).casefold()
+    return producer in {code.casefold() for code in get_mark("doubao").tc260_producer_codes}
 
 
 def has_hailuo_video_provenance(markers: dict[str, str]) -> bool:

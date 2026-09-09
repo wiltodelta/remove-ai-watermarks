@@ -1,5 +1,12 @@
 # SynthID detector and pixel-only removal research plan
 
+> Audit correction, 2026-09-08: multi-period affine-probe results from
+> schema 13 or earlier used confirmation patches during period selection
+> (R04). They require rerunning and recalibration under schema 14; the
+> frozen runtime detector uses separate code and its thresholds are unchanged.
+> External-negative claims admitted without explicit independent evidence
+> (R08) also need an evidence audit before reuse.
+
 > Chronological mixed archive of detector, classifier, and removal work.
 > Not a statement of current product capability. Read the split pages
 > first:
@@ -1353,7 +1360,7 @@ norm on content-correlated periodic structure and was rejected in favor of the
 narrow carrier direction.
 
 The geometry challenge then selected three `first_only` carrier positives from
-each of the 20 most frequent native Spaces geometries. The edit repeats the
+each of the 20 most frequent native private-corpus geometries. The edit repeats the
 same 16x16 carrier past the image boundaries and crops the repetition to the
 decoded dimensions, so it does not require dimensions divisible by 16. A zero
 score target cleared 60 of 60 aligned candidates and 5 of 60 matched shifted
@@ -1373,7 +1380,7 @@ shifted controls cleared 7, 1, 1, 5, and 17. The increased shifted-control rate
 is the measured price of adding transform margin.
 
 The frozen -0.25 recipe was finally run once on one deterministic first-carrier
-positive from every represented native Spaces geometry. All 647 images at 647
+positive from every represented native private-corpus geometry. All 647 images at 647
 distinct decoded sizes reached the target, with no maximum-amplitude failure.
 Median fidelity was 57.67 dB PSNR and 0.99867 SSIM; the worst case was 51.78 dB
 and 0.99400. Of 323 source images whose carrier survived JPEG-95, 323 aligned
@@ -1400,7 +1407,7 @@ refuses overwrite and locally negative input, and records source/output hashes,
 the selected scalar amplitude, local scores, fidelity metrics, and runtime in a
 sidecar JSON report. Unit tests cover non-divisible geometry, target attainment,
 an unreachable target, and the negative-input guard. A real CLI smoke test on a
-Spaces source reproduced its reported score exactly through the runtime detector
+private-corpus source reproduced its reported score exactly through the runtime detector
 after saving. It remains a research script rather than a routed package command.
 
 ### 2026-08-10: confirmatory oracle-batch readiness
@@ -1612,7 +1619,7 @@ carrier epochs, and provider attribution remain outside the claim. The fast
 native fold remains the default and the `identify` path.
 
 That period-8 conclusion was overturned by a later symmetric negative test.
-Every one of the 11,506 known non-Google Spaces controls was downscaled by 0.5,
+Every one of the 11,506 known non-Google private-corpus controls was downscaled by 0.5,
 matching the positive transformation; 11,273 outputs remained in the registered
 geometry range. The direct analytic 8-by-8 template was dominated by shared
 resize structure: 80.8% of its energy projected onto a 2-by-2 lattice and 94.0%
@@ -1629,7 +1636,7 @@ rule: 68 of 11,273 supported controls crossed `0.2460603834083705`. Fixed
 thresholds for nine recovered-period bins eliminated those errors while
 retaining 238 of 355 transformed positives, but one of 4,900 COCO controls then
 crossed through the third spectral candidate. Requiring the canonical winner to
-match the strongest spectral candidate removed that case and all 68 Spaces
+match the strongest spectral candidate removed that case and all 68 private-corpus
 errors, with 239 of 355 positives retained. This version was not shipped: a
 fresh, content-deduplicated 1,000-image Open Images validation corpus produced
 six false positives.
@@ -1646,7 +1653,7 @@ high-band score was `0.004682175209264222`.
 The retained positives by scale were 0/65 at 0.5, 8/15 at 0.65, 53/55 at 0.8,
 33/40 at 0.9, 13/15 at 1.0, 30/40 at 1.1, 38/55 at 1.2, 40/55 at 1.333, and
 14/15 at 1.5. A physically transformed template recovered strong correlations
-for some period-8 positives, but 975 top-candidate Spaces controls fully
+for some period-8 positives, but 975 top-candidate private-corpus controls fully
 overlapped every tested amplitude, spectral-band, and joint feature. No
 zero-control operating point retained a period-8 positive. The calibrated
 runtime therefore uses the top-candidate, period-bin, and high-band gates and
@@ -1658,7 +1665,7 @@ threshold frozen above all 341 top-1 development controls recovered 11 of the
 126 current false negatives and accepted none of a separate 499-image Open
 Images reserve; the reserve maximum was 0.100583 against the 0.118168
 threshold. The decisive symmetric challenge rejected it: 19 of all 11,506
-Spaces controls after 0.5x resizing crossed the frozen threshold, with a
+private-corpus controls after 0.5x resizing crossed the frozen threshold, with a
 maximum of 0.179989. The errors spanned OpenAI, Firefly, Microsoft, hosted
 jobs, and other generators. Raising the threshold post hoc above that maximum
 would recover only seven false negatives, none at scale 0.65 or 0.8. The joint
@@ -1717,7 +1724,7 @@ median of 0.27. A development-selected rescue therefore multiplied normalized
 amplitude by the stronger ring and required ring balance at or below 0.5. A
 threshold above 341 development controls recovered 11 of 65 top-1 false
 negatives and accepted none of the 499-image Open Images reserve. The full
-symmetric challenge again rejected it: 13 of 11,506 resized Spaces controls
+symmetric challenge again rejected it: 13 of 11,506 resized private-corpus controls
 passed, with a maximum score of 0.694818 against the 0.308683 threshold. Strong
 single-ring lattices occurred in Firefly, OpenAI, hosted jobs, China-labeled
 generators, Canva, and other controls. Radial imbalance is therefore another
@@ -1732,7 +1739,7 @@ of 0.88 through 0.95, while the additional states were less stable. A threshold
 above 2,500 development natural-image controls accepted none of a separate
 2,500-image reserve and selected 225 of 770 metadata-labeled Google images that
 the shared-template threshold missed. The broader challenge decisively rejected
-the feature: 828 of 11,506 metadata-labeled non-Google Spaces controls crossed
+the feature: 828 of 11,506 metadata-labeled non-Google private-corpus controls crossed
 the frozen threshold. Errors occurred across OpenAI, Microsoft, Firefly,
 China-labeled generators, hosted jobs, Stable Diffusion, and other sources. A
 post-hoc intersection above every control that also passed the registered
@@ -1744,7 +1751,7 @@ runtime.
 A related spatial-payload pilot stopped averaging all 16-by-16 blocks and
 measured carrier and codebook responses block by block. The positive carrier
 response was spatially coherent: median adjacent-block correlation was 0.61 on
-both axes, compared with 0.20 and 0.24 in a heterogeneous Spaces sample and
+both axes, compared with 0.20 and 0.24 in a heterogeneous private-corpus sample and
 0.04 and 0.06 among codebook false positives. The development-selected rescue
 was instead the standard deviation of the best codebook response across
 blocks. It retained 11 of 60 reserve positives and none of 180 reserve controls,
@@ -1957,7 +1964,7 @@ challenged related experts. It requires a new content-deduplicated AI-control
 corpus before it can be treated as validation or runtime logic.
 
 The next source-independent model-cohort challenge sharply bounded that
-hypothesis. With no exact-byte overlap against the Spaces inventory, the
+hypothesis. With no exact-byte overlap against the private-corpus inventory, the
 original group-separated conjunction accepted 2 of 589 public Gemini 3.1 Flash
 Image Preview images, none of 520 Nano Banana Pro Preview, and none of 280
 DALL-E 3 images. The two Gemini hits were visually distinct diverse images at
@@ -1968,7 +1975,7 @@ base rule therefore has weak transfer to a current Gemini cohort but still
 collides with 2 of 11,506 arbitrary-size controls; the strict rule removes both
 the controls and the current-Gemini transfer only through a post-test threshold.
 Neither is a validated universal Google-model or cross-provider SynthID
-detector. The 16 Spaces all-size hits and two public Gemini base hits are useful
+detector. The 16 private-corpus all-size hits and two public Gemini base hits are useful
 hard positives for epoch analysis, not justification for implementation.
 
 The near-duplicate audit also provided a small mechanistic diagnostic. In all
@@ -2470,7 +2477,7 @@ retained as versioned calibration infrastructure, while the independently
 frozen production thresholds remain the valid two-expert decisions.
 
 A wider calibration reused the already saved component reports for 11,273
-supported, symmetrically resized Spaces controls. The stored high-band value
+supported, symmetrically resized private-corpus controls. The stored high-band value
 made the current registered decision score exactly reconstructible throughout
 the relevant upper tail; rows screened below the historical 0.1182 amplitude
 ratio cannot affect this tail. At alpha 0.001, the two-expert cascade accepted
@@ -2495,7 +2502,7 @@ the fixed detector available as a separately scoped diagnostic does not make
 their union safe.
 
 The fixed-only geometry does not provide a fallback. Among 89 saved non-Google
-Spaces controls from 10 to 18 megapixels, where registered mode is unsupported
+private-corpus controls from 10 to 18 megapixels, where registered mode is unsupported
 but fixed mode is supported, 10 crossed the fixed threshold. The errors span
 multiple generator families. A geometry router therefore cannot extend recall
 by selecting fixed whenever registered is unavailable.
@@ -2514,7 +2521,7 @@ separate OpenAI family still require additional validated experts.
 
 Directly enlarging registered mode's pixel ceiling also failed. The unchanged
 registered components were computed on every saved 10-to-18-megapixel example:
-37 Google candidates and 89 non-Google Spaces controls. The frozen threshold
+37 Google candidates and 89 non-Google private-corpus controls. The frozen threshold
 accepted one positive and zero controls. Amplitude passed for 28 positives and
 the selected spatial and spectral periods agreed for 21, but only three cleared
 the high-band gate. Large full-frame spectra therefore lose almost all recall;
@@ -2687,7 +2694,7 @@ validation only. The selected period-16 power candidate used a separately
 fitted template for each view. It accepted 8 of 140 validation positives and 8
 of 158 locked-test positives, with no native-geometry control accepted in
 either split. On the complete wide challenge it accepted none of 2,227
-validation and 2,162 test Spaces controls, one of all 261 action-derived
+validation and 2,162 test private-corpus controls, one of all 261 action-derived
 same-provider controls, and none of the 118 exact-version `gpt-image 2.0`
 controls. Five of its eight test hits overlapped the signed period-8 candidate;
 three were additional.
@@ -2705,7 +2712,7 @@ measured view directions correlated 0.992 for native versus JPEG and 0.900 for
 native versus resize. It retained 7 of 158 native-geometry locked-test
 positives and none of 135 controls. That apparent invariance failed on the
 wide geometry challenge: the same thresholds accepted 11 of 2,227 validation
-and 14 of 2,162 test Spaces controls, plus seven of 261 same-provider controls
+and 14 of 2,162 test private-corpus controls, plus seven of 261 same-provider controls
 and two of 118 exact-version controls. It is a general renderer or resampling
 spectrum and is rejected.
 
@@ -2750,7 +2757,7 @@ absolute residual of the third cube-root LMS component at period 4. It retained
 33 of 140 validation and 43 of 158 locked-test positives, but also accepted 2
 of 135 locked-test controls. The frozen wide challenge confirmed a renderer
 confound: it accepted 48 of 1,854 validation and 52 of 1,839 test OpenAI images,
-against 7 of 2,227 validation and 5 of 2,162 test Spaces controls. It also
+against 7 of 2,227 validation and 5 of 2,162 test private-corpus controls. It also
 accepted 10 of 261 action-derived same-provider controls, including 5 of 118
 that explicitly name `gpt-image 2.0`. Requiring spatial agreement did not
 repair specificity; the validation-selected median over four quadrants kept
@@ -3180,9 +3187,9 @@ validation controls at the frozen 0.552176 threshold, then 27 of 52 locked-test
 positives and zero of 140 controls. This looked like a useful low-resolution
 expert but did not survive scale-matched specificity testing.
 
-The frozen challenge symmetrically resized every remaining Spaces control and a
+The frozen challenge symmetrically resized every remaining private-corpus control and a
 separate 1,000-image Open Images reserve to 0.5x. The expert accepted 61 of
-10,906 Spaces controls and 22 of 1,000 Open Images controls. All 83 errors were
+10,906 private-corpus controls and 22 of 1,000 Open Images controls. All 83 errors were
 rescored with the prespecified feature inventory. A negative-Green patch-spread
 gate could remove them post hoc, but retained only 12 of 106 base-positive
 development hits. On the later August 7-10 cohort the original patch expert
@@ -3203,7 +3210,7 @@ Near-ceiling windows, color spaces, and JPEG-paired phase directions did not
 provide a missing large-image expert. Three aligned windows of approximately
 10 megapixels retained 1 of 37 candidates and zero of 89 controls. A native
 fixed-score plus Green mid-band rule retained 15 of 19 candidates in four exact
-recurring geometries and accepted one of 11,417 resized Spaces controls, but
+recurring geometries and accepted one of 11,417 resized private-corpus controls, but
 collapsed to 0 of 19 after JPEG 90. A codebook fitted to the minimum native/JPEG
 period-16 correlation selected RGB Green mid-band on the pre-July split. It
 retained 23 of 26 candidates and zero of 40 controls there, then 10 of 11 and 7
@@ -3242,7 +3249,7 @@ is the minimum normalized gate margin and crosses at `1.0`.
 
 The rule retained all 37 inferred candidates, including all seven official
 pixel positives. It accepted none of 17,417 exposed COCO, Open Images, and
-Spaces controls after the portrait alias gate. Because those controls informed
+private-corpus controls after the portrait alias gate. Because those controls informed
 the final gate, they do not certify the operating point. The constants were
 then challenged through the actual runtime on a frozen, decoded-pixel-deduped
 local holdout: 2,000 COCO val2017 images excluded from the earlier 3,000-image
@@ -3660,6 +3667,10 @@ news-publisher corporate email and required News Publisher and Publisher URL
 fields. The words research, academic and developer do not appear on the form at
 all. Research access is excluded by construction rather than by refusal.
 
+**2026-09-07 operational update:** the old portal no longer works. Its official
+`labs.google/synthid` entry point redirects a signed-in browser to a Google 404;
+Gemini remains the Google verifier route.
+
 The Gemini app therefore stays the only working route, at roughly two checks per
 account per two hours. The Google branch's control shortage has no near-term
 provider-labelled fix.
@@ -3685,14 +3696,11 @@ a content-dependent post-hoc neural encoder produces and what the SynthID-Image
 paper describes. The comb experts work on one provider and not the other because
 the providers are not doing the same thing.
 
-The Google numbers say something sharper than "positives correlate more". A
-single shared pattern present in two classes at different amplitudes gives a
-cross-correlation at the geometric mean of the two within-class values, whereas
-two distinct components would fall below it. Observed against predicted:
-`0.224` against `0.227` for tile16, `0.304` against `0.306` for tile8, ratios of
-`0.985` and `0.993`. So it is one pattern, not a watermark carrier layered on a
-separate generator fingerprint, and the controls carry that same pattern at
-roughly half the amplitude of the positives.
+The normalized cross-correlations (`0.224` for tile16 and `0.304` for
+tile8) are close to the geometric means of the corresponding within-class
+correlations (`0.227` and `0.306`). This is consistent with shared structure,
+but normalized correlations discard absolute scale. They do not establish
+one unique component or a control-to-positive carrier amplitude ratio.
 
 Three readings survive that, and L1 decides between them: the controls are
 watermarked after all and the label is wrong; the mark modulates the amplitude of
@@ -4298,8 +4306,7 @@ A full pass over the register against the recorded evidence, closing what the
 log already settles:
 
 - M2 re-verified independently and settled. `imagen-4.0-generate-001` and
-  `imagen-3.0-generate-002` return 404 in us-central1 and us-east1 on both GCP
-  projects (`gen-lang-client-0926942364` and `raiw-cws-publish`);
+  `imagen-3.0-generate-002` returned 404 in the tested regional API calls;
   `gemini-2.5-flash-image` rejects `addWatermark` at request parsing
   (`Unknown name "addWatermark" at 'generation_config': Cannot find field`),
   and the current Gemini API documentation states for both the Gemini-image
@@ -4844,7 +4851,8 @@ Where it is written. Grayscale (PIL `L`, then RGB) stayed `detected`, so the
 decoder reads luminance: stacking `L,L,L` zeroes chroma, and a chroma-only
 carrier would have gone silent. JPEG q20 stayed `detected`, so the carrier
 is not the high-frequency DCT tail that classical DWT-DCT uses. A center
-crop keeping half the area stayed `detected`, so the residual is spatially
+crop keeping half the width and half the height (one quarter of the area)
+stayed `detected`, so the residual is spatially
 redundant rather than a border or a single tile. A two-pixel crop stayed
 `detected` while our origin-locked lattice dies, so the written residual is
 not that lattice. 90-degree rotation and a horizontal flip stayed `detected`,
@@ -5916,11 +5924,13 @@ the ordered pixel-file hash list has SHA-256
 `651f959689e7043989ded09fa4aece5cea2592e7b69e371cc97c35f581d9f57d`.
 All 3,000 decoded hashes were unique and none overlapped the first cohort. The
 unchanged registered-v2 base produced no threshold crossings among 2,996
-supported images, so registered-v3 also produced 0/2,996. Together, the two
-Open Images cohorts give registered-v3 0/5,993 false positives after the
-confirmation rule was applied, with a one-sided 95% zero-error upper bound of
-about 0.050%. They are source-disjoint samples from one source family, not two
-independent acquisition mechanisms.
+supported images, so registered-v3 also produced 0/2,996. Only this second
+cohort was untouched during gate selection. Its one-sided 95% zero-error upper
+bound is `1 - 0.05**(1/2996)`, approximately 0.09994%. The first cohort
+(2,997 supported images) selected the gates and must not enlarge that
+independent denominator. Both cohorts come from one source family. This
+historical holdout result does not validate the later corrected selection-only
+period search; that implementation needs a fresh evaluation.
 
 A second-family challenge used the first 3,000 sorted COCO val2017 files. The
 newline-delimited file-name list has SHA-256
@@ -5931,9 +5941,10 @@ All 3,000 pixel hashes were unique. The unchanged registered base produced
 0/2,366 crossings, with maximum score `0.932964706`; registered-v3 therefore
 also produced zero. COCO predates this confirmation experiment and is not a
 fresh acquisition, but it is a distinct natural-image source family. Across
-both Open Images cohorts and this COCO challenge, registered-v3 has 0/8,359
-supported-control crossings. This qualifies the precision-first positive route;
-it does not turn a miss into proof of absence.
+both Open Images cohorts and this COCO challenge, the historical descriptive
+total is 0/8,359 supported-control crossings. It includes gate-selection data
+and is not an independent qualification denominator. A miss is not proof of
+absence, and corrected period selection requires a new evaluation.
 
 The fixed `0.28` candidate failed the second holdout and is rejected. It
 accepted one of 213 supported images, at score `0.322542963`. The runtime keeps
@@ -6059,7 +6070,7 @@ parents at nine scales from 0.5 through 0.9, but accepted 605/2,997 and
 587/2,996 controls in two Open Images cohorts. The crossings concentrated at
 periods 8 and 12.8 and tracked JPEG sampling. A 3,964-image COCO challenge added
 one period-10 crossing below one megapixel, while 3,772 heterogeneous
-non-Google/non-OpenAI Spaces controls added 28 crossings, again only at periods
+non-Google/non-OpenAI private-corpus controls added 28 crossings, again only at periods
 8 and 12.8. The unrestricted branch is a codec/resize-lattice detector and is
 rejected.
 
@@ -6105,7 +6116,7 @@ non-block phases. All seven lossless 0.5x positives had both Red-Green and
 Blue-Yellow ratios no greater than the frozen `1.05` ceiling. The ceiling
 rejected 600/600 development period-8 codec crossings, then 582/582 crossings
 in the nonoverlapping Open Images holdout, 601/601 in the feature-unseen frozen
-reserve, and 7/7 in the heterogeneous Spaces challenge. An additional 350
+reserve, and 7/7 in the heterogeneous private-corpus challenge. An additional 350
 controls transformed through the identical lossless 0.5x resize produced zero
 base crossings before the veto.
 

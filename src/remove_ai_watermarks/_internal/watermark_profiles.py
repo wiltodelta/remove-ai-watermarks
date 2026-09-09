@@ -113,11 +113,10 @@ QWEN_ZIMAGE_OPENAI_STRENGTH = 0.07675
 # measured corpus margin, not a universal InvisMark threshold.
 QWEN_ZIMAGE_MICROSOFT_STRENGTH = 0.15
 
-# Meta Muse Image stamps every output with Content Seal, but no provenance signal
-# survives to route it: the outputs carry no C2PA, and their IPTC
-# trainedAlgorithmicMedia companion tag is a standard code many platforms use, so
-# it cannot key this cohort the way an issuer keys the others. The floor is
-# therefore selected by an explicit --vendor meta override, never by detection.
+# Meta Muse Image's retained standalone IPTC AI tag selects this floor through
+# vendor_for_strength. That shared standard tag is a routing heuristic, not a
+# vendor-unique signature or a Content Seal pixel detection. Stripped outputs
+# need an explicit --vendor meta override when their origin is known.
 # Derivation (oracle meta.ai/identification, 2026-08-26/27, corpus in
 # data/contentseal/): five independent 2.56 MP generations bracketed at
 # lighthouse (0.0525, 0.06], fox (0.03, 0.0375], night_city (0.03, 0.0375],
@@ -146,7 +145,7 @@ _SDXL_ZIMAGE_STRENGTH_BY_VENDOR: dict[str, float] = {
 
 # chroma-zimage floors, from the 2026-08-29/30 four-cohort oracle calibration
 # (docs/chroma1-engine-research.md; ChromaImg2ImgPipeline, neutral prompt,
-# guidance 5.0, four effective steps, seed 0). Flat per-vendor values derived
+# guidance 5.0, ceil(4 / strength) requested steps, seed 0). Flat per-vendor values derived
 # by the same worst-clean-plus-one-spread rule as the other profiles:
 #
 # - OpenAI: the initial three fixtures first cleared at 0.06 / 0.06 / 0.075,
@@ -156,6 +155,14 @@ _SDXL_ZIMAGE_STRENGTH_BY_VENDOR: dict[str, float] = {
 #   operating point, verified clean three times on both withheld carriers.
 #   Qwen cleared both withheld carriers at its existing 0.07675 operating point,
 #   so auto routes OpenAI to Qwen rather than paying Chroma's higher fidelity cost.
+#   Three further withheld carriers, all zero-face by the same YuNet detector the
+#   adaptive arms gate on, first cleared at 0.045 / 0.06 / 0.11 -> a zero-face
+#   operating point of 0.11 + (0.11 - 0.045) = 0.175, which 0.20 already covers.
+#   That is why OpenAI keeps a FLAT floor: the two content classes differ by 0.025
+#   while the spread WITHIN each is 0.065 and 0.0625, so a face split would key on
+#   a variable explaining a quarter of the variation it leaves behind. The earlier
+#   fixture-only view (0.06 / 0.06 / 0.075, spread 0.015) understated the real
+#   scatter fourfold; do not re-derive this cohort from fixtures alone.
 # - Microsoft InvisMark: paint-1 (0.06, 0.08], paint-2 <= 0.04, paint-3
 #   (0.06, 0.08] -> 0.08 + (0.08 - 0.04) = 0.12, rounded up to the measured
 #   rung 0.125, oracle-verified clean on both worst sources. BELOW qwen's 0.15.

@@ -397,7 +397,7 @@ shifted control cleared one.
 The same native-period edit works without resizing when dimensions are not
 multiples of 16: repeat the carrier past both image boundaries and crop it to
 the decoded geometry. A deterministic development challenge selected three
-first-carrier-positive Spaces images from each of the 20 most frequent native
+first-carrier-positive private-corpus images from each of the 20 most frequent native
 geometries, for 60 images total. Searching to a zero fixed-tile target cleared
 60 of 60, compared with 5 of 60 norm-matched one-pixel-shifted controls. Median
 fidelity was 60.37 dB PSNR and 0.99919 SSIM; the minima were 53.56 dB and
@@ -406,7 +406,7 @@ local clearances at median 57.70 dB PSNR and 0.99863 SSIM, with minima of
 52.38 dB and 0.99443.
 
 The frozen -0.25 rule was then evaluated once on one deterministic first-carrier
-positive from every native geometry represented by that Spaces subset: 647
+positive from every native geometry represented by that private-corpus subset: 647
 images at 647 distinct decoded sizes. It reached the local target on all 647,
 with no maximum-amplitude failure. Median fidelity was 57.67 dB PSNR and
 0.99867 SSIM; the worst case was 51.78 dB and 0.99400. Among the 323 images
@@ -575,18 +575,20 @@ The SynthID decoder is proprietary and not released:
 > -- Gowal et al., arXiv:2510.09263
 
 There are no released payload-decoder weights or public algorithm. Google
-provides verification in Gemini and a limited SynthID Detector
-portal. OpenAI now documents a synchronous Content Provenance API whose image
-response contains separate C2PA and SynthID outcomes. That API is a remote,
-OpenAI-scoped verifier, not a local decoder. Its documentation also says not to
-use repeated queries to reverse-engineer, remove, or evade a watermark, so an
-adaptive research loop requires separate authorization.
+provides verification in Gemini. The old limited SynthID Detector portal does
+not work: on 2026-09-07, its official `labs.google/synthid` entry point
+redirected a signed-in browser to a Google 404. OpenAI now documents a
+synchronous Content Provenance API whose image response contains separate C2PA
+and SynthID outcomes. That API is a remote, OpenAI-scoped verifier, not a local
+decoder. Its documentation also says not to use repeated queries to
+reverse-engineer, remove, or evade a watermark, so an adaptive research loop
+requires separate authorization.
 
-Google's SynthID Detector service is:
+Google previously described the SynthID Detector service as:
 
 > "a verification portal" in early testing with "journalists and media
 > professionals" on a waitlist
-> -- deepmind.google/models/synthid/
+> -- deepmind.google/models/synthid/ (historical description)
 
 The external variant SynthID-O is available "through partnerships" only. This
 package does not ship a local payload decoder. Research on a periodic lattice
@@ -899,8 +901,8 @@ The default was **vendor-adaptive** (`watermark_profiles.resolve_strength` +
 `vendor_for_strength`): the tool read the C2PA issuer on the original input and picked
 `OPENAI_STRENGTH` 0.10 / `GEMINI_STRENGTH` 0.15 / `UNKNOWN_STRENGTH` 0.15 **(LOWERED
 2026-06-14 from the 2026-06-04 cert floors 0.20/0.30/0.30)**. **The SAME ladder applied
-to both pipelines** (`sdxl` and `controlnet`). The 2026-06-14 re-test on the deployed
-Modal controlnet worker (v0.10.0) cleared SynthID on the oracle at OpenAI 0.10 (2
+to both pipelines** (`sdxl` and `controlnet`). The 2026-06-14 re-test on a deployed
+GPU worker running the controlnet profile (v0.10.0) cleared SynthID on the oracle at OpenAI 0.10 (2
 photoreal) and Google 0.15 (2 NATIVE 2816x1536, contradicting the "native >= 0.30" guess
 on line above), and a pixel sweep showed 0.20/0.30 over-regenerated for no efficacy gain.
 **This re-opens a genuine tension with the 2026-06-04 pass, which found photoreal STILL

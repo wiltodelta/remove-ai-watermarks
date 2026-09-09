@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import math
 import os
 import tempfile
 import urllib.request
@@ -300,9 +301,21 @@ def largest_face_denoise(
     return _clamp(scaled, denoise_min, denoise_max)
 
 
-def _target_size(width: int, height: int) -> tuple[int, int]:
-    """Floor image dimensions to the /16 latent grid without changing aspect."""
-    return max(16, (width // 16) * 16), max(16, (height // 16) * 16)
+def requested_steps(effective_steps: int, strength: float) -> int:
+    """Scale a nominal denoising budget by strength for Diffusers img2img.
+
+    SDXL truncates ``steps * strength``. Chroma truncates the skipped count
+    instead, so the same request can execute one additional step. Both profiles
+    were calibrated with this request formula; it is not an exact count across
+    schedulers. DiffSynth instead executes every requested step over a shortened
+    sigma range and does not use this compensation.
+    """
+    return max(1, math.ceil(effective_steps / max(float(strength), 1e-6)))
+
+
+def _target_size(width: int, height: int, grid: int = 16) -> tuple[int, int]:
+    """Floor image dimensions to the profile's latent grid."""
+    return max(grid, (width // grid) * grid), max(grid, (height // grid) * grid)
 
 
 def _resize_to_target(image: Image.Image) -> Image.Image:

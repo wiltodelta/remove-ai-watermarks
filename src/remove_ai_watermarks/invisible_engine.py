@@ -297,9 +297,10 @@ class InvisibleEngine:
         # what would otherwise register it, so a bare Image.open would fail on HEIC.
         from remove_ai_watermarks import image_io
 
+        output_path = Path(output_path) if output_path is not None else Path(image_path)
         image_io._register_heif()
-        image = Image.open(image_path)
-        image = ImageOps.exif_transpose(image)
+        with Image.open(image_path) as opened:
+            image = ImageOps.exif_transpose(opened)
         orig_size = image.size  # (width, height)
         # Full-res original, kept for the adaptive-polish detail target (image is
         # reassigned to the resized copy below; PIL resize returns a new object).
@@ -312,7 +313,7 @@ class InvisibleEngine:
 
         # All profiles run at the input's native geometry, so only the explicit max
         # cap can move it, and it can only ever scale down.
-        target = _target_size(image.width, image.height, max_resolution)
+        target = None if tile else _target_size(image.width, image.height, max_resolution)
         if target is not None:
             if self._progress_callback:
                 self._progress_callback(
@@ -330,11 +331,11 @@ class InvisibleEngine:
         _tmp_path = Path(_tmp_str)
         # Convert to RGB before the PNG temp: the diffusion pass is RGB anyway, and a
         # non-RGB source mode (e.g. a CMYK JPEG) cannot be written as PNG and would raise.
-        image.convert("RGB").save(_tmp_path)
         os.close(_tmp_fd)
         image_path = _tmp_path
 
         try:
+            image.convert("RGB").save(_tmp_path, icc_profile=image.info.get("icc_profile"))
             out_path = self._remover.remove_watermark(
                 image_path=image_path,
                 output_path=output_path,
@@ -380,7 +381,8 @@ class InvisibleEngine:
                     progress=self._progress_callback,
                 )
 
-                image_io.imwrite(out_path, out_cv, display_tags_from=image_path)
+                if not image_io.imwrite(out_path, out_cv, display_tags_from=image_path, orientation_applied=True):
+                    raise OSError(f"failed to write postprocessed output: {out_path}")
 
             return out_path
         finally:

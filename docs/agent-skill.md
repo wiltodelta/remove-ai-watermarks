@@ -54,10 +54,11 @@ Do these in order after the skill is on the default branch.
      brand-new skills ("give your skill time to mature and gain users before
      submitting"). Re-attempt after the skill has real installs and a
      release that ships it (0.38.0+).
-   - `VoltAgent/awesome-openclaw-skills`: DEFERRED. Entries are indexed via
-     clawskills.sh, so the skill must be published to ClawHub first, and the
-     list asks contributors not to submit skills "created 3 hours ago".
-     Re-attempt after the ClawHub publish plus visible adoption.
+   - `VoltAgent/awesome-openclaw-skills`: DEFERRED on adoption only. Entries
+     are indexed via clawskills.sh, and the ClawHub prerequisite in step 6 is
+     now met. The list still asks contributors not to submit skills "created
+     3 hours ago", and `clawhub search` reports 0 installs over 60 days.
+     Re-attempt once the listing shows real installs.
 5. **Claude community marketplace.** Form at
    [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)
    (individuals) or the claude.ai directory form (Team/Enterprise). Validate
@@ -68,10 +69,28 @@ Do these in order after the skill is on the default branch.
    official Anthropic marketplace is
    curated and has no application.
 6. **ClawHub.** `clawhub login` then `clawhub skill publish` from
-   `skills/remove-ai-watermarks/`. The public catalog already has an add-watermark
-   skill; this would be the removal counterpart. Frame it as the user's own
-   content. ClawHub disallows deception, impersonation, and fake-engagement
-   install loops.
+   `skills/remove-ai-watermarks/`. LISTED 2026-09-09: version 1.0.5, submitted
+   by the `clawhub` job in `distribute.yml` during the 0.39.0 release, is
+   public. A green job proves only a submission, so read the catalog itself:
+   `clawhub search remove-ai-watermarks` returns the row and
+   `https://clawhub.ai/api/v1/skills/remove-ai-watermarks` reports
+   `tags.latest` 1.0.5 with a single published version. The earlier 1.0.3 and
+   1.0.4 submissions never became public and do not appear in that version
+   list, so they were bypassed rather than recovered. The issue that tracked
+   them, openclaw/clawhub#3643, was closed by the reporter on 2026-09-09 once
+   1.0.5 went through; nothing upstream was confirmed fixed, and it is the
+   fifth report of this shape (#3624, #3466, #3351, #3284), so treat a stalled
+   submission as recurring and file a fresh one rather than assuming the
+   pipeline is repaired. Release-time publishing is automated (see
+   [release-and-distribution.md](release-and-distribution.md)), and the job
+   fires only on a published GitHub Release: a skill version bumped after a
+   release, as 1.0.6 was, reaches ClawHub with the next one. Do not publish by
+   hand to close that gap. The listing records the license as MIT-0 while
+   `SKILL.md` declares Apache-2.0; `clawhub skill publish` has no license
+   flag, so correct it in the ClawHub listing itself. The public catalog
+   already has an add-watermark skill; this is the removal counterpart, framed
+   as the user's own content. ClawHub disallows deception, impersonation, and
+   fake-engagement install loops.
 7. **OpenAI ChatGPT / Codex plugin directory.** Skills-only plugins are a
    supported submission type at
    [platform.openai.com/plugins](https://platform.openai.com/plugins). This is
@@ -113,7 +132,12 @@ Write for every harness and a weaker model, not only Claude Opus:
   pixel stack reaches. Reporting a found binary as ready is what sent an agent
   into a missing-cv2 crash on the Homebrew build, which carries no extras. It
   also compares the installed release against `MIN_CLI_VERSION`, so a stale CLI
-  is named instead of being reported as a broken flag;
+  is named instead of being reported as a broken flag. Video capability is
+  checked separately in the installed CLI's Python environment:
+  `video_stacks.pixels` reports `ok`, `missing`, or `unknown`, and
+  `video_stacks.invisible` reports `installed`, `missing`, or `unknown`.
+  These checks load no weights. An unrecognized launcher leaves video
+  guidance unverified rather than inferring readiness from image support;
 - uv, pipx, and pip as installer fallbacks;
 - forward slashes only;
 - no `allowed-tools` (that field is experimental and host-specific).

@@ -138,12 +138,12 @@ def _recognition_box(
 ) -> tuple[int, int, int, int]:
     x1, y1, x2, y2 = box
     line_height = y2 - y1
+    pad_y = max(8, line_height // 3) if vertical_pad_ratio is None else max(1, round(line_height * vertical_pad_ratio))
     if script == "cjk":
         left_pad = max(16, round(line_height * 0.2))
         right_pad = max(16, round(line_height * 0.6))
-        return max(0, x1 - left_pad), y1, min(width, x2 + right_pad), y2
+        return max(0, x1 - left_pad), max(0, y1 - pad_y), min(width, x2 + right_pad), min(height, y2 + pad_y)
     pad_x = max(16, line_height)
-    pad_y = max(8, line_height // 3) if vertical_pad_ratio is None else max(8, round(line_height * vertical_pad_ratio))
     return max(0, x1 - pad_x), max(0, y1 - pad_y), min(width, x2 + pad_x), min(height, y2 + pad_y)
 
 
@@ -199,8 +199,8 @@ def _build_engines() -> tuple[Any, dict[str, Any]]:
     from paddleocr import PaddleOCR, TextRecognition
 
     # enable_mkldnn=False is load-bearing on linux: paddle's oneDNN PIR executor
-    # raises NotImplementedError on the text-detection graph there (seen on the
-    # Modal draft container, 2026-08-19), while the reference CPU path runs. The
+    # raises NotImplementedError on the text-detection graph there (seen on a
+    # Linux GPU container, 2026-08-19), while the reference CPU path runs. The
     # eval scripts never hit it because macOS pads take a different path.
     detector = PaddleOCR(
         lang="ch",

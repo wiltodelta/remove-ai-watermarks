@@ -15,7 +15,7 @@ updates:
           - "minor"
           - "patch"
     # The `all` extra must remain jointly resolvable. These candidates violate
-    # upstream constraints: TrustMark still requires NumPy 1.x, OpenCV 4.12+
+    # compatibility constraints: older supported TrustMark builds require NumPy 1.x, OpenCV 4.12+
     # requires NumPy 2 on newer Python versions, and this project keeps tokenizers
     # below 0.23 for the stable Transformers path. Keep Dependabot on the
     # compatible lines until those constraints move.

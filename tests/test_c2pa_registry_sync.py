@@ -78,3 +78,37 @@ def test_official_source_is_fetched_through_its_resolved_revision(monkeypatch: p
     assert payload == b"[]"
     assert resolved == revision
     assert requested == [sync.PINNED_SOURCE_URL.format(revision=revision)]
+
+
+def test_packaged_snapshot_preserves_published_resolution_apis():
+    """Guard the resolution-API subset the runtime deliberately never calls.
+
+    Eight algorithms publish ``softBindingResolutionApis`` today. The runtime
+    resolves nothing over the network by design (see
+    docs/c2pa-resolution-research.md for the contracts and the product
+    decision); this guard keeps the packaged snapshot honest about what the
+    ecosystem publishes, so an upstream change surfaces here consciously
+    instead of passing silently through a registry regeneration.
+    """
+    documented = {
+        "ai.trufo.pawprint.watermark": ("https://c2pa.trufo.ai/v1",),
+        "ai.trufo.pawprint.fingerprint": ("https://c2pa.trufo.ai/v1",),
+        "com.aiwatermark.videoseal.1": ("https://aiwatermark.com/api/v1",),
+        "com.aiwatermark.pixelseal.1": ("https://aiwatermark.com/api/v1",),
+        "com.aiwatermark.audioseal.1": ("https://aiwatermark.com/api/v1",),
+        "me.deepmark.audio.vigil.128": ("https://resolution-api.deepmark.me",),
+        "io.blockfact.audio.watermark.32": ("https://api.blockfact.io/api/soft-binding/v1",),
+        "com.joinmonolith.sha256": ("https://api.joinmonolith.com/api/c2pa",),
+    }
+    packaged = {entry.algorithm: entry.resolution_apis for entry in C2PA_SOFT_BINDING_REGISTRY}
+
+    for algorithm, apis in documented.items():
+        assert packaged.get(algorithm) == apis, (
+            f"{algorithm} resolution APIs changed: {packaged.get(algorithm)} != {apis}; "
+            "update docs/c2pa-resolution-research.md with the new contract"
+        )
+    with_apis = {algorithm for algorithm, apis in packaged.items() if apis}
+    assert with_apis == set(documented), (
+        f"upstream softbinding-algorithm-list resolution-API set changed: {sorted(with_apis)}; "
+        "revisit docs/c2pa-resolution-research.md before regenerating"
+    )

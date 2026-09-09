@@ -284,7 +284,7 @@ def load_config(path: Path) -> CascadeConfig:
 def load_observation_records(path: Path) -> list[tuple[str, tuple[ExpertObservation, ...]]]:
     """Load named score records with explicit support for every expert."""
     payload = _mapping(json.loads(path.read_text(encoding="utf-8")), "observation manifest")
-    if payload.get("schema_version") != 1:
+    if payload.get("schema_version") not in {1, 2}:
         raise ValueError("unsupported observation manifest schema")
     records: list[tuple[str, tuple[ExpertObservation, ...]]] = []
     for record_index, raw_record in enumerate(_sequence(payload.get("records"), "records")):
@@ -311,6 +311,11 @@ def load_observation_records(path: Path) -> list[tuple[str, tuple[ExpertObservat
                     else _number(raw_score, f"records[{record_index}].observations[{observation_index}].score"),
                 )
             )
+        if payload.get("schema_version") == 1:
+            from synthid_runtime.synthid_detector import REGISTERED_DETECTOR_ID
+
+            if any(observation.name == REGISTERED_DETECTOR_ID for observation in observations):
+                raise ValueError("legacy runtime observations require rescoring to preserve fallback expert identity")
         records.append((record_id, tuple(observations)))
     return records
 

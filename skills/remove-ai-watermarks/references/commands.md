@@ -21,10 +21,13 @@ remove-ai-watermarks visible image.png --keep-metadata -o clean.png
 ```
 
 Image mark keys: `gemini`, `doubao`, `jimeng`, `qwen`, `kling`, `yuanbao`,
-`samsung`, `runninghub`, `baidu`, `liblib`, `microsoft`, `jimeng_pill`. Default
+`samsung`, `runninghub`, `baidu`, `liblib`, `liblib_pill`, `microsoft`,
+`jimeng_pill`. Default
 `--mark auto` removes every selected match. `microsoft` is the top-right AI
 badge, separate from the invisible InvisMark watermark on the same vendor's
-images. `jimeng_pill` is a weak detector and needs corroboration.
+images. `jimeng_pill` is a weak detector and needs corroboration. The compact
+`liblib_pill` likewise requires LiblibAI metadata or the bottom-center wordmark
+(since CLI 0.39.0).
 
 ```bash
 remove-ai-watermarks erase image.png --region 1640,1930,400,100 -o clean.png
@@ -75,9 +78,10 @@ cohort asserts the watermark IS present, so it also runs the scrub without a
 local signal, exactly like `--force`. Set it only when the USER says where the
 file came from. `--vendor` is on `invisible`, `all` and `batch`.
 
-Meta Muse Image is the case this exists for: Content Seal ships with no C2PA and
-its IPTC tag is a generic code, so nothing routes it and `identify` reports
-origin unknown. Without `--vendor meta` there is no way to clean it.
+Meta Muse Image exports can retain standalone IPTC metadata that enables
+heuristic attribution and automatic routing. That generic code is not unique
+to Meta and does not detect Content Seal in pixels. After metadata is stripped,
+`--vendor meta` supplies the route only when the user confirms the source.
 There is no `--model`, `--steps`, or `--guidance-scale` flag, and no `--device`
 on the image path: auto-detection already finds the only device these profiles
 run on.
@@ -85,8 +89,8 @@ run on.
 Pipeline profiles: `qwen-zimage` (the default), `sdxl-zimage`, `chroma-zimage`,
 `auto`. All are CUDA-only and all install from the same `qwen-zimage` extra.
 `auto` picks the engine from the file's own provenance -- chroma-zimage for
-Microsoft, qwen-zimage for OpenAI, Google, Meta and unknown -- so prefer it
-over naming an engine when the user has no reason to care. `sdxl-zimage` is the
+Microsoft, qwen-zimage for OpenAI (since CLI 0.39.0), Google, Meta and unknown
+-- so prefer it over naming an engine when the user has no reason to care. `sdxl-zimage` is the
 heavier alternative and `chroma-zimage` is the Apache-2.0 global stage.
 
 ```bash

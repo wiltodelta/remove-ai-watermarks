@@ -27,6 +27,7 @@ _ALTERNATE_SIZE = {
     "runninghub": (1280, 960),
     "baidu": (1280, 960),
     "liblib": (960, 1280),
+    "liblib_pill": (960, 1280),
     "microsoft": (1280, 960),
     "jimeng_pill": (960, 1280),
 }
@@ -102,7 +103,8 @@ def test_cv2_mask_quality_smoke(key: str, case: str) -> None:
     assert np.any(changed), key
 
     mark = wr.get_mark(key)
-    before = mark.detect(marked, provenance=False)
+    corroborated = key == "liblib_pill"
+    before = mark.detect(marked, provenance=corroborated)
     assert before.detected, f"{key}/{case}: confidence {before.confidence:.3f}"
     localization = mark.localize(marked, force=False, detection=before)
     assert localization.mask is not None, f"{key}/{case}: no mask"
@@ -114,7 +116,7 @@ def test_cv2_mask_quality_smoke(key: str, case: str) -> None:
     assert region is not None, key
     assert np.array_equal(filled[localization.mask == 0], marked[localization.mask == 0]), key
 
-    after = mark.detect(filled, provenance=False)
+    after = mark.detect(filled, provenance=corroborated)
     assert not after.detected, f"{key}/{case}: residual confidence {after.confidence:.3f}"
     filled_psnr, filled_ssim = _score_box(clean, filled, changed)
     assert filled_psnr >= _MIN_FILLED_PSNR, f"{key}/{case}: PSNR {filled_psnr:.2f} dB"

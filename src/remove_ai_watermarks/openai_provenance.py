@@ -184,17 +184,26 @@ def _parse_synthid_result(payload: Mapping[str, Any]) -> OpenAISynthIDDetection:
     )
 
 
-def _default_client() -> Any:
+def _default_client(*, api_key: str | None = None) -> Any:
     if not is_available():
         raise RuntimeError(f"OpenAI SynthID verification needs the OpenAI SDK; {INSTALL_HINT}")
     openai_module = importlib.import_module("openai")
     client_factory = cast("Callable[..., Any]", openai_module.OpenAI)
+    http_client_factory = cast("Callable[..., Any]", openai_module.DefaultHttpxClient)
+    http_client = http_client_factory(trust_env=False)
+    client_options: dict[str, object] = {
+        "timeout": REQUEST_TIMEOUT_SECONDS,
+        "max_retries": MAX_AUTOMATIC_RETRIES,
+        "http_client": http_client,
+    }
+    if api_key is not None:
+        client_options["api_key"] = api_key
     try:
-        client = client_factory(
-            timeout=REQUEST_TIMEOUT_SECONDS,
-            max_retries=MAX_AUTOMATIC_RETRIES,
-        )
+        client = client_factory(**client_options)
     except Exception as exc:
+        close = getattr(http_client, "close", None)
+        if callable(close):
+            close()
         raise RuntimeError(f"could not initialize the OpenAI client: {exc}") from exc
     if not hasattr(client, "content_provenance_checks"):
         raise RuntimeError(f"OpenAI SynthID verification needs openai>=2.52.0; {INSTALL_HINT}")
@@ -276,6 +285,7 @@ def verify_openai_synthid(
     *,
     acknowledge_upload: bool = False,
     client: Any | None = None,
+    api_key: str | None = None,
 ) -> OpenAISynthIDDetection:
     """Verify OpenAI SynthID after stripping AI metadata without changing pixels.
 
@@ -307,7 +317,7 @@ def verify_openai_synthid(
         if upload_bytes > MAX_UPLOAD_BYTES:
             raise ValueError("sanitized image exceeds the OpenAI Content Provenance 50 MiB upload limit")
 
-        api_client = client if client is not None else _default_client()
+        api_client = client if client is not None else _default_client(api_key=api_key)
         if not hasattr(api_client, "content_provenance_checks"):
             raise RuntimeError("OpenAI client does not expose content_provenance_checks; openai>=2.52.0 is required")
         request_context = {

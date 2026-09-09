@@ -7,10 +7,10 @@ change there cannot silently diverge between the profiles.
 
 Pieces bound to this architecture: the diffusers ``ChromaImg2ImgPipeline``
 (no DiffSynth here), the neutral faithful-regeneration prompt the floors were
-calibrated with, guidance 5.0, and the step-count compensation -- diffusers
-truncates the step COUNT (``int(steps * strength)``), so the requested count is
-scaled to always spend four effective denoising steps, the same semantics as
-``sdxl_zimage_pipeline.requested_steps``. Strength is bound to it too: the flat
+calibrated with, guidance 5.0, and ``ceil(4 / strength)`` requested steps. Chroma
+truncates the skipped interval, so this calibrated schedule executes four or
+five steps depending on strength; SDXL rounds differently. Strength is bound
+to the request schedule too: the flat
 vendor floors in ``watermark_profiles`` come from the 2026-08-29/30 oracle
 calibration (docs/chroma1-engine-research.md) and do not transfer to another
 prompt, guidance, or effective step count.
@@ -25,7 +25,6 @@ img2img pass, so that is the calibrated path.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -36,17 +35,19 @@ from remove_ai_watermarks._internal.two_stage_pipeline import (
     _load_prompt_payload,
     _prompt_cache_path,
     _store_prompt_payload,
+    _target_size,
     edge_pad_to_grid,
+    requested_steps,
 )
 
 log = logging.getLogger(__name__)
 
 CHROMA_MODEL_ID = "lodestones/Chroma1-HD"
 
-# The Chroma1 global stage spends four effective denoising steps at every
-# strength. The calibration ladder (docs/chroma1-engine-research.md) held this
-# fixed; a different count is a different engine.
-CHROMA_STEPS = 4
+# Calibration used ceil(4 / strength) requested steps. Chroma truncates the
+# skipped count, so some strengths execute five steps rather than four.
+# Preserve this request schedule: changing it invalidates the measured floors.
+CHROMA_NOMINAL_STEPS = 4
 CHROMA_GUIDANCE = 5.0
 
 # The neutral faithful-regeneration prompt the floors were measured with. It is
@@ -67,21 +68,9 @@ _CHROMA_PROMPT_CACHE_KEY = (CHROMA_MODEL_ID, ("chroma1-prompt-embeds-v1",), CHRO
 _LATENT_GRID = 16
 
 
-def requested_steps(effective_steps: int, strength: float) -> int:
-    """Spend ``effective_steps`` regardless of Diffusers' step-count truncation.
-
-    Diffusers img2img truncates the step COUNT (``init_timestep = int(steps *
-    strength)``), so at the floors this profile uses a naive request would run
-    zero or one steps. Scale the request so the effective count is exact.
-    """
-    return max(1, math.ceil(effective_steps / max(float(strength), 1e-6)))
-
-
 def chroma_target_size(width: int, height: int) -> tuple[int, int]:
     """Floor dimensions to the latent grid without changing aspect."""
-    return max(_LATENT_GRID, (width // _LATENT_GRID) * _LATENT_GRID), max(
-        _LATENT_GRID, (height // _LATENT_GRID) * _LATENT_GRID
-    )
+    return _target_size(width, height, _LATENT_GRID)
 
 
 @dataclass
@@ -161,8 +150,8 @@ class ChromaZImagePipeline(TwoStageZImagePipeline):
         pipe = self._load_global()
         target = chroma_target_size(image.width, image.height)
         prepared = image if image.size == target else image.resize(target, Image.Resampling.LANCZOS)
-        steps = requested_steps(CHROMA_STEPS, strength)
-        self._progress(f"Running Chroma1 pass: strength={strength:.4f}, steps={CHROMA_STEPS} of {steps}...")
+        steps = requested_steps(CHROMA_NOMINAL_STEPS, strength)
+        self._progress(f"Running Chroma1 pass: strength={strength:.4f}, requested steps={steps}...")
         generator = torch.Generator(device=self.device).manual_seed(seed) if seed is not None else None
 
         # Pass cached embeddings when available to skip the T5 inference.

@@ -26,7 +26,7 @@
 | L1 repair, L1 geometry, camera vs edit pair, E3 | [detector](synthid-detector-research.md) |
 | CLIP-L photo vs AI, provider CLIP, union | [AI classifiers](ai-generated-image-classifiers.md), [source classifiers](synthid-classifiers.md) |
 | 124-d three-class and binary AI | [source classifiers](synthid-classifiers.md) |
-| `pipeline_lattice` re-check, Spaces census | [source classifiers](synthid-classifiers.md) |
+| `pipeline_lattice` re-check, private-corpus census | [source classifiers](synthid-classifiers.md) |
 | Attack / kill / flip / add / surround ladders | [removal](synthid-removal-research.md) |
 | 16-32 titration, E2 scramble, Bayer and geometry | [removal](synthid-removal-research.md) |
 | S4 provider split, M2 Imagen `addWatermark`, reverse-SynthID, Bypass | [detector](synthid-detector-research.md) |

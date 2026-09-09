@@ -223,7 +223,7 @@ class TestEngineConstructsWithoutAModelId:
     Once the remover tightened its "you may not override the fixed stack" check to
     ``is not None``, that substitution made EVERY construction raise -- and no test
     saw it, because the library tests build WatermarkRemover directly while the engine
-    tests mock it. A deployed Modal worker caught it instead. The parameter is gone on
+    tests mock it. A deployed GPU worker caught it instead. The parameter is gone on
     both sides now, so guard the property that broke: a default construction reaches
     the remover, carrying no model at all.
     """

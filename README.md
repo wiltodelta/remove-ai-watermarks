@@ -265,7 +265,7 @@ ControlNet, followed by SAM-masked Z-Image repair of any detected face. The
 alternative, `sdxl-zimage`, swaps the global stage for SDXL and keeps the same face
 stage. A third profile, `chroma-zimage`, uses the Apache-2.0 Chroma1 global pass
 with its own flat vendor floors; see `docs/chroma1-engine-research.md` for the
-calibration. `--pipeline auto` picks chroma-zimage for OpenAI and Microsoft
+calibration. `--pipeline auto` picks chroma-zimage for Microsoft
 provenance and qwen-zimage otherwise. All are CUDA only.
 
 ```bash
@@ -344,7 +344,8 @@ Visible mark support includes:
 
 - Google Gemini and Nano Banana visible sparkle watermark;
 - Doubao, the Jimeng wordmark and top-left `AI生成` pill, Qwen, Kling AI,
-  Yuanbao, Baidu, LiblibAI, and RunningHub labels;
+  Yuanbao, Baidu, LiblibAI's bottom-center wordmark and compact top-left pill,
+  and RunningHub labels;
 - one calibrated Microsoft top-right white AI-badge variant;
 - one calibrated Samsung Galaxy AI label variant.
 
@@ -485,8 +486,8 @@ uv run --extra video --extra diffusion python scripts/video_synthid_sweep.py inp
 ```
 
 To score what an output actually cost, use `scripts/video_fidelity_probe.py`:
-the engine's own PSNR is measured before the resize and the encode, so only the
-probe sees the delivered picture.
+the engine's own PSNR is measured after the input resize and before final
+encoding, so only the probe sees the delivered picture.
 
 ```bash
 uv run --extra video python scripts/video_fidelity_probe.py input.mp4 input_clean.mp4

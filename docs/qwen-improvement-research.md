@@ -1,5 +1,10 @@
 # Qwen-Image improvement research (2026-06-20)
 
+> Metric correction: the OCR metric from `scripts/fidelity_metrics.py` is
+> normalized edit distance (NED), edit distance divided by the longer
+> normalized string. The historical values are unchanged; the earlier CER
+> label incorrectly implied normalization by reference length.
+
 > Research archive. This page records experiments and decisions from the date
 > above. It may mention prototypes or defaults that were later changed. Use the
 > user guides and current source code for the supported interface.
@@ -15,7 +20,7 @@ The `qwen` pipeline runs base Qwen-Image (20B MMDiT, Apache-2.0) as a low-streng
 img2img scrub (removal comes from the denoising `strength`). Certified oracle scrub
 floors: OpenAI 0.10 (seed-robust), Gemini 0.25 (pinned seed). Measured against the
 SDXL + canny-ControlNet pipeline (`scripts/fidelity_metrics.py`): Qwen preserves
-**text** markedly better (incl. CJK and Cyrillic, lower OCR CER) but preserves
+**text** markedly better (incl. CJK and Cyrillic, lower OCR NED) but preserves
 **faces** worse, smoothing skin (Laplacian-variance retention 0.40 vs 0.62, face
 LPIPS 0.17 vs 0.09, ArcFace identity 0.38 vs 0.55 at the scrub floors). The goal of
 the research: keep Qwen's text advantage while fixing the face-smoothing, and judge
@@ -132,7 +137,7 @@ candidate; it does not upgrade that exact-output result into broad certification
 A `--pipeline auto` router (Haar+MSER → text→qwen / faces→controlnet / both→mixed) and a
 faces+text mixed dual-pass (scrub the whole frame on both, graft qwen text regions onto the
 controlnet base) were built and run on Modal (the abba poster: faces + display text). On that
-canonical faces+text case **controlnet won EVERY metric, including text** (CER 0.114 vs qwen
+canonical faces+text case **controlnet won EVERY metric, including text** (NED 0.114 vs qwen
 0.379; ID 0.64 vs 0.36) — canny holds existing letter shapes, qwen re-renders display text and
 garbles it, so grafting qwen text only hurts. Qwen beats controlnet on text ONLY for clean body
 text on a plain background with no faces (openai_1/2), a niche `--pipeline qwen` alone covers;
@@ -226,7 +231,7 @@ original bbox and stayed collision-immune. Regression-guarded by
   re-introducing SynthID? Note: residual transfer from the ORIGINAL risks copying back
   watermark-carrying high frequencies, so it must be verified against the SynthID oracle.
 - Head-to-head: does `qwen-zimage` retain its measured ArcFace gain across more portraits
-  and mixed scenes, match Qwen's text advantage (CJK+Cyrillic CER), and clear SynthID
+  and mixed scenes, match Qwen's text advantage (CJK+Cyrillic NED), and clear SynthID
   robustly across content types and seeds?
 - Can YuNet's serial face workload be bounded to foreground/relevant faces without losing the
   small faces the upstream YOLO path would process?

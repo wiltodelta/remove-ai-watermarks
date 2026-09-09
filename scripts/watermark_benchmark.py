@@ -3,19 +3,24 @@
 
 The input is a strict JSONL manifest. Every row names one immutable artifact,
 its evidence arm and processing state, the detector adapter, source and
-transform revisions, an explicit seed, and an optional decoded-pixel reference.
-Artifacts and references are hash-checked before any detector runs.
+transform revisions, an explicit seed, and an optional decoded-media
+reference. Artifacts and references are hash-checked before any detector
+runs. Image rows decode through the image pipeline; audio rows decode to mono
+16 kHz float32 through the system ffmpeg and are measured in the sample
+domain.
 
 The output keeps three questions separate:
 
 * ``detection`` records only what one named adapter recognized;
 * ``removal`` records the post-removal observation without certifying erasure;
-* ``fidelity`` measures decoded-pixel distance from an explicit reference.
+* ``fidelity`` measures the decoded-media distance from an explicit reference.
 
 This is a maintainer tool, not an installed command. It calls no provenance
 oracle or provider API, does not download corpora, and refuses to overwrite an
 existing report. The optional TrustMark dependency may fetch its official model
-weights when its local package cache is incomplete.
+weights when its local package cache is incomplete; the optional audioseal
+adapter loads revision-pinned weights through the shared local oracle the same
+way.
 
     uv run python scripts/watermark_benchmark.py manifest.jsonl --output report.jsonl
 """
@@ -52,15 +57,23 @@ from remove_ai_watermarks._internal.schema import require_schema_version  # noqa
 log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
+Media = Literal["image", "audio", "video"]
 Arm = Literal["positive", "matched_negative", "wrong_key", "hard_negative"]
-State = Literal["clean", "marked", "attacked", "removed"]
+State = Literal["clean", "marked", "attacked", "removed", "forged"]
 ExpectedDetection = Literal["detected", "not_detected", "unresolved"]
 DetectorStatus = Literal["detected", "not_detected", "unavailable", "error"]
 
 _ARMS: tuple[Arm, ...] = ("positive", "matched_negative", "wrong_key", "hard_negative")
-_STATES: tuple[State, ...] = ("clean", "marked", "attacked", "removed")
+_STATES: tuple[State, ...] = ("clean", "marked", "attacked", "removed", "forged")
 _EXPECTED: tuple[ExpectedDetection, ...] = ("detected", "not_detected", "unresolved")
 DETECTOR_STATUSES: tuple[DetectorStatus, ...] = ("detected", "not_detected", "unavailable", "error")
+MEDIA_TYPES: tuple[Media, ...] = ("image", "audio", "video")
+ADAPTER_MEDIA: dict[str, Media] = {
+    "dwt-dct": "image",
+    "trustmark": "image",
+    "audioseal": "audio",
+    "videoseal": "video",
+}
 _FIELDS = {
     "schema_version",
     "case_id",
@@ -96,7 +109,7 @@ class BenchmarkCase:
 
     case_id: str
     pair_id: str
-    media_type: Literal["image"]
+    media_type: Media
     adapter: str
     arm: Arm
     state: State
@@ -117,6 +130,7 @@ class DetectorOutcome:
     status: DetectorStatus
     label: str | None
     error: str | None = None
+    temporal: tuple[float, ...] | None = None
 
 
 class DetectorAdapter(Protocol):
@@ -131,7 +145,7 @@ class DetectorAdapter(Protocol):
     @property
     def available(self) -> bool: ...
 
-    def detect(self, path: Path, image: NDArray[Any]) -> DetectorOutcome: ...
+    def detect(self, path: Path, artifact: NDArray[Any]) -> DetectorOutcome: ...
 
 
 @dataclass(frozen=True)
@@ -143,9 +157,28 @@ class FunctionAdapter:
     available: bool
     detector: Callable[[Path, NDArray[Any]], str | None]
 
-    def detect(self, path: Path, image: NDArray[Any]) -> DetectorOutcome:
-        label = self.detector(path, image)
+    def detect(self, path: Path, artifact: NDArray[Any]) -> DetectorOutcome:
+        label = self.detector(path, artifact)
         return DetectorOutcome(status="detected" if label is not None else "not_detected", label=label)
+
+
+@dataclass(frozen=True)
+class VideoSealAdapter:
+    """Adapter whose outcome also carries per-frame temporal evidence."""
+
+    name: str
+    source_file: Path
+    available: bool
+
+    def detect(self, path: Path, frames: NDArray[Any]) -> DetectorOutcome:
+        from videoseal_oracle import read
+
+        reading = read(_videoseal_model(), frames)
+        return DetectorOutcome(
+            status="detected" if reading.detected else "not_detected",
+            label=reading.label if reading.detected else None,
+            temporal=reading.per_frame_bit_accuracy,
+        )
 
 
 def sha256_file(path: Path) -> str:
@@ -264,8 +297,12 @@ def _case(
         raise ValueError(f"{location}: {exc}") from exc
 
     media_type = values["media_type"]
-    if media_type != "image":
-        raise ValueError(f"{location}: media_type must be image in schema v{SCHEMA_VERSION}")
+    if media_type not in MEDIA_TYPES:
+        raise ValueError(f"{location}: media_type must be one of {', '.join(MEDIA_TYPES)} in schema v{SCHEMA_VERSION}")
+    adapter = require_nonempty_string(values["adapter"], field="adapter", location=location)
+    expected_media = ADAPTER_MEDIA.get(adapter)
+    if expected_media is not None and expected_media != media_type:
+        raise ValueError(f"{location}: adapter {adapter!r} measures {expected_media} artifacts, not {media_type}")
     arm = values["arm"]
     if arm not in _ARMS:
         raise ValueError(f"{location}: arm must be one of {', '.join(_ARMS)}")
@@ -306,8 +343,8 @@ def _case(
     return BenchmarkCase(
         case_id=require_nonempty_string(values["case_id"], field="case_id", location=location),
         pair_id=require_nonempty_string(values["pair_id"], field="pair_id", location=location),
-        media_type="image",
-        adapter=require_nonempty_string(values["adapter"], field="adapter", location=location),
+        media_type=media_type,
+        adapter=adapter,
         arm=arm,
         state=state,
         path=path,
@@ -365,11 +402,19 @@ def _detect_trustmark(path: Path, image: NDArray[Any]) -> str | None:
 
 
 def default_adapters() -> dict[str, DetectorAdapter]:
-    """Return the first two local, open image-watermark adapters."""
+    """Return the local, open watermark adapters for both media types."""
     from remove_ai_watermarks import invisible_watermark, trustmark_detector
+
+    scripts_dir = Path(__file__).resolve().parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import audioseal_oracle
+    import videoseal_oracle
 
     dwt_source = Path(invisible_watermark.__file__).resolve()
     trustmark_source = Path(trustmark_detector.__file__).resolve()
+    audio_oracle_source = Path(audioseal_oracle.__file__).resolve()
+    video_oracle_source = Path(videoseal_oracle.__file__).resolve()
     return {
         "dwt-dct": FunctionAdapter(
             name="dwt-dct",
@@ -382,6 +427,17 @@ def default_adapters() -> dict[str, DetectorAdapter]:
             source_file=trustmark_source,
             available=trustmark_detector.is_available(),
             detector=_detect_trustmark,
+        ),
+        "audioseal": FunctionAdapter(
+            name="audioseal",
+            source_file=audio_oracle_source,
+            available=audioseal_oracle.available(),
+            detector=_detect_audioseal,
+        ),
+        "videoseal": VideoSealAdapter(
+            name="videoseal",
+            source_file=video_oracle_source,
+            available=videoseal_oracle.available(),
         ),
     }
 
@@ -416,6 +472,126 @@ def _decode_image(path: Path) -> NDArray[Any] | None:
     from remove_ai_watermarks.image_io import imread
 
     return imread(path, cv2.IMREAD_UNCHANGED)
+
+
+def _decode_audio(path: Path) -> NDArray[Any] | None:
+    """Decode any audio artifact to mono 16 kHz float32 via system ffmpeg."""
+    import subprocess
+
+    import numpy as np
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        return None
+    result = subprocess.run(  # noqa: S603 - resolved ffmpeg with fixed arguments
+        [ffmpeg, "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", "16000", "-f", "f32le", "pipe:1"],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return None
+    return np.frombuffer(result.stdout, dtype="<f4").astype(np.float32)
+
+
+def _decode_video(path: Path) -> NDArray[Any] | None:
+    """Decode a video artifact to float RGB frames in [0, 1] as (T, H, W, 3)."""
+    import subprocess
+
+    import numpy as np
+
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        return None
+    probe = subprocess.run(  # noqa: S603 - resolved ffprobe with fixed arguments
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode != 0:
+        return None
+    try:
+        width, height = (int(value) for value in probe.stdout.strip().split(","))
+    except ValueError:
+        return None
+    result = subprocess.run(  # noqa: S603 - resolved ffmpeg with fixed arguments
+        [
+            ffmpeg,
+            "-loglevel",
+            "error",
+            "-i",
+            str(path),
+            "-map",
+            "0:v:0",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "pipe:1",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return None
+    if height <= 0 or width <= 0:
+        return None
+    frame_size = height * width * 3
+    if len(result.stdout) % frame_size != 0:
+        return None
+    frames = np.frombuffer(result.stdout, dtype=np.uint8).reshape(-1, height, width, 3)
+    return frames.astype(np.float32) / 255.0
+
+
+def decode_video_artifact(path: Path) -> tuple[NDArray[Any], str]:
+    """Decode saved bytes and bind the measurement to their unchanged digest."""
+    digest = sha256_file(path)
+    frames = _decode_video(path)
+    if frames is None:
+        raise ValueError(f"video artifact failed to decode: {path}")
+    if sha256_file(path) != digest:
+        raise ValueError(f"video artifact changed during decoding: {path}")
+    return frames, digest
+
+
+def _detect_audioseal(path: Path, samples: NDArray[Any]) -> str | None:
+    """Read the pinned AudioSeal oracle; the label is the decoded message."""
+    from audioseal_oracle import detect_sample_array
+
+    return detect_sample_array(_audioseal_detector(), samples)
+
+
+@cache
+def _audioseal_detector() -> object:
+    scripts_dir = Path(__file__).resolve().parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    from audioseal_oracle import load_pinned_models
+
+    _generator, detector = load_pinned_models()
+    return detector
+
+
+@cache
+def _videoseal_model() -> object:
+    scripts_dir = Path(__file__).resolve().parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    from videoseal_oracle import load_model
+
+    return load_model()
 
 
 def _image_fidelity(
@@ -463,9 +639,84 @@ def _image_fidelity(
     }
 
 
-def _detect(adapter: DetectorAdapter, path: Path, image: NDArray[Any]) -> DetectorOutcome:
+def _audio_fidelity(
+    case: BenchmarkCase,
+    artifact: NDArray[Any] | None,
+    reference_decoder: Callable[[Path], NDArray[Any] | None],
+) -> dict[str, Any]:
+    """Compare decoded mono 16 kHz samples against an explicit reference."""
+    if case.reference_path is None:
+        return {"status": "not_measured", "reason": "reference_not_provided"}
+
+    import numpy as np
+
+    reference = artifact if case.reference_path == case.path else reference_decoder(case.reference_path)
+    if artifact is None or reference is None:
+        return {"status": "not_measured", "reason": "decoded_samples_unavailable"}
+    artifact_samples = np.asarray(artifact, dtype=np.float32).reshape(-1)
+    reference_samples = np.asarray(reference, dtype=np.float32).reshape(-1)
+    if artifact_samples.shape != reference_samples.shape:
+        return {
+            "status": "incomparable",
+            "reason": "length_mismatch",
+            "artifact_samples": int(artifact_samples.shape[0]),
+            "reference_samples": int(reference_samples.shape[0]),
+        }
+    delta = artifact_samples.astype(np.float64) - reference_samples.astype(np.float64)
+    reference_power = float(np.sum(reference_samples.astype(np.float64) ** 2))
+    error_power = float(np.sum(delta**2))
+    identical = error_power == 0.0
+    return {
+        "status": "measured",
+        "identical": identical,
+        "max_abs_error": float(np.max(np.abs(delta))),
+        "snr_db": None if identical or reference_power == 0.0 else 10.0 * math.log10(reference_power / error_power),
+        "snr_status": (
+            "unbounded_identical" if identical else ("zero_reference_power" if reference_power == 0.0 else "measured")
+        ),
+    }
+
+
+def _video_fidelity(
+    case: BenchmarkCase,
+    artifact: NDArray[Any] | None,
+    reference_decoder: Callable[[Path], NDArray[Any] | None],
+) -> dict[str, Any]:
+    """Compare decoded RGB frames against an explicit reference clip."""
+    if case.reference_path is None:
+        return {"status": "not_measured", "reason": "reference_not_provided"}
+
+    import numpy as np
+
+    reference = artifact if case.reference_path == case.path else reference_decoder(case.reference_path)
+    if artifact is None or reference is None:
+        return {"status": "not_measured", "reason": "decoded_frames_unavailable"}
+    artifact_frames = np.asarray(artifact, dtype=np.float32)
+    reference_frames = np.asarray(reference, dtype=np.float32)
+    if artifact_frames.shape != reference_frames.shape:
+        return {
+            "status": "incomparable",
+            "reason": "shape_mismatch",
+            "artifact_shape": list(artifact_frames.shape),
+            "reference_shape": list(reference_frames.shape),
+        }
+    delta = artifact_frames.astype(np.float64) - reference_frames.astype(np.float64)
+    per_frame_mse = np.mean(np.square(delta), axis=(1, 2, 3))
+    identical = bool(np.all(per_frame_mse == 0.0))
+    changed_frames = np.asarray(per_frame_mse) > 0.0
+    finite = per_frame_mse[per_frame_mse > 0.0]
+    return {
+        "status": "measured",
+        "identical": identical,
+        "changed_frame_fraction": float(np.mean(changed_frames)),
+        "mean_psnr_db": None if identical or finite.size == 0 else float(np.mean(10.0 * np.log10(1.0 / finite))),
+        "psnr_status": "unbounded_identical" if identical else "measured",
+    }
+
+
+def _detect(adapter: DetectorAdapter, path: Path, artifact: NDArray[Any]) -> DetectorOutcome:
     try:
-        return adapter.detect(path, image)
+        return adapter.detect(path, artifact)
     except Exception as exc:
         log.warning("Benchmark adapter %s failed for %s: %s", adapter.name, path, exc)
         return DetectorOutcome(status="error", label=None, error=f"{type(exc).__name__}: {exc}")
@@ -485,6 +736,15 @@ def _detection_record(
         "positive_evidence": outcome.status == "detected",
         "adapter_elapsed_ms": adapter_elapsed_ms,
     }
+    if outcome.temporal is not None:
+        values = [float(value) for value in outcome.temporal]
+        record["temporal"] = {
+            "frames": len(values),
+            "min_bit_accuracy": min(values) if values else None,
+            "mean_bit_accuracy": sum(values) / len(values) if values else None,
+            "max_bit_accuracy": max(values) if values else None,
+            "per_frame_bit_accuracy": [round(value, 6) for value in values],
+        }
     if outcome.error is not None:
         record["error"] = outcome.error
     return record
@@ -511,8 +771,8 @@ def evaluate_case(
     *,
     adapters: Mapping[str, DetectorAdapter],
     repository: Mapping[str, str | bool],
-    artifact_decoder: Callable[[Path], NDArray[Any] | None] = _decode_image,
-    reference_decoder: Callable[[Path], NDArray[Any] | None] = _decode_image,
+    artifact_decoder: Callable[[Path], NDArray[Any] | None] | None = None,
+    reference_decoder: Callable[[Path], NDArray[Any] | None] | None = None,
     clock_ns: Callable[[], int] = time.perf_counter_ns,
 ) -> dict[str, Any]:
     """Evaluate one case while keeping detector and fidelity claims distinct."""
@@ -520,6 +780,10 @@ def evaluate_case(
         adapter = adapters[case.adapter]
     except KeyError as exc:
         raise ValueError(f"unknown adapter {case.adapter!r}") from exc
+    if artifact_decoder is None:
+        artifact_decoder = _default_decoder(case.media_type)
+    if reference_decoder is None:
+        reference_decoder = _default_decoder(case.media_type)
     artifact = artifact_decoder(case.path)
     adapter_elapsed_ms: float | None = None
     if artifact is None:
@@ -556,8 +820,30 @@ def evaluate_case(
         },
         "detection": _detection_record(outcome, case.expected, adapter_elapsed_ms),
         "removal": _removal_record(case.state, outcome),
-        "fidelity": _image_fidelity(case, artifact, reference_decoder),
+        "fidelity": _fidelity_for(case, artifact, reference_decoder),
     }
+
+
+def _default_decoder(media: Media) -> Callable[[Path], NDArray[Any] | None]:
+    """The per-media artifact decoder used when a caller injects none."""
+    if media == "image":
+        return _decode_image
+    if media == "audio":
+        return _decode_audio
+    return _decode_video
+
+
+def _fidelity_for(
+    case: BenchmarkCase,
+    artifact: NDArray[Any] | None,
+    reference_decoder: Callable[[Path], NDArray[Any] | None],
+) -> dict[str, Any]:
+    """Dispatch the fidelity contract by media type."""
+    if case.media_type == "image":
+        return _image_fidelity(case, artifact, reference_decoder)
+    if case.media_type == "audio":
+        return _audio_fidelity(case, artifact, reference_decoder)
+    return _video_fidelity(case, artifact, reference_decoder)
 
 
 def write_jsonl(path: Path, records: Iterable[Mapping[str, Any]]) -> None:
@@ -594,23 +880,29 @@ def run_benchmark(manifest: Path, output: Path) -> Counter[str]:
     counts: Counter[str] = Counter()
     path_counts = Counter(case.path for case in cases)
     path_counts.update(case.reference_path for case in cases if case.reference_path is not None)
-    recurring_images: dict[Path, NDArray[Any] | None] = {}
+    recurring_artifacts: dict[Path, NDArray[Any] | None] = {}
 
-    def decode_image(path: Path) -> NDArray[Any] | None:
-        if path_counts[path] < 2:
-            return _decode_image(path)
-        if path not in recurring_images:
-            recurring_images[path] = _decode_image(path)
-        return recurring_images[path]
+    def decoder_for(media: Media) -> Callable[[Path], NDArray[Any] | None]:
+        base = _default_decoder(media)
+
+        def decode(path: Path) -> NDArray[Any] | None:
+            if path_counts[path] < 2:
+                return base(path)
+            if path not in recurring_artifacts:
+                recurring_artifacts[path] = base(path)
+            return recurring_artifacts[path]
+
+        return decode
 
     def records() -> Iterable[dict[str, Any]]:
         for case in cases:
+            decoder = decoder_for(case.media_type)
             record = evaluate_case(
                 case,
                 adapters=adapters,
                 repository=repository,
-                artifact_decoder=decode_image,
-                reference_decoder=decode_image,
+                artifact_decoder=decoder,
+                reference_decoder=decoder,
             )
             counts[record["detection"]["status"]] += 1
             yield record

@@ -23,6 +23,8 @@ def _observations(
     large_supported: bool = False,
 ) -> tuple[ExpertObservation, ...]:
     return (
+        ExpertObservation(bank.synthid_detector.OPPONENT_REGISTERED_DETECTOR_ID, False, None),
+        ExpertObservation(bank.synthid_detector.FINE_OPPONENT_REGISTERED_DETECTOR_ID, False, None),
         ExpertObservation(bank.synthid_detector.DETECTOR_ID, fixed_supported, fixed_score),
         ExpertObservation(
             bank.synthid_detector.REGISTERED_DETECTOR_ID,
@@ -98,11 +100,21 @@ def test_cli_writes_hash_pinned_report(tmp_path: Path) -> None:
     observations_path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "records": [
                     {
                         "id": "candidate-1",
                         "observations": [
+                            {
+                                "name": bank.synthid_detector.OPPONENT_REGISTERED_DETECTOR_ID,
+                                "supported": False,
+                                "score": None,
+                            },
+                            {
+                                "name": bank.synthid_detector.FINE_OPPONENT_REGISTERED_DETECTOR_ID,
+                                "supported": False,
+                                "score": None,
+                            },
                             {
                                 "name": bank.synthid_detector.DETECTOR_ID,
                                 "supported": True,

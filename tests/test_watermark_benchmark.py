@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -392,9 +393,11 @@ def test_jsonl_writer_refuses_overwrite_and_emits_strict_json(tmp_path: Path) ->
 def test_builtin_adapters_name_their_exact_source_files() -> None:
     adapters = MODULE.default_adapters()
 
-    assert set(adapters) == {"dwt-dct", "trustmark"}
+    assert set(adapters) == {"dwt-dct", "trustmark", "audioseal", "videoseal"}
     assert adapters["dwt-dct"].source_file.name == "invisible_watermark.py"
     assert adapters["trustmark"].source_file.name == "trustmark_detector.py"
+    assert adapters["audioseal"].source_file.name == "audioseal_oracle.py"
+    assert adapters["videoseal"].source_file.name == "videoseal_oracle.py"
 
 
 def test_run_benchmark_caches_only_recurring_images(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -446,3 +449,314 @@ def test_run_benchmark_writes_official_trustmark_result(tmp_path: Path) -> None:
     assert record["detection"]["status"] == "detected"
     assert record["detection"]["label"] == "Adobe TrustMark (variant P, schema 1)"
     assert record["case_id"] == "case-1"
+
+
+# --- Audio rows (schema v1, media_type "audio", adapter "audioseal") --------
+
+
+def _wav(path: Path, samples: np.ndarray) -> Path:
+    import sys
+
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    from audioseal_experiment import wav_pcm16_bytes
+
+    path.write_bytes(wav_pcm16_bytes(samples, 16_000))
+    return path
+
+
+def _audio_row(artifact: Path, *, reference: Path | None = None, adapter: str = "audioseal") -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "case_id": "audio-case-1",
+        "pair_id": "audio-pair-1",
+        "media_type": "audio",
+        "adapter": adapter,
+        "arm": "positive",
+        "state": "marked",
+        "path": artifact.name,
+        "sha256": _sha256(artifact),
+        "reference_path": reference.name if reference is not None else None,
+        "reference_sha256": _sha256(reference) if reference is not None else None,
+        "source_revision": "fixture-set@abc123",
+        "transform": {"name": "audioseal-embed", "revision": "builtin-v1", "parameters": {}},
+        "seed": 7,
+        "expected": "detected",
+    }
+
+
+def test_manifest_accepts_audio_rows(tmp_path: Path) -> None:
+    artifact = _wav(tmp_path / "marked.wav", np.zeros(1600, dtype=np.float32))
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [_audio_row(artifact)])
+
+    row = MODULE.load_manifest(manifest)[0]
+
+    assert row.media_type == "audio"
+    assert row.adapter == "audioseal"
+
+
+def test_manifest_rejects_unknown_media_type(tmp_path: Path) -> None:
+    artifact = _image(tmp_path / "marked.png", 100)
+    row = _row(artifact)
+    row["media_type"] = "document"
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [row])
+
+    with pytest.raises(ValueError, match="media_type must be one of image, audio, video"):
+        MODULE.load_manifest(manifest)
+
+
+def test_manifest_rejects_adapter_measuring_another_media_type(tmp_path: Path) -> None:
+    artifact = _wav(tmp_path / "marked.wav", np.zeros(1600, dtype=np.float32))
+    row = _audio_row(artifact)
+    row["adapter"] = "dwt-dct"
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [row])
+
+    with pytest.raises(ValueError, match="'dwt-dct' measures image artifacts, not audio"):
+        MODULE.load_manifest(manifest)
+
+
+def test_manifest_still_accepts_custom_adapter_names_on_audio_rows(tmp_path: Path) -> None:
+    artifact = _wav(tmp_path / "marked.wav", np.zeros(1600, dtype=np.float32))
+    row = _audio_row(artifact, adapter="custom-audio-detector")
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [row])
+
+    assert MODULE.load_manifest(manifest)[0].adapter == "custom-audio-detector"
+
+
+def test_audio_fidelity_reports_unbounded_snr_for_identical_samples(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples = np.linspace(-0.5, 0.5, 4096, dtype=np.float32)
+    artifact = _wav(tmp_path / "marked.wav", samples)
+    reference = _wav(tmp_path / "clean.wav", samples.copy())
+    row = _audio_row(artifact, reference=reference, adapter="fake-audio")
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [row])
+    case = MODULE.load_manifest(manifest)[0]
+    decode_calls: list[Path] = []
+
+    def decode(path: Path) -> Any:
+        decode_calls.append(path)
+        return samples
+
+    fidelity = MODULE._audio_fidelity(case, samples, decode)
+
+    assert fidelity["status"] == "measured"
+    assert fidelity["identical"] is True
+    assert fidelity["snr_db"] is None
+    assert fidelity["snr_status"] == "unbounded_identical"
+    assert decode_calls == [reference.resolve()]
+
+
+def test_audio_fidelity_marks_length_mismatch_incomparable(tmp_path: Path) -> None:
+    short = np.zeros(1000, dtype=np.float32)
+    long = np.zeros(2000, dtype=np.float32)
+    artifact = _wav(tmp_path / "marked.wav", short)
+    reference = _wav(tmp_path / "clean.wav", long)
+    row = _audio_row(artifact, reference=reference, adapter="fake-audio")
+    case = MODULE.load_manifest(_write_manifest(tmp_path / "manifest.jsonl", [row]))[0]
+
+    fidelity = MODULE._audio_fidelity(case, short, lambda _path: long)
+
+    assert fidelity["status"] == "incomparable"
+    assert fidelity["reason"] == "length_mismatch"
+    assert fidelity["artifact_samples"] == 1000
+    assert fidelity["reference_samples"] == 2000
+
+
+def test_run_benchmark_evaluates_audio_rows_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("audio rows decode through the system ffmpeg")
+    samples = np.linspace(-0.5, 0.5, 16000, dtype=np.float32)
+    artifact = _wav(tmp_path / "marked.wav", samples)
+    reference = _wav(tmp_path / "clean.wav", samples * 0.99)
+    manifest = _write_manifest(
+        tmp_path / "manifest.jsonl",
+        [_audio_row(artifact, reference=reference)],
+    )
+    adapter = _FakeAdapter(status="detected", label="1111111000011001")
+    monkeypatch.setattr(MODULE, "default_adapters", lambda: {"audioseal": adapter})
+    output = tmp_path / "result.jsonl"
+
+    counts = MODULE.run_benchmark(manifest, output)
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert counts == {"detected": 1}
+    assert record["media_type"] == "audio"
+    assert record["detection"]["label"] == "1111111000011001"
+    assert record["fidelity"]["status"] == "measured"
+    assert record["fidelity"]["snr_status"] == "measured"
+    assert record["fidelity"]["snr_db"] > 30.0
+    assert adapter.calls == [artifact.resolve()]
+
+
+# --- Video rows (schema v1, media_type "video", adapter "videoseal") --------
+
+
+def _video(path: Path, frames: int = 4, width: int = 64, height: int = 48) -> Path:
+    import subprocess
+
+    payload = b"".join(bytes([frame_index * 12 % 256]) * (height * width * 3) for frame_index in range(frames))
+    subprocess.run(  # noqa: S603 - resolved ffmpeg with fixed arguments
+        [
+            shutil.which("ffmpeg"),
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s:v",
+            f"{width}x{height}",
+            "-r",
+            "12",
+            "-i",
+            "pipe:0",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "8",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        input=payload,
+        check=True,
+    )
+    return path
+
+
+def _video_row(artifact: Path, *, reference: Path | None = None, adapter: str = "videoseal") -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "case_id": "video-case-1",
+        "pair_id": "video-pair-1",
+        "media_type": "video",
+        "adapter": adapter,
+        "arm": "positive",
+        "state": "marked",
+        "path": artifact.name,
+        "sha256": _sha256(artifact),
+        "reference_path": reference.name if reference is not None else None,
+        "reference_sha256": _sha256(reference) if reference is not None else None,
+        "source_revision": "fixture-set@abc123",
+        "transform": {"name": "videoseal-embed", "revision": "builtin-v1", "parameters": {}},
+        "seed": 7,
+        "expected": "detected",
+    }
+
+
+def test_manifest_accepts_video_rows(tmp_path: Path) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("video rows decode through the system ffmpeg")
+    artifact = _video(tmp_path / "marked.mp4")
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [_video_row(artifact)])
+
+    row = MODULE.load_manifest(manifest)[0]
+
+    assert row.media_type == "video"
+    assert row.adapter == "videoseal"
+
+
+def test_manifest_rejects_image_adapter_on_video_rows(tmp_path: Path) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("video rows decode through the system ffmpeg")
+    artifact = _video(tmp_path / "marked.mp4")
+    row = _video_row(artifact)
+    row["adapter"] = "trustmark"
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [row])
+
+    with pytest.raises(ValueError, match="'trustmark' measures image artifacts, not video"):
+        MODULE.load_manifest(manifest)
+
+
+def test_video_fidelity_marks_shape_mismatch_incomparable(tmp_path: Path) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("video rows decode through the system ffmpeg")
+    artifact = _video(tmp_path / "marked.mp4", frames=4)
+    reference = _video(tmp_path / "clean.mp4", frames=3)
+    row = _video_row(artifact, reference=reference, adapter="fake-video")
+    case = MODULE.load_manifest(_write_manifest(tmp_path / "manifest.jsonl", [row]))[0]
+
+    fidelity = MODULE._video_fidelity(case, np.zeros((4, 48, 64, 3)), lambda _path: np.zeros((3, 48, 64, 3)))
+
+    assert fidelity["status"] == "incomparable"
+    assert fidelity["reason"] == "shape_mismatch"
+
+
+def test_video_fidelity_reports_unbounded_psnr_for_identical_frames(tmp_path: Path) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("video rows decode through the system ffmpeg")
+    frames = np.full((4, 48, 64, 3), 0.5, dtype=np.float32)
+    artifact = _video(tmp_path / "marked.mp4")
+    reference = _video(tmp_path / "clean.mp4")
+    row = _video_row(artifact, reference=reference, adapter="fake-video")
+    case = MODULE.load_manifest(_write_manifest(tmp_path / "manifest.jsonl", [row]))[0]
+
+    fidelity = MODULE._video_fidelity(case, frames, lambda _path: frames)
+
+    assert fidelity["status"] == "measured"
+    assert fidelity["identical"] is True
+    assert fidelity["mean_psnr_db"] is None
+    assert fidelity["psnr_status"] == "unbounded_identical"
+
+
+def test_run_benchmark_evaluates_video_rows_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("video rows decode through the system ffmpeg")
+    artifact = _video(tmp_path / "marked.mp4")
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [_video_row(artifact)])
+    adapter = _FakeAdapter(status="detected", label="a1b2")
+    monkeypatch.setattr(MODULE, "default_adapters", lambda: {"videoseal": adapter})
+    output = tmp_path / "result.jsonl"
+
+    counts = MODULE.run_benchmark(manifest, output)
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert counts == {"detected": 1}
+    assert record["media_type"] == "video"
+    assert record["detection"]["label"] == "a1b2"
+    assert record["fidelity"]["status"] == "not_measured"
+
+
+def test_detection_record_carries_temporal_evidence_when_present() -> None:
+    outcome = MODULE.DetectorOutcome(status="detected", label="ff00", temporal=(0.8, 0.9, 1.0))
+
+    record = MODULE._detection_record(outcome, "detected", 1.5)
+
+    temporal = record["temporal"]
+    assert temporal["frames"] == 3
+    assert temporal["min_bit_accuracy"] == 0.8
+    assert temporal["mean_bit_accuracy"] == pytest.approx(0.9)
+    assert temporal["max_bit_accuracy"] == 1.0
+    assert temporal["per_frame_bit_accuracy"] == [0.8, 0.9, 1.0]
+
+
+def test_detection_record_omits_temporal_for_non_temporal_adapters() -> None:
+    outcome = MODULE.DetectorOutcome(status="not_detected", label=None)
+
+    assert "temporal" not in MODULE._detection_record(outcome, "not_detected", None)
+
+
+def test_run_benchmark_records_videoseal_temporal_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("video rows decode through the system ffmpeg")
+    artifact = _video(tmp_path / "marked.mp4")
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [_video_row(artifact)])
+
+    class TemporalAdapter(_FakeAdapter):
+        def detect(self, path: Path, frames: Any) -> Any:
+            self.calls.append(path)
+            return MODULE.DetectorOutcome(status=self.status, label=self.label, temporal=(0.5, 0.75, 1.0))
+
+    adapter = TemporalAdapter(status="detected", label="ff00")
+    monkeypatch.setattr(MODULE, "default_adapters", lambda: {"videoseal": adapter})
+    output = tmp_path / "result.jsonl"
+
+    MODULE.run_benchmark(manifest, output)
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["detection"]["temporal"]["frames"] == 3

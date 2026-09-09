@@ -77,7 +77,7 @@ construction and fits the same heads from the pack above.
    `detector_ai_train` plus extras versus `detector_photo_train` plus struct.
    Threshold is the 1.67% quantile on `detector_photo_dev_oi`.
 2. AND that MLP with the frozen ridge in the probe file. DEFINITELY is both.
-3. Load 124-d vectors. Fit one-vs-rest focal heads for openai, google, tc260,
+3. Load 124-d vectors. Fit one-vs-rest focal heads for openai, google, bytedance, tc260,
    meta_muse_image, no_ai. Margin 0.30. The public class for the Muse Image
    head is `muse-image`. `tc260` is the China AIGC label standard, mixed
    producers, not one company.
@@ -89,10 +89,18 @@ inference and embedding dependency, not a retrain-pack input.
 
 ## Next retrain
 
-Keep the current `tc260` head until then. The next provider-head fit should
-split that catalog by `ContentProducer` (Doubao, Jimeng, Qwen, Kling, and
-the rest) instead of one label-standard class. Do not treat a `tc260` score
-as a named manufacturer.
+The taxonomy is GENERATOR-based: a class names the model that rendered the
+pixels, never the brand. `bytedance` (the shared Doubao+Jimeng lineage)
+shipped 2026-09-07 as a surgical head refit at 83.9% on the frozen test
+cell; the rest of China (Qwen, Yuanbao, Kling, ...) abstains behind the
+tc260 veto until per-producer train mass holds its own cells (qwen
+measured at 64 train rows: 27%). The producer metadata is available
+locally (all catalog tc260 rows parse their producer from the
+sha256-verified mirror),
+and the historical harvest keeps adding mass
+(`tc260-producer-split-2026-09-07/historical-harvest.json`). Microsoft
+has no pixel class and cannot have one: its products render with other
+vendors' models, named by their own C2PA softwareAgent.
 
 The 2026-09-02 drift campaign set two preconditions for adding renderer
 drift rows to that fit. First, scale: 14 openai drift rows recovered exactly
@@ -101,5 +109,6 @@ the shared negative pools (google -10 or meta -6 depending on variant), so
 drift rows should enter together with enough mass to hold every cell flat,
 not as a standalone patch. Second, scope: 6 of 12 Aug rows failed before
 the provider stage, so a drift fix that covers the whole cell needs Model 1
-in the loop. The `ContentProducer` split still needs metadata exported from
-the app database.
+in the loop. The `ContentProducer` metadata is already available; the
+remaining prerequisite is enough independent per-producer training and
+evaluation data to establish a stable class without regressing sibling cells.

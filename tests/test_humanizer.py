@@ -114,6 +114,22 @@ def test_unsharp_flat_image_is_a_noop():
     assert np.array_equal(result, img)
 
 
+def test_unsharp_rounds_and_clips_float_output(monkeypatch):
+    import cv2
+
+    values = np.array([-0.75, 0.75, 127.99999, 128.75, 254.9, 255.75], dtype=np.float32).reshape(1, 2, 3)
+    calls = []
+
+    def weighted(*args):
+        calls.append(args)
+        return values.copy()
+
+    monkeypatch.setattr(cv2, "addWeighted", weighted)
+    result = unsharp_mask(np.full((1, 2, 3), 128, dtype=np.uint8))
+    assert len(calls) == 1
+    assert np.array_equal(result, np.array([0, 1, 128, 129, 255, 255], dtype=np.uint8).reshape(1, 2, 3))
+
+
 class TestAdaptivePolish:
     """Adaptive polish: target the reference's detail level, sparing text/edges."""
 

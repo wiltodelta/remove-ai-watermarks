@@ -85,7 +85,7 @@ def unsharp_mask(image: NDArray, amount: float = 0.5, sigma: float = 1.0) -> NDA
     img_f = image.astype(np.float32)
     blurred = cv2.GaussianBlur(img_f, (0, 0), sigmaX=sigma, sigmaY=sigma)
     sharpened = cv2.addWeighted(img_f, 1.0 + amount, blurred, -amount, 0.0)
-    return np.clip(sharpened, 0, 255).astype(np.uint8)
+    return np.clip(np.rint(sharpened, out=sharpened), 0, 255).astype(np.uint8)
 
 
 # ── Adaptive polish (target the input's detail level; spare text) ──────────────
