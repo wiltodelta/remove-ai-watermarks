@@ -1091,6 +1091,30 @@ offline deploy's pre-cache installs the exact runtime request as one name
 [photo-classify.md](photo-classify.md). Hub card:
 [photo-classify-hf/README.md](photo-classify-hf/README.md).
 
+The CLIP loader suppresses discarded random parameter initialization with
+Transformers' `no_init_weights` context before applying the complete frozen
+state dict. Normal `CLIPModel(config)` construction initialized 427 million
+parameters that the checkpoint immediately replaced. On 2026-09-10, three
+fresh local CPU processes over the same synthetic 512x384 PNG fell from
+9.024/7.558/7.783 seconds to 2.124/2.059/2.065 seconds. This is a process-cold,
+OS-cache-warm comparison, not a hosted-container startup estimate. All 42
+tracked image fixtures kept byte-identical classification records before and
+after. `tests/test_clip_l_ft.py` rejects a loader that invokes random Linear
+initialization and verifies that checkpoint parameters and constructor-created
+buffers are fully materialized.
+
+A same-day vision-only FP32 ONNX probe was 1,216,102,506 bytes versus the
+1,710,697,163-byte full PyTorch checkpoint, loaded an ONNX Runtime CPU session
+in 0.419 seconds, ran the probe in 0.136 seconds, and preserved all 42 tracked
+fixture verdicts. It is not a shipped path: the full checkpoint contains
+494,601,216 bytes of unused text-tower weights, but replacing it requires a new
+published vision artifact and a full labeled-corpus certification. Dynamic INT8
+reduced the ONNX file to 305,462,280 bytes but changed 3 of the 42 fixture
+verdicts, in both directions across the public decision boundary, so it is
+rejected without retraining and a new operating point. Splitting Model 2 does
+not address cold start: its detector and provider files total about 2 MB and
+loaded in roughly 3 ms in the same stage profile; CLIP-L Model 1 dominates.
+
 ### Pixel forensics
 
 [`pixel_evidence.py`](../src/remove_ai_watermarks/pixel_evidence.py) measures six

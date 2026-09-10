@@ -52,12 +52,19 @@ class HeadedCLIP(nn.Module):
 
 
 def load_headed_clip(checkpoint: Path, device: torch.device) -> HeadedCLIP:
-    """Build CLIP-L from config and load the freeze state dict."""
+    """Build CLIP-L without discarded random weights and load the freeze state dict."""
     import torch
     from transformers import CLIPConfig, CLIPModel
+    from transformers.initialization import no_init_weights
 
-    clip = CLIPModel(CLIPConfig.from_pretrained(BACKBONE))
-    model = HeadedCLIP(clip)
+    # The frozen checkpoint replaces every parameter. Normal construction spends
+    # most of a CPU cold start randomly initializing 427M parameters first.
+    # ``no_init_weights`` preserves constructor-created buffers while suppressing
+    # only those redundant parameter fills; unlike a meta-device construction,
+    # it cannot leave non-persistent CLIP buffers unmaterialized.
+    with no_init_weights():
+        clip = CLIPModel(CLIPConfig.from_pretrained(BACKBONE))
+        model = HeadedCLIP(clip)
     state = torch.load(checkpoint, map_location="cpu", weights_only=True)
     model.load_state_dict(state, strict=True)
     return model.to(device).eval()
