@@ -94,7 +94,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+        # Third-party apt sources baked into the runner image (google-chrome et
+        # al.) can publish a broken index and fail `apt-get update`, while this
+        # job only needs ffmpeg from Ubuntu's own repositories: drop every
+        # non-Ubuntu source definition before updating.
+        run: |
+          sudo find /etc/apt/sources.list.d -mindepth 1 -maxdepth 1 \
+            ! -name 'ubuntu.sources' -delete
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
       - name: Sync dev environment
         run: uv sync --frozen --extra dev
       - name: Run full-clip video test
