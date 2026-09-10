@@ -462,3 +462,101 @@ class TestTiffOrientation:
         with Image.open(out) as im:
             assert im.size == (64, 96)  # the upright raster, not the stored landscape
             assert im.getexif().get(0x0112) is None  # and no tag asking for another turn
+
+
+class TestHeifOrientation:
+    """A camera HEIC stores its raster and carries the rotation in the EXIF
+    payload; a pillow-heif-written one bakes the rotation as an ``irot`` transform
+    that the decode applies. pillow-heif blanks the EXIF tag on open for both and
+    stashes the real value in ``info["original_orientation"]``, and ``Image.size``
+    matches the raster either way, so the container's transform boxes are the only
+    signal telling the two apart (issue #105)."""
+
+    ORIENT = 6  # Rotate 90 CW.
+
+    @staticmethod
+    def _baked(path: Path) -> Path:
+        """A 96x64 stored raster whose rotation is baked as an irot transform."""
+        import piexif
+        from PIL import Image
+
+        exif = piexif.dump({"0th": {piexif.ImageIFD.Orientation: TestHeifOrientation.ORIENT}})
+        Image.new("RGB", (96, 64), "red").save(path, exif=exif)
+        return path
+
+    @staticmethod
+    def _camera_style(path: Path) -> Path:
+        """The camera counterpart: same EXIF payload, identity transform, so the
+        decode returns the stored raster and only the tag says to turn it."""
+        data = bytearray(TestHeifOrientation._baked(path).read_bytes())
+        meta_end = data.find(b"mdat")
+        irot = data.find(b"irot", 0, meta_end if meta_end != -1 else len(data))
+        assert irot != -1, "fixture lost its irot box"
+        data[irot + 4] = 0  # angle 0 is the identity transform
+        path.write_bytes(data)
+        return path
+
+    def test_malformed_input_reads_as_no_transform(self, tmp_path: Path) -> None:
+        from remove_ai_watermarks._internal import isobmff
+
+        not_bmff = tmp_path / "garbage.bin"
+        not_bmff.write_bytes(b"\x00\x00\x00\x0cJUNKgarbage")
+        assert isobmff.heif_transform_applied(not_bmff) is False
+        empty = tmp_path / "empty.heic"
+        empty.write_bytes(b"")
+        assert isobmff.heif_transform_applied(empty) is False
+        assert isobmff.heif_transform_applied(tmp_path / "missing.heic") is False
+
+    @pytest.mark.skipif(not _heif_writable("HEIF"), reason="no HEIC encoder in this env")
+    def test_the_transform_box_alone_reports_the_decode_state(self, tmp_path: Path) -> None:
+        from remove_ai_watermarks._internal import isobmff
+
+        assert isobmff.heif_transform_applied(self._baked(tmp_path / "baked.heic")) is True
+        assert isobmff.heif_transform_applied(self._camera_style(tmp_path / "cam.heic")) is False
+
+    @pytest.mark.skipif(not _heif_writable("HEIF"), reason="no HEIC encoder in this env")
+    def test_a_camera_heic_carries_its_orientation_tag(self, tmp_path: Path) -> None:
+        # Issue #105: the blanked tag used to be dropped, so the output went out
+        # sideways with nothing on it saying so.
+        from PIL import Image
+
+        src = self._camera_style(tmp_path / "cam.heic")
+        raster = image_io.imread(src, cv2.IMREAD_UNCHANGED)
+        assert raster is not None
+        assert (raster.shape[1], raster.shape[0]) == (96, 64)  # the stored raster
+        out = tmp_path / "out.png"
+        assert image_io.imwrite(out, raster, display_tags_from=src) is True
+        with Image.open(out) as im:
+            assert im.size == (96, 64)
+            assert im.getexif().get(0x0112) == self.ORIENT  # the turn re-declared
+
+    @pytest.mark.skipif(not _heif_writable("HEIF"), reason="no HEIC encoder in this env")
+    def test_a_baked_heif_is_not_tagged_into_a_second_rotation(self, tmp_path: Path) -> None:
+        from PIL import Image
+
+        src = self._baked(tmp_path / "baked.heic")
+        raster = image_io.imread(src, cv2.IMREAD_UNCHANGED)
+        assert raster is not None
+        assert (raster.shape[1], raster.shape[0]) == (64, 96)  # libheif turned it upright
+        out = tmp_path / "out.png"
+        assert image_io.imwrite(out, raster, display_tags_from=src) is True
+        with Image.open(out) as im:
+            assert im.getexif().get(0x0112) is None
+
+    @pytest.mark.skipif(not _heif_writable("HEIF"), reason="no HEIC encoder in this env")
+    def test_the_visible_api_path_carries_a_camera_heic_tag(self, tmp_path: Path) -> None:
+        # The visible write passes orientation_applied=False ("raw decode"), a
+        # claim it cannot make for HEIF: whether libheif turned the raster is a
+        # per-file fact of the container. _read_display_tags must override the
+        # claim the way it does for TIFF (issue #105).
+        from PIL import Image
+
+        from remove_ai_watermarks import api
+
+        src = self._camera_style(tmp_path / "cam.heic")
+        out = tmp_path / "out.png"
+        _, removed = api.remove_visible(src, out, strip_metadata=False)
+        assert removed == []  # plain red: no mark, the passthrough write is exercised
+        with Image.open(out) as im:
+            assert im.size == (96, 64)  # the stored raster...
+            assert im.getexif().get(0x0112) == self.ORIENT  # ...with its turn re-declared

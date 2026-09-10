@@ -388,7 +388,11 @@ OpenCV does not decode these formats in the project. `image_io.imread` falls
 back to Pillow with `pillow-heif` when the `heif` extra is installed alongside
 a pixel feature. The
 default metadata path scans these containers without that plugin. A corrupt or
-truncated file may still fail to decode.
+truncated file may still fail to decode. A camera-style AVIF's EXIF
+orientation is exposed by this plugin neither through `getexif()` nor
+`info["original_orientation"]`, so the display-tag carry cannot re-declare it
+(HEIC can; see the display-tags contract in
+[`module-internals.md`](module-internals.md)).
 
 ### Some metadata removal requires ffmpeg
 

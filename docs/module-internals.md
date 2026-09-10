@@ -2148,14 +2148,25 @@ Contracts:
   pixels on save. Callers that know the decode state pass
   `orientation_applied=False` for raw pixels and `True` for a transposed
   raster. Dimensions alone cannot distinguish mirrors or 180-degree rotation.
-  TIFF is the container exception: every reader in the stack (cv2's libtiff path
-  under `IMREAD_UNCHANGED` too, and Pillow's TIFF plugin, identically) applies
-  the orientation tag on decode, so `_read_display_tags` ignores the explicit
-  claim for TIFF and decides on the IFD's stored `ImageWidth`/`ImageLength`
-  against the raster, via `_stored_size` -- `Image.size` already reports the
-  upright geometry there, which is what let a turned raster be tagged into a
-  second rotation (issue #106). The omitted value retains the compatibility shape
-  heuristic. Display tags
+  TIFF and HEIF are the container exceptions on the explicit claim. Every
+  reader in the stack (cv2's libtiff path under `IMREAD_UNCHANGED` too, and
+  Pillow's TIFF plugin, identically) applies the TIFF orientation tag on
+  decode, so `_read_display_tags` ignores the claim for TIFF and decides on
+  the IFD's stored `ImageWidth`/`ImageLength` against the raster, via
+  `_stored_size` -- `Image.size` already reports the upright geometry there,
+  which is what let a turned raster be tagged into a second rotation
+  (issue #106). HEIF blanks the tag instead: pillow-heif's opener rewrites
+  the EXIF orientation to 1 (the real value waits in
+  `info["original_orientation"]`), and libheif turns the raster exactly
+  when the container declares an effective `irot`/`imir` transform
+  (`isobmff.heif_transform_applied` scans the `meta`/`iprp`/`ipco`
+  property store), so `Image.size` matches the raster in both cases and the
+  shape heuristic has nothing to compare. A camera HEIC (stored raster,
+  EXIF-only rotation, issue #105) re-declares its turn on the output; a
+  re-encoded one whose writer baked `irot` decodes upright and is not
+  tagged again. AVIF keeps the generic path: this plugin build neither
+  blanks its tag nor applies the transform there. The omitted value retains
+  the compatibility shape heuristic. Display tags
   are captured before encoding, including when source and destination match.
 
 The metadata strip is the other half of that contract: Pillow cannot hold 16-bit

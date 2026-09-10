@@ -344,6 +344,68 @@ def is_isobmff(data: bytes) -> bool:
     return len(data) >= 8 and data[4:8] == b"ftyp"
 
 
+# What a HEIF ``meta`` box's first child can be; used to probe whether the box
+# carries the ISO FullBox header (children start 4 bytes into the payload) or
+# the QuickTime bare form (children start at 0).
+_HEIF_META_CHILD_TYPES = frozenset({b"hdlr", b"pitm", b"iinf", b"iprp", b"iloc", b"iref", b"idat"})
+
+
+def heif_transform_applied(path: str | Path) -> bool:
+    """Whether a HEIF/AVIF file declares an effective container transform.
+
+    Scans the ``meta`` box's ``iprp``/``ipco`` property store for an ``irot``
+    box with a non-zero angle or any ``imir`` box. libheif applies those
+    transforms on decode, and that is the only signal separating a re-encoded
+    HEIF -- the writer baked the rotation as ``irot`` and the decode comes back
+    upright -- from a camera-style one that stores the raw raster and carries
+    the rotation only in its EXIF payload: pillow-heif blanks that tag on open
+    for both and stashes the real value in ``info["original_orientation"]"
+    (issue #105). Association through ``ipma`` is not re-derived: a stray
+    unassociated ``irot`` reads as "transformed", the direction that drops the
+    tag and keeps today's tagless output rather than risking a double rotation.
+    A malformed or missing structure reads as "no transform".
+    """
+    try:
+        with open(path, "rb") as f:
+            sniff = f.read(8)
+            if len(sniff) < 8 or sniff[4:8] != b"ftyp":
+                return False
+            f.seek(0, 2)
+            file_size = f.tell()
+            for _start, end, box_type, payload_off in iter_file_boxes(f, 0, file_size):
+                if box_type != b"meta":
+                    continue
+                # ISO serializes ``meta`` as a FullBox, so children start 4 bytes
+                # into the payload; the QuickTime bare form starts at 0. The form
+                # whose first child has a known type is the real one.
+                children = None
+                for offset in (4, 0):
+                    first = _read_box_header(f, payload_off + offset, end)
+                    if first is not None and first[1] in _HEIF_META_CHILD_TYPES:
+                        children = iter_file_boxes(f, payload_off + offset, end)
+                        break
+                if children is None:
+                    return False
+                for _s, iprp_end, iprp_type, iprp_payload in children:
+                    if iprp_type != b"iprp":
+                        continue
+                    for _s2, ipco_end, ipco_type, ipco_payload in iter_file_boxes(f, iprp_payload, iprp_end):
+                        if ipco_type != b"ipco":
+                            continue
+                        for _s3, _prop_end, prop_type, prop_payload in iter_file_boxes(f, ipco_payload, ipco_end):
+                            if prop_type == b"irot":
+                                f.seek(prop_payload)
+                                angle = f.read(1)
+                                if angle and angle[0] & 0x03:
+                                    return True
+                            elif prop_type == b"imir":
+                                return True
+                return False
+    except OSError:
+        return False
+    return False
+
+
 def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024, strict: bool = False) -> bytes:
     """Concatenated payloads of top-level ``uuid`` / ``jumb`` boxes in an ISOBMFF
     file, found by seeking past other boxes (``mdat`` etc.) by size.

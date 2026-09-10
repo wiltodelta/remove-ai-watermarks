@@ -227,6 +227,15 @@ def _read_display_tags(
     decides against the IFD's stored size: a raster that no longer has the stored
     dimensions was turned by the decode and must not be tagged again (issue #106).
 
+    HEIF is the other exception: pillow-heif's opener blanks the EXIF orientation
+    on open (the real value waits in ``info["original_orientation"]``), and
+    libheif turns the raster exactly when the container declares an effective
+    ``irot``/``imir`` transform, so the geometry check has nothing to compare --
+    ``Image.size`` matches the raster in both cases. For HEIF the parameter is
+    likewise ignored and the container decides (issue #105). AVIF keeps the
+    generic path: this plugin build neither blanks its tag nor applies the
+    transform there.
+
     The stored size cannot be read straight off ``Image``: Pillow's TIFF reader
     reports the upright one, so it comes through :func:`_stored_size`.
     """
@@ -240,6 +249,9 @@ def _read_display_tags(
             icc = im.info.get("icc_profile")
             orient = im.getexif().get(_ORIENT_EXIF_TAG)
             fmt = im.format
+            # pillow-heif's opener rewrites the EXIF orientation to 1 and stashes
+            # the real value here, so `orient` is blanked for every HEIF.
+            heif_original = im.info.get("original_orientation")
             stored_w, stored_h = _stored_size(im)
     except Exception:
         return None, None
@@ -247,6 +259,18 @@ def _read_display_tags(
         icc = None
     if fmt == "TIFF":
         orientation_applied = None
+    if fmt == "HEIF":
+        # The second container whose decode state a caller cannot claim: libheif
+        # turns the raster on decode exactly when the file declares an effective
+        # irot/imir transform, and pillow-heif has blanked the EXIF tag either
+        # way, so the container decides and `original_orientation` supplies the
+        # value (issue #105). AVIF keeps the generic path: this plugin build
+        # neither blanks its tag nor applies the transform there.
+        from remove_ai_watermarks._internal import isobmff
+
+        orientation_applied = isobmff.heif_transform_applied(source)
+        if orient in (None, 1):
+            orient = heif_original
     if orientation_applied is True:
         orient = None
     elif orientation_applied is False:
