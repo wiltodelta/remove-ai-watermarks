@@ -29,6 +29,7 @@ from remove_ai_watermarks._internal.constants import PNG_SIGNATURE
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+    from PIL.Image import Image as PILImage
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +73,10 @@ def _pil_read(path: str | Path, flags: int) -> NDArray[Any] | None:
     """Decode via Pillow (HEIC/AVIF and any other Pillow-readable container) into the
     cv2 layout ``flags`` implies: grayscale, 3-channel BGR, or BGRA when the source has
     alpha and ``IMREAD_UNCHANGED`` was requested. Returns None if Pillow (with the
-    optional HEIF plugin) still cannot open it. This fallback does not apply EXIF orientation."""
+    optional HEIF plugin) still cannot open it. This fallback asks for no EXIF
+    auto-rotation, but a container reader can apply it regardless: Pillow's TIFF
+    reader always turns the raster upright. That decode state is reconciled where
+    it matters, in :func:`_read_display_tags`."""
     import cv2
     import numpy as np
 
@@ -152,6 +156,8 @@ def _register_heif() -> None:
 # AI-provenance tags the metadata strip exists to drop.
 
 _ORIENT_EXIF_TAG = 0x0112  # EXIF ImageIFD.Orientation
+_TIFF_IMAGE_WIDTH = 256  # TIFF ImageWidth, the stored raster's columns
+_TIFF_IMAGE_LENGTH = 257  # TIFF ImageLength, the stored raster's rows
 # Orientations that transpose width and height (the 90-degree rotations). Only these
 # can be detected by comparing the raster's shape with the source's stored size;
 # the mirror/180 values (2, 3, 4) keep today's tagless behaviour because no cheap
@@ -176,6 +182,23 @@ def _orientation_exif(orient: int | None, *, prefixed: bool) -> bytes | None:
     return dumped[6:] if dumped.startswith(b"Exif\x00\x00") else dumped
 
 
+def _stored_size(im: PILImage) -> tuple[int, int]:
+    """The size the container STORES, which is not always ``Image.size``.
+
+    Pillow's TIFF reader applies the EXIF orientation itself: it hands back a turned
+    raster and reports the upright size. Comparing that against a turned raster says
+    "still in stored orientation" for pixels that are already upright, and the tag
+    rides along into a second rotation. The TIFF IFD keeps the real stored geometry in
+    ImageWidth/ImageLength, and no other Pillow plugin exposes ``tag_v2``.
+    """
+    tags = getattr(im, "tag_v2", None)
+    if tags is not None:
+        width, height = tags.get(_TIFF_IMAGE_WIDTH), tags.get(_TIFF_IMAGE_LENGTH)
+        if isinstance(width, int) and isinstance(height, int):
+            return width, height
+    return im.size
+
+
 def _read_display_tags(
     source: Path, raster_shape: tuple[int, int], *, orientation_applied: bool | None = None
 ) -> tuple[bytes | None, int | None]:
@@ -195,6 +218,17 @@ def _read_display_tags(
     tag and keeps today's behaviour rather than risk a double rotation. ICC travels
     in every case: it describes colour, not geometry. Failures read as "no tags":
     the restore is an enhancement, never a reason to fail a write.
+
+    TIFF is the exception on the explicit state: every reader in this module's
+    stack applies the TIFF orientation tag on decode (cv2's libtiff path under
+    ``IMREAD_UNCHANGED`` too, and Pillow's TIFF plugin, identically), so a caller's
+    blanket ``False`` -- which encodes cv2's JPEG/PNG/WebP contract -- is not true
+    for TIFF. For TIFF sources the parameter is ignored and the geometry check
+    decides against the IFD's stored size: a raster that no longer has the stored
+    dimensions was turned by the decode and must not be tagged again (issue #106).
+
+    The stored size cannot be read straight off ``Image``: Pillow's TIFF reader
+    reports the upright one, so it comes through :func:`_stored_size`.
     """
     _register_heif()
     try:
@@ -205,11 +239,14 @@ def _read_display_tags(
         with Image.open(source) as im:
             icc = im.info.get("icc_profile")
             orient = im.getexif().get(_ORIENT_EXIF_TAG)
-            stored_w, stored_h = im.size
+            fmt = im.format
+            stored_w, stored_h = _stored_size(im)
     except Exception:
         return None, None
     if not (isinstance(icc, bytes) and icc):
         icc = None
+    if fmt == "TIFF":
+        orientation_applied = None
     if orientation_applied is True:
         orient = None
     elif orientation_applied is False:

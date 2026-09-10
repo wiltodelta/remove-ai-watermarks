@@ -409,3 +409,56 @@ class TestRemoverWriteCarriesDisplayTags:
         with Image.open(out) as im:
             assert im.info.get("icc_profile") == icc
             assert im.getexif().get(0x0112) is None
+
+
+class TestTiffOrientation:
+    """Pillow's TIFF reader applies the EXIF orientation itself, and reports the
+    upright size while doing it. A stored-size comparison against ``Image.size``
+    therefore matches for a raster that is already upright, and the tag is carried
+    onto it -- a viewer then turns the picture a second time."""
+
+    ORIENT = 6  # Rotate 90 CW.
+
+    @staticmethod
+    def _tagged(path: Path, orient: int) -> Path:
+        """A 96x64 stored raster carrying ``orient``, written by the container itself."""
+        import piexif
+        from PIL import Image
+
+        exif = piexif.dump({"0th": {piexif.ImageIFD.Orientation: orient}})
+        Image.new("RGB", (96, 64), "red").save(path, exif=exif)
+        return path
+
+    @staticmethod
+    def _out_orientation(path: Path) -> object:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            return im.getexif().get(0x0112)
+
+    def test_a_turned_tiff_decode_is_not_tagged_into_a_second_rotation(self, tmp_path: Path) -> None:
+        src = self._tagged(tmp_path / "src.tif", self.ORIENT)
+        raster = image_io.imread(src, cv2.IMREAD_UNCHANGED)
+        assert raster is not None
+        # Pillow already applied the rotation: the raster is upright, 64x96.
+        assert (raster.shape[1], raster.shape[0]) == (64, 96)
+        out = tmp_path / "out.png"
+        assert image_io.imwrite(out, raster, display_tags_from=src) is True
+        assert self._out_orientation(out) is None
+
+    def test_the_visible_api_path_does_not_tag_a_turned_tiff(self, tmp_path: Path) -> None:
+        # The visible write passes orientation_applied=False ("raw decode"), which is
+        # a lie for TIFF: both readers turn the raster. _read_display_tags must ignore
+        # that claim for TIFF and let the IFD geometry decide, or a CLI/library user
+        # gets a turned raster TAGGED for the same turn again (issue #106).
+        from PIL import Image
+
+        from remove_ai_watermarks import api
+
+        src = self._tagged(tmp_path / "src.tif", self.ORIENT)
+        out = tmp_path / "out.png"
+        _, removed = api.remove_visible(src, out, strip_metadata=False)
+        assert removed == []  # plain red: no mark, the passthrough write is exercised
+        with Image.open(out) as im:
+            assert im.size == (64, 96)  # the upright raster, not the stored landscape
+            assert im.getexif().get(0x0112) is None  # and no tag asking for another turn
