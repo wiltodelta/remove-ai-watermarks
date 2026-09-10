@@ -117,7 +117,16 @@ Do these in order after the skill is on the default branch.
 9. **AI Skills Catalog.** SUBMITTED 2026-09-09 as reference 2 under Video Media,
    with Codex as the primary agent and every supported harness marked compatible.
    The catalog reviews source quality, security, license, and compatibility
-   before publication.
+   before publication. Once accepted, treat material skill-version updates as
+   manual because the catalog stores compatible packages in addition to source
+   metadata and does not promise that a GitHub change refreshes those packages.
+   Use the update route supplied with acceptance; if none is supplied, contact
+   the catalog or resubmit, then verify the live result. Do not open a duplicate
+   while the initial review is pending.
+
+The conditional update actions for every catalog are part of the canonical
+release checklist in
+[Release and distribution](release-and-distribution.md#agent-skill).
 
 Do not treat Smithery or other MCP directories as skill catalogs. Do not open
 a second near-identical skill to farm installs. The conversion path that

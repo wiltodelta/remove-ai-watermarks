@@ -160,6 +160,36 @@ surface complete. The Claude community marketplace remains a manual,
 authenticated publish. Do not treat any listing as complete until the live
 catalog shows the skill.
 
+When `metadata.version` in `SKILL.md` changes, finish the catalog follow-up as
+part of the release that carries that version:
+
+1. Verify the automatic ClawHub submission and then the live version. Do not
+   publish it a second time by hand.
+2. If the Claude community directory listing is live, publish the updated
+   plugin through its authenticated submission surface and verify the listing.
+   If the original submission is still under review, leave it pending rather
+   than opening a duplicate.
+3. If the AI Skills Catalog listing is live, send the new skill version through
+   the update route supplied with its acceptance. The catalog stores compatible
+   packages as well as source metadata, so a GitHub push alone is not a verified
+   update. If no update control was supplied, contact the catalog or resubmit
+   and verify the resulting listing. Do not duplicate a pending initial review.
+4. If the OpenAI plugin directory listing has been approved, upload the new
+   plugin archive through the Platform portal and verify the published version.
+   Until the initial product-specific review is approved, there is no release
+   action beyond tracking that review.
+5. SkillsMP, skills.sh, AgenticSkills, and the awesome lists point at GitHub or
+   refresh from it. Do not resubmit a routine version bump. Contact them or open
+   a new PR only when their public description, category, tags, or repository
+   URL must change.
+
+The automated release workflow cannot perform the authenticated directory
+steps. A release with a changed skill version is not fully distributed until
+each applicable manual step is verified or explicitly marked pending because
+the catalog has not accepted the initial submission. The catalog-specific
+submission state and links live in
+[`docs/agent-skill.md`](agent-skill.md#where-the-skill-can-actually-be-listed).
+
 ## Release verification
 
 Forensic transports are versioned independently from the package. Before publishing
@@ -210,6 +240,9 @@ version, or any other status, fails. The full checklist for completeness:
   rebuild, and one live `identify` and one live `visible` API call succeed
   against the running Space;
 - a clean install can run `remove-ai-watermarks --version`.
+- when the Agent Skill version changed, every applicable manual catalog update
+  above is verified, or its initial submission remains pending without a
+  duplicate submission.
 
 A clean-install check run immediately after publication can fail with "no
 version of remove-ai-watermarks==X.Y.Z" even though the simple index already
