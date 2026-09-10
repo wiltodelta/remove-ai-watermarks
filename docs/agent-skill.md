@@ -50,6 +50,9 @@ Do these in order after the skill is on the default branch.
    today. One accurate PR per list, with the scope sentence intact.
    - `ComposioHQ/awesome-claude-skills`: submitted 2026-09-05 as PR 1841
      (Creative & Media); no maturity bar in its contribution rules.
+   - `heilcheng/awesome-agent-skills`: submitted 2026-09-09 as PR 483 under
+     Community Skills > Media. The skill's three concrete input/output examples
+     satisfy the list's working-example requirement.
    - `VoltAgent/awesome-agent-skills`: DEFERRED. Its CONTRIBUTING rejects
      brand-new skills ("give your skill time to mature and gain users before
      submitting"). The skill now has real installs and shipped releases, but
@@ -108,6 +111,13 @@ Do these in order after the skill is on the default branch.
    execution, arbitrary file access, and optional hardware access, which the
    official guide routes through that product-specific review. Convert with
    [Submit your Claude Code plugin to OpenAI](https://developers.openai.com/plugins/guides/submit-claude-plugin).
+8. **AgenticSkills.** SUBMITTED 2026-09-09 as review issue 174 under AI/ML
+   Development. The submission carries the user-owned-content boundary and
+   links to the repository rather than hosting a separate copy.
+9. **AI Skills Catalog.** SUBMITTED 2026-09-09 as reference 2 under Video Media,
+   with Codex as the primary agent and every supported harness marked compatible.
+   The catalog reviews source quality, security, license, and compatibility
+   before publication.
 
 Do not treat Smithery or other MCP directories as skill catalogs. Do not open
 a second near-identical skill to farm installs. The conversion path that
