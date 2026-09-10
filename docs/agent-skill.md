@@ -86,8 +86,13 @@ Do these in order after the skill is on the default branch.
    fires only on a published GitHub Release: a skill version bumped after a
    release, as 1.0.6 was, reaches ClawHub with the next one. Do not publish by
    hand to close that gap. The listing records the license as MIT-0 while
-   `SKILL.md` declares Apache-2.0; `clawhub skill publish` has no license
-   flag, so correct it in the ClawHub listing itself. The public catalog
+   `SKILL.md` declares Apache-2.0, and that is not a listing error to repair:
+   MIT-0 is a platform-wide constant in ClawHub's own client
+   (`dist/schema/license.js`, and its version schema accepts only `"MIT-0"`
+   or null), so every skill published there is offered under MIT No
+   Attribution. Publishing to ClawHub means offering this skill on those
+   terms in addition to the repository's Apache-2.0; do not try to edit the
+   field, and do not read the mismatch as drift. The public catalog
    already has an add-watermark skill; this is the removal counterpart, framed
    as the user's own content. ClawHub disallows deception, impersonation, and
    fake-engagement install loops.
