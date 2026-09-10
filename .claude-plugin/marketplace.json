@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Agent skill and Claude Code plugin for the remove-ai-watermarks CLI.",
-    "version": "1.0.6"
+    "version": "1.0.7"
   },
   "plugins": [
     {

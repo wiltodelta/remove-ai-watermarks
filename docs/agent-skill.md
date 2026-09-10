@@ -41,24 +41,23 @@ Do these in order after the skill is on the default branch.
    Cursor, OpenCode, Pi, Codex, and Copilot have no separate skill store; they
    consume this repo or a copied `SKILL.md`.
 2. **SkillsMP.** Aggregates public GitHub `SKILL.md` files. No submit form. A
-   search for `remove-ai-watermarks` was empty before the first public push.
-   Neighboring `watermark` hits are PDF-add and detection skills, not removal.
+   search for `remove-ai-watermarks` now returns this skill. Neighboring
+   `watermark` hits are PDF-add and detection skills, not removal.
 3. **skills.sh.** No submit form. A row appears on the leaderboard only after
-   people run `npx skills add`. The README install line is the seed, not a
-   registration.
+   people run `npx skills add`. The listing is live and has recorded real
+   installs; the README install line remains the seed, not a registration.
 4. **Awesome-list PRs.** Hand-curated GitHub lists are how people browse skills
    today. One accurate PR per list, with the scope sentence intact.
    - `ComposioHQ/awesome-claude-skills`: submitted 2026-09-05 as PR 1841
      (Creative & Media); no maturity bar in its contribution rules.
    - `VoltAgent/awesome-agent-skills`: DEFERRED. Its CONTRIBUTING rejects
      brand-new skills ("give your skill time to mature and gain users before
-     submitting"). Re-attempt after the skill has real installs and a
-     release that ships it (0.38.0+).
+     submitting"). The skill now has real installs and shipped releases, but
+     adoption remains too small to make the list's maturity claim comfortably.
    - `VoltAgent/awesome-openclaw-skills`: DEFERRED on adoption only. Entries
      are indexed via clawskills.sh, and the ClawHub prerequisite in step 6 is
-     now met. The list still asks contributors not to submit skills "created
-     3 hours ago", and `clawhub search` reports 0 installs over 60 days.
-     Re-attempt once the listing shows real installs.
+     now met. The list still requires proven real-world usage. Re-attempt once
+     the ClawHub listing shows organic installs.
 5. **Claude community marketplace.** Form at
    [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)
    (individuals) or the claude.ai directory form (Team/Enterprise). Validate
@@ -69,14 +68,16 @@ Do these in order after the skill is on the default branch.
    official Anthropic marketplace is
    curated and has no application.
 6. **ClawHub.** `clawhub login` then `clawhub skill publish` from
-   `skills/remove-ai-watermarks/`. LISTED 2026-09-09: version 1.0.5, submitted
-   by the `clawhub` job in `distribute.yml` during the 0.39.0 release, is
-   public. A green job proves only a submission, so read the catalog itself:
+   `skills/remove-ai-watermarks/`. LISTED 2026-09-09: versions 1.0.5 and 1.0.6,
+   submitted by the `clawhub` job in `distribute.yml` during the 0.39.0 and
+   0.39.1 releases, are public. A green job proves only a submission, so read
+   the catalog itself:
    `clawhub search remove-ai-watermarks` returns the row and
    `https://clawhub.ai/api/v1/skills/remove-ai-watermarks` reports
-   `tags.latest` 1.0.5 with a single published version. The earlier 1.0.3 and
-   1.0.4 submissions never became public and do not appear in that version
-   list, so they were bypassed rather than recovered. The issue that tracked
+   `latestVersion.version` 1.0.6, while its `/versions` endpoint returns those
+   two published versions. The earlier 1.0.3 and 1.0.4 submissions never became
+   public and do not appear in that version list, so they were bypassed rather
+   than recovered. The issue that tracked
    them, openclaw/clawhub#3643, was closed by the reporter on 2026-09-09 once
    1.0.5 went through; nothing upstream was confirmed fixed, and it is the
    fifth report of this shape (#3624, #3466, #3351, #3284), so treat a stalled
@@ -84,7 +85,7 @@ Do these in order after the skill is on the default branch.
    pipeline is repaired. Release-time publishing is automated (see
    [release-and-distribution.md](release-and-distribution.md)), and the job
    fires only on a published GitHub Release: a skill version bumped after a
-   release, as 1.0.6 was, reaches ClawHub with the next one. Do not publish by
+   release, as 1.0.7 was, reaches ClawHub with the next one. Do not publish by
    hand to close that gap. The listing records the license as MIT-0 while
    `SKILL.md` declares Apache-2.0, and that is not a listing error to repair:
    MIT-0 is a platform-wide constant in ClawHub's own client

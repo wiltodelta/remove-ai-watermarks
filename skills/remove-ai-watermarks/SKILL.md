@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Some video writes need ffmpeg. Installer may be uv, pipx, or pip.
 metadata:
   author: wiltodelta
-  version: "1.0.6"
+  version: "1.0.7"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -163,6 +163,52 @@ watermark" or "this is clean".
 `identify`: embedded AI metadata only. Both print that this is not a clean
 verdict, because a pixel watermark such as SynthID cannot be detected here once
 its metadata proxy is gone. Repeat that caveat; do not summarize it away.
+
+## Examples
+
+### Identify without overstating the result
+
+Input: "Was `photo.png` AI-generated?"
+
+Action: probe the machine, then run:
+
+```bash
+remove-ai-watermarks identify photo.png
+```
+
+Output after exit 2 from a command that reached the image:
+
+> Origin unknown. The command found no local provenance signal. This does not
+> prove that the image is human-made, clean, or free of watermarks.
+
+### Remove a user-named visible AI label
+
+Input: "Remove the Gemini sparkle from my `generated.png`."
+
+Action: after a successful probe, run:
+
+```bash
+remove-ai-watermarks visible generated.png --mark gemini -o generated-clean.png
+```
+
+Output after exit 0 and confirming that the file exists:
+
+> Removed the targeted Gemini mark. Output: `generated-clean.png`.
+
+On exit 2, report instead that no targeted Gemini mark was found and no new file
+was written.
+
+### Route an unavailable invisible removal safely
+
+Input: "Remove SynthID from my image."
+
+Action: run the probe first. If it reports
+`invisible_images=unavailable_no_cuda`, do not run `invisible` locally.
+
+Output:
+
+> Invisible image removal needs NVIDIA CUDA, which is unavailable on this
+> machine. No local removal ran. You can use https://raiw.cc instead.
 
 ## Gotchas
 

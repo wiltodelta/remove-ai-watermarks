@@ -86,6 +86,19 @@ def test_skill_stays_under_the_500_line_budget() -> None:
     assert lines <= 500, f"SKILL.md is {lines} lines; move detail into references/"
 
 
+def test_skill_keeps_concrete_input_output_examples() -> None:
+    text = SKILL.read_text(encoding="utf-8")
+    examples = text.split("## Examples\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    cases = re.split(r"(?m)^### ", examples)[1:]
+
+    assert len(cases) == 3
+    for case in cases:
+        assert re.search(r'(?m)^Input: "[^"]+"$', case)
+        assert re.search(r"(?m)^Action:", case)
+        assert re.search(r"(?m)^Output(?: [^:\n]+)?:$", case)
+        assert re.search(r"(?m)^> ", case)
+
+
 def test_probe_min_cli_version_never_exceeds_the_package_version() -> None:
     import tomllib
 
