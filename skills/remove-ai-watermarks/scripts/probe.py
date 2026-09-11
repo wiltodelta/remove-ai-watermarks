@@ -24,14 +24,15 @@ from typing import Any
 _GPU_MARKERS = ("GPU ", "gpu:")
 # Below this, the CLI predates flags and behavior this skill documents. Raise it in
 # the same change as any reference that names a flag the previous release lacked:
-# 0.39.0 is here because the `liblib_pill` mark and `auto` routing OpenAI
-# provenance to qwen-zimage arrived with it; 0.38.0 added the receipt gate;
-# `classify` needed 0.37.0 (`--pipeline auto` 0.36.0; chroma-zimage and the
-# doubao video mark 0.35.0; the `microsoft` mark 0.34.0; `--vendor` 0.32.0),
-# and a stale floor told an agent its CLI was current right before it typed a
-# value that build rejects. tests/test_agent_skill.py pins it against the
-# package version and against every "(since CLI X.Y.Z)" annotation in the skill.
-MIN_CLI_VERSION = (0, 39, 0)
+# 0.40.0 is here because the skill names the `classify-onnx` extra; 0.39.0 is
+# here because the `liblib_pill` mark and `auto` routing OpenAI provenance to
+# qwen-zimage arrived with it; 0.38.0 added the receipt gate; `classify` needed
+# 0.37.0 (`--pipeline auto` 0.36.0; chroma-zimage and the doubao video mark
+# 0.35.0; the `microsoft` mark 0.34.0; `--vendor` 0.32.0), and a stale floor
+# told an agent its CLI was current right before it typed a value that build
+# rejects. tests/test_agent_skill.py pins it against the package version and
+# against every "(since CLI X.Y.Z)" annotation in the skill.
+MIN_CLI_VERSION = (0, 40, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # Homebrew formula ships exactly such a build.

@@ -66,6 +66,7 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Verified text restoration (`--text-manifest`) | add `text-restoration` |
 | Open DWT-DCT detect | add `detect` |
 | Pixel classifier (`classify`) | add `classify` |
+| CPU ONNX photo classifier, library `backend="onnx"` only (since CLI 0.40.0) | add `classify-onnx` |
 | Adobe TrustMark on Python 3.11-3.12 | add `trustmark` |
 | Every production extra on this Python | `all` |
 

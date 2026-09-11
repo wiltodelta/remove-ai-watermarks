@@ -126,6 +126,7 @@ application actually uses:
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |
 | `trustmark` | Adobe TrustMark detection on Python 3.11-3.12 | trustmark | Yes |
 | `classify` | Metadata-free photo AI-versus-camera classifier plus gated provider | `pixels`, Torch, Transformers | Yes |
+| `classify-onnx` | Optional CPU-only ONNX vision runtime for `classify` | `classify`, ONNX Runtime | Yes |
 | `diffusion` | Torch and Diffusers runtime; video SynthID regeneration | `pixels`, Torch, Diffusers | Yes |
 | `migan` | MI-GAN ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
 | `lama` | big-LaMa ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
@@ -152,12 +153,14 @@ flowchart LR
     heif
     trustmark
     classify --> pixels
+    onnx["classify-onnx"] --> classify
 ```
 
 `heif`, `trustmark`, and `text-draft` are independent branches. Combine them
 explicitly with another feature when required. `text-draft` is excluded from
 `all` because it proposes unverified OCR annotations and is not a production
-removal path. The TrustMark branch remains available only on Python 3.11-3.12.
+removal path. `classify-onnx` is excluded from `all`; install it only for `backend="onnx"`.
+The TrustMark branch remains available only on Python 3.11-3.12.
 Its supported dependency floor includes releases requiring NumPy 1.x, which has
 no CPython 3.13 or 3.14 wheels; newer TrustMark releases relaxing that requirement
 do not by themselves widen this package's declared support range. The `all` bundle contains every production branch compatible with

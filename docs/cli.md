@@ -78,6 +78,9 @@ no-signal metadata scan. Install the extra first:
 uv tool install --force "remove-ai-watermarks[classify]"
 ```
 
+The optional CPU ONNX backend is library-only
+(`classify_pixels(..., backend="onnx")`, extra `classify-onnx`), not a CLI flag.
+
 Then:
 
 ```bash

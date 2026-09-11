@@ -44,7 +44,9 @@ remove-ai-watermarks classify image.png --json
 ```
 
 Pixel classifier, needs the `classify` extra. It is NOT provenance: it guesses
-from pixels alone and `identify` never runs it. Labels are `ai` (both models
+from pixels alone and `identify` never runs it. The CLI has no ONNX flag; the
+optional CPU ONNX runtime is library-only (`backend="onnx"`) and needs
+`classify-onnx` (since CLI 0.40.0). Labels are `ai` (both models
 agree), `human`, and `unknown` -- `unknown` is an abstention, not a negative.
 Photographed receipts abstain to `unknown` through the bundled receipt gate
 (since CLI 0.38.0), so a receipt is not reported as `ai`. Offer `classify`

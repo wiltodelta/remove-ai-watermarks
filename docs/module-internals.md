@@ -1084,7 +1084,8 @@ gate without downloads and pin that `identify` does not import this
 module.
 
 Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-photo-classify`.
-`RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. The runtime
+`RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. The optional
+CPU ONNX vision runtime is the `classify-onnx` extra. The runtime
 narrows its snapshot download to the selected backend's model and shared heads.
 `WEIGHTS_ALLOW_PATTERNS` exports the union so an offline deploy can pre-cache
 both backends explicitly (`tests/test_classify.py` pins the seam). User guide:

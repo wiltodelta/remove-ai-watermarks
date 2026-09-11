@@ -88,7 +88,8 @@ Do these in order after the skill is on the default branch.
    pipeline is repaired. Release-time publishing is automated (see
    [release-and-distribution.md](release-and-distribution.md)), and the job
    fires only on a published GitHub Release: a skill version bumped after a
-   release, as 1.0.7 was, reaches ClawHub with the next one. Do not publish by
+   release reaches ClawHub with the next one. 0.40.0 publishes 1.0.8; 1.0.7 was
+   the post-0.39.1 bump and is not a ClawHub version. Do not publish by
    hand to close that gap. The listing records the license as MIT-0 while
    `SKILL.md` declares Apache-2.0, and that is not a listing error to repair:
    MIT-0 is a platform-wide constant in ClawHub's own client

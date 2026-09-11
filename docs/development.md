@@ -37,9 +37,16 @@ Rechecked on 2026-09-10 against the locked versions and the advisory sources:
 - `accelerate`, required by the diffusion stack, is affected by
   [GHSA-4j2p-28q2-5m79](https://github.com/advisories/GHSA-4j2p-28q2-5m79)
   and PYSEC-2026-3804. The sharded-checkpoint loader accepts unsafe
-  `weight_map` paths; neither advisory lists a patched release. The project has no direct call to
-  `load_checkpoint_in_model` or `load_checkpoint_and_dispatch`, but this does
-  not prove indirect model-loading paths are unaffected.
+  `weight_map` paths; neither advisory lists a patched release. 1.15.0 is
+  on PyPI and is outside the advisory's `<= 1.14.0` range, but its
+  `load_checkpoint_in_model` still joins `weight_map` entries with no
+  containment check, and the sanitizer PRs
+  ([#4138](https://github.com/huggingface/accelerate/pull/4138),
+  [#4214](https://github.com/huggingface/accelerate/pull/4214)) did not
+  land. Do not bump solely to silence the scanner. The project has no
+  direct call to `load_checkpoint_in_model` or
+  `load_checkpoint_and_dispatch`, but this does not prove indirect
+  model-loading paths are unaffected.
 
 Before carrying the remaining block forward, rerun `uvx uv-secure uv.lock` and check
 PyPI for a fixed release. Upgrade a fixed package with

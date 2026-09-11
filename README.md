@@ -65,7 +65,7 @@ its linked C2PA manifest; metadata stripping alone removes only the manifest.
 | Every production feature available on the active Python | `remove-ai-watermarks[all]` |
 
 Lower-level and specialized extras include `pixels`, `heif`, `trustmark`,
-`migan`, `lama`, and `diffusion`. The
+`migan`, `lama`, `diffusion`, and `classify-onnx`. The
 [installation guide](docs/installation.md#feature-extras) documents their exact
 dependency composition, Python compatibility, and model requirements.
 
