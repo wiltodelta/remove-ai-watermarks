@@ -1391,6 +1391,13 @@ The shared text engine handles `千问AI生成`; `QwenEngine` also scans a squar
 bottom-right region for Qwen Create's three-lobe symbol. Its 0.65 NCC gate was
 measured against the cleared provider fixture (0.848) and 132 decoded tracked
 controls other than that positive (maximum 0.516 on 2026-09-10, zero fires).
+NCC is not portable across OpenCV builds: issue 108 reported 0.81 on
+`data/fixtures/provenance/chatgpt-1.png` (sand and denim, no glyph) while this
+tree's OpenCV 4.11 scores 0.437 on the same file. A fire also requires
+binarized IoU of the bright residual with the three-lobe silhouette at or
+above 0.70; the true fixture stays at or above 0.75 down to 512 px, and
+chatgpt-1 sits at 0.55. `provenance_ncc_factor` remains 1.0, so OpenAI C2PA
+cannot relax this mark.
 The removal mask reuses the aligned three-lobe alpha and expands it by 6% of
 the detected side; a solid square was rejected because classical inpainting
 left a visible rectangular blur.

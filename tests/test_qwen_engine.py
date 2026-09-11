@@ -20,6 +20,7 @@ from remove_ai_watermarks.qwen_engine import (
     _ALPHA_HEIGHT_FRAC,
     _ALPHA_WIDTH_FRAC,
     _LADDER,
+    _SYMBOL_SHAPE_IOU_THRESHOLD,
     QwenEngine,
     _alpha_template,
     _glyph_silhouette,
@@ -32,6 +33,7 @@ _BIG_MODE, _SMALL_MODE = 0.203, 0.124
 _MARGIN = 0.025  # measured right/bottom margin of the real mark
 _ROOT = Path(__file__).resolve().parents[1]
 _QWEN_CREATE = _ROOT / "data" / "fixtures" / "provenance" / "qwen-create-qwen-image-2.png"
+_CHATGPT_1 = _ROOT / "data" / "fixtures" / "provenance" / "chatgpt-1.png"
 
 
 def _compose(w: int, h: int, mode: float = _BIG_MODE, bg: float = 100.0):
@@ -146,6 +148,26 @@ class TestDetect:
         assert y > image.shape[0] * 0.90
         assert width == height
 
+    def test_chatgpt_1_fixture_does_not_fire_qwen(self):
+        # Issue 108: 0.40.0 reported visible_qwen 0.81 on this OpenAI C2PA
+        # beach photo and auto-inpainted sand. NCC on the three-lobe template
+        # is OpenCV-sensitive; the shape overlap must still refuse it.
+        from remove_ai_watermarks.identify import identify
+        from remove_ai_watermarks.image_io import imread
+
+        image = imread(_CHATGPT_1)
+        assert image is not None
+        det = QwenEngine().detect(image)
+        assert not det.detected
+        record = identify(_CHATGPT_1, check_visible=True, check_invisible=False)
+        assert all(signal.name != "visible_qwen" for signal in record.signals)
+
+    def test_symbol_shape_iou_rejects_a_solid_blob(self):
+        template = QwenEngine()._scaled_symbol_template(32)
+        blob = np.full_like(template, float(template.max()))
+        assert QwenEngine._symbol_shape_iou(blob, template) < _SYMBOL_SHAPE_IOU_THRESHOLD
+        assert QwenEngine._symbol_shape_iou(template, template) >= _SYMBOL_SHAPE_IOU_THRESHOLD
+
     def test_unaccepted_symbol_candidate_cannot_hide_detected_text(self):
         text_detection = TextMarkDetection(detected=True, confidence=0.45)
         symbol_detection = TextMarkDetection(detected=False, confidence=0.46)
@@ -175,6 +197,16 @@ class TestFootprintMaskAndRemoval:
     def test_clean_frame_produces_no_mask(self):
         clean = cv2.GaussianBlur(np.full((640, 853, 3), 120, np.uint8), (5, 5), 0)
         assert QwenEngine().footprint_mask(clean, force=False) is None
+
+    def test_chatgpt_1_auto_remove_does_not_touch_pixels(self):
+        from remove_ai_watermarks.api import remove_visible_detailed
+        from remove_ai_watermarks.image_io import imread
+
+        image = imread(_CHATGPT_1)
+        assert image is not None
+        report = remove_visible_detailed(image, sensitivity="auto")
+        assert report.status == "no_watermark"
+        assert np.array_equal(report.image, image)
 
     def test_removes_qwen_create_symbol(self):
         image = cv2.imread(str(_QWEN_CREATE), cv2.IMREAD_COLOR)

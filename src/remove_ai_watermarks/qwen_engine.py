@@ -109,6 +109,14 @@ _SYMBOL_MARGIN_FRAC = 0.012
 _SYMBOL_SIZE_FRAC = 0.03125
 _SYMBOL_LADDER = (0.75, 0.875, 1.0, 1.125, 1.25)
 _SYMBOL_NCC_THRESHOLD = 0.65
+# NCC alone is not portable: issue 108 reported 0.81 on
+# data/fixtures/provenance/chatgpt-1.png (sand/denim, no glyph) while this
+# OpenCV build scores 0.437 on the same file. True Qwen Create matches keep
+# binarized IoU >= 0.75 down to 512 px; that fixture sits at 0.55. Require
+# both the NCC gate and this shape overlap so a high-NCC blob cannot fire.
+_SYMBOL_SHAPE_IOU_THRESHOLD = 0.70
+_SYMBOL_TEMPLATE_MASK_FRAC = 0.25
+_SYMBOL_RESPONSE_MASK_FRAC = 0.35
 _SYMBOL_MIN_SHORT_SIDE = 256
 _SYMBOL_MASK_ALPHA = 4 / 255
 _SYMBOL_MASK_DILATE_FRAC = 0.06
@@ -165,6 +173,23 @@ class QwenEngine(TextMarkEngine):
         self._symbol_template = template
         self._symbol_template_scales: dict[int, NDArray[Any]] = {}
 
+    @staticmethod
+    def _symbol_shape_iou(response_crop: NDArray[Any], template: NDArray[Any]) -> float:
+        """Overlap of the bright residual with the three-lobe silhouette."""
+        if response_crop.size == 0 or template.size == 0:
+            return 0.0
+        template_peak = float(template.max())
+        response_peak = float(response_crop.max())
+        if template_peak <= 0.0 or response_peak <= 0.0:
+            return 0.0
+        template_mask = template > (template_peak * _SYMBOL_TEMPLATE_MASK_FRAC)
+        response_mask = response_crop > (response_peak * _SYMBOL_RESPONSE_MASK_FRAC)
+        union = int(np.logical_or(template_mask, response_mask).sum())
+        if union == 0:
+            return 0.0
+        intersection = int(np.logical_and(template_mask, response_mask).sum())
+        return intersection / union
+
     def _scaled_symbol_template(self, side: int) -> NDArray[Any]:
         """Return a cached square symbol template for a measured ladder size."""
         template = self._symbol_template_scales.get(side)
@@ -195,6 +220,7 @@ class QwenEngine(TextMarkEngine):
 
         best_score = 0.0
         best_region = (0, 0, 0, 0)
+        best_iou = 0.0
         for rung in _SYMBOL_LADDER:
             side = max(12, int(base * _SYMBOL_SIZE_FRAC * rung))
             if side >= search_side:
@@ -202,11 +228,15 @@ class QwenEngine(TextMarkEngine):
             template = self._scaled_symbol_template(side)
             scores = cv2.matchTemplate(response, template, cv2.TM_CCOEFF_NORMED)
             _minimum, score, _min_location, location = cv2.minMaxLoc(scores)
-            if score > best_score:
-                best_score = float(score)
-                best_region = (origin_x + location[0], origin_y + location[1], side, side)
+            ncc = float(score)
+            if ncc <= best_score:
+                continue
+            crop = response[location[1] : location[1] + side, location[0] : location[0] + side]
+            best_score = ncc
+            best_region = (origin_x + location[0], origin_y + location[1], side, side)
+            best_iou = self._symbol_shape_iou(crop, template)
         det.confidence = best_score
-        det.detected = best_score >= _SYMBOL_NCC_THRESHOLD
+        det.detected = best_score >= _SYMBOL_NCC_THRESHOLD and best_iou >= _SYMBOL_SHAPE_IOU_THRESHOLD
         det.region = best_region
         return det
 
