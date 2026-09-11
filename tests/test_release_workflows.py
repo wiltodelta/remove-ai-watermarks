@@ -175,6 +175,11 @@ def test_space_pin_is_dispatched_before_the_factory_rebuild() -> None:
     assert "pin-library.yml" in script
     assert "RAIW_HF_SPACE_TOKEN secret is not set" in script
     assert "restart_space" in script
+    # Nested YAML indent inside python -c crashed 0.40.1's waiter with
+    # IndentationError before it could see the dispatched pin run.
+    waiter = re.search(r"python3 -c \"(.*?)\"", script)
+    assert waiter is not None
+    assert waiter.group(1).lstrip() == waiter.group(1)
 
 
 @pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")

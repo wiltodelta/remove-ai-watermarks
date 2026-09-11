@@ -142,17 +142,8 @@ jobs:
                   --event workflow_dispatch \
                   --limit 10 \
                   --json databaseId,createdAt \
-                  | python3 -c '
-            import json
-            import sys
-
-            dispatched_at = sys.argv[1]
-            runs = json.load(sys.stdin)
-            print(next(
-                (run["databaseId"] for run in runs if run["createdAt"] >= dispatched_at),
-                "",
-            ))
-            ' "$dispatched_at"
+                  | python3 -c "import json,sys; t=sys.argv[1]; print(next((r['databaseId'] for r in json.load(sys.stdin) if r['createdAt']>=t), ''))" \
+                  "$dispatched_at"
               )
               if [ -n "$run_id" ]; then
                 break
