@@ -40,9 +40,9 @@ Missing extra raises `RuntimeError` with
 `pip install 'remove-ai-watermarks[classify]'`. `device` is a library
 parameter (`None` / `"auto"` / `"cpu"` / `"cuda"`), not a CLI option. The
 explicit `backend="onnx"` path is CPU-only and requires
-`clip-l-ft-vision-fp32.onnx` in `RAIW_CLASSIFY_WEIGHTS`; PyTorch remains the
-default until that artifact is published in the pinned Hub snapshot. Install
-the experimental runtime with `pip install 'remove-ai-watermarks[classify-onnx]'`.
+`clip-l-ft-vision-fp32.onnx` in `RAIW_CLASSIFY_WEIGHTS` or the pinned Hub
+snapshot. PyTorch remains the default. Install the optional runtime with
+`pip install 'remove-ai-watermarks[classify-onnx]'`.
 
 Weights are not in git. First call downloads
 [`wiltodelta/raiw-photo-classify`](https://huggingface.co/wiltodelta/raiw-photo-classify)

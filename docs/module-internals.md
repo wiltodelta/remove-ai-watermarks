@@ -1105,8 +1105,8 @@ buffers are fully materialized.
 
 The optional CPU-only `backend="onnx"` path reads a static batch-one,
 vision-only FP32 graph produced by `scripts/export_photo_classify_onnx.py`.
-PyTorch remains the default until that artifact is published in the pinned Hub
-snapshot. The graph is 1,216,102,506 bytes versus the 1,710,697,163-byte full
+The graph is published in the pinned Hub snapshot; PyTorch remains the default.
+It is 1,216,102,506 bytes versus the 1,710,697,163-byte full
 PyTorch checkpoint; the removed text tower alone is 494,601,216 bytes. A
 2026-09-10 stress comparison covered 500 locally available catalog photographs
 closest to either Model 1 threshold plus 500 deterministic family-stratified
