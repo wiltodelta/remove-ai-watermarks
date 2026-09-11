@@ -182,6 +182,11 @@ class TextMarkDetection:
     provenance: bool = False
 
 
+def best_detection(*detections: TextMarkDetection) -> TextMarkDetection:
+    """Prefer an accepted variant, then retain the strongest rejected score."""
+    return max(detections, key=lambda detection: (detection.detected, detection.confidence))
+
+
 @dataclass(frozen=True)
 class TextMarkScan:
     """The trust-level-BLIND half of text-mark detection, reusable across both levels.

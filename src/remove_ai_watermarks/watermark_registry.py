@@ -21,7 +21,7 @@ Entries:
   - ``gemini`` -- Google Gemini / Nano Banana visible watermark (sparkle), bottom-right.
   - ``doubao`` -- ByteDance Doubao "豆包AI生成" text strip, bottom-right.
   - ``jimeng`` -- ByteDance Jimeng / Dreamina "★ 即梦AI" wordmark, bottom-right.
-  - ``qwen`` -- Alibaba Cloud Qwen "千问AI生成" text strip, bottom-right.
+  - ``qwen`` -- Alibaba Cloud Qwen "千问AI生成" text or three-lobe symbol, bottom-right.
   - ``kling`` -- Kuaishou Kling AI "可灵AI 3.0" / "KlingAI 3.0" strip, bottom-right.
   - ``yuanbao`` -- Tencent Yuanbao "元宝 / AI生成" two-line mark, bottom-right.
   - ``samsung`` -- Samsung Galaxy AI "Contenuti generati dall'AI" strip, bottom-left.
@@ -701,9 +701,9 @@ _REGISTRY: tuple[KnownMark, ...] = (
     ),
     _text_mark(
         "qwen",
-        "Qwen 千问AI生成 text",
+        "Qwen 千问AI生成 text or three-lobe symbol",
         "bottom-right",
-        platform="Alibaba Cloud Qwen (visible 千问AI生成 mark detected)",
+        platform="Alibaba Cloud Qwen (visible text or symbol mark detected)",
         manufacturer="alibaba",
         tc260_producer_codes=("91440101MA9Y9T4H7A",),
     ),

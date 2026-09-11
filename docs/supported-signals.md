@@ -13,7 +13,7 @@ The `visible` command registers these mark keys:
 | `gemini` | Google Gemini visible watermark (sparkle) | Usually bottom right | Detection includes a false positive gate. |
 | `doubao` | `豆包AI生成` | Bottom right | Vendor specific text detector. |
 | `jimeng` | `★ 即梦AI` | Bottom right | Vendor specific text detector. |
-| `qwen` | `千问AI生成` | Bottom right | Strict visual gate. |
+| `qwen` | `千问AI生成` or the three-lobe Qwen symbol | Bottom right | Separate strict templates cover the text and Qwen Create symbol variants. |
 | `kling` | `可灵AI 3.0` or `KlingAI 3.0` | Bottom right | Separate calibrated silhouettes cover the older CJK and current IMAGE 3.0 Latin variants. |
 | `yuanbao` | `元宝` over `AI生成` | Bottom right | Standard two-line variant only. |
 | `samsung` | `✦ Contenuti generati dall'AI` | Bottom left | Calibrated for the Italian text variant. |

@@ -1,4 +1,4 @@
-"""Tests for the Qwen (千问AI生成) visible-watermark engine (localize -> fill).
+"""Tests for the Qwen text and symbol visible-watermark engine (localize -> fill).
 
 Every tuned constant in ``qwen_engine`` was measured on the 117-frame vendor
 cohort (2026-07-21, ``scripts/vendor_mark_calibrate.py``); these tests pin the
@@ -8,11 +8,14 @@ geometry (the exact failure the calibration had to fix).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
 
 from remove_ai_watermarks import watermark_registry as registry
+from remove_ai_watermarks._text_mark_engine import TextMarkDetection, best_detection
 from remove_ai_watermarks.qwen_engine import (
     _ALPHA_HEIGHT_FRAC,
     _ALPHA_WIDTH_FRAC,
@@ -27,6 +30,8 @@ from remove_ai_watermarks.qwen_engine import (
 # centres one rung on each mode.
 _BIG_MODE, _SMALL_MODE = 0.203, 0.124
 _MARGIN = 0.025  # measured right/bottom margin of the real mark
+_ROOT = Path(__file__).resolve().parents[1]
+_QWEN_CREATE = _ROOT / "data" / "fixtures" / "provenance" / "qwen-create-qwen-image-2.png"
 
 
 def _compose(w: int, h: int, mode: float = _BIG_MODE, bg: float = 100.0):
@@ -87,6 +92,7 @@ class TestConfig:
         mark = registry.get_mark("qwen")
         assert mark.location == "bottom-right"
         assert "千问AI生成" in mark.label
+        assert "symbol" in mark.label
         assert mark.in_auto
 
 
@@ -129,6 +135,22 @@ class TestDetect:
         assert eng.detect(wm).detected
         assert not eng.detect(cv2.resize(wm, (150, 112))).detected
 
+    def test_qwen_create_symbol_detected(self):
+        image = cv2.imread(str(_QWEN_CREATE), cv2.IMREAD_COLOR)
+        assert image is not None
+        det = QwenEngine().detect(image)
+        assert det.detected
+        assert det.confidence >= 0.80
+        x, y, width, height = det.region
+        assert x > image.shape[1] * 0.90
+        assert y > image.shape[0] * 0.90
+        assert width == height
+
+    def test_unaccepted_symbol_candidate_cannot_hide_detected_text(self):
+        text_detection = TextMarkDetection(detected=True, confidence=0.45)
+        symbol_detection = TextMarkDetection(detected=False, confidence=0.46)
+        assert best_detection(text_detection, symbol_detection) is text_detection
+
 
 class TestFootprintMaskAndRemoval:
     @pytest.mark.parametrize("mode", [_BIG_MODE, _SMALL_MODE])
@@ -153,3 +175,19 @@ class TestFootprintMaskAndRemoval:
     def test_clean_frame_produces_no_mask(self):
         clean = cv2.GaussianBlur(np.full((640, 853, 3), 120, np.uint8), (5, 5), 0)
         assert QwenEngine().footprint_mask(clean, force=False) is None
+
+    def test_removes_qwen_create_symbol(self):
+        image = cv2.imread(str(_QWEN_CREATE), cv2.IMREAD_COLOR)
+        assert image is not None
+        before = QwenEngine().detect(image)
+        assert before.detected
+        mask = QwenEngine().footprint_mask(image, detection=before)
+        assert mask is not None
+        x, y, width, height = before.region
+        assert np.count_nonzero(mask[y : y + height, x : x + width]) < width * height * 0.90
+        out, region = registry.get_mark("qwen").remove(image, backend="cv2")
+        assert region == before.region
+        assert not QwenEngine().detect(out).detected
+        assert np.array_equal(
+            out[: image.shape[0] // 2, : image.shape[1] // 2], image[: image.shape[0] // 2, : image.shape[1] // 2]
+        )

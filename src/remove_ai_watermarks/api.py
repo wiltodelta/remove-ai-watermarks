@@ -175,7 +175,7 @@ def remove_visible(
     """Remove every detected known visible AI mark through localize then fill.
 
     The registry currently covers the Gemini visible watermark; Doubao, Jimeng,
-    Qwen, Kling AI, Yuanbao, Samsung, RunningHub, and Baidu text marks; the
+    Qwen text or symbol mark, Kling AI, Yuanbao, Samsung, RunningHub, and Baidu text marks; the
     LiblibAI wordmark and compact pill; one Microsoft top-right AI-badge variant;
     and the Jimeng pill. Returns ``(result_bgr, [labels removed])``.
 

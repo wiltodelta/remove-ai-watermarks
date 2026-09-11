@@ -1369,6 +1369,18 @@ be represented by the shared base:
 - [`liblib_engine.py`](../src/remove_ai_watermarks/liblib_engine.py)
 - [`microsoft_engine.py`](../src/remove_ai_watermarks/microsoft_engine.py)
 
+Qwen is the one image registry row that currently covers two layout families.
+The shared text engine handles `千问AI生成`; `QwenEngine` also scans a square
+bottom-right region for Qwen Create's three-lobe symbol. Its 0.65 NCC gate was
+measured against the cleared provider fixture (0.848) and 132 decoded tracked
+controls other than that positive (maximum 0.516 on 2026-09-10, zero fires).
+The removal mask reuses the aligned three-lobe alpha and expands it by 6% of
+the detected side; a solid square was rejected because classical inpainting
+left a visible rectangular blur.
+`scripts/visible_alpha_solve.py qwen_symbol` rebuilds the template from the
+cleared fixture with a cubic local-background fit and retains only the three
+interior lobes.
+
 LiblibAI has two registry entries under one product. `liblib` retains the
 historical bottom-center wordmark detector. `liblib_pill` covers the compact
 top-left `AI生成` pill and never fires at strict trust: the shape is generic, so

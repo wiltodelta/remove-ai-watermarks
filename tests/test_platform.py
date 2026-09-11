@@ -460,6 +460,7 @@ class TestPlatformPaths:
         asset_dir = Path(__file__).parent.parent / "src" / "remove_ai_watermarks" / "assets"
         assert (asset_dir / "gemini_bg_48.png").exists()
         assert (asset_dir / "gemini_bg_96.png").exists()
+        assert (asset_dir / "qwen_symbol_alpha.png").exists()
 
     def test_asset_loading_works(self):
         """Verify embedded assets load correctly (critical for packaging)."""
@@ -469,3 +470,7 @@ class TestPlatformPaths:
         # If we get here without error, asset loading works
         assert engine._alpha_small.shape == (48, 48)
         assert engine._alpha_large.shape == (96, 96)
+
+        from remove_ai_watermarks.qwen_engine import QwenEngine
+
+        assert QwenEngine()._symbol_template.shape == (53, 53)

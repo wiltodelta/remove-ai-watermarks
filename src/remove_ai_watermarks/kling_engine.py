@@ -160,14 +160,9 @@ class KlingEngine(TextMarkEngine):
         super().__init__(_CONFIG)
         self._latin = TextMarkEngine(_LATIN_CONFIG)
 
-    @staticmethod
-    def _best(*detections: TextMarkDetection) -> TextMarkDetection:
-        """Prefer an accepted variant, then retain the strongest rejected score."""
-        return max(detections, key=lambda detection: (detection.detected, detection.confidence))
-
     def detect(self, image: NDArray[Any], *, provenance: bool = False) -> TextMarkDetection:
         """Return the strongest CJK or Latin Kling wordmark verdict."""
-        return self._best(
+        return _text_mark_engine.best_detection(
             super().detect(image, provenance=provenance),
             self._latin.detect(image, provenance=provenance),
         )
@@ -176,7 +171,9 @@ class KlingEngine(TextMarkEngine):
         """Scan each immutable variant once and combine strict/relaxed verdicts."""
         cjk_strict, cjk_relaxed = super().detect_both(image)
         latin_strict, latin_relaxed = self._latin.detect_both(image)
-        return self._best(cjk_strict, latin_strict), self._best(cjk_relaxed, latin_relaxed)
+        return _text_mark_engine.best_detection(cjk_strict, latin_strict), _text_mark_engine.best_detection(
+            cjk_relaxed, latin_relaxed
+        )
 
     def footprint_mask(
         self,

@@ -44,7 +44,7 @@ explicitly names a tracked canonical result.
 | `synthid_corpus.py` | Ingest and inspect the local SynthID reference corpus. |
 | `vendor_cohort_harvest.py` | Partition TC260 carriers by producer code. |
 | `vendor_mark_calibrate.py` | Calibrate a candidate vendor text detector. |
-| `visible_alpha_solve.py` | Rebuild visible-watermark alpha assets from controlled captures. |
+| `visible_alpha_solve.py` | Rebuild visible-watermark alpha assets from controlled captures and the cleared Qwen symbol fixture. |
 | `visible_groundtruth.py` | Consolidate blinded contact-sheet labels into ground truth. |
 | `visible_positives.py` | List corpus images carrying a registered visible mark. |
 | `visible_recall_sample.py` | Build an unbiased blinded sample for recall measurement. |

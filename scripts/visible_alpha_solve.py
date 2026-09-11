@@ -23,11 +23,18 @@ edges:
 engine reads ``alpha = max(R,G,B)/255`` directly (no background fit). Its assets are
 the sparkle-on-black capture cropped to two fixed logo sizes (``gemini_bg_{96,48}.png``).
 
+**Qwen symbol** is solved from the cleared Qwen Create provider fixture. The symbol
+occupies a recorded square in a smooth linen region. A cubic surface fitted outside
+that square estimates the local background; the three interior components of the
+positive residual are the symbol. Keeping the extraction as code makes the bundled
+asset reproducible instead of a hand-cropped copy of the fixture.
+
 Usage::
 
     uv run python scripts/visible_alpha_solve.py doubao
     uv run python scripts/visible_alpha_solve.py jimeng
     uv run python scripts/visible_alpha_solve.py gemini
+    uv run python scripts/visible_alpha_solve.py qwen_symbol
     uv run python scripts/visible_alpha_solve.py all
 """
 
@@ -114,6 +121,12 @@ _GEMINI_ASSETS: dict[int, Path] = {
     96: _ROOT / "src" / "remove_ai_watermarks" / "assets" / "gemini_bg_96.png",
     48: _ROOT / "src" / "remove_ai_watermarks" / "assets" / "gemini_bg_48.png",
 }
+
+_QWEN_SYMBOL_CAPTURE = _ROOT / "data" / "fixtures" / "provenance" / "qwen-create-qwen-image-2.png"
+_QWEN_SYMBOL_ASSET = _ROOT / "src" / "remove_ai_watermarks" / "assets" / "qwen_symbol_alpha.png"
+# Recorded provider-symbol box (x, y, width, height) in the 2048-square fixture.
+_QWEN_SYMBOL_BOX = (1925, 1917, 70, 70)
+_QWEN_SYMBOL_BG_PAD = 45
 
 
 def _union_bbox(mask: NDArray[np.uint8], err: str) -> tuple[int, int, int, int]:
@@ -246,10 +259,48 @@ def solve_gemini() -> dict[int, NDArray[np.uint8]]:
     return {size: cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA) for size in _GEMINI_ASSETS}
 
 
+def solve_qwen_symbol() -> NDArray[np.uint8]:
+    """Recover the three-lobe Qwen symbol from its cleared provider fixture."""
+    source = image_io.imread(str(_QWEN_SYMBOL_CAPTURE), cv2.IMREAD_COLOR)
+    if source is None:
+        raise FileNotFoundError(f"missing Qwen symbol capture {_QWEN_SYMBOL_CAPTURE}")
+    x, y, width, height = _QWEN_SYMBOL_BOX
+    pad = _QWEN_SYMBOL_BG_PAD
+    crop = source[y - pad : y + height + pad, x - pad : x + width + pad].astype(np.float32)
+    excluded = np.zeros(crop.shape[:2], dtype=bool)
+    excluded[pad - 8 : pad + height + 8, pad - 8 : pad + width + 8] = True
+    background = _cubic_background(crop, excluded)
+    alpha = np.clip(
+        ((crop - background) / np.clip(255.0 - background, 1e-3, None)).mean(axis=2),
+        0.0,
+        1.0,
+    )[pad : pad + height, pad : pad + width]
+
+    body = (alpha > 0.10).astype(np.uint8)
+    count, labels, stats, _centroids = cv2.connectedComponentsWithStats(body, connectivity=8)
+    parts = [
+        index
+        for index in range(1, count)
+        if stats[index, cv2.CC_STAT_AREA] >= 300
+        and stats[index, cv2.CC_STAT_LEFT] > 0
+        and stats[index, cv2.CC_STAT_TOP] > 0
+        and stats[index, cv2.CC_STAT_LEFT] + stats[index, cv2.CC_STAT_WIDTH] < width
+        and stats[index, cv2.CC_STAT_TOP] + stats[index, cv2.CC_STAT_HEIGHT] < height
+    ]
+    if len(parts) != 3:
+        raise ValueError(f"expected three Qwen symbol lobes, found {len(parts)}")
+    selected = np.isin(labels, parts)
+    ys, xs = np.where(selected)
+    tight = np.where(selected, alpha, 0.0)[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+    tight[tight < 0.08] = 0.0
+    log.info("qwen-symbol: alpha %dx%d max %.3f", tight.shape[1], tight.shape[0], float(tight.max()))
+    return (tight * 255.0).astype(np.uint8)
+
+
 @click.command()
-@click.argument("engine", type=click.Choice([*_SPECS, "gemini", "all"]))
+@click.argument("engine", type=click.Choice([*_SPECS, "gemini", "qwen_symbol", "all"]))
 def main(engine: str) -> None:
-    """Rebuild the alpha asset(s) for ENGINE (doubao / jimeng / gemini / all)."""
+    """Rebuild the alpha asset(s) for ENGINE."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     def _write(path: Path, img: NDArray[np.uint8], label: str) -> None:
@@ -265,6 +316,8 @@ def main(engine: str) -> None:
     if engine in ("gemini", "all"):
         for size, img in solve_gemini().items():
             _write(_GEMINI_ASSETS[size], img, f"gemini-{size}")
+    if engine in ("qwen_symbol", "all"):
+        _write(_QWEN_SYMBOL_ASSET, solve_qwen_symbol(), "qwen-symbol")
 
 
 if __name__ == "__main__":
