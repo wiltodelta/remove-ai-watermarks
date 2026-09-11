@@ -11,7 +11,7 @@ A release is complete only after all four published surfaces are verified:
 |---|---|---|
 | PyPI | The `remove-ai-watermarks` wheel and source distribution | `publish.yml` |
 | Homebrew | The `remove-ai-watermarks` formula in `wiltodelta/homebrew-tap` | `distribute.yml` |
-| Hugging Face Space | The Space demo deployed on the new release through a requirements-pin bump in `wiltodelta/raiw-hf-space` | `raiw-hf-space` sync workflow; the pin bump is manual, `distribute.yml` only re-installs the pinned version |
+| Hugging Face Space | The Space demo deployed on the new release through a requirements-pin bump in `wiltodelta/raiw-hf-space` | `distribute.yml` dispatches `pin-library.yml` in that repo, waits for the Hub `requirements.txt` pin, then factory-rebuilds; `sync-to-hf.yml` mirrors the pin onto the Space |
 | ComfyUI Registry | A compatible release of `wiltodelta/ComfyUI-remove-ai-watermarks` with its own node version | `distribute.yml` and the node repository's workflows |
 
 The GitHub Release is the trigger and release record for this flow. Conda is
@@ -62,16 +62,20 @@ PyPI API token from the repository.
 waits for the matching source distribution to appear on PyPI, then:
 
 - updates the Homebrew tap formula URL and SHA-256;
-- triggers a factory rebuild of the Hugging Face Space: this re-installs the
-  version pinned in the Space repo, it does NOT upgrade the demo;
+- bumps the Hugging Face Space pin and factory-rebuilds the demo on that pin;
 - synchronizes, tests, versions, and publishes the ComfyUI nodes.
 
-Upgrading the Hugging Face Space is a separate, manual step: bump
-`remove-ai-watermarks[visible,heif]` in `wiltodelta/raiw-hf-space` (`pyproject.toml`,
-`uv lock`, and the re-exported `requirements.txt`), then push. That repository's
-`sync-to-hf.yml` mirrors the files onto the Space, which rebuilds on the new
-pin. Its callback smoke tests run in that repository's CI on every push; they
-are the scenario check for the demo surface.
+Upgrading the Hugging Face Space is dispatched from `distribute.yml`: it runs
+`pin-library.yml` in `wiltodelta/raiw-hf-space`, which bumps
+`remove-ai-watermarks[visible,heif]` in `pyproject.toml`, refreshes `uv.lock`,
+and pushes. That repository's `sync-to-hf.yml` then mirrors the files onto the
+Space. `distribute.yml` waits for the Hub `requirements.txt` pin to match,
+then factory-rebuilds. The `RAIW_HF_SPACE_TOKEN` repository secret is a
+fine-grained token limited to the Space repository, with Contents write and
+Actions write. Without the secret the pin bump is skipped and only the
+factory rebuild runs, which reinstalls whatever version is already pinned.
+The Space repo's callback smoke tests still run on every push; they are the
+scenario check for the demo surface.
 
 The Hugging Face **model** `wiltodelta/raiw-photo-classify` is not part of that
 release fan-out. It holds the photo-classify freeze weights. The library extra
@@ -253,9 +257,18 @@ failure.
 
 The ComfyUI sync run can fail the same way on its own: it resolves the version
 from the PyPI JSON API (which updates first) but installs the test dependency
-with pip against the simple index, whose CDN edges lag by minutes. Rerun the
-failed `distribute.yml` comfyui job once the simple index lists the release;
-nothing about the release itself is wrong.
+with pip against the simple index, whose CDN edges lag by minutes. The
+`distribute.yml` waiter also has a clock: 0.40.0's node suite finished after
+the 15-minute poll, so the job now waits 30 minutes and then accepts a
+registry row that already requires this library version. Rerun the failed
+`comfyui` job only when the registry still has no such row.
+
+The automatic `verify-release.yml` run after `distribute.yml` checks the
+Hugging Face Space pin. When `RAIW_HF_SPACE_TOKEN` is set, that pin lands
+during distribution. Without the secret, bump the pin by dispatching
+`pin-library.yml` in `wiltodelta/raiw-hf-space` and then dispatch
+`verify-release.yml` with the release version. Do not read a missing Space
+pin as a broken PyPI or Homebrew publish.
 
 If the release changed CLI routing, extras, exit codes, mark keys, or the
 intended-use boundary, confirm `skills/remove-ai-watermarks/` still matches.

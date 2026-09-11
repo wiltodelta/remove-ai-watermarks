@@ -114,10 +114,100 @@ jobs:
     needs: resolve
     runs-on: ubuntu-latest
     steps:
-      - name: Factory-rebuild the HuggingFace Space
+      - name: Bump the Space pin, then factory-rebuild
         env:
+          GH_TOKEN: ${{ secrets.RAIW_HF_SPACE_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
+          set -euo pipefail
+          repo=wiltodelta/raiw-hf-space
+          workflow=pin-library.yml
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "RAIW_HF_SPACE_TOKEN secret is not set; skipping the pin bump."
+          else
+            dispatched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            gh workflow run "$workflow" \
+              --repo "$repo" \
+              --ref main \
+              --raw-field library_version="$VERSION"
+
+            run_id=""
+            for attempt in $(seq 1 30); do
+              run_id=$(
+                gh run list \
+                  --repo "$repo" \
+                  --workflow "$workflow" \
+                  --event workflow_dispatch \
+                  --limit 10 \
+                  --json databaseId,createdAt \
+                  | python3 -c '
+            import json
+            import sys
+
+            dispatched_at = sys.argv[1]
+            runs = json.load(sys.stdin)
+            print(next(
+                (run["databaseId"] for run in runs if run["createdAt"] >= dispatched_at),
+                "",
+            ))
+            ' "$dispatched_at"
+              )
+              if [ -n "$run_id" ]; then
+                break
+              fi
+              echo "Space pin run not visible yet (attempt $attempt), waiting..."
+              sleep 2
+            done
+            if [ -z "$run_id" ]; then
+              echo "::error::The dispatched Space pin run did not appear"
+              exit 1
+            fi
+            for attempt in $(seq 1 180); do
+              read -r status conclusion <<< "$(
+                gh run view "$run_id" \
+                  --repo "$repo" \
+                  --json status,conclusion \
+                  --jq '[.status, (.conclusion // "")] | @tsv'
+              )"
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  echo "Space pin run $run_id succeeded"
+                  break
+                fi
+                echo "::error::Space pin run $run_id completed with $conclusion"
+                exit 1
+              fi
+              echo "Space pin run $run_id is $status (attempt $attempt), waiting..."
+              sleep 5
+            done
+            if [ "${status:-}" != "completed" ]; then
+              echo "::error::Space pin run $run_id did not finish in time"
+              exit 1
+            fi
+
+            echo "Waiting for the Space requirements pin to show $VERSION..."
+            pinned=""
+            for attempt in $(seq 1 40); do
+              reqs=$(curl -fsSL \
+                "https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks/raw/main/requirements.txt" \
+                || true)
+              pinned=$(printf '%s\n' "$reqs" \
+                | sed -n 's/^remove-ai-watermarks==\([0-9][0-9a-zA-Z.]*\).*/\1/p' \
+                | head -1)
+              echo "  attempt $attempt: Space pin=$pinned"
+              if [ "$pinned" = "$VERSION" ]; then
+                break
+              fi
+              sleep 15
+            done
+            if [ "$pinned" != "$VERSION" ]; then
+              echo "::error::Space requirements.txt still pinned to ${pinned:-<none>}, not $VERSION"
+              exit 1
+            fi
+          fi
+
           python3 -m pip install --quiet huggingface_hub
           python3 - <<'PY'
           import os
@@ -217,7 +307,12 @@ jobs:
             exit 1
           fi
 
-          for attempt in $(seq 1 180); do
+          # 0.40.0's node sync finished after this waiter: 180 * 5s is 15 min,
+          # and the node suite plus registry upload ran longer. Keep the
+          # workflow wait, then accept a registry row for this library version
+          # so a late-but-published node is not reported as a missing release.
+          version="${{ needs.resolve.outputs.version }}"
+          for attempt in $(seq 1 360); do
             read -r status conclusion <<< "$(
               gh run view "$run_id" \
                 --repo "$repo" \
@@ -235,5 +330,39 @@ jobs:
             echo "ComfyUI sync run $run_id is $status (attempt $attempt), waiting..."
             sleep 5
           done
-          echo "::error::ComfyUI sync run $run_id did not finish in time"
+          echo "ComfyUI sync run $run_id did not finish in time; checking the registry."
+          python3 -m pip install --quiet packaging
+          if curl -fsSL "https://api.comfy.org/nodes/remove-ai-watermarks/versions" \
+            | VERSION="$version" python3 -c '
+          import json, os, sys
+          from packaging.requirements import InvalidRequirement, Requirement
+          from packaging.utils import canonicalize_name
+          from packaging.version import Version
+          version = os.environ["VERSION"]
+          target = Version(version)
+          def requires_release(value):
+              try:
+                  requirement = Requirement(value)
+              except InvalidRequirement:
+                  return False
+              return (
+                  canonicalize_name(requirement.name) == "remove-ai-watermarks"
+                  and requirement.url is None
+                  and requirement.marker is None
+                  and target in requirement.specifier
+                  and any(s.operator == ">=" and Version(s.version) == target for s in requirement.specifier)
+              )
+          matches = [
+              v for v in json.load(sys.stdin)
+              if any(requires_release(d) for d in (v.get("dependencies") or []))
+          ]
+          if not matches:
+              sys.exit(1)
+          newest = max(matches, key=lambda v: v.get("createdAt") or "")
+          print("%s %s" % (newest.get("version"), newest.get("status")))
+          '; then
+            echo "Registry already lists a node for $version; the wait timed out after publish."
+            exit 0
+          fi
+          echo "::error::ComfyUI sync run $run_id did not finish in time and the registry has no node for $version"
           exit 1

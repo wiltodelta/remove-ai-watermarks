@@ -49,10 +49,14 @@ Do these in order after the skill is on the default branch.
 4. **Awesome-list PRs.** Hand-curated GitHub lists are how people browse skills
    today. One accurate PR per list, with the scope sentence intact.
    - `ComposioHQ/awesome-claude-skills`: submitted 2026-09-05 as PR 1841
-     (Creative & Media); no maturity bar in its contribution rules.
+     (Creative & Media); no maturity bar in its contribution rules. Rechecked
+     2026-09-11: still open, CI green, no review comments, waiting on the
+     list maintainers.
    - `heilcheng/awesome-agent-skills`: submitted 2026-09-09 as PR 483 under
      Community Skills > Media. The skill's three concrete input/output examples
-     satisfy the list's working-example requirement.
+     satisfy the list's working-example requirement. Rechecked 2026-09-11:
+     still open; the only check failure is their Vercel deploy authorization,
+     which a contributor cannot grant.
    - `VoltAgent/awesome-agent-skills`: DEFERRED. Its CONTRIBUTING rejects
      brand-new skills ("give your skill time to mature and gain users before
      submitting"). The skill now has real installs and shipped releases, but
@@ -67,29 +71,31 @@ Do these in order after the skill is on the default branch.
    with `claude plugin validate` first. SUBMITTED 2026-09-07 for Claude Code
    only (strict validation passed; Apache 2.0; description carries the
    scope boundary; platform selection limited to Claude Code because Cowork
-   was not tested). Pending review; the team may reach out by email. The
-   official Anthropic marketplace is
-   curated and has no application.
+   was not tested). Pending review; the team may reach out by email.
+   Rechecked 2026-09-11: `platform.claude.com/plugins` is 404, and
+   `claude.ai/directory` is the MCP connector catalog, not plugins; a search
+   there does not list this skill. Do not open a second submission. The
+   official Anthropic marketplace is curated and has no application.
 6. **ClawHub.** `clawhub login` then `clawhub skill publish` from
-   `skills/remove-ai-watermarks/`. LISTED 2026-09-09: versions 1.0.5 and 1.0.6,
-   submitted by the `clawhub` job in `distribute.yml` during the 0.39.0 and
-   0.39.1 releases, are public. A green job proves only a submission, so read
-   the catalog itself:
+   `skills/remove-ai-watermarks/`. LISTED 2026-09-09: versions 1.0.5, 1.0.6,
+   and 1.0.8, submitted by the `clawhub` job in `distribute.yml` during the
+   0.39.0, 0.39.1, and 0.40.0 releases, are public. A green job proves only a
+   submission, so read the catalog itself:
    `clawhub search remove-ai-watermarks` returns the row and
    `https://clawhub.ai/api/v1/skills/remove-ai-watermarks` reports
-   `latestVersion.version` 1.0.6, while its `/versions` endpoint returns those
-   two published versions. The earlier 1.0.3 and 1.0.4 submissions never became
+   `latestVersion.version` 1.0.8, while its `/versions` endpoint returns
+   1.0.5, 1.0.6, and 1.0.8. The earlier 1.0.3 and 1.0.4 submissions never became
    public and do not appear in that version list, so they were bypassed rather
-   than recovered. The issue that tracked
-   them, openclaw/clawhub#3643, was closed by the reporter on 2026-09-09 once
+   than recovered. 1.0.7 was a post-0.39.1 bump that never reached ClawHub.
+   The issue that tracked 1.0.3 and 1.0.4, openclaw/clawhub#3643, was closed
+   by the reporter on 2026-09-09 once
    1.0.5 went through; nothing upstream was confirmed fixed, and it is the
    fifth report of this shape (#3624, #3466, #3351, #3284), so treat a stalled
    submission as recurring and file a fresh one rather than assuming the
    pipeline is repaired. Release-time publishing is automated (see
    [release-and-distribution.md](release-and-distribution.md)), and the job
    fires only on a published GitHub Release: a skill version bumped after a
-   release reaches ClawHub with the next one. 0.40.0 publishes 1.0.8; 1.0.7 was
-   the post-0.39.1 bump and is not a ClawHub version. Do not publish by
+   release reaches ClawHub with the next one. Do not publish by
    hand to close that gap. The listing records the license as MIT-0 while
    `SKILL.md` declares Apache-2.0, and that is not a listing error to repair:
    MIT-0 is a platform-wide constant in ClawHub's own client
@@ -114,16 +120,23 @@ Do these in order after the skill is on the default branch.
    [Submit your Claude Code plugin to OpenAI](https://developers.openai.com/plugins/guides/submit-claude-plugin).
 8. **AgenticSkills.** SUBMITTED 2026-09-09 as review issue 174 under AI/ML
    Development. The submission carries the user-owned-content boundary and
-   links to the repository rather than hosting a separate copy.
+   links to the repository rather than hosting a separate copy. Rechecked
+   2026-09-11: the public index still does not list it (`/skills/remove-ai-watermarks`
+   is 404; search for `wiltodelta` returns 0 of 192). Their form promises a
+   48-hour review; that window has passed. Issue 174 is not a public GitHub
+   issue. Do not open a second submission. Followed up 2026-09-11 through
+   their contact form as a listing correction.
 9. **AI Skills Catalog.** SUBMITTED 2026-09-09 as reference 2 under Video Media,
    with Codex as the primary agent and every supported harness marked compatible.
-   The catalog reviews source quality, security, license, and compatibility
-   before publication. Once accepted, treat material skill-version updates as
-   manual because the catalog stores compatible packages in addition to source
-   metadata and does not promise that a GitHub change refreshes those packages.
-   Use the update route supplied with acceptance; if none is supplied, contact
-   the catalog or resubmit, then verify the live result. Do not open a duplicate
-   while the initial review is pending.
+   Rechecked 2026-09-11: the public catalog at skillscatalog.ai shows 0 skills
+   from 0 publishers, `/api/featured` returns 401, and `/api/auth/session`
+   returns 500, so a stranger cannot confirm the listing. Do not open a
+   duplicate while that initial review is pending. Once accepted, treat
+   material skill-version updates as manual because the catalog stores
+   compatible packages in addition to source metadata and does not promise
+   that a GitHub change refreshes those packages. Use the update route
+   supplied with acceptance; if none is supplied, contact the catalog or
+   resubmit, then verify the live result.
 
 The conditional update actions for every catalog are part of the canonical
 release checklist in

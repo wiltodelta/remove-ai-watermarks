@@ -164,6 +164,19 @@ def test_distributed_version_reads_the_flat_single_artifact_layout(tmp_path: Pat
     assert "version=0.37.0" in (tmp_path / "output").read_text()
 
 
+def test_comfyui_waiter_outlasts_the_node_suite_then_reads_the_registry() -> None:
+    script = _step("distribute.yml", "comfyui", "Sync and publish the ComfyUI nodes")["run"]
+    assert "seq 1 360" in script
+    assert "api.comfy.org/nodes/remove-ai-watermarks/versions" in script
+
+
+def test_space_pin_is_dispatched_before_the_factory_rebuild() -> None:
+    script = _step("distribute.yml", "hf-space", "Bump the Space pin, then factory-rebuild")["run"]
+    assert "pin-library.yml" in script
+    assert "RAIW_HF_SPACE_TOKEN secret is not set" in script
+    assert "restart_space" in script
+
+
 @pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")
 def test_clawhub_uses_local_install(tmp_path: Path) -> None:
     script = _step("distribute.yml", "clawhub", "Publish the agent skill when its version moved")["run"]
