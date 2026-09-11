@@ -960,15 +960,13 @@ def _visible_sparkle(image_path: Path, *, image: NDArray[Any] | None = None) -> 
 
 # Visible text marks (registry keys) -> human-readable platform, mirroring the
 # Gemini-sparkle phrasing. These are the stripped-metadata visual fallback for
-# the China-served ByteDance generators (normally also caught by the TC260 AIGC
-# metadata label); the per-engine detection thresholds live in the registry.
+# several China-served generators (normally also caught by the TC260 AIGC metadata
+# label); the per-engine detection thresholds live in the registry.
 # Text mark -> the platform sentence this report prints when that mark is the strongest
-# evidence, DERIVED from the registry rows so registering a mark is one edit. It was a
-# hand-maintained copy, and that class of copy is how LiblibAI ended up registered but
-# missing from the pill veto. Insertion order is the registry's, which is what fixes the
-# scan order below. The Gemini sparkle and the capture-less pill carry no platform of
-# their own (`KnownMark.platform is None`) and are excluded here: the sparkle has its
-# own higher-confidence `_visible_sparkle` path.
+# evidence, derived from the registry rows so registering a mark is one edit. Insertion
+# order is the registry's, which fixes the scan order below. The Gemini sparkle and the
+# capture-less pill carry no platform of their own (`KnownMark.platform is None`) and
+# are excluded here: the sparkle has its own higher-confidence `_visible_sparkle` path.
 #
 # Safe at module scope: `watermark_registry` is already imported above for
 # GEMINI_SPARKLE_TRUST_CONF, and it is deliberately cv2-free at import time.

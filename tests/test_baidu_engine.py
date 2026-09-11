@@ -133,12 +133,3 @@ class TestDetectAndMask:
         assert xs.max() >= bx + bw - 1
         assert ys.min() <= by
         assert ys.max() >= by + bh - 1
-
-
-class TestPillInteraction:
-    def test_confident_baidu_detection_suppresses_the_jimeng_pill(self):
-        # A Baidu image is TC260 too but is not Jimeng-basic: like Doubao/Qwen/
-        # Kling, a confident Baidu detection must veto the pill (``_keep_pill``).
-        from remove_ai_watermarks.watermark_registry import _keep_pill
-
-        assert not _keep_pill({"baidu"}, provenance=frozenset({"jimeng"}), footprint_flat=1.0)

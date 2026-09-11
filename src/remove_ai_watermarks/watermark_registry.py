@@ -265,9 +265,12 @@ class KnownMark:
     # REQUIRED, deliberately: a defaulted empty product would let two rows that forgot
     # the field corroborate each other and silently bypass the trust gate.
     product: str
+    # The company responsible for the product. This is deliberately separate from the
+    # labeling standard: Alibaba, ByteDance, Kuaishou, Tencent, and other manufacturers
+    # all use TC260, but that does not make their marks one product family.
+    manufacturer: str
     # Which provenance regime this mark's vendor labels under, or None. "tc260" means
-    # the vendor stamps the China AIGC label, so a confident detection of it names a
-    # DIFFERENT TC260 product than the Jimeng pill -- see _keep_pill.
+    # the vendor stamps the China AIGC label; it does not identify the manufacturer.
     label_regime: str | None
     # The sentence `identify` reports when THIS mark is the strongest evidence. None for
     # a mark that never names a platform on its own: `gemini` has its own higher-
@@ -598,6 +601,7 @@ def _text_mark(
     location: str,
     *,
     platform: str,
+    manufacturer: str,
     product: str | None = None,
     label_regime: str | None = "tc260",
     provenance_signals: tuple[str, ...] = ("aigc",),
@@ -607,9 +611,10 @@ def _text_mark(
     """Build a text-mark registry row from its shared detector and mask adapters.
 
     ``product`` defaults to the key (one mark, one product); pass it only when two
-    marks share a product. ``label_regime`` and ``provenance_signals`` default to the
-    China-AIGC label because every text mark registered so far except Samsung and
-    Microsoft uses it.
+    marks share a product. ``manufacturer`` is separate because unrelated companies
+    use the same TC260 standard. ``label_regime`` and ``provenance_signals`` default
+    to the China-AIGC label because every text mark registered so far except Samsung
+    and Microsoft uses it.
     """
     return KnownMark(
         key,
@@ -617,6 +622,7 @@ def _text_mark(
         location,
         True,
         product or key,
+        manufacturer,
         label_regime,
         platform,
         _engine_mark_detect(key, label, location),
@@ -660,14 +666,14 @@ def _pill_features(image: NDArray[Any]) -> dict[str, float]:
 
 
 _REGISTRY: tuple[KnownMark, ...] = (
-    # Gemini is a Google C2PA/SynthID product, not a China-AIGC labeler: label_regime
-    # is None so it can never act as a TC260 sibling in _keep_pill.
+    # Gemini is a Google C2PA/SynthID product, not a China-AIGC labeler.
     KnownMark(
         "gemini",
         "Google Gemini visible watermark (sparkle)",
         "bottom-right",
         True,
         "gemini",
+        "google",
         None,
         # No platform sentence: the sparkle has its own higher-confidence
         # `_visible_sparkle` path in identify, which names the platform itself.
@@ -682,6 +688,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "Doubao 豆包AI生成 text",
         "bottom-right",
         platform="ByteDance Doubao (visible 豆包AI生成 mark detected)",
+        manufacturer="bytedance",
         tc260_producer_codes=("91110102MACQD9K640", "doubao"),
     ),
     _text_mark(
@@ -689,6 +696,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "Jimeng 即梦AI wordmark",
         "bottom-right",
         platform="ByteDance Jimeng / Dreamina (visible 即梦AI mark detected)",
+        manufacturer="bytedance",
         tc260_producer_codes=("9144030008867405X2",),
     ),
     _text_mark(
@@ -696,6 +704,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "Qwen 千问AI生成 text",
         "bottom-right",
         platform="Alibaba Cloud Qwen (visible 千问AI生成 mark detected)",
+        manufacturer="alibaba",
         tc260_producer_codes=("91440101MA9Y9T4H7A",),
     ),
     _text_mark(
@@ -703,6 +712,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "Kling AI 可灵AI / KlingAI 3.0 text",
         "bottom-right",
         platform="Kuaishou Kling AI (visible 可灵AI / KlingAI 3.0 mark detected)",
+        manufacturer="kuaishou",
         tc260_producer_codes=("91110108335469089C",),
     ),
     _text_mark(
@@ -710,6 +720,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "Tencent Yuanbao 元宝 / AI生成 mark",
         "bottom-right",
         platform="Tencent Yuanbao (visible 元宝 / AI生成 mark detected)",
+        manufacturer="tencent",
         tc260_producer_codes=("91440300708461136T",),
     ),
     # Samsung Galaxy AI is a device editing marker (samsung_genai), not a TC260 label.
@@ -717,6 +728,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "samsung",
         "Samsung Galaxy AI text",
         "bottom-left",
+        manufacturer="samsung",
         label_regime=None,
         provenance_signals=("samsung_genai",),
         platform="Samsung Galaxy AI (visible 'Contenuti generati dall'AI' mark detected)",
@@ -726,6 +738,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "RunningHub AI生成 text",
         "top-left",
         platform="RunningHub (visible RunningHub AI生成 mark detected)",
+        manufacturer="runninghub",
         tc260_producer_codes=("91340100MAEB4N8H76", "RunningHub"),
     ),
     _text_mark(
@@ -733,6 +746,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "Baidu 百度 AI生成 text",
         "bottom-right",
         platform="Baidu (visible 百度 AI生成 mark detected)",
+        manufacturer="baidu",
         tc260_producer_codes=("91110000802100433B",),
     ),
     _text_mark(
@@ -740,6 +754,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "LiblibAI wordmark",
         "bottom-center",
         platform="LiblibAI (visible LiblibAI mark detected)",
+        manufacturer="liblib",
         tc260_producer_codes=("91110105MACJ6K1C8A",),
     ),
     KnownMark(
@@ -747,6 +762,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "LiblibAI AI生成 pill",
         "top-left",
         True,
+        "liblib",
         "liblib",
         "tc260",
         # The compact pill is generic on its own; the bottom wordmark or LiblibAI
@@ -765,6 +781,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "microsoft",
         "Microsoft top-right AI badge",
         "top-right",
+        manufacturer="microsoft",
         label_regime=None,
         provenance_signals=(),
         platform="Microsoft (visible top-right AI badge detected)",
@@ -777,6 +794,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "top-left",
         True,
         "jimeng",
+        "bytedance",
         "tc260",
         # The capture-less pill is too weak a detector to attribute a platform on its
         # own; the Jimeng wordmark is what names ByteDance.
@@ -881,15 +899,9 @@ def tc260_producer_vendors() -> dict[str, str]:
 
 
 def _pill_suppressors() -> set[str]:
-    """Marks whose detection vetoes the capture-less pill: same label regime as the
-    pill, different product. Derived so a newly registered TC260 mark cannot be
-    forgotten here -- which is exactly how LiblibAI ended up missing."""
+    """Other products from the pill's manufacturer whose detection vetoes it."""
     pill = get_mark("jimeng_pill")
-    return {
-        m.key
-        for m in _REGISTRY
-        if m.label_regime is not None and m.label_regime == pill.label_regime and m.product != pill.product
-    }
+    return {m.key for m in _REGISTRY if m.manufacturer == pill.manufacturer and m.product != pill.product}
 
 
 def _keep_pill(keys: set[str], *, provenance: frozenset[str], footprint_flat: bool) -> bool:
@@ -905,18 +917,14 @@ def _keep_pill(keys: set[str], *, provenance: frozenset[str], footprint_flat: bo
         top-left footprint is flat enough for an invisible fill (``footprint_flat``),
         so real flat-scene pills (and harmless flat false fires) are cleaned while the
         damaging textured false fires are left untouched.
-    A Doubao image is TC260 too but is not Jimeng-basic, so the pill never rides on a
-    Doubao detection; every other TC260 product's mark likewise names a different
-    product and suppresses the pill.
+    A Doubao image is TC260 too but is not Jimeng-basic, so its mark suppresses the
+    pill. Marks from other TC260 manufacturers are unrelated and do not participate in
+    this ByteDance-family decision.
     No confirmation at all -> never remove (blocks false fires on non-Jimeng content).
 
-    The suppressor set is DERIVED from the registry (same label regime, different
-    product), not hand-listed. The hand-written list had drifted: LiblibAI was
-    registered alongside RunningHub and Baidu but never added to it, so a confident
-    LiblibAI detection did not veto the pill the way its two siblings did. Marks
-    outside the TC260 regime (Gemini, Samsung) are deliberately NOT suppressors --
-    neither can put ``"jimeng"`` into ``provenance``, so neither can enable the arm
-    they would be vetoing."""
+    The suppressor set is derived from the manufacturer and product fields rather than
+    from the shared TC260 standard. Marks from Google, Samsung, or another TC260
+    manufacturer cannot enable or veto this ByteDance-specific arm."""
     if _pill_suppressors() & keys:
         return False
     if "jimeng" in keys:

@@ -124,12 +124,3 @@ class TestDetectAndMask:
         region = wm[10:60, 12:360]
         shifted[100 : 100 + region.shape[0], 200 : 200 + region.shape[1]] = region
         assert not eng.detect(shifted).detected
-
-
-class TestPillInteraction:
-    def test_confident_runninghub_detection_suppresses_the_jimeng_pill(self):
-        # A RunningHub frame names its own product; its detection must veto the
-        # Jimeng pill the same way Doubao/Qwen/Kling do (``_keep_pill``).
-        from remove_ai_watermarks.watermark_registry import _keep_pill
-
-        assert not _keep_pill({"runninghub"}, provenance=frozenset({"jimeng"}), footprint_flat=1.0)

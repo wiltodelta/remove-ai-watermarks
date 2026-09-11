@@ -90,13 +90,6 @@ class TestConfig:
         assert "可灵AI" in mark.label
         assert mark.in_auto
 
-    def test_confident_kling_detection_suppresses_the_jimeng_pill(self):
-        # A Kling image is TC260 too but is not Jimeng-basic: like Doubao and Qwen,
-        # a confident Kling detection must veto the pill (``_keep_pill``).
-        from remove_ai_watermarks.watermark_registry import _keep_pill
-
-        assert not _keep_pill({"kling"}, provenance=frozenset({"jimeng"}), footprint_flat=1.0)
-
 
 class TestDetect:
     def test_clean_gradient_not_detected(self):

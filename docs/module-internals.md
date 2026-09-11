@@ -1277,22 +1277,23 @@ The Jimeng pill has an additional decision gate because its visual detector is
 weaker than the other registered marks. Keep that policy in the registry, not
 inside unrelated detector engines.
 
-Everything about a mark is one registry row: its product family, its label regime,
-the platform sentence `identify` reports for it, and the metadata signals that
-confirm its vendor. `identify._VISIBLE_MARK_PLATFORM` and the signal mapping in
+Everything about a mark is one registry row: its product family, manufacturer,
+label regime, the platform sentence `identify` reports for it, and the metadata
+signals that confirm its vendor. The manufacturer is distinct from the label
+regime: Alibaba, ByteDance, Kuaishou, Tencent, and other companies all use TC260,
+but their marks do not belong to one manufacturer family.
+`identify._VISIBLE_MARK_PLATFORM` and the signal mapping in
 `api.visible_provenance` are derived from those rows rather than hand-maintained
 beside them, so registering a mark is one edit. Two marks carry no platform of
 their own: the Gemini sparkle has its own higher-confidence path, and the pill
 alone is too weak to attribute.
 
-The set of marks that veto the pill is DERIVED from the registry rows: every mark
-under the same label regime (`tc260`) belonging to a different product. It used to
-be a hand-written list of keys, and that list drifted -- LiblibAI was registered
-alongside RunningHub and Baidu, both of which were added to it, and LiblibAI was
-not, so a confident LiblibAI detection did not suppress the pill the way its two
-siblings did. Marks outside the TC260 regime (Gemini, Samsung) are deliberately
-not vetoers: neither can put `jimeng` into `provenance`, so neither can enable the
-arm it would be vetoing.
+The set of marks that veto the Jimeng pill is derived from the registry rows:
+every other product from the same manufacturer. Doubao therefore vetoes the pill
+because both products are ByteDance, while Qwen, Kling, Yuanbao, RunningHub,
+Baidu, and LiblibAI do not become siblings merely because they use the same TC260
+standard. Marks from other manufacturers cannot enable or veto the
+ByteDance-specific arm.
 
 A TC260 label relaxes the vendor its `ContentProducer` names, resolved through
 `KnownMark.tc260_producer_codes`. The label itself is vendor-agnostic, so this used to

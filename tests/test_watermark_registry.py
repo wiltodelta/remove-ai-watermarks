@@ -231,6 +231,7 @@ class TestPostRemovalValidation:
             location="top-left",
             in_auto=True,
             product="test",
+            manufacturer="test",
             label_regime=None,
             platform="Test",
             _detect=detect_after,
@@ -524,26 +525,16 @@ class TestArbiter:
         assert "doubao" in keys
         assert "jimeng_pill" not in keys
 
-    def test_pill_dropped_on_qwen(self):
-        # A Qwen frame is TC260 too but is not Jimeng-basic either: a confident
-        # bottom-right 千问AI生成 detection suppresses the pill exactly like Doubao's.
+    @pytest.mark.parametrize("key", ["qwen", "yuanbao"])
+    def test_other_manufacturers_do_not_join_the_bytedance_pill_family(self, key):
+        # These marks and Jimeng share TC260, but not a manufacturer. The shared
+        # standard must not create a product relationship.
         cands = [
-            self._c("qwen", strict=True, relaxed=True),
+            self._c(key, strict=True, relaxed=True),
             self._c("jimeng_pill", strict=True, relaxed=True, flat=True),
         ]
         keys = self._keys(cands, reg.Context(provenance=frozenset({"jimeng"})))
-        assert "qwen" in keys
-        assert "jimeng_pill" not in keys
-
-    def test_pill_dropped_on_yuanbao(self):
-        # The standard Yuanbao mark identifies a different TC260 product, so a
-        # coincident top-left pill match must not be treated as Jimeng-basic.
-        cands = [
-            self._c("yuanbao", strict=True, relaxed=True),
-            self._c("jimeng_pill", strict=True, relaxed=True, flat=True),
-        ]
-        keys = self._keys(cands, reg.Context(provenance=frozenset({"jimeng"})))
-        assert keys == {"yuanbao"}
+        assert keys == {key, "jimeng_pill"}
 
     def test_pill_metadata_arm_gated_on_flatness(self):
         ctx = reg.Context(provenance=frozenset({"jimeng"}))
@@ -665,10 +656,9 @@ class TestSinglePassPerception:
 class TestMarkKnowledgeIsOnTheRow:
     """Registering a mark is ONE edit: the row carries everything about it.
 
-    Product family, label regime, the platform sentence and the metadata signals that
-    confirm the vendor all used to live in separate hand-maintained tables across
-    ``watermark_registry``, ``identify`` and ``api``. That is how LiblibAI ended up
-    registered but absent from the pill veto.
+    Product family, manufacturer, label regime, the platform sentence and the metadata
+    signals that confirm the vendor all used to live in separate hand-maintained tables
+    across ``watermark_registry``, ``identify`` and ``api``.
     """
 
     def test_identify_platform_table_is_derived_from_the_rows(self):
@@ -697,6 +687,13 @@ class TestMarkKnowledgeIsOnTheRow:
             if mark.label_regime == "tc260" and mark.key != "jimeng_pill":
                 assert "aigc" in mark.provenance_signals, mark.key
 
+    def test_tc260_marks_keep_distinct_manufacturers(self):
+        manufacturers = {mark.key: mark.manufacturer for mark in reg.known_marks() if mark.label_regime == "tc260"}
+        assert manufacturers["doubao"] == manufacturers["jimeng"] == "bytedance"
+        assert manufacturers["qwen"] == "alibaba"
+        assert manufacturers["kling"] == "kuaishou"
+        assert manufacturers["yuanbao"] == "tencent"
+
     def test_platform_token_marks_are_the_c2pa_attributed_ones(self):
         # Gemini (Google C2PA) and Microsoft (issuer "Microsoft") are the marks whose
         # vendor a C2PA platform string can confirm; every other mark reaches its
@@ -706,32 +703,19 @@ class TestMarkKnowledgeIsOnTheRow:
 
 
 class TestPillSuppressors:
-    """The pill veto is derived from the registry, not hand-listed.
+    """The pill veto is derived from the Jimeng manufacturer's registry rows."""
 
-    The hand-written list drifted: LiblibAI was registered in the same commit as
-    RunningHub and Baidu, both of which were added to the veto, and it was not. A
-    derived set cannot be forgotten by the next registration.
-    """
-
-    def test_every_other_tc260_product_suppresses_the_pill(self):
+    def test_other_bytedance_product_suppresses_the_pill(self):
+        pill = reg.get_mark("jimeng_pill")
         expected = {
-            m.key
-            for m in reg.known_marks()
-            if m.label_regime == "tc260" and m.product != reg.get_mark("jimeng_pill").product
+            m.key for m in reg.known_marks() if m.manufacturer == pill.manufacturer and m.product != pill.product
         }
         assert reg._pill_suppressors() == expected
-        assert "liblib" in expected
+        assert expected == {"doubao"}
 
-    def test_pill_dropped_on_liblib(self):
-        assert not reg._keep_pill({"liblib"}, provenance=frozenset({"jimeng"}), footprint_flat=1.0)
-
-    def test_pill_dropped_on_liblib_even_with_the_jimeng_wordmark(self):
-        """The veto precedes the wordmark arm, so a co-firing LiblibAI wins.
-
-        This is the broader half of the change: it needs neither TC260 provenance nor
-        a flat footprint, so it is reachable on more inputs than the metadata arm.
-        """
-        assert not reg._keep_pill({"liblib", "jimeng"}, provenance=frozenset(), footprint_flat=1.0)
+    def test_other_manufacturers_do_not_suppress_the_pill(self):
+        assert reg._keep_pill({"qwen"}, provenance=frozenset({"jimeng"}), footprint_flat=1.0)
+        assert reg._keep_pill({"liblib", "jimeng"}, provenance=frozenset(), footprint_flat=1.0)
 
     def test_pill_survives_gemini_and_samsung(self):
         """Neither is a TC260 labeler, and neither can put "jimeng" into provenance,
