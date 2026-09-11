@@ -226,7 +226,9 @@ head abstains to `None`. Otherwise it is `None`, including
 when 124-d extraction refuses the file.
 
 `device` is a library parameter: `None` / `"auto"` detect, `"cpu"` or `"cuda"`
-pin. It is not a CLI option.
+pin. It is not a CLI option. `backend="onnx"` selects the optional CPU-only
+FP32 vision runtime and requires `remove-ai-watermarks[classify-onnx]`;
+`backend="torch"` remains the default.
 
 Missing extra raises `RuntimeError` with the quoted install command
 `'remove-ai-watermarks[classify]'`. Guide:

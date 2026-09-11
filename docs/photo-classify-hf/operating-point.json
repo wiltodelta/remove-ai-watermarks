@@ -52,6 +52,7 @@
   },
   "files": [
     "clip-l-ft.pt",
+    "clip-l-ft-vision-fp32.onnx",
     "probe-weights-clip-l-ft.npz",
     "detector.pt",
     "provider.pt"

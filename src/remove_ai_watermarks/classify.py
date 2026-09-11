@@ -19,15 +19,18 @@ from typing import Any, Literal
 log = logging.getLogger(__name__)
 
 CLASSIFY_EXTRA = "'remove-ai-watermarks[classify]'"
+CLASSIFY_ONNX_EXTRA = "'remove-ai-watermarks[classify-onnx]'"
 WEIGHTS_ENV = "RAIW_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-photo-classify"
 WEIGHTS_REVISION = "4c2763766dd1c8c212d64e01e1cc3f166243c47d"
 CLIP_FILE = "clip-l-ft.pt"
+CLIP_ONNX_FILE = "clip-l-ft-vision-fp32.onnx"
 PROBE_FILE = "probe-weights-clip-l-ft.npz"
 DETECTOR_FILE = "detector.pt"
 PROVIDER_FILE = "provider.pt"
 OPERATING_POINT_FILE = "operating-point.json"
-_WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
+_COMMON_WEIGHT_FILES = (PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
+_WEIGHT_FILES = (CLIP_FILE, *_COMMON_WEIGHT_FILES)
 
 # 2026-09-02 receipt-document gate: linear head on the same CLIP-L-ft
 # vector, trained on CORD-v2 train (800, CC BY 4.0) plus 200 synthetic
@@ -55,6 +58,7 @@ RECEIPT_GATE_THRESHOLD = 2.0432573877459697
 # drifting the next time a release adds one.
 WEIGHTS_ALLOW_PATTERNS: tuple[str, ...] = (
     *_WEIGHT_FILES,
+    CLIP_ONNX_FILE,
     OPERATING_POINT_FILE,
     RECEIPT_GATE_STABLE_FILE,
     RECEIPT_GATE_FILE,
@@ -87,6 +91,7 @@ DetectorLevel = Literal["definitely", "possibly", "likely_human"]
 PixelLabel = Literal["ai", "human", "unknown"]
 PixelDomain = Literal["photo"]
 PixelProvider = Literal["openai", "google", "muse-image", "bytedance"]
+ClassifierBackend = Literal["torch", "onnx"]
 PUBLIC_PROVIDER: dict[str, PixelProvider | None] = {
     "openai": "openai",
     "google": "google",
@@ -255,7 +260,12 @@ def classify_from_scores(
     return PixelClassification(label=label, domain="photo", detector=level, provider=provider)
 
 
-def classify_pixels(path: Path, *, device: str | None = None) -> PixelClassification:
+def classify_pixels(
+    path: Path,
+    *,
+    device: str | None = None,
+    backend: ClassifierBackend = "torch",
+) -> PixelClassification:
     """Run Model 1 then, on DEFINITELY, the receipt gate and Model 2.
 
     Never called by ``identify``. A DEFINITELY verdict that the receipt gate
@@ -263,7 +273,14 @@ def classify_pixels(path: Path, *, device: str | None = None) -> PixelClassifica
     """
     if not is_available():
         raise RuntimeError(f"pixel classification requires the classify extra. Install: pip install {CLASSIFY_EXTRA}")
-    runtime = _get_runtime(device)
+    if backend == "onnx":
+        from remove_ai_watermarks.optional_deps import module_available
+
+        if not module_available("onnxruntime"):
+            raise RuntimeError(
+                f"the ONNX photo-classifier backend requires ONNX Runtime. Install: pip install {CLASSIFY_ONNX_EXTRA}"
+            )
+    runtime = _get_runtime(device, backend)
     from PIL import Image
 
     with Image.open(path) as image:
@@ -304,6 +321,7 @@ def classify_pixels(path: Path, *, device: str | None = None) -> PixelClassifica
 @dataclass
 class _Runtime:
     device: Any
+    backend: ClassifierBackend
     clip_model: Any
     processor: Any
     detector: Any
@@ -331,7 +349,26 @@ def _resolve_device(device: str | None) -> Any:
     raise ValueError(f"unsupported classify device {device!r}")
 
 
-def _weights_dir() -> Path:
+def _resolve_backend(backend: ClassifierBackend, device: Any) -> ClassifierBackend:
+    if backend == "onnx" and device.type != "cpu":
+        raise ValueError("the ONNX photo-classifier backend supports CPU only")
+    if backend not in ("torch", "onnx"):
+        raise ValueError(f"unsupported classify backend {backend!r}")
+    return backend
+
+
+def _backend_allow_patterns(backend: ClassifierBackend) -> tuple[str, ...]:
+    model_file = CLIP_ONNX_FILE if backend == "onnx" else CLIP_FILE
+    return (
+        model_file,
+        *_COMMON_WEIGHT_FILES,
+        OPERATING_POINT_FILE,
+        RECEIPT_GATE_STABLE_FILE,
+        RECEIPT_GATE_FILE,
+    )
+
+
+def _weights_dir(backend: ClassifierBackend = "torch") -> Path:
     override = os.environ.get(WEIGHTS_ENV)
     if override:
         path = Path(override)
@@ -345,7 +382,7 @@ def _weights_dir() -> Path:
             snapshot_download(
                 repo_id=WEIGHTS_REPO,
                 revision=WEIGHTS_REVISION,
-                allow_patterns=list(WEIGHTS_ALLOW_PATTERNS),
+                allow_patterns=list(_backend_allow_patterns(backend)),
             )
         )
     except Exception as exc:
@@ -373,8 +410,10 @@ def _weight_path(folder: Path, name: str) -> Path:
     return found
 
 
-def _require_files(folder: Path) -> None:
-    missing = [name for name in _WEIGHT_FILES if _find_weight(folder, name) is None]
+def _require_files(folder: Path, *, backend: ClassifierBackend = "torch") -> None:
+    model_file = CLIP_ONNX_FILE if backend == "onnx" else CLIP_FILE
+    required = (model_file, *_COMMON_WEIGHT_FILES)
+    missing = [name for name in required if _find_weight(folder, name) is None]
     if missing:
         raise RuntimeError(
             "pixel classification weights are missing "
@@ -417,14 +456,14 @@ def _build_provider_head() -> Any:
     )
 
 
-def _load_runtime(device: Any) -> _Runtime:
+def _load_runtime(device: Any, backend: ClassifierBackend = "torch") -> _Runtime:
     import numpy as np
     import torch
 
-    from remove_ai_watermarks._internal.clip_l_ft import load_headed_clip, load_processor
+    from remove_ai_watermarks._internal.clip_l_ft import load_headed_clip, load_onnx_vision, load_processor
 
-    folder = _weights_dir()
-    _require_files(folder)
+    folder = _weights_dir(backend)
+    _require_files(folder, backend=backend)
     probe = np.load(_weight_path(folder, PROBE_FILE))
     detector = _build_detector()
     detector.load_state_dict(torch.load(_weight_path(folder, DETECTOR_FILE), map_location="cpu", weights_only=True))
@@ -441,9 +480,15 @@ def _load_runtime(device: Any) -> _Runtime:
     ridge_threshold = float(probe["thr_oi_1pct"])
     mlp_threshold, provider_margin = _operating_point(folder)
     log.info("loaded photo-classify freeze from %s", folder)
+    clip_model = (
+        load_onnx_vision(_weight_path(folder, CLIP_ONNX_FILE))
+        if backend == "onnx"
+        else load_headed_clip(_weight_path(folder, CLIP_FILE), device)
+    )
     return _Runtime(
         device=device,
-        clip_model=load_headed_clip(_weight_path(folder, CLIP_FILE), device),
+        backend=backend,
+        clip_model=clip_model,
         processor=load_processor(),
         detector=detector,
         provider_heads=heads,
@@ -457,18 +502,21 @@ def _load_runtime(device: Any) -> _Runtime:
     )
 
 
-def _get_runtime(device: str | None) -> _Runtime:
+def _get_runtime(device: str | None, backend: ClassifierBackend = "torch") -> _Runtime:
     global _runtime
     resolved = _resolve_device(device)
+    resolved_backend = _resolve_backend(backend, resolved)
     with _runtime_lock:
-        if _runtime is None or _runtime.device != resolved:
-            _runtime = _load_runtime(resolved)
+        if _runtime is None or _runtime.device != resolved or _runtime.backend != resolved_backend:
+            _runtime = _load_runtime(resolved, resolved_backend)
         return _runtime
 
 
 def _embed(runtime: _Runtime, image: Any) -> Any:
-    from remove_ai_watermarks._internal.clip_l_ft import embed_image
+    from remove_ai_watermarks._internal.clip_l_ft import embed_image, embed_image_onnx
 
+    if runtime.backend == "onnx":
+        return embed_image_onnx(runtime.clip_model, runtime.processor, image)
     return embed_image(runtime.clip_model, runtime.processor, image, runtime.device)
 
 

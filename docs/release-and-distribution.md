@@ -79,8 +79,9 @@ release fan-out. It holds the photo-classify freeze weights. The library extra
 `RAIW_CLASSIFY_WEIGHTS`. Update the Hub repo only with
 `.github/workflows/publish-photo-classify-hf.yml` (`workflow_dispatch`,
 type `publish`). Full mode downloads the four weight files from the GitHub
-Release tag `photo-classify-freeze-2026-08-31` (or the tag you pass) and
-uploads them with the card in `docs/photo-classify-hf/`. Card mode updates
+Release tag `photo-classify-freeze-2026-08-31` (or the tag you pass), exports
+the static FP32 vision-only ONNX graph from `clip-l-ft.pt`, and uploads all five
+files with the card in `docs/photo-classify-hf/`. Card mode updates
 the README, `operating-point.json`, and the receipt-gate head staged from
 the package assets; freeze weights are untouched. A library version bump
 alone does not upload new heads -- bump the pinned Hub revision when a new

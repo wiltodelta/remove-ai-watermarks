@@ -29,26 +29,22 @@ Do not add advisory ignores or suppress the scanner's exit status. Run and
 report Ruff, Pyright scoped to `src/`, and tests separately when security blocks
 the gate.
 
-Rechecked on 2026-09-08 against PyPI release metadata and the advisory sources:
+Rechecked on 2026-09-10 against the locked versions and the advisory sources:
 
-- `lightning`, pulled by the optional `trustmark` extra, remains affected by
-  [PYSEC-2026-3624](https://github.com/pypa/advisory-database/blob/main/vulns/lightning/PYSEC-2026-3624.yaml)
-  and its alias [GHSA-qqmf-gpg7-g8gw](https://github.com/advisories/GHSA-qqmf-gpg7-g8gw).
-  These describe one checkpoint-loading vulnerability. The latest PyPI release
-  is still affected; the advisory's `2022.6.15` fix entry is not a newer release
-  on the supported 2.x line. The adapter selects TrustMark's supplied weights,
-  rather than accepting a caller-supplied Lightning checkpoint.
+- `lightning` and `pytorch-lightning`, pulled by the optional `trustmark`
+  extra, are pinned to 2.6.6. That release clears PYSEC-2026-3624 and
+  PYSEC-2026-3967; do not reintroduce an older transitive resolution.
 - `accelerate`, required by the diffusion stack, is affected by
-  [GHSA-4j2p-28q2-5m79](https://github.com/advisories/GHSA-4j2p-28q2-5m79).
-  The sharded-checkpoint loader accepts unsafe `weight_map` paths; the advisory
-  lists no patched release. The project has no direct call to
+  [GHSA-4j2p-28q2-5m79](https://github.com/advisories/GHSA-4j2p-28q2-5m79)
+  and PYSEC-2026-3804. The sharded-checkpoint loader accepts unsafe
+  `weight_map` paths; neither advisory lists a patched release. The project has no direct call to
   `load_checkpoint_in_model` or `load_checkpoint_and_dispatch`, but this does
   not prove indirect model-loading paths are unaffected.
 
-Before carrying either block forward, rerun `uvx uv-secure uv.lock` and check
+Before carrying the remaining block forward, rerun `uvx uv-secure uv.lock` and check
 PyPI for a fixed release. Upgrade a fixed package with
-`uv lock --upgrade-package <package>` and rerun the gate. Removing either
-current dependency would remove a supported optional feature, so that is not a
+`uv lock --upgrade-package <package>` and rerun the gate. Removing the current
+dependency would remove a supported optional feature, so that is not a
 maintenance-only repair.
 
 Minor-only lock refreshes must retain each package's current major and lower

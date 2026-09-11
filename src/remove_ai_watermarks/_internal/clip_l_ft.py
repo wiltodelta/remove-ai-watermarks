@@ -79,6 +79,18 @@ def load_processor() -> Any:
     return processor
 
 
+def load_onnx_vision(model: Path) -> Any:
+    """Load the portable CPU session for the vision-only FP32 export."""
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    # Runtime graph optimization rebuilds this 1.2 GB static graph on every cold
+    # process. The export is already constant-folded; disabling that repeated pass
+    # reduced local session creation without changing the graph or its outputs.
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+    return ort.InferenceSession(str(model), sess_options=options, providers=["CPUExecutionProvider"])
+
+
 def embed_image(model: HeadedCLIP, processor: Any, image: Image.Image, device: torch.device) -> NDArray[Any]:
     """Return a 768-d L2-normalized CLIP-L-ft vector."""
     import numpy as np
@@ -90,4 +102,15 @@ def embed_image(model: HeadedCLIP, processor: Any, image: Image.Image, device: t
     )
     with torch.inference_mode():
         vector = model.embed(pixels).float().cpu().numpy()[0]
+    return np.asarray(vector, dtype=np.float64)
+
+
+def embed_image_onnx(session: Any, processor: Any, image: Image.Image) -> NDArray[Any]:
+    """Return the vision-only ONNX export's normalized 768-d vector."""
+    import numpy as np
+
+    boxed = letterbox(image)
+    pixels = processor(images=[boxed], return_tensors="np")["pixel_values"]
+    inputs = {"pixel_values": np.asarray(pixels, dtype=np.float32)}
+    vector = session.run(["embedding"], inputs)[0][0]
     return np.asarray(vector, dtype=np.float64)

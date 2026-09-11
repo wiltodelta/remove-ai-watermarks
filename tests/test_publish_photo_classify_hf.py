@@ -23,8 +23,19 @@ def test_hub_id_is_the_photo_classify_repo() -> None:
     assert _publish().HUB_REPO == "wiltodelta/raiw-photo-classify"
 
 
+def test_publish_freeze_includes_both_clip_runtimes() -> None:
+    publish = _publish()
+    from remove_ai_watermarks.classify import _WEIGHT_FILES, CLIP_ONNX_FILE, WEIGHTS_ALLOW_PATTERNS
+
+    assert publish.CLIP_FILE in publish.WEIGHT_FILES
+    assert publish.CLIP_ONNX_FILE in publish.WEIGHT_FILES
+    assert set(publish.WEIGHT_FILES) == {*_WEIGHT_FILES, CLIP_ONNX_FILE}
+    assert set(publish.WEIGHT_FILES) <= set(WEIGHTS_ALLOW_PATTERNS)
+
+
 def test_weight_paths_accepts_run1_layout(tmp_path: Path) -> None:
     (tmp_path / "clip-l-ft.pt").write_bytes(b"clip")
+    (tmp_path / "clip-l-ft-vision-fp32.onnx").write_bytes(b"onnx")
     (tmp_path / "probe-weights-clip-l-ft.npz").write_bytes(b"probe")
     run1 = tmp_path / "run1"
     run1.mkdir()
@@ -37,6 +48,7 @@ def test_weight_paths_accepts_run1_layout(tmp_path: Path) -> None:
 
 def test_weight_paths_requires_every_file(tmp_path: Path) -> None:
     (tmp_path / "clip-l-ft.pt").write_bytes(b"clip")
+    (tmp_path / "clip-l-ft-vision-fp32.onnx").write_bytes(b"onnx")
     with pytest.raises(SystemExit, match=r"missing probe-weights-clip-l-ft\.npz"):
         _publish().weight_paths(tmp_path)
 

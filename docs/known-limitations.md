@@ -516,11 +516,9 @@ remain identical because isolated decoder hits can otherwise be content noise.
 It accepts Variant P schemas 0-2. Variant Q requires a different model, and
 schema 3 is rejected at the measured precision threshold. Its NumPy 1.x runtime
 limits the extra to Python 3.11-3.12; the rest of the package remains supported
-through Python 3.14. The current TrustMark dependency line also resolves lightning 2.6.5
-(PYSEC-2026-3624, no fixed release yet); the vulnerable `load_from_checkpoint`
-path is unreachable here because TrustMark loads its checksummed checkpoints
-with plain `torch.load`. Bump lightning and cut a patch release when a fix
-ships. The calibration history is in
+through Python 3.14. The current TrustMark dependency line resolves
+`lightning` and `pytorch-lightning` 2.6.6, which contain the published fixes
+for their checkpoint-loading advisories. The calibration history is in
 [module internals](module-internals.md#metadata-and-provenance).
 
 A generic metadata-free AI-generated-image classifier is not shipped. It is a

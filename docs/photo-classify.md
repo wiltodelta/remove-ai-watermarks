@@ -38,7 +38,11 @@ print(result.label, result.detector, result.provider)
 
 Missing extra raises `RuntimeError` with
 `pip install 'remove-ai-watermarks[classify]'`. `device` is a library
-parameter (`None` / `"auto"` / `"cpu"` / `"cuda"`), not a CLI option.
+parameter (`None` / `"auto"` / `"cpu"` / `"cuda"`), not a CLI option. The
+explicit `backend="onnx"` path is CPU-only and requires
+`clip-l-ft-vision-fp32.onnx` in `RAIW_CLASSIFY_WEIGHTS`; PyTorch remains the
+default until that artifact is published in the pinned Hub snapshot. Install
+the experimental runtime with `pip install 'remove-ai-watermarks[classify-onnx]'`.
 
 Weights are not in git. First call downloads
 [`wiltodelta/raiw-photo-classify`](https://huggingface.co/wiltodelta/raiw-photo-classify)
@@ -47,9 +51,18 @@ at the freeze revision pinned in `classify.py`, or reads
 `probe-weights-clip-l-ft.npz`, `detector.pt`, and `provider.pt`. The training
 catalog is not published with the package. Deployments that pre-cache the
 snapshot for offline resolution must request exactly
-`classify.WEIGHTS_ALLOW_PATTERNS` (the runtime resolves that same list under
-`HF_HUB_OFFLINE=1`; a partial pre-cache fails the whole resolution, even for
-files the runtime would fall back on).
+`classify.WEIGHTS_ALLOW_PATTERNS`. That exported list covers both backends;
+the online runtime narrows its download to the selected model plus the shared
+heads. A partial offline pre-cache fails resolution, even for files the runtime
+would otherwise fall back on.
+
+Generate the optional vision-only graph from the exact frozen checkpoint:
+
+```bash
+uv run --with onnx python scripts/export_photo_classify_onnx.py \
+  --checkpoint /path/to/clip-l-ft.pt \
+  --out /path/to/clip-l-ft-vision-fp32.onnx
+```
 
 ## What one call returns
 

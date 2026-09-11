@@ -13,6 +13,7 @@ from click.testing import CliRunner
 from PIL import Image
 
 from remove_ai_watermarks.classify import (
+    CLIP_ONNX_FILE,
     MLP_THRESHOLD,
     PROVIDER_MARGIN,
     RECEIPT_GATE_FILE,
@@ -57,13 +58,11 @@ def test_hub_snapshot_is_the_freeze_revision() -> None:
     assert WEIGHTS_REVISION == "4c2763766dd1c8c212d64e01e1cc3f166243c47d"
 
 
-def test_runtime_requests_the_exported_allow_patterns(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The exported pre-cache list and the runtime request must stay one list.
+def test_runtime_requests_only_the_selected_backend_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Online downloads stay narrow while the exported pre-cache covers both.
 
     An offline deploy pre-caches WEIGHTS_ALLOW_PATTERNS from the Hub; the
-    runtime then resolves the same snapshot offline. If the runtime's request
-    grows a file the export misses, every offline deployment breaks on a
-    four-fifths-present cache, so pin the seam in both directions.
+    runtime requests a subset of that snapshot for its selected backend.
     """
     from remove_ai_watermarks.classify import _WEIGHT_FILES, _weights_dir
 
@@ -81,8 +80,65 @@ def test_runtime_requests_the_exported_allow_patterns(monkeypatch: pytest.Monkey
     assert _weights_dir() == Path("/cached/snapshot")
     assert captured[0]["repo_id"] == WEIGHTS_REPO
     assert captured[0]["revision"] == WEIGHTS_REVISION
-    assert captured[0]["allow_patterns"] == list(WEIGHTS_ALLOW_PATTERNS)
+    torch_patterns = captured[0]["allow_patterns"]
+    assert "clip-l-ft.pt" in torch_patterns
+    assert CLIP_ONNX_FILE not in torch_patterns
     assert set(_WEIGHT_FILES) <= set(WEIGHTS_ALLOW_PATTERNS)
+    assert CLIP_ONNX_FILE in WEIGHTS_ALLOW_PATTERNS
+
+    captured.clear()
+    assert _weights_dir("onnx") == Path("/cached/snapshot")
+    onnx_patterns = captured[0]["allow_patterns"]
+    assert CLIP_ONNX_FILE in onnx_patterns
+    assert "clip-l-ft.pt" not in onnx_patterns
+    assert set(torch_patterns) | set(onnx_patterns) == set(WEIGHTS_ALLOW_PATTERNS)
+
+
+def test_backend_requires_its_own_model_file(tmp_path: Path) -> None:
+    from remove_ai_watermarks.classify import DETECTOR_FILE, PROBE_FILE, PROVIDER_FILE, _require_files
+
+    for name in (CLIP_ONNX_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE):
+        (tmp_path / name).touch()
+
+    _require_files(tmp_path, backend="onnx")
+    with pytest.raises(RuntimeError, match=r"clip-l-ft\.pt"):
+        _require_files(tmp_path, backend="torch")
+
+
+def test_onnx_backend_is_cpu_only() -> None:
+    import torch
+
+    from remove_ai_watermarks.classify import _resolve_backend
+
+    assert _resolve_backend("onnx", torch.device("cpu")) == "onnx"
+    with pytest.raises(ValueError, match=r"ONNX.*CPU"):
+        _resolve_backend("onnx", torch.device("cuda"))
+
+
+def test_onnx_backend_names_its_install_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    from remove_ai_watermarks import classify as classify_mod
+    from remove_ai_watermarks import optional_deps
+
+    monkeypatch.setattr(classify_mod, "is_available", lambda: True)
+    monkeypatch.setattr(optional_deps, "module_available", lambda *_names: False)
+
+    with pytest.raises(RuntimeError, match=r"remove-ai-watermarks\[classify-onnx\]"):
+        classify_mod.classify_pixels(Path("unused.png"), backend="onnx")
+
+
+def test_embed_dispatches_to_the_selected_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    from remove_ai_watermarks import classify as classify_mod
+    from remove_ai_watermarks._internal import clip_l_ft
+
+    calls: list[str] = []
+    monkeypatch.setattr(clip_l_ft, "embed_image", lambda *_args: calls.append("torch") or "torch-vector")
+    monkeypatch.setattr(clip_l_ft, "embed_image_onnx", lambda *_args: calls.append("onnx") or "onnx-vector")
+    runtime = SimpleNamespace(backend="onnx", clip_model=object(), processor=object(), device=object())
+
+    assert classify_mod._embed(runtime, object()) == "onnx-vector"
+    runtime.backend = "torch"
+    assert classify_mod._embed(runtime, object()) == "torch-vector"
+    assert calls == ["onnx", "torch"]
 
 
 def test_shipped_operating_point_matches_the_runtime_defaults() -> None:
@@ -332,7 +388,7 @@ def _patch_definitely_runtime(monkeypatch: pytest.MonkeyPatch, *, forensic_calls
         weights_dir=None,
     )
     monkeypatch.setattr("remove_ai_watermarks.classify.is_available", lambda: True)
-    monkeypatch.setattr("remove_ai_watermarks.classify._get_runtime", lambda device: runtime)
+    monkeypatch.setattr("remove_ai_watermarks.classify._get_runtime", lambda device, backend="torch": runtime)
     monkeypatch.setattr("remove_ai_watermarks.classify._embed", lambda *args, **kwargs: np.full(768, 100.0))
     monkeypatch.setattr("remove_ai_watermarks.classify._mlp_score", lambda *args, **kwargs: 10.0)
     monkeypatch.setattr(
@@ -402,7 +458,7 @@ def test_124d_is_not_extracted_unless_definitely(monkeypatch: pytest.MonkeyPatch
         weights_dir=None,
     )
     monkeypatch.setattr("remove_ai_watermarks.classify.is_available", lambda: True)
-    monkeypatch.setattr("remove_ai_watermarks.classify._get_runtime", lambda device: runtime)
+    monkeypatch.setattr("remove_ai_watermarks.classify._get_runtime", lambda device, backend="torch": runtime)
     monkeypatch.setattr("remove_ai_watermarks.classify._embed", lambda *args, **kwargs: np.zeros(768))
     monkeypatch.setattr("remove_ai_watermarks.classify._mlp_score", lambda *args, **kwargs: 0.0)
     monkeypatch.setattr(

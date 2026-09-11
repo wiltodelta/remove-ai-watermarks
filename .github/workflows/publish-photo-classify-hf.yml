@@ -6,8 +6,9 @@ name: Publish photo classifier to Hugging Face
 # Hub model: wiltodelta/raiw-photo-classify
 # Secret: HF_TOKEN, write-role Hugging Face token (same secret Space sync uses).
 #
-# Weights are not in git. Full mode downloads them from a GitHub Release
-# of this repository, then uploads with the card from docs/photo-classify-hf/.
+# Weights are not in git. Full mode downloads the frozen PyTorch files from a
+# GitHub Release, exports the vision-only ONNX graph, then uploads everything
+# with the card from docs/photo-classify-hf/.
 
 on:
   workflow_dispatch:
@@ -51,6 +52,14 @@ jobs:
           mkdir -p weights
           gh release download "$TAG" --repo "${{ github.repository }}" --dir weights
           ls -l weights
+
+      - name: Export the vision-only ONNX graph
+        if: ${{ github.event.inputs.mode == 'full' }}
+        run: |
+          set -euo pipefail
+          uv run --extra classify --with onnx python scripts/export_photo_classify_onnx.py \
+            --checkpoint weights/clip-l-ft.pt \
+            --out weights/clip-l-ft-vision-fp32.onnx
 
       - name: Publish to Hugging Face
         env:

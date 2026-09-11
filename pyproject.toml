@@ -154,6 +154,12 @@ classify = [
     "tokenizers>=0.22,<0.23",
     "huggingface-hub>=0.20.0",
 ]
+# Optional vision-only CPU runtime for the photo classifier. Keep it separate
+# until the ONNX artifact is published and the backend becomes the default.
+classify-onnx = [
+    "remove-ai-watermarks[classify]",
+    "onnxruntime>=1.24.0",
+]
 # Universal region eraser backend -- big-LaMa via onnxruntime (Carve/LaMa-ONNX,
 # Apache-2.0). CPU, no torch. Model (~200 MB) is downloaded on first use and
 # cached by huggingface_hub; it is never bundled in this repo. The default cv2

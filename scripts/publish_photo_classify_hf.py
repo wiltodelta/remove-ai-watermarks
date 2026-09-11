@@ -2,8 +2,8 @@
 """Publish the photo-classify freeze to Hugging Face wiltodelta/raiw-photo-classify.
 
 Manual. Not a library release step. Weights are not in git: pass --src, a
-directory that holds clip-l-ft.pt and the probe, with detector.pt and
-provider.pt either at the root or in run1/.
+directory that holds clip-l-ft.pt, clip-l-ft-vision-fp32.onnx, and the probe,
+with detector.pt and provider.pt either at the root or in run1/.
 
     uv run python scripts/publish_photo_classify_hf.py --src DIR
     uv run python scripts/publish_photo_classify_hf.py --card-only
@@ -28,10 +28,11 @@ log = logging.getLogger(__name__)
 
 HUB_REPO = "wiltodelta/raiw-photo-classify"
 CLIP_FILE = "clip-l-ft.pt"
+CLIP_ONNX_FILE = "clip-l-ft-vision-fp32.onnx"
 PROBE_FILE = "probe-weights-clip-l-ft.npz"
 DETECTOR_FILE = "detector.pt"
 PROVIDER_FILE = "provider.pt"
-WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
+WEIGHT_FILES = (CLIP_FILE, CLIP_ONNX_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 GATE_FILE = "receipt-gate-2026-09-02.npz"
 GATE_STABLE_FILE = "receipt-gate.npz"
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -68,7 +69,7 @@ def stage_card(dest: Path) -> None:
     shutil.copy2(readme, dest / "README.md")
     shutil.copy2(operating, dest / "operating-point.json")
     # The gate head versions with the model: card mode carries it even when
-    # the four freeze weight files are not being re-uploaded.
+    # the five freeze weight files are not being re-uploaded.
     shutil.copy2(GATE_SOURCE, dest / GATE_FILE)
 
 

@@ -258,6 +258,7 @@ silently change the heads.
 | File | Role |
 | --- | --- |
 | `clip-l-ft.pt` | HeadedCLIP state dict (CLIP-L plus unused linear head) |
+| `clip-l-ft-vision-fp32.onnx` | Static batch-one vision tower and projection for the optional CPU backend |
 | `probe-weights-clip-l-ft.npz` | Ridge mean, scale, weights, `thr_oi_1pct` |
 | `detector.pt` | Freeze MLP |
 | `provider.pt` | Focal heads keyed `openai`, `google`, `bytedance`, `tc260`, `meta_muse_image`, `no_ai` |

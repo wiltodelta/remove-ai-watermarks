@@ -1085,9 +1085,9 @@ module.
 
 Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-photo-classify`.
 `RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. The runtime
-resolves the snapshot through `WEIGHTS_ALLOW_PATTERNS`, exported so an
-offline deploy's pre-cache installs the exact runtime request as one name
-(`tests/test_classify.py` pins the seam). User guide:
+narrows its snapshot download to the selected backend's model and shared heads.
+`WEIGHTS_ALLOW_PATTERNS` exports the union so an offline deploy can pre-cache
+both backends explicitly (`tests/test_classify.py` pins the seam). User guide:
 [photo-classify.md](photo-classify.md). Hub card:
 [photo-classify-hf/README.md](photo-classify-hf/README.md).
 
@@ -1103,17 +1103,32 @@ after. `tests/test_clip_l_ft.py` rejects a loader that invokes random Linear
 initialization and verifies that checkpoint parameters and constructor-created
 buffers are fully materialized.
 
-A same-day vision-only FP32 ONNX probe was 1,216,102,506 bytes versus the
-1,710,697,163-byte full PyTorch checkpoint, loaded an ONNX Runtime CPU session
-in 0.419 seconds, ran the probe in 0.136 seconds, and preserved all 42 tracked
-fixture verdicts. It is not a shipped path: the full checkpoint contains
-494,601,216 bytes of unused text-tower weights, but replacing it requires a new
-published vision artifact and a full labeled-corpus certification. Dynamic INT8
-reduced the ONNX file to 305,462,280 bytes but changed 3 of the 42 fixture
-verdicts, in both directions across the public decision boundary, so it is
-rejected without retraining and a new operating point. Splitting Model 2 does
-not address cold start: its detector and provider files total about 2 MB and
-loaded in roughly 3 ms in the same stage profile; CLIP-L Model 1 dominates.
+The optional CPU-only `backend="onnx"` path reads a static batch-one,
+vision-only FP32 graph produced by `scripts/export_photo_classify_onnx.py`.
+PyTorch remains the default until that artifact is published in the pinned Hub
+snapshot. The graph is 1,216,102,506 bytes versus the 1,710,697,163-byte full
+PyTorch checkpoint; the removed text tower alone is 494,601,216 bytes. A
+2026-09-10 stress comparison covered 500 locally available catalog photographs
+closest to either Model 1 threshold plus 500 deterministic family-stratified
+photographs. The minimum embedding cosine was 0.999999979, mean absolute delta
+was 1.54e-7, and no detector or receipt-gate decision changed. All 42 tracked
+fixtures also kept byte-identical public records.
+
+Three alternating fresh-process CPU pairs on the same synthetic 512x384 PNG
+gave PyTorch 7.037/5.235/5.003 seconds and ONNX 6.058/4.956/4.528 seconds under
+the then-current machine load: ONNX won all three pairs, but its 4.956-second
+median was only 5% below PyTorch's 5.235 seconds. Median peak RSS fell from
+3.78 GB to 1.92 GB. These are process-cold, OS-cache-warm local results, not a
+hosted-container estimate; the memory reduction is the stronger result. ONNX
+Runtime graph optimization is disabled because rebuilding the already
+constant-folded 1.2 GB graph increased session startup. CoreML is not selected:
+its static session took 18.8 seconds to construct and its dynamic-batch probe
+failed. Dynamic INT8 reduced the graph to 305,462,280 bytes but changed 3 of the
+42 fixture verdicts in both directions across the public decision boundary, so
+it remains rejected without retraining and a new operating point. Splitting
+Model 2 does not address cold start: its detector and provider files total about
+2 MB and loaded in roughly 3 ms in the same stage profile; CLIP-L Model 1
+dominates.
 
 ### Pixel forensics
 
