@@ -61,8 +61,9 @@ def visible_provenance(source: str | Path) -> frozenset[str]:
 
     Mapping: a Google/Gemini C2PA issuer -> ``"gemini"``; a ``samsung_genai`` marker ->
     ``"samsung"``; a China-AIGC (TC260) label -> the vendor its ``ContentProducer``
-    names (``KnownMark.tc260_producer_codes``), falling back to ByteDance's two products
-    when the producer is absent or unmapped.
+    names (``KnownMark.tc260_producer_codes``). An absent or unmapped producer confirms
+    no particular product: the TC260 standard identifies neither a manufacturer nor a
+    product.
 
     The TC260 label itself says only "this is AI", so it used to relax Doubao and
     Jimeng on EVERY China-AIGC image -- including one carrying a Qwen or Kling mark,
@@ -87,24 +88,21 @@ def visible_provenance(source: str | Path) -> frozenset[str]:
 def _tc260_vendors(path: Path) -> frozenset[str]:
     """Vendor keys a TC260 label confirms, from its ``ContentProducer`` identity.
 
-    An absent, unreadable or unmapped producer falls back to the historical pair rather
-    than to nothing: the caller has already established that the AIGC signal fired, so
-    the image IS China-AIGC labeled, and dropping to no relaxation would lose the
-    detections the fallback recovers today. The re-read is deliberately isolated -- a
-    failure here must narrow the answer, never discard the rest of the provenance.
+    An absent, unreadable or unmapped producer confirms no particular product. The
+    caller has established only that the AIGC signal fired; a shared standard cannot
+    safely relax one manufacturer's detector. The re-read is deliberately isolated --
+    a failure here must narrow the answer, never discard the rest of the provenance.
     """
     import contextlib
 
-    from remove_ai_watermarks._internal.constants import TC260_FALLBACK_VENDORS
-
     with contextlib.suppress(Exception):
         from remove_ai_watermarks.metadata import aigc_label, uscc_of
-        from remove_ai_watermarks.watermark_registry import tc260_producer_vendors
+        from remove_ai_watermarks.watermark_registry import tc260_producer_mark
 
         producer = (aigc_label(path) or {}).get("ContentProducer", "")
-        if producer and (vendor := tc260_producer_vendors().get(uscc_of(producer))):
-            return frozenset({vendor})
-    return TC260_FALLBACK_VENDORS
+        if producer and (mark := tc260_producer_mark(uscc_of(producer))):
+            return frozenset({mark.key})
+    return frozenset()
 
 
 def _load_visible_input(source: str | Path | NDArray[Any]) -> _VisibleInput:

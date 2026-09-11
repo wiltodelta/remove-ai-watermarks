@@ -779,7 +779,8 @@ old OpenAI C2PA remains an origin signal without becoming a SynthID claim.
 
 - **Kakao** (South Korea): SynthID adopter as of May 2026 (Google announcement)
 - **NVIDIA Cosmos**: SynthID for video (not still images; different pipeline)
-- **Meta AI**: does NOT use SynthID; uses IPTC `digitalSourceType` marker instead
+- **Meta AI**: does NOT use SynthID; Muse uses Content Seal and may retain a shared
+  IPTC `digitalSourceType` companion tag that does not identify Meta by itself
 
 ### 4.4 Version evolution (v1 vs v2 hardening)
 

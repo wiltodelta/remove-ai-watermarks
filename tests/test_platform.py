@@ -263,16 +263,13 @@ class TestResolveStrength:
             assert resolve_strength(None, "meta", "qwen-zimage", size=size) == pytest.approx(QWEN_ZIMAGE_META_STRENGTH)
         assert resolve_strength(None, "meta", "sdxl-zimage") == SDXL_ZIMAGE_UNKNOWN_STRENGTH
 
-    def test_vendor_for_strength_routes_standalone_iptc_to_meta(self, tmp_path):
-        """Auto mode: a file whose only provenance is the AI IPTC tag routes to the
-        meta cohort (Muse carries no C2PA; the tag is its fallback companion), while
-        a file without the tag stays on the resolution curve and a C2PA issuer still
-        wins over the tag."""
+    def test_vendor_for_strength_does_not_treat_shared_iptc_as_meta(self, tmp_path):
+        """A standard AI tag does not identify the Meta strength cohort."""
         from remove_ai_watermarks._internal.watermark_profiles import vendor_for_strength
 
         tagged = tmp_path / "tagged.webp"
         tagged.write_bytes(_MUSE_WEBP_WITH_IPTC_TAG)
-        assert vendor_for_strength(tagged) == "meta"
+        assert vendor_for_strength(tagged) is None
 
         stripped = tmp_path / "stripped.webp"
         stripped.write_bytes(b"RIFF\x24\x00\x00\x00WEBPVP8 \x18\x00\x00\x00" + b"\x00" * 16)

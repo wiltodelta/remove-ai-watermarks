@@ -231,15 +231,3 @@ AI_GENERATOR_TOKENS = frozenset(
 
 _C2PA_ACTION_NAMES = _tokens("created|converted|edited|filtered|cropped|resized|opened|placed|watermarked.unbound")
 C2PA_ACTIONS = {f"c2pa.{action}".encode(): action for action in _C2PA_ACTION_NAMES}
-
-
-# TC260 producer identity -> the mark key whose vendor signs with it now lives on the
-# registry rows (``KnownMark.tc260_producer_codes``, read through
-# ``watermark_registry.tc260_producer_vendors``). Keeping the codes beside the mark is
-# what stops a newly registered TC260 vendor from silently falling back to ByteDance.
-#
-# What a TC260 label confirms when its producer is absent or unmapped. Historical
-# behavior, kept as the fallback so an unrecognized producer never regresses to no
-# relaxation at all: ByteDance's two products are the ones the relaxed band was
-# calibrated on (see _text_mark_engine._DEFAULT_PROVENANCE_NCC_FACTOR).
-TC260_FALLBACK_VENDORS: frozenset[str] = frozenset({"doubao", "jimeng"})

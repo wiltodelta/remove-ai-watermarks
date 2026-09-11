@@ -30,6 +30,7 @@ from remove_ai_watermarks.identify import (
     _attribute_platform,
     _integrity_clashes,
     _issuers_in,
+    _tc260_manufacturer_of,
     _vendor_of,
     evidence_from_metadata_record,
     extract_provenance_evidence,
@@ -731,6 +732,8 @@ class TestIdentifyRealSamples:
         assert r.is_ai_generated is True
         assert r.platform == "Apple Photos (Clean Up AI edit)"
         assert r.ai_source_kind == "enhanced"
+        assert "content_seal" not in [signal.name for signal in r.signals]
+        assert not any("Meta" in watermark for watermark in r.watermarks)
 
     def test_standalone_iptc_composite_synthetic_is_enhanced(self, tmp_path: Path):
         p = tmp_path / "composite.jpg"
@@ -743,15 +746,8 @@ class TestIdentifyRealSamples:
         assert r.is_ai_generated is True
         assert r.ai_source_kind == "enhanced"
 
-    def test_standalone_ai_tag_attributes_the_content_seal(self, tmp_path: Path):
-        """A standalone AI digital-source tag emits the seal as its own signal.
-
-        Muse Image outputs carry no C2PA; this tag is their only provenance, and
-        Muse stamps every output with the invisible Content Seal. The signal is
-        the strength router's Meta bet as evidence - an attribution, not a decode
-        (no public decoder exists), so its confidence is medium and the caveat
-        still points at the oracle.
-        """
+    def test_standalone_ai_tag_does_not_claim_a_vendor_watermark(self, tmp_path: Path):
+        """The shared IPTC standard proves neither Meta nor Content Seal."""
         p = tmp_path / "muse-tag.jpg"
         p.write_bytes(
             b'\xff\xd8\xff\xe1<x:xmpmeta Iptc4xmpExt:DigitalSourceType="trainedAlgorithmicMedia"></x:xmpmeta>\xff\xd9'
@@ -761,38 +757,9 @@ class TestIdentifyRealSamples:
 
         names = [s.name for s in r.signals]
         assert "iptc" in names
-        assert "content_seal" in names
-        seal = next(s for s in r.signals if s.name == "content_seal")
-        assert seal.confidence == "medium"
-        assert "Invisible Content Seal watermark (Meta Muse attribution)" in r.watermarks
-        assert any("meta.ai/identification" in c for c in r.caveats)
-
-    def test_seal_platform_attribution_follows_the_signal(self, tmp_path: Path):
-        """The Likely-source line follows the same bet the seal signal makes.
-
-        Apple keeps its own attribution; every other standalone-tag file gets the
-        hedged Muse attribution instead of "platform not specified", so the panel
-        that prices the Content Seal and the source line agree.
-        """
-        muse = tmp_path / "muse.jpg"
-        muse.write_bytes(
-            b'\xff\xd8\xff\xe1<x:xmpmeta Iptc4xmpExt:DigitalSourceType="trainedAlgorithmicMedia"></x:xmpmeta>\xff\xd9'
-        )
-        apple = tmp_path / "apple.jpg"
-        apple.write_bytes(
-            b'\xff\xd8\xff\xe1<x:xmpmeta Iptc4xmpExt:DigitalSourceType="compositeWithTrainedAlgorithmicMedia" '
-            b'photoshop:Credit="Apple Photos Clean Up"></x:xmpmeta>\xff\xd9'
-        )
-
-        assert identify(muse, check_visible=False, check_invisible=False).platform == (
-            "Meta Muse Image (attributed by the standalone AI digital-source tag)"
-        )
-        assert identify(apple, check_visible=False, check_invisible=False).platform == "Apple Photos (Clean Up AI edit)"
-
-    def test_c2pa_backed_file_gets_no_content_seal_attribution(self):
-        """C2PA issuers win first: a manifest-backed file is not Meta-routed."""
-        r = identify(SAMPLES_DIR / "flux-1.png", check_visible=False, check_invisible=False)
-        assert "content_seal" not in [s.name for s in r.signals]
+        assert "content_seal" not in names
+        assert r.platform is None
+        assert not any("Content Seal" in watermark for watermark in r.watermarks)
 
     def test_flux_bfl_c2pa_png(self):
         # flux-1.png: real Black Forest Labs FLUX.2 Playground output (signed C2PA).
@@ -1541,7 +1508,7 @@ class TestIdentifyInvisibleWatermark:
 
 
 class TestIdentifyAIGC:
-    """China TC260 AIGC label is detected and attributed (e.g. Doubao)."""
+    """China TC260 AIGC labels are detected without guessing the product."""
 
     def _aigc_png(self, tmp_path: Path) -> Path:
         from PIL import Image
@@ -1644,6 +1611,11 @@ class TestVendorOf:
 
 
 class TestIntegrityClashesHelper:
+    def test_tc260_manufacturer_comes_from_the_registered_producer(self):
+        assert _tc260_manufacturer_of("001191440101MA9Y9T4H7A00001") == "Alibaba"
+        assert _tc260_manufacturer_of("0011999999999999999999999") is None
+        assert _tc260_manufacturer_of("") is None
+
     def test_two_ai_vendors_clash(self):
         clashes = _integrity_clashes({"c2pa": "OpenAI", "exif_generator": "Ideogram"}, None, camera_has_ai_marker=True)
         assert len(clashes) == 1
@@ -1665,19 +1637,11 @@ class TestIntegrityClashesHelper:
                 == []
             )
 
-    def test_bytedance_c2pa_plus_own_aigc_no_clash(self):
-        # A legit ByteDance/Doubao image carries BOTH a ByteDance C2PA manifest and its
-        # own China TC260 AIGC label. The label is ByteDance's own regulatory stamp, so
-        # it must be attributed to ByteDance and NOT read as a competing origin.
-        assert (
-            _integrity_clashes({"c2pa": "ByteDance", "aigc": "China AIGC (TC260)"}, None, camera_has_ai_marker=True)
-            == []
-        )
+    def test_matching_tc260_manufacturer_no_clash(self):
+        assert _integrity_clashes({"c2pa": "ByteDance", "aigc": "ByteDance"}, None, camera_has_ai_marker=True) == []
 
-    def test_foreign_vendor_plus_aigc_still_clashes(self):
-        # But a NON-Chinese vendor's C2PA next to a China TC260 label names two different
-        # origins -- a laundering tell that must still fire (the generic label stays generic).
-        clashes = _integrity_clashes({"c2pa": "OpenAI", "aigc": "China AIGC (TC260)"}, None, camera_has_ai_marker=True)
+    def test_different_tc260_manufacturer_clashes(self):
+        clashes = _integrity_clashes({"c2pa": "OpenAI", "aigc": "ByteDance"}, None, camera_has_ai_marker=True)
         assert len(clashes) == 1
         assert "Conflicting AI-origin" in clashes[0]
 
@@ -1754,9 +1718,13 @@ class TestIntegrityClashEndToEnd:
 
     def test_two_generator_stamps_clash(self, tmp_path: Path):
         # An OpenAI C2PA manifest (AI source) on an image that ALSO carries a
-        # China TC260 AIGC label = two independent generator stamps naming
-        # different origins -> a laundering tell.
-        path = self._c2pa_jpeg(tmp_path, b"OpenAI ... trainedAlgorithmicMedia ... TC260:AIGC label")
+        # Qwen TC260 AIGC label = two independent generator stamps naming
+        # different manufacturers -> a laundering tell.
+        path = self._c2pa_jpeg(
+            tmp_path,
+            b"OpenAI ... trainedAlgorithmicMedia ... "
+            b'<TC260:AIGC>{"Label":"1","ContentProducer":"91440101MA9Y9T4H7A"}</TC260:AIGC>',
+        )
         r = identify(path, check_visible=False, check_invisible=False)
         assert r.integrity_clashes
         assert any("Conflicting AI-origin" in c for c in r.integrity_clashes)
@@ -1773,7 +1741,7 @@ class TestIntegrityClashEndToEnd:
         # the provenance is inconsistent (a laundering / spoofing tell).
         path = self._c2pa_jpeg(
             tmp_path,
-            b'Pixel Camera ... <TC260:AIGC>{"Label":"1","ContentProducer":"BYTEDANCE001"}</TC260:AIGC>',
+            b'Pixel Camera ... <TC260:AIGC>{"Label":"1","ContentProducer":"91110102MACQD9K640"}</TC260:AIGC>',
         )
         r = identify(path, check_visible=False, check_invisible=False)
         assert r.platform == "Google Pixel (camera, C2PA capture)"

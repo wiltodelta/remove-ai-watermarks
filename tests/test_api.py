@@ -136,9 +136,9 @@ class TestVisibleProvenance:
         assert "doubao" in prov
         assert "jimeng" not in prov
 
-    def test_unmapped_tc260_producer_falls_back_to_the_bytedance_pair(self, monkeypatch, tmp_path):
-        """An unrecognized producer must not lose the relaxation entirely: the label is
-        still evidence that some China-AIGC vendor made the image."""
+    @pytest.mark.parametrize("producer", ["0011999999999999999999999", ""])
+    def test_tc260_without_a_mapped_producer_does_not_confirm_a_product(self, monkeypatch, tmp_path, producer):
+        """A shared labeling standard cannot identify a product by itself."""
         from types import SimpleNamespace
 
         from remove_ai_watermarks import identify, metadata
@@ -148,8 +148,8 @@ class TestVisibleProvenance:
             "identify",
             lambda *a, **k: SimpleNamespace(platform=None, signals=[SimpleNamespace(name="aigc")]),
         )
-        monkeypatch.setattr(metadata, "aigc_label", lambda _p: {"ContentProducer": "0011999999999999999999999"})
-        assert raiw.visible_provenance(tmp_path / "x.png") == frozenset({"doubao", "jimeng"})
+        monkeypatch.setattr(metadata, "aigc_label", lambda _p: {"ContentProducer": producer})
+        assert raiw.visible_provenance(tmp_path / "x.png") == frozenset()
 
     def test_known_tc260_producer_names_a_single_vendor(self, monkeypatch, tmp_path):
         from types import SimpleNamespace
@@ -165,16 +165,10 @@ class TestVisibleProvenance:
         monkeypatch.setattr(metadata, "aigc_label", lambda _p: {"ContentProducer": "001191440101MA9Y9T4H7A00001"})
         assert raiw.visible_provenance(tmp_path / "x.png") == frozenset({"qwen"})
 
-    def test_every_mapped_producer_names_a_registered_mark(self):
-        """The table drives the arbiter's provenance set, so a typo'd key would relax
-        nothing and fail silently. Checked here, not at import: importing the registry
-        from _internal.constants would drag it into every metadata-only path."""
-        from remove_ai_watermarks._internal.constants import TC260_FALLBACK_VENDORS
-        from remove_ai_watermarks.watermark_registry import known_marks, mark_keys, tc260_producer_vendors
+    def test_every_primary_tc260_mark_declares_a_producer_code(self):
+        """Only companion pills may inherit a primary mark's producer identity."""
+        from remove_ai_watermarks.watermark_registry import known_marks
 
-        keys = set(mark_keys())
-        assert set(tc260_producer_vendors().values()) <= keys
-        assert keys >= TC260_FALLBACK_VENDORS
         # Primary TC260 marks name their producer. Companion pills inherit the primary
         # mark's product-level provenance rather than duplicating an external identity.
         unmapped = {m.key for m in known_marks() if m.label_regime == "tc260" and not m.tc260_producer_codes}
@@ -189,7 +183,7 @@ class TestVisibleProvenance:
         assert raiw.visible_provenance(tmp_path / "missing.png") == frozenset()
 
     def test_uses_report_signals_for_falsy_metadata_values(self, monkeypatch, tmp_path):
-        """An empty TC260 object and Samsung genAIType=0 are still present signals.
+        """An empty TC260 object names no product; Samsung genAIType=0 is present.
 
         The report has already normalized those values, so the public API must not
         re-read the file and accidentally discard them by truthiness.
@@ -204,7 +198,7 @@ class TestVisibleProvenance:
         )
         monkeypatch.setattr(identify, "identify", lambda *args, **kwargs: report)
 
-        assert raiw.visible_provenance(tmp_path / "synthetic.png") == frozenset({"doubao", "jimeng", "samsung"})
+        assert raiw.visible_provenance(tmp_path / "synthetic.png") == frozenset({"samsung"})
 
 
 class TestRemoveVisibleOutputPath:

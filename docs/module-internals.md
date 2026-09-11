@@ -1315,7 +1315,8 @@ A TC260 label relaxes the vendor its `ContentProducer` names, resolved through
 relax ByteDance's two products on every China-AIGC image -- which both risked a
 false fill on an image carrying some other vendor's mark and denied that vendor's
 own mark the relaxed gate its `provenance_ncc_factor` was calibrated for. An
-absent or unmapped producer still falls back to the ByteDance pair.
+absent or unmapped producer confirms no particular product and leaves every detector
+strict.
 
 `remove_auto_marks` removes every selected mark, not only the strongest one.
 This matters for images that carry marks in more than one corner.
@@ -2040,10 +2041,9 @@ so it is left alone.
 Measured 2026-08-26 against the anonymous oracle `meta.ai/identification`
 (verdicts read from the settled page text; corpus and full row-level provenance in
 `data/contentseal/manifest.csv`). The original measurement used the
-default resolution-adaptive curve. Current routing can infer the Meta cohort
-from a retained standalone AI IPTC tag, after checking C2PA vendor evidence
-first. Stripped files need explicit `--vendor meta` to select the measured
-Meta floor; absence of C2PA alone does not prevent automatic attribution.
+default resolution-adaptive curve. The retained standalone AI IPTC tag is a
+shared standard and no longer infers Meta. Files need explicit `--vendor meta`
+to select the measured Meta floor from independently known provenance.
 
 | source (2.56 MP generation) | detected at | clean from |
 |---|---|---|
@@ -2057,13 +2057,9 @@ Full spread: worst first-clean boundary (0.0525, 0.06] on lighthouse, easiest
 source already clean at 0.015. Following the same derivation as the OpenAI and
 Microsoft floors (worst clean boundary plus one full observed cross-source
 spread): 0.06 + (0.0525 - 0.015) = 0.0975, rounded up to **0.1**. Shipped as
-`QWEN_ZIMAGE_META_STRENGTH` with two routing paths: auto mode routes a file
-whose only provenance is the standalone AI IPTC tag onto the cohort
-(`vendor_for_strength` checks C2PA issuers first, so Google/OpenAI/Microsoft
-evidence always wins, and the tag's other users ship no invisible watermark
-this profile targets), and `--vendor meta` / `InvisibleOptions.vendor` names the
-cohort explicitly on stripped files, implying the scrub runs (naming the cohort
-asserts the watermark is present). sdxl-zimage has no measured Meta rung and an
+`QWEN_ZIMAGE_META_STRENGTH`; `--vendor meta` / `InvisibleOptions.vendor` names
+the cohort explicitly, implying the scrub runs (naming the cohort asserts the
+watermark is present). sdxl-zimage has no measured Meta rung and an
 explicit meta vendor there falls to the conservative unknown 0.25. The default
 resolution-adaptive curve (~0.1305 at 2.56 MP) also clears every measured
 source, so default behavior needed no change. Oracle verdicts carry a

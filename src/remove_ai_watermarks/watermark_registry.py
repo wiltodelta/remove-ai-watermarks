@@ -290,8 +290,7 @@ class KnownMark:
     # Social Credit Codes as normalized by ``metadata.uscc_of``, plus the bare product
     # names a few generators write instead. Here rather than in a separate table
     # because a newly registered TC260 mark whose codes were forgotten fails SILENTLY:
-    # it falls back to relaxing ByteDance's pair on an image carrying the new mark,
-    # the exact false positive the producer code exists to prevent.
+    # its own detector remains strict even on an image carrying that producer's label.
     tc260_producer_codes: tuple[str, ...] = ()
     # Optional single-pass dual verdict for the arbiter's perception stage (see
     # `detect_both`). None = fall back to two `_detect` calls.
@@ -886,16 +885,9 @@ def resolve_trust(
     return "confirmed" if confirmed else "strict"
 
 
-def tc260_producer_vendors() -> dict[str, str]:
-    """TC260 ``ContentProducer`` identity -> the mark key whose vendor signs with it.
-
-    Derived from the registry rows, so registering a TC260 mark and its producer codes
-    is one edit. A mark registered without codes falls through to
-    :data:`TC260_FALLBACK_VENDORS`, which relaxes ByteDance's pair -- a silent wrong
-    answer on an image carrying the new mark, which is why the codes belong on the row
-    next to ``label_regime`` rather than in a table someone must remember to update.
-    """
-    return {code: mark.key for mark in _REGISTRY for code in mark.tc260_producer_codes}
+def tc260_producer_mark(code: str) -> KnownMark | None:
+    """Return the registry row for one TC260 ``ContentProducer`` identity."""
+    return next((mark for mark in _REGISTRY if code in mark.tc260_producer_codes), None)
 
 
 def _pill_suppressors() -> set[str]:

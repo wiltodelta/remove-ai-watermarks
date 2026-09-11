@@ -465,10 +465,10 @@ remove-ai-watermarks invisible image.png -o clean.png --force
 ### Choose a strength cohort
 
 `--vendor` selects the cohort the default strength resolves from. `auto`
-(the default) derives it from provenance: the C2PA issuer for
-OpenAI/Google/Microsoft, and the standalone AI IPTC tag for Meta Content Seal
-(Muse output carries no C2PA; the tag is a standard code, so C2PA evidence
-always wins first). An explicit value both names the cohort for stripped files
+(the default) derives it from product-specific C2PA provenance for
+OpenAI/Google/Microsoft. The standalone AI IPTC tag is a shared standard and
+does not select Meta; use `--vendor meta` only when the source is independently
+known. An explicit value both names the cohort for stripped files
 and implies the scrub runs -- naming the cohort asserts the pixel watermark is
 present -- exactly like `--force` plus a measured floor:
 
@@ -486,7 +486,7 @@ The same option exists on `all` and `batch`, and as
 | `qwen-zimage` | Default. Qwen-Image-2512 global pass plus a SAM-masked Z-Image face stage |
 | `sdxl-zimage` | The same recipe and face stage on an SDXL global pass, at a higher denoise |
 | `chroma-zimage` | The same face stage on an Apache-2.0 Chroma1 global pass; explicit OpenAI use needs a higher floor than qwen-zimage |
-| `auto` | Pick the engine from provenance: chroma-zimage for Microsoft, qwen-zimage for OpenAI, Google, Meta, and unknown |
+| `auto` | Pick the engine from provenance: chroma-zimage for Microsoft, qwen-zimage for OpenAI, Google, unknown, and an explicitly selected Meta cohort |
 
 **All four are CUDA-only.** There is no CPU or MPS profile for invisible-watermark
 removal. The former `controlnet`, `sdxl`, `qwen` and `default` profiles were removed

@@ -694,6 +694,10 @@ class TestMarkKnowledgeIsOnTheRow:
         assert manufacturers["kling"] == "kuaishou"
         assert manufacturers["yuanbao"] == "tencent"
 
+    def test_tc260_producer_lookup_returns_the_registry_row(self):
+        assert reg.tc260_producer_mark("91440101MA9Y9T4H7A") is reg.get_mark("qwen")
+        assert reg.tc260_producer_mark("unknown") is None
+
     def test_platform_token_marks_are_the_c2pa_attributed_ones(self):
         # Gemini (Google C2PA) and Microsoft (issuer "Microsoft") are the marks whose
         # vendor a C2PA platform string can confirm; every other mark reaches its

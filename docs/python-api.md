@@ -247,6 +247,10 @@ import remove_ai_watermarks as raiw
 vendors = raiw.visible_provenance("input.png")
 ```
 
+A known TC260 `ContentProducer` maps to one registered product. A missing or
+unmapped producer, and the shared standalone IPTC AI tag, return no vendor key;
+neither standard identifies a manufacturer by itself.
+
 Get the full provenance report:
 
 ```python

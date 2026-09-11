@@ -232,9 +232,8 @@ Output:
 - `classify` answers from pixels with no provenance behind it, so its `ai` is a
   guess and its `unknown` is an abstention. Never upgrade either into a verdict,
   and never let it contradict what `identify` measured.
-- A Meta AI (Muse Image) export can retain standalone IPTC metadata that enables
-  heuristic attribution and automatic routing. The IPTC code is not unique to Meta
-  and does not detect Content Seal in pixels. If metadata was stripped, use
+- A Meta AI (Muse Image) export can retain standalone IPTC metadata, but the shared
+  code does not identify Meta or detect Content Seal in pixels. Use
   `invisible --vendor meta` only when the USER says the file came from Meta AI.
   Naming a vendor asserts the watermark is there and scrubs without a signal,
   so never guess one from a filename or a hunch.

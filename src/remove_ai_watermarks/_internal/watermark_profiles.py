@@ -113,10 +113,9 @@ QWEN_ZIMAGE_OPENAI_STRENGTH = 0.07675
 # measured corpus margin, not a universal InvisMark threshold.
 QWEN_ZIMAGE_MICROSOFT_STRENGTH = 0.15
 
-# Meta Muse Image's retained standalone IPTC AI tag selects this floor through
-# vendor_for_strength. That shared standard tag is a routing heuristic, not a
-# vendor-unique signature or a Content Seal pixel detection. Stripped outputs
-# need an explicit --vendor meta override when their origin is known.
+# Meta Muse Image's retained standalone IPTC AI tag is not a vendor-unique
+# signature or a Content Seal pixel detection, so this floor requires an explicit
+# --vendor meta override when the origin is independently known.
 # Derivation (oracle meta.ai/identification, 2026-08-26/27, corpus in
 # data/contentseal/): five independent 2.56 MP generations bracketed at
 # lighthouse (0.0525, 0.06], fox (0.03, 0.0375], night_city (0.03, 0.0375],
@@ -310,15 +309,9 @@ def resolve_strength(
 def vendor_for_strength(image_path: Path) -> Literal["openai", "google", "microsoft", "meta"] | None:
     """Select the strength cohort from non-invalid pixel-watermark provenance.
 
-    OpenAI / Google / Microsoft come from their C2PA issuers. Meta is the
-    fallback cohort: Muse Image carries no C2PA at all, and its only readable
-    companion is the IPTC ``trainedAlgorithmicMedia`` XMP tag -- a standard code
-    other platforms also use. Attributing that tag to Meta is a measured bet,
-    not an identification: the other tag users in this project's model (ByteDance
-    products, X) ship no invisible pixel watermark this profile targets, so the
-    worst misroute spends the Meta floor (0.1) where the resolution curve would
-    have spent a similar amount, and Google/OpenAI files never reach this arm
-    because their C2PA matched first."""
+    OpenAI / Google / Microsoft come from product-specific C2PA evidence. Meta has no
+    automatic route because its companion IPTC ``trainedAlgorithmicMedia`` value is a
+    shared standard, not manufacturer evidence; callers can select it explicitly."""
     try:
         from remove_ai_watermarks._internal.c2pa import (
             c2pa_info_has_invalid_credential,
@@ -337,25 +330,4 @@ def vendor_for_strength(image_path: Path) -> Literal["openai", "google", "micros
         return "openai"
     if not c2pa_info_has_invalid_credential(info) and c2pa_info_has_invismark(info):
         return "microsoft"
-    if _standalone_iptc_ai_tag(image_path):
-        return "meta"
     return None
-
-
-def _standalone_iptc_ai_tag(image_path: Path) -> bool:
-    """True when the file carries an AI IPTC marker with no C2PA around it.
-
-    Mirrors identify's ``standalone_iptc`` condition (the tag is only
-    trustworthy as platform evidence when no manifest supersedes it) without
-    importing the heavy identify module: the shared chunk-aware
-    :func:`metadata.scan_head` window -- Muse WebP outputs place their XMP
-    packet in a tail chunk up to hundreds of KB past a plain head read, which
-    is exactly what scan_head's extensions exist to catch.
-    """
-    try:
-        from remove_ai_watermarks.metadata import IPTC_AI_MARKERS, c2pa_marker_in, scan_head
-
-        scan = scan_head(image_path)
-    except Exception:
-        return False
-    return any(marker in scan for marker in IPTC_AI_MARKERS) and not c2pa_marker_in(scan)

@@ -197,12 +197,7 @@ This project has no local Content Seal decoder. Meta Model API outputs and
 Meta CDN copies carry an XMP `iptcExt:DigitalSourceType =
 trainedAlgorithmicMedia` companion tag, which `identify` reports through the
 existing Made-with-AI path; that IPTC code is a standard, not a Meta-exclusive
-signal, so it cannot key a strength cohort the way the C2PA issuer does. Since
-0.33.0 a standalone AI digital-source tag (no C2PA manifest) additionally emits
-the additive `content_seal` signal - the strength router's Meta bet as evidence,
-medium confidence, with the same caveat - so clients select pixel removal from
-the signal list exactly the way InvisMark is additive over `soft_binding`. It
-is an attribution, never a decode. The
+signal, so it neither asserts Content Seal nor selects a strength cohort. The
 external oracle is `https://meta.ai/identification`: anonymous, no login,
 accepts image, video, and audio, enforces an unspecified daily identification
 limit, and answers with model attribution (`Muse Image 1 - Meta`) plus a
@@ -215,12 +210,9 @@ resolution-adaptive strength (oracle-verified on 2.56 MP generations); measured
 strength boundaries are recorded in `data/contentseal/manifest.csv` and
 [module internals](module-internals.md#meta-content-seal-boundaries-for-qwen-zimage).
 The derived Meta floor (0.1 by the standard spread method) ships as a measured
-cohort: auto mode routes a file whose only provenance is the standalone AI IPTC
-tag to it (the tag is not Meta-exclusive; other tag users ship no invisible
-watermark this profile targets, and Google/OpenAI/Microsoft C2PA evidence
-always wins first), and `invisible --vendor meta` (also `all` and `batch`, and
-`InvisibleOptions.vendor` in the API) names the cohort explicitly on stripped
-files. An explicit vendor implies the scrub runs: naming the cohort asserts the
+cohort. `invisible --vendor meta` (also `all` and `batch`, and
+`InvisibleOptions.vendor` in the API) selects it when the source is independently
+known. An explicit vendor implies the scrub runs: naming the cohort asserts the
 pixel watermark is present.
 The seal survives resizing, JPEG recompression, and metadata stripping; it dies
 to center crops of a third to a half, matching the Reuters 2026-07-11 finding

@@ -136,11 +136,6 @@ _C2PA_INVALID_CAVEAT = (
     "are retained only as removal hints, not as verified provenance."
 )
 _IPTC_ONLY_CAVEAT = "The IPTC 'Made with AI' tag flags AI provenance but does not identify the specific platform."
-_CONTENT_SEAL_CAVEAT = (
-    "Meta Muse Image outputs carry the invisible Content Seal pixel watermark, which has no "
-    "local decoder; `invisible` removes it (auto when this tag is present, or `--vendor meta` "
-    "on stripped files) and meta.ai/identification verifies it."
-)
 _INVISIBLE_WM_CAVEAT = (
     "The open invisible watermark is fragile: it does not survive JPEG re-encoding "
     "or resizing, so it confirms origin only on a pristine (un-re-encoded) file."
@@ -822,6 +817,16 @@ _AI_VENDOR_TOKENS: tuple[tuple[str, str], ...] = (
     ("dreamina", "ByteDance"),
     ("volcengine", "ByteDance"),
     ("volcano engine", "ByteDance"),
+    ("qwen", "Alibaba"),
+    ("alibaba", "Alibaba"),
+    ("kling", "Kuaishou"),
+    ("kuaishou", "Kuaishou"),
+    ("yuanbao", "Tencent"),
+    ("tencent", "Tencent"),
+    ("runninghub", "RunningHub"),
+    ("baidu", "Baidu"),
+    ("ernie", "Baidu"),
+    ("liblib", "LiblibAI"),
     ("canva", "Canva"),
     ("elevenlabs", "ElevenLabs"),
     ("eleven labs", "ElevenLabs"),
@@ -860,16 +865,16 @@ def _vendor_of(text: str | None) -> str | None:
 _C2PA_MANIFEST_SOURCE = "c2pa_manifest"
 _CLASH_SOURCE: dict[str, str] = {"c2pa": _C2PA_MANIFEST_SOURCE, "synthid": _C2PA_MANIFEST_SOURCE}
 
-# The generic China TC260 AIGC vendor label -- a COUNTRY-LEVEL regulatory "this is AI"
-# stamp any Chinese generator applies to its own output, naming no specific vendor.
-_GENERIC_AIGC_VENDOR = "China AIGC (TC260)"
-# Vendors that apply the TC260 label to their OWN output. When one is co-attributed with
-# the generic AIGC label, the label is that vendor's own stamp (not an independent
-# competing origin), so the clash check attributes the AIGC label to it -- else a legit
-# ByteDance/Doubao image (C2PA "ByteDance" + its own TC260 label) would false-clash once
-# ByteDance normalizes via _vendor_of. Chinese generators only (Canva/BFL/ElevenLabs,
-# also added to _vendor_of, are NOT TC260 appliers).
-_TC260_VENDORS: frozenset[str] = frozenset({"ByteDance"})
+
+def _tc260_manufacturer_of(producer: str) -> str | None:
+    """Resolve a TC260 producer to a normalized manufacturer, if registered."""
+    if not producer:
+        return None
+    from remove_ai_watermarks.metadata import uscc_of
+    from remove_ai_watermarks.watermark_registry import tc260_producer_mark
+
+    mark = tc260_producer_mark(uscc_of(producer))
+    return _vendor_of(mark.manufacturer if mark else None)
 
 
 def _integrity_clashes(
@@ -895,18 +900,6 @@ def _integrity_clashes(
     # families clash only when they belong to different provenance sources (see
     # _CLASH_SOURCE) AND name different vendors -- so multiple vendors named within
     # one C2PA manifest (C2PA issuer + SynthID provenance) do not flag.
-    # The generic TC260 AIGC label is a Chinese regulatory "this is AI" stamp. When a
-    # Chinese TC260-applying vendor (ByteDance) is ALSO attributed, the label is that
-    # vendor's own stamp on its own output, so attribute it to that vendor -- a legit
-    # Doubao image carries BOTH a ByteDance C2PA manifest and its own TC260 label and
-    # must not clash. Against a NON-TC260 vendor (OpenAI, Google, ...) the label stays
-    # generic and still clashes as a laundering tell (a foreign-vendor image carrying a
-    # Chinese TC260 label names two different origins).
-    if ai_vendors.get("aigc") == _GENERIC_AIGC_VENDOR:
-        own = next((v for f, v in ai_vendors.items() if f != "aigc" and v in _TC260_VENDORS), None)
-        if own:
-            ai_vendors = {**ai_vendors, "aigc": own}  # copy co-located with the relabel
-
     source = {fam: _CLASH_SOURCE.get(fam, fam) for fam in ai_vendors}
     independent_conflict = any(
         source[a] != source[b] and ai_vendors[a] != ai_vendors[b] for a, b in itertools.combinations(ai_vendors, 2)
@@ -1376,38 +1369,12 @@ def _identify_from_evidence(
     if standalone_iptc:
         signals.append(Signal("iptc", "digitalSourceType (Made with AI)", "high"))
         watermarks.append("IPTC digitalSourceType (Made with AI)")
-        # Muse Image stamps every output with the invisible Content Seal, and this
-        # tag is the only provenance such a file carries - the same measured bet
-        # the strength router makes (vendor_for_strength -> "meta"). Emit the seal
-        # as its own stable signal, the way InvisMark is additive over
-        # soft_binding, so clients select pixel removal from the signal list
-        # instead of parsing caveats. It is an attribution, not a decode: no
-        # public Content Seal decoder exists, hence "medium".
-        signals.append(
-            Signal(
-                "content_seal",
-                "Meta Muse Content Seal pixel watermark (attributed by the standalone AI digital-source tag)",
-                "medium",
-            )
-        )
-        watermarks.append("Invisible Content Seal watermark (Meta Muse attribution)")
         caveats.append(_IPTC_ONLY_CAVEAT)
-        caveats.append(_CONTENT_SEAL_CAVEAT)
-        if platform is None:
-            # Apple Photos Clean Up (Apple Intelligence object removal) marks
-            # the edit with photoshop:Credit / IPTC "Apple Photos Clean Up"
-            # next to compositeWithTrainedAlgorithmicMedia. It was detected but
-            # previously never attributed.
-            if b"Apple Photos Clean Up" in head:
-                platform = "Apple Photos (Clean Up AI edit)"
-            else:
-                # The platform line follows the same measured bet the seal signal
-                # and the strength router make: Muse Image is the tag writer whose
-                # outputs this profile targets, so a hedged Muse attribution is
-                # more useful than "platform not specified" while the panel below
-                # already prices the Content Seal removal. The hedge stays in the
-                # wording - it names the attribution basis, not a detection.
-                platform = "Meta Muse Image (attributed by the standalone AI digital-source tag)"
+        # Apple Photos Clean Up carries an explicit product credit beside the shared
+        # IPTC value. Without such product-specific evidence the standard names no
+        # platform and must not imply a vendor watermark.
+        if platform is None and b"Apple Photos Clean Up" in head:
+            platform = "Apple Photos (Clean Up AI edit)"
 
     # ── IPTC 2025.1 AI-disclosure fields (Iptc4xmpExt:AISystemUsed etc.) ─
     iptc_ai = any(m in head for m in IPTC_AI_FIELD_MARKERS)
@@ -1435,8 +1402,9 @@ def _identify_from_evidence(
         signals.append(Signal("aigc", f"TC260 AIGC label{f' (producer {producer})' if producer else ''}", "high"))
         watermarks.append("China AIGC label (TC260 standard)")
         if platform is None:
-            platform = "China AIGC-labeled generator (TC260; e.g. Doubao)"
-        ai_vendor_claims["aigc"] = _GENERIC_AIGC_VENDOR
+            platform = "China AIGC-labeled content (TC260 standard)"
+        if manufacturer := _tc260_manufacturer_of(producer):
+            ai_vendor_claims["aigc"] = manufacturer
 
     # ── Local diffusion parameters (Stable Diffusion / ComfyUI) ──────
     local_keys = sorted(k for k in meta if k.lower() in _LOCAL_GEN_KEYS)
