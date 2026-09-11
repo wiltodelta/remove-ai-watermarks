@@ -9,7 +9,7 @@ explicitly names a tracked canonical result.
 
 | Script | Purpose |
 | --- | --- |
-| `corpus_gap_scan.py` | Compare a local image corpus with the library's `identify` results. |
+| `corpus_gap_scan.py` | Inventory `identify`, metadata markers, unattributed outcomes, errors, and gap candidates over a full or date-bounded corpus. |
 | `detection_timing.py` | Record per-method metadata and verdict timings. |
 | `detection_timing_report.py` | Aggregate timing records by method and segment. |
 | `fidelity_metrics.py` | Compute objective image-fidelity metrics for paired outputs. |

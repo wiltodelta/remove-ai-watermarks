@@ -3,7 +3,8 @@
 Two jobs in one pass:
 
 1. **Report** -- run ``identify`` over every image and write one CSV row per file
-   (verdict, platform, confidence, watermarks, signals, integrity clashes).
+   (verdict, platform, confidence, watermarks, signals, raw metadata markers,
+   candidate classes, integrity clashes, and errors).
 2. **Gap audit** -- for every ``unknown``-verdict file, scan only its *metadata
    region* (PNG text/eXIf chunks, JPEG APPn segments before SOS, or the file
    head for other containers) for known provenance markers. A marker found there
@@ -20,6 +21,8 @@ Usage:
     uv run python scripts/corpus_gap_scan.py --corpus .local-eval/originals
     uv run python scripts/corpus_gap_scan.py --corpus .local-eval/originals \\
         --report .local-eval/detector-report.csv
+    uv run python scripts/corpus_gap_scan.py --corpus .local-eval/originals \\
+        --since 2026-09-01 --report .local-eval/detector-report-weekly.csv
 """
 
 from __future__ import annotations
@@ -27,13 +30,17 @@ from __future__ import annotations
 import csv
 import logging
 from collections import Counter
+from datetime import date
+from importlib.metadata import version
 from pathlib import Path
+from typing import Any
 
 import click
 from _plain_console import Console, Table
 
+from remove_ai_watermarks.identify import _metadata_region as identify_metadata_region
 from remove_ai_watermarks.identify import identify
-from remove_ai_watermarks.metadata import _png_late_metadata
+from remove_ai_watermarks.metadata import scan_head
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -80,35 +87,31 @@ MARKERS: tuple[bytes, ...] = (
     b"Samsung Galaxy",
 )
 
-
-def _metadata_region(path: Path) -> bytes:
-    """Return only the bytes where provenance metadata can live, never the
-    compressed pixel stream (which produces random short-token collisions)."""
-    try:
-        head = path.read_bytes()
-    except OSError:
-        return b""
-    if head[:8] == b"\x89PNG\r\n\x1a\n":
-        # All ancillary metadata chunks (window=0), via the library's own walker.
-        return _png_late_metadata(path, 0)
-    if head[:2] == b"\xff\xd8":  # JPEG: APPn segments up to Start-Of-Scan
-        out = bytearray()
-        p = 2
-        n = len(head)
-        while p + 4 <= n and head[p] == 0xFF:
-            marker = head[p + 1]
-            if marker == 0xDA:  # SOS -> compressed scan data follows
-                break
-            seg_len = (head[p + 2] << 8) | head[p + 3]
-            out += head[p + 4 : p + 2 + seg_len]
-            p += 2 + seg_len
-        return bytes(out)
-    return head[:65536]  # webp/avif/heif/jxl: metadata sits near the head
+REPORT_FIELDS: tuple[str, ...] = (
+    "path",
+    "suffix",
+    "lib_version",
+    "is_ai",
+    "platform",
+    "confidence",
+    "watermarks",
+    "signals",
+    "integrity_clashes",
+    "markers",
+    "candidate_classes",
+    "error",
+)
 
 
-def _row(rep) -> dict[str, str]:  # noqa: ANN001 (ProvenanceReport)
+def _base_row(path: str, suffix: str, lib_version: str) -> dict[str, str]:
+    row = dict.fromkeys(REPORT_FIELDS, "")
+    row.update(path=path, suffix=suffix, lib_version=lib_version)
+    return row
+
+
+def _row(rep, *, path: str, suffix: str, lib_version: str) -> dict[str, str]:  # noqa: ANN001
     return {
-        "path": "",  # filled by caller (relative)
+        **_base_row(path, suffix, lib_version),
         "is_ai": str(rep.is_ai_generated),
         "platform": rep.platform or "",
         "confidence": rep.confidence,
@@ -116,6 +119,55 @@ def _row(rep) -> dict[str, str]:  # noqa: ANN001 (ProvenanceReport)
         "signals": "|".join(s.name for s in rep.signals),
         "integrity_clashes": "|".join(rep.integrity_clashes),
     }
+
+
+def _marker_hits(region: bytes) -> list[str]:
+    """Return marker labels found case-insensitively in one metadata region."""
+    folded = region.lower()
+    return sorted({marker.decode("latin-1", "replace") for marker in MARKERS if marker.lower() in folded})
+
+
+def _marker_hits_for_path(path: Path) -> list[str]:
+    """Return bounded metadata hits without turning an unreadable row into a fatal scan."""
+    try:
+        return _marker_hits(identify_metadata_region(scan_head(path)))
+    except OSError:
+        return []
+
+
+def _candidate_classes(rep: Any, hits: list[str]) -> list[str]:
+    """Classify review-worthy outcomes without treating them as proven bugs."""
+    classes: list[str] = []
+    if hits and not rep.is_ai_generated and not rep.signals:
+        classes.append("blind_marker")
+    if rep.is_ai_generated and not rep.platform:
+        classes.append("unattributed_ai")
+    elif rep.signals and not rep.platform:
+        classes.append("unattributed_signal")
+    if rep.integrity_clashes:
+        classes.append("integrity_clash")
+    return classes
+
+
+def _day_of(path: Path, corpus: Path) -> date | None:
+    """Read the leading YYYY-MM-DD corpus segment, if this layout has one."""
+    try:
+        segment = path.relative_to(corpus).parts[0]
+        return date.fromisoformat(segment)
+    except (ValueError, IndexError):
+        return None
+
+
+def _files(corpus: Path, since: date | None) -> list[Path]:
+    """Return the deterministic corpus walk, optionally bounded by its date segment."""
+    if since is None:
+        return sorted(path for path in corpus.rglob("*") if path.is_file())
+    roots = [
+        path
+        for path in corpus.iterdir()
+        if path.is_dir() and (day := _day_of(path, corpus)) is not None and day >= since
+    ]
+    return sorted(path for root in roots for path in root.rglob("*") if path.is_file())
 
 
 @click.command()
@@ -132,82 +184,93 @@ def _row(rep) -> dict[str, str]:  # noqa: ANN001 (ProvenanceReport)
     default=None,
     help="Write the per-file CSV here (default: <corpus>/../detector_report.csv).",
 )
+@click.option(
+    "--since",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Only scan files under YYYY-MM-DD corpus directories on or after this date.",
+)
 @click.option("--limit", type=int, default=0, help="Scan at most N files (0 = all).")
-def main(corpus: Path, report: Path | None, limit: int) -> None:
+def main(corpus: Path, report: Path | None, since, limit: int) -> None:  # noqa: ANN001
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
     report = report or corpus.parent / "detector_report.csv"
 
-    files = sorted(p for p in corpus.rglob("*") if p.is_file())
+    since_date = since.date() if since is not None else None
+    files = _files(corpus, since_date)
     if limit:
         files = files[:limit]
     console.print(f"Scanning [bold]{len(files)}[/bold] files under {corpus} ...")
 
     verdicts: Counter[str] = Counter()
     platforms: Counter[str] = Counter()
-    gap_tokens: Counter[str] = Counter()
-    gaps: list[tuple[str, list[str]]] = []
+    shapes: Counter[str] = Counter()
     rows: list[dict[str, str]] = []
     errors = 0
+    lib_version = version("remove-ai-watermarks")
 
     with click.progressbar(files, label="identify") as bar:
         for p in bar:
             rel = str(p.relative_to(corpus))
+            shapes[p.suffix.lower() or "(none)"] += 1
             try:
                 rep = identify(p)
             except Exception as exc:
                 log.warning("identify failed on %s: %s", rel, exc)
                 errors += 1
+                row = _base_row(rel, p.suffix.lower(), lib_version)
+                row["candidate_classes"] = "identify_error"
+                row["error"] = f"{type(exc).__name__}: {exc}"[:300]
+                hits = _marker_hits_for_path(p)
+                row["markers"] = "|".join(hits)
+                rows.append(row)
                 continue
-            row = _row(rep)
-            row["path"] = rel
+            row = _row(rep, path=rel, suffix=p.suffix.lower(), lib_version=lib_version)
+            # identify() has already populated scan_head's bounded cache, so this
+            # reuses the exact metadata region rather than reading the file again.
+            hits = _marker_hits_for_path(p)
+            classes = _candidate_classes(rep, hits)
+            row["markers"] = "|".join(hits)
+            row["candidate_classes"] = "|".join(classes)
             rows.append(row)
             if rep.is_ai_generated:
                 verdicts["ai"] += 1
                 platforms[rep.platform or "?"] += 1
                 continue
             verdicts["unknown"] += 1
-            # A gap candidate is a file identify is *blind* to (no signal at all)
-            # yet whose metadata carries a known marker. A file that produced a
-            # signal but no AI verdict (e.g. an ASUS Gallery C2PA signer, which we
-            # attribute but do not call AI) is handled correctly -- not a gap.
-            if rep.signals:
-                continue
-            region = _metadata_region(p)
-            hits = sorted({m.decode("latin-1", "replace") for m in MARKERS if m in region})
-            if hits:
-                gaps.append((rel, hits))
-                gap_tokens.update(hits)
 
+    report.parent.mkdir(parents=True, exist_ok=True)
     with report.open("w", newline="") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=["path", "is_ai", "platform", "confidence", "watermarks", "signals", "integrity_clashes"],
-        )
+        writer = csv.DictWriter(f, fieldnames=REPORT_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
     console.print(f"\nWrote [bold]{len(rows)}[/bold] rows -> {report}")
 
     console.print(f"\n[bold]Verdicts:[/bold] AI {verdicts['ai']} | unknown {verdicts['unknown']} | errors {errors}")
+    console.print("[bold]Input shapes:[/bold] " + " | ".join(f"{name} {n}" for name, n in shapes.most_common()))
     plat = Table(title="AI platforms", show_header=False)
     for name, n in platforms.most_common():
         plat.add_row(str(n), name)
     console.print(plat)
 
-    if gaps:
+    candidates = [row for row in rows if row["candidate_classes"]]
+    if candidates:
+        candidate_counts = Counter(candidate for row in candidates for candidate in row["candidate_classes"].split("|"))
+        gap_tokens = Counter(marker for row in rows for marker in row["markers"].split("|") if marker)
         console.print(
-            f"\n[bold red]Gap candidates[/bold red]: {len(gaps)} unknown files carry a known "
-            f"marker in their metadata region (potential undetected serialization/generator):"
+            f"\n[bold red]Review candidates[/bold red]: {len(candidates)} file(s) "
+            f"({', '.join(f'{name}={n}' for name, n in candidate_counts.most_common())})"
         )
-        tok = Table(title="markers seen in unknown files")
+        tok = Table(title="metadata markers seen across the run")
         tok.add_column("count", justify="right")
         tok.add_column("marker")
         for name, n in gap_tokens.most_common():
             tok.add_row(str(n), name)
         console.print(tok)
-        for rel, hits in gaps:
-            console.print(f"  {rel}  ->  {', '.join(hits)}")
+        for row in candidates:
+            detail = f"; markers={row['markers'].replace('|', ', ')}" if row["markers"] else ""
+            console.print(f"  {row['path']}  ->  {row['candidate_classes'].replace('|', ', ')}{detail}")
     else:
-        console.print("\n[green]No gap candidates: every unknown file is metadata-free.[/green]")
+        console.print("\n[green]No review candidates in this run.[/green]")
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ OUT = REPO / ".local-eval" / "sidecar-regression.jsonl"
 
 # Map a watermark description to a stable behavior family. Order matters: the first
 # matching pattern wins, so put the specific tokens above the generic ones.
-_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+_LEGACY_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synthid", ("synthid",)),
     ("visible_sparkle", ("sparkle",)),
     ("visible_doubao", ("豆包", "doubao")),
@@ -71,27 +71,61 @@ _FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("trustmark", ("trustmark",)),
     ("open_invisible", ("open invisible", "dwt", "stable diffusion xl")),
     ("xai_signature", ("xai", "grok signature")),
+    ("samsung_genai", ("genaitype", "photoeditor_re_edit")),
+    ("soft_binding", ("soft binding", "soft-binding", "invismark")),
+    ("c2pa_cloud", ("cloud manifest",)),
+    ("hf_job", ("hf-job", "hugging face job")),
     ("exif_generator", ("exif", "software tag", "png text")),
 )
 
 
+def _registered_visible_family(description: str) -> str | None:
+    """Map current mark labels from the registry instead of copying its keys here."""
+    from remove_ai_watermarks.watermark_registry import known_marks
+
+    low = description.lower()
+    matches = [
+        (mark.label.lower() in low, len(mark.label), mark)
+        for mark in known_marks()
+        if mark.key != "gemini" and (mark.label.lower() in low or mark.key.replace("_", " ") in low)
+    ]
+    if not matches:
+        return None
+    _, _, mark = max(matches, key=lambda candidate: candidate[:2])
+    return f"visible_{mark.key}"
+
+
 def family_of(description: str) -> str:
     low = description.lower()
-    for name, tokens in _FAMILIES:
+    if family := _registered_visible_family(description):
+        return family
+    for name, tokens in _LEGACY_FAMILIES:
         if any(t in low for t in tokens):
             return name
     return "other"
 
 
 def families(descriptions: list[str]) -> set[str]:
-    return {family_of(d) for d in descriptions or []}
+    return {family for description in descriptions or [] if (family := family_of(description)) != "other"}
+
+
+def sidecar_families(sidecar: dict) -> set[str]:
+    """Combine stable names with legacy-only families such as SynthID."""
+    signals = sidecar.get("signals") or []
+    return {str(signal) for signal in signals} | families(sidecar.get("watermarks") or [])
+
+
+def report_families(report: object) -> set[str]:
+    """Combine current Signal.name values with watermark-only families."""
+    signal_names = {str(signal.name) for signal in getattr(report, "signals", []) or []}
+    return signal_names | families(list(getattr(report, "watermarks", []) or []))
 
 
 def compare(sidecar: dict, report: object) -> dict:
     """Classify the difference between a recorded verdict and a fresh one."""
     old_ai, new_ai = sidecar.get("is_ai_generated"), getattr(report, "is_ai_generated", None)
-    old_fam = families(sidecar.get("watermarks") or [])
-    new_fam = families(list(getattr(report, "watermarks", []) or []))
+    old_fam = sidecar_families(sidecar)
+    new_fam = report_families(report)
     old_plat, new_plat = sidecar.get("platform"), getattr(report, "platform", None)
     old_conf, new_conf = sidecar.get("confidence"), getattr(report, "confidence", None)
 

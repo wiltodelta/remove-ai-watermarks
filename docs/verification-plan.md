@@ -490,6 +490,32 @@ bridge or reset its start PTS must fail this gate.
 A separate constant-rate clip with the same non-zero start guards the
 start-offset routing without relying on the VFR branch.
 
+## Signal discovery cadence
+
+The project skill [signal-discovery](../.claude/skills/signal-discovery/SKILL.md)
+orchestrates the corpus audits in this plan. `scripts/corpus_gap_scan.py` is only
+the metadata-serialization probe inside that workflow. It now records raw
+markers, input shapes, identify errors, integrity clashes, unattributed results,
+and blind-marker candidates, but it does not cover visible marks, proprietary
+invisible marks, detection/removal parity, or historical crossfire.
+
+Run a fresh-delta discovery review weekly after the retained corpus is
+refreshed, using `corpus_gap_scan.py --since` with an overlap from the preceding
+run. Replay the complete historical corpus before releases that change a
+detection, metadata, container, registry, invisible-routing, or removal seam,
+after every detector registration or recalibration, and monthly as a backstop.
+The historical pass is required because newer code can expose an old
+serialization and a new detector can crossfire on an old neighbouring cohort.
+A stratified sidecar sample is a useful preflight but does not replace a
+triggered full replay.
+
+Removal-parity sweeps are change-triggered rather than weekly: run the matching
+metadata, visible, video, or invisible audit whenever either its detector or
+cleaner moves. External provider oracles are claim-triggered, never
+calendar-triggered. Keep private inputs and reports untracked, and implement an
+actionable detector or cleaner gap in this library rather than in a downstream
+consumer.
+
 ## Standing gap
 
 None of this is in `maintain.sh`, and it should not all be -- the sweeps take hours. But
