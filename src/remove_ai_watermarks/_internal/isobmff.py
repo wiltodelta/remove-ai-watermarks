@@ -43,6 +43,7 @@ from remove_ai_watermarks.metadata import (
     C2PA_UUID,
     IPTC_AI_FIELD_MARKERS,
     IPTC_AI_MARKERS,
+    LOCAL_GENERATION_METADATA_KEYS,
     MAX_TC260_VALUE_BYTES,
     parse_tc260_aigc_json,
 )
@@ -152,12 +153,12 @@ def iter_file_boxes(
         pos = box_end
 
 
-def _tc260_key_indices(
+def _metadata_key_indices(
     stream: BinaryIO,
     payload_off: int,
     box_end: int,
-) -> dict[int, tuple[int, int]]:
-    """Map every exact ``AIGC`` key index to its byte span."""
+) -> dict[int, tuple[bytes, tuple[int, int]]]:
+    """Map bounded metadata key indices to their names and byte spans."""
     if payload_off + 8 > box_end:
         return {}
     stream.seek(payload_off)
@@ -166,7 +167,7 @@ def _tc260_key_indices(
         return {}
     entry_count = struct.unpack(">I", prefix[4:8])[0]
     pos = payload_off + 8
-    found: dict[int, tuple[int, int]] = {}
+    found: dict[int, tuple[bytes, tuple[int, int]]] = {}
     for index in range(1, entry_count + 1):
         if pos + 8 > box_end:
             return {}
@@ -179,10 +180,12 @@ def _tc260_key_indices(
         if entry_size < 8 or entry_end > box_end:
             return {}
         name_start = pos + 8
-        if entry_end - name_start == 4:
+        name_size = entry_end - name_start
+        if 0 < name_size <= 128:
             stream.seek(name_start)
-            if stream.read(4) == b"AIGC":
-                found[index] = (name_start, entry_end)
+            name = stream.read(name_size)
+            if len(name) == name_size:
+                found[index] = (name, (name_start, entry_end))
         pos = entry_end
     return found
 
@@ -248,12 +251,23 @@ def _tc260_aigc_regions(
     iOS export writes, where the JSON sits in a bare ``ilst`` data item with no
     key name to blank.
     """
-    regions: list[tuple[tuple[int, int] | None, int, int, bytes]] = []
+    return [
+        (key_span, value_start, value_end, value)
+        for key_name, key_span, value_start, value_end, value in _metadata_items(stream, file_size)
+        if (key_name is None or key_name == b"AIGC") and parse_tc260_aigc_json(value) is not None
+    ]
+
+
+def _metadata_items(
+    stream: BinaryIO,
+    file_size: int,
+) -> Iterator[tuple[bytes | None, tuple[int, int] | None, int, int, bytes]]:
+    """Yield bounded keyed or keyless metadata-list values from a media file."""
     for _moov_start, moov_end, moov_type, moov_payload in iter_file_boxes(stream, 0, file_size):
         if moov_type != b"moov":
             continue
         for meta_payload, meta_end in _iter_tc260_meta_boxes(stream, moov_payload, moov_end):
-            keys: dict[int, tuple[int, int]] = {}
+            keys: dict[int, tuple[bytes, tuple[int, int]]] = {}
             ilst_boxes: list[tuple[int, int]] = []
             keyed = False
             for _child_start, child_end, child_type, child_payload in _meta_child_boxes(
@@ -263,7 +277,7 @@ def _tc260_aigc_regions(
             ):
                 if child_type == b"keys":
                     keyed = True
-                    keys.update(_tc260_key_indices(stream, child_payload, child_end))
+                    keys.update(_metadata_key_indices(stream, child_payload, child_end))
                 elif child_type == b"ilst":
                     ilst_boxes.append((child_payload, child_end))
             if not ilst_boxes:
@@ -275,8 +289,8 @@ def _tc260_aigc_regions(
                     ilst_end,
                 ):
                     index = int.from_bytes(item_type, "big")
-                    key_span = keys.get(index)
-                    if keyed and key_span is None:
+                    key = keys.get(index)
+                    if keyed and key is None:
                         # A keyed (ISO) meta box maps items through ``keys``;
                         # an unmapped index is not an AIGC entry, and reading
                         # its value would pull arbitrary metadata (e.g. cover
@@ -284,6 +298,7 @@ def _tc260_aigc_regions(
                         # keyless QuickTime list falls through to content
                         # validation below.
                         continue
+                    key_name, key_span = key if key is not None else (None, None)
                     for _data_start, data_end, data_type, data_payload in iter_file_boxes(
                         stream,
                         item_payload,
@@ -295,9 +310,8 @@ def _tc260_aigc_regions(
                             continue
                         stream.seek(value_start)
                         value = stream.read(value_size)
-                        if len(value) == value_size and parse_tc260_aigc_json(value) is not None:
-                            regions.append((key_span, value_start, data_end, value))
-    return regions
+                        if len(value) == value_size:
+                            yield key_name, key_span, value_start, data_end, value
 
 
 def tc260_aigc_payloads(path: str | Path, *, strict: bool = False) -> tuple[bytes, ...]:
@@ -313,6 +327,42 @@ def tc260_aigc_payloads(path: str | Path, *, strict: bool = False) -> tuple[byte
         if strict:
             raise
         return ()
+
+
+def _ai_metadata_regions(
+    stream: BinaryIO,
+    file_size: int,
+) -> list[tuple[tuple[int, int], int, int, str, bytes]]:
+    """Locate keyed generation metadata without reading media payloads."""
+    regions: list[tuple[tuple[int, int], int, int, str, bytes]] = []
+    for name_bytes, key_span, value_start, value_end, value in _metadata_items(stream, file_size):
+        if name_bytes is None or key_span is None:
+            continue
+        try:
+            name = name_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if name.lower() in LOCAL_GENERATION_METADATA_KEYS:
+            regions.append((key_span, value_start, value_end, name, value))
+    return regions
+
+
+def ai_metadata_tags(path: str | Path, *, strict: bool = False) -> dict[str, str]:
+    """Read keyed AI-generation metadata from an ISOBMFF container."""
+    try:
+        with open(path, "rb") as stream:
+            if not is_isobmff(stream.read(8)):
+                return {}
+            stream.seek(0, 2)
+            file_size = stream.tell()
+            return {
+                name: value.decode("utf-8", "replace")
+                for _key_span, _value_start, _value_end, name, value in _ai_metadata_regions(stream, file_size)
+            }
+    except OSError:
+        if strict:
+            raise
+        return {}
 
 
 def blank_tc260_aigc_tags(data: bytes) -> tuple[bytes, int]:
@@ -576,7 +626,9 @@ def strip_isobmff_media_file(
             max_scan=max_box_scan,
         )
         tc260_regions = _tc260_aigc_regions(stream, file_size) if targets is not None else []
+        ai_metadata_regions = _ai_metadata_regions(stream, file_size) if targets is not None else []
         tc260_key_spans = {region[0] for region in tc260_regions if region[0] is not None}
+        ai_metadata_key_spans = {region[0] for region in ai_metadata_regions}
 
     with atomic_video_output(output_path) as temporary_path:
         with source_path.open("rb") as source_stream, temporary_path.open("r+b") as temporary:
@@ -591,6 +643,10 @@ def strip_isobmff_media_file(
                         temporary.seek(key_span[0])
                         temporary.write(b"free")
                     _overwrite_range(temporary, value_start, value_end, byte=b" ")
+                for key_span, value_start, value_end, _name, _value in ai_metadata_regions:
+                    temporary.seek(key_span[0])
+                    temporary.write(b"free" + b" " * (key_span[1] - key_span[0] - 4))
+                    _overwrite_range(temporary, value_start, value_end, byte=b" ")
             temporary.flush()
             os.fsync(temporary.fileno())
         shutil.copymode(source_path, temporary_path)
@@ -601,7 +657,7 @@ def strip_isobmff_media_file(
             source_path,
         )
         return 0, 0
-    return len(targets), len(tc260_key_spans)
+    return len(targets), len(tc260_key_spans | ai_metadata_key_spans)
 
 
 def strip_c2pa_boxes(data: bytes) -> tuple[bytes, int]:

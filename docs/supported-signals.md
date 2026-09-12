@@ -80,17 +80,20 @@ The learned backends download model files on first use.
 The inspection and stripping code handles signals in these groups:
 
 - C2PA Content Credentials and supported cloud manifest references;
-- EXIF and XMP generator fields;
+- EXIF and XMP generator fields, including structured
+  `generationParams.modelName` values from supported generators;
 - exact app-export provenance and AIGC disclosures from supported
   ByteDance-family products, with product-only provenance excluded from the
   generated-image verdict;
 - IPTC AI disclosure fields;
-- PNG text chunks and embedded generation parameters;
+- PNG text chunks and embedded generation parameters, including keyed
+  `workflow` and `prompt` tags in MP4/MOV metadata lists;
 - China TC260 AIGC labels in supported image placements and the normative
   MP4/MOV `moov.udta.meta.keys/ilst`, MKV/WebM
   `Segment.Tags.Tag.SimpleTag`, AVI `LIST/INFO/AIGC`, and FLV
   `script.onMetaData.AIGC` placements;
-- xAI and Grok EXIF signature fields;
+- xAI and Grok EXIF signature fields in ordinary EXIF and ImageMagick PNG raw
+  EXIF profiles;
 - Samsung AI editing markers;
 - Hugging Face job metadata;
 - open Stable Diffusion style DWT-DCT watermarks with the `detect` extra;

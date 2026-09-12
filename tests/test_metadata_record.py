@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 from remove_ai_watermarks.identify import (
     PROVENANCE_REPORT_SCHEMA_VERSION,
@@ -155,6 +156,54 @@ class TestPlacementsTheRecordCouldDrop:
         piexif.insert(piexif.dump(exif), str(path))
 
         assert "xai_signature" in {s.name for s in identify(path, check_visible=False, check_invisible=False).signals}
+        _assert_same_verdict(path)
+
+    def test_an_imagemagick_raw_exif_profile_survives(self, tmp_path: Path):
+        """Pillow decodes this PNG EXIF profile through getexif, not img.info."""
+        import piexif
+
+        exif = piexif.dump(
+            {
+                "0th": {
+                    piexif.ImageIFD.ImageDescription: b"Signature: " + b"A" * 80,
+                    piexif.ImageIFD.Artist: b"3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+                }
+            }
+        )
+        profile = (
+            "\nexif\n"
+            + f"{len(exif):8d}\n"
+            + "\n".join(exif.hex()[start : start + 72] for start in range(0, len(exif) * 2, 72))
+        )
+        info = PngInfo()
+        info.add_text("Raw profile type exif", profile)
+        path = tmp_path / "grok-converted.png"
+        Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8)).save(path, "PNG", pnginfo=info)
+
+        assert "xai_signature" in {s.name for s in identify(path, check_visible=False, check_invisible=False).signals}
+        _assert_same_verdict(path)
+
+    def test_isobmff_generation_tags_survive(self, tmp_path: Path):
+        def box(kind: bytes, payload: bytes) -> bytes:
+            return (8 + len(payload)).to_bytes(4, "big") + kind + payload
+
+        def key(name: bytes) -> bytes:
+            return box(b"mdta", name)
+
+        def value(index: int, payload: bytes) -> bytes:
+            return box(index.to_bytes(4, "big"), box(b"data", b"\x00" * 8 + payload))
+
+        keys = box(b"keys", b"\x00" * 4 + (2).to_bytes(4, "big") + key(b"workflow") + key(b"title"))
+        ilst = box(b"ilst", value(1, b'{"app":"ComfyUI"}') + value(2, b"standard title"))
+        meta = box(b"meta", b"\x00" * 4 + keys + ilst)
+        path = tmp_path / "workflow.mp4"
+        path.write_bytes(
+            b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+            + box(b"mdat", b"synthetic-video")
+            + box(b"moov", box(b"udta", meta))
+        )
+
+        assert "gen_params" in {s.name for s in identify(path, check_visible=False, check_invisible=False).signals}
         _assert_same_verdict(path)
 
 

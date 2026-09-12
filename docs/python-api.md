@@ -568,7 +568,8 @@ field records that source audio is copied if present and not watermark-verified.
 MP4/MOV
 inspection recognizes the native TC260 `AIGC` entry in
 `moov.udta.meta.keys/ilst` and the QuickTime-form `meta` variants Doubao's iOS
-export writes; its removal preserves container size and encoded
+export writes. It also recognizes keyed `workflow` and `prompt` generation
+metadata in the same metadata-list structure; removal preserves container size and encoded
 stream bytes. MP4/MOV/M4V are copied in bounded chunks, so a large `mdat` is not
 loaded into memory; publication is atomic. MKV/WebM inspection recognizes the corresponding
 `Segment.Tags.Tag.SimpleTag` representation; its removal requires ffmpeg for a

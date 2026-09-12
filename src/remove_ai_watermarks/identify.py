@@ -51,6 +51,7 @@ from remove_ai_watermarks.metadata import (
     AIGC_MARKERS,
     IPTC_AI_FIELD_MARKERS,
     IPTC_AI_MARKERS,
+    LOCAL_GENERATION_METADATA_KEYS,
     aigc_label,
     aigc_label_from_metadata,
     c2pa_cloud_manifest_in,
@@ -106,9 +107,7 @@ _ISSUER_PLATFORM: tuple[tuple[str, str], ...] = tuple(
 
 # PNG-text / EXIF keys that indicate a local diffusion pipeline (vs. a hosted
 # platform's C2PA). Subset of AI_METADATA_KEYS; excludes the C2PA/Software keys.
-_LOCAL_GEN_KEYS = frozenset(
-    AI_METADATA_KEYS & {"parameters", "prompt", "negative_prompt", "workflow", "comfyui", "invokeai_metadata", "dream"}
-)
+_LOCAL_GEN_KEYS = LOCAL_GENERATION_METADATA_KEYS
 
 _STRIP_CAVEAT = (
     "Absence of metadata is not proof the image is clean: C2PA, EXIF, and PNG "

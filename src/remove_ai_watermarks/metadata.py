@@ -59,6 +59,9 @@ AI_METADATA_KEYS: frozenset[str] = frozenset(
         "Software",
     ]
 )
+LOCAL_GENERATION_METADATA_KEYS: frozenset[str] = frozenset(
+    AI_METADATA_KEYS & {"parameters", "prompt", "negative_prompt", "workflow", "comfyui", "invokeai_metadata", "dream"}
+)
 
 AI_KEYWORDS: tuple[str, ...] = (
     "stable_diffusion",
@@ -169,6 +172,7 @@ TC260_AIGC_FIELDS: frozenset[str] = frozenset(
         "ServiceUser",
     }
 )
+_TC260_CANONICAL_FIELDS: dict[str, str] = {field.casefold(): field for field in TC260_AIGC_FIELDS}
 MAX_TC260_VALUE_BYTES = 1024 * 1024
 
 
@@ -197,7 +201,10 @@ def parse_tc260_aigc_json(value: bytes) -> dict[str, str] | None:
         return None
     if not isinstance(parsed, dict):
         return None
-    fields = {str(key): str(item) for key, item in cast("dict[object, object]", parsed).items()}
+    fields = {
+        _TC260_CANONICAL_FIELDS.get(str(key).casefold(), str(key)): str(item)
+        for key, item in cast("dict[object, object]", parsed).items()
+    }
     return fields if TC260_AIGC_FIELDS & fields.keys() else None
 
 
@@ -877,8 +884,44 @@ def generator_from_metadata(candidates: Iterable[str], scan: bytes = b"") -> str
     for value in itertools.chain(candidates, creator_tools):
         if app_generator := app_generator_from_metadata(value):
             return app_generator
+        if structured_generator := _structured_generator_from_metadata(value):
+            return structured_generator
         if any(token in value.lower() for token in AI_GENERATOR_TOKENS):
             return value.strip()
+    return None
+
+
+def _structured_generator_from_metadata(value: str) -> str | None:
+    """Extract a bounded generator name without returning its surrounding JSON."""
+    from remove_ai_watermarks._internal.constants import AI_GENERATOR_TOKENS
+
+    if len(value) > MAX_TC260_VALUE_BYTES:
+        return None
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    generation_params = cast("dict[object, object]", parsed).get("generationParams")
+    if not isinstance(generation_params, dict):
+        return None
+    model_name = cast("dict[object, object]", generation_params).get("modelName")
+    if not isinstance(model_name, str) or not model_name.strip() or len(model_name) > 200:
+        return None
+    normalized = model_name.strip()
+    return normalized if any(token in normalized.lower() for token in AI_GENERATOR_TOKENS) else None
+
+
+def exif_bytes_from_image(image: Any) -> bytes | None:
+    """Return EXIF bytes from either a normal EXIF field or a decoded raw profile."""
+    value = image.info.get("exif")
+    if isinstance(value, bytes) and value:
+        return value
+    with contextlib.suppress(Exception):
+        exif = image.getexif()
+        if exif:
+            return exif.tobytes()
     return None
 
 
@@ -894,12 +937,17 @@ _APP_AIGC_LABEL_RE = re.compile(r'"aigc_label_type"\s*:\s*[12](?=\s*[,}])', re.I
 _APP_AIGC_TYPE_RE = re.compile(r'"aigc_type"\s*:\s*1(?=\s*[,}])', re.IGNORECASE)
 
 
-def _normalized_app_metadata(value: str | bytes) -> str:
-    text = value.decode("latin-1", "ignore") if isinstance(value, bytes) else value
+def _normalized_app_metadata(value: object) -> str:
+    if isinstance(value, bytes):
+        text = value.decode("latin-1", "ignore")
+    elif isinstance(value, str):
+        text = value
+    else:
+        return ""
     return text.replace('\\"', '"')
 
 
-def _app_metadata_evidence(value: str | bytes) -> tuple[str | None, str | None]:
+def _app_metadata_evidence(value: object) -> tuple[str | None, str | None]:
     """Return removable product provenance and stronger AI-origin evidence."""
     normalized = _normalized_app_metadata(value)
     products = tuple(match.group(1).lower() for match in _APP_PRODUCT_RE.finditer(normalized))
@@ -962,7 +1010,7 @@ def exif_generator(image_path: Path) -> str | None:
 
         with Image.open(image_path) as img:
             info = img.info
-            exif_bytes = info.get("exif")
+            exif_bytes = exif_bytes_from_image(img)
             # PNG tEXt/iTXt chunks land in img.info too (same idiom as the other
             # PNG-text readers in this module); NovelAI stamps Software/Source/Title.
             for key in ("Software", "Source", "Title", "Description"):
@@ -1034,7 +1082,7 @@ def _xai_signature_impl(image_path: Path) -> bool:
         from PIL import Image
 
         with Image.open(image_path) as img:
-            exif_bytes = img.info.get("exif")
+            exif_bytes = exif_bytes_from_image(img)
         if not exif_bytes:
             return False
         tags = piexif.load(exif_bytes).get("0th", {})
@@ -1063,8 +1111,7 @@ def _is_aigc_exif_value(raw: object) -> bool:
         return False
     if b"AIGC" not in raw:
         return False
-    text = bytes(raw).decode("latin-1", "ignore")
-    return any(field in text for field in TC260_AIGC_FIELDS)
+    return aigc_label_from_metadata(bytes(raw)) is not None
 
 
 def _ai_exif_targets(loaded: dict[str, Any]) -> list[tuple[str, int, bytes, str]]:
@@ -1100,15 +1147,18 @@ def _ai_exif_targets(loaded: dict[str, Any]) -> list[tuple[str, int, bytes, str]
     if xai_signature_pair(_exif_text(ifd0, piexif.ImageIFD.ImageDescription), _exif_text(ifd0, piexif.ImageIFD.Artist)):
         add("0th", ifd0, piexif.ImageIFD.ImageDescription, "ImageDescription")
         add("0th", ifd0, piexif.ImageIFD.Artist, "Artist")
-    # (b) known AI generator token in a 0th text tag.
-    for tag, name in (
-        (piexif.ImageIFD.Software, "Software"),
-        (piexif.ImageIFD.Make, "Make"),
-        (piexif.ImageIFD.Artist, "Artist"),
-        (piexif.ImageIFD.ImageDescription, "ImageDescription"),
+    # (b) known AI generator token or structured generator name in a text tag.
+    for ifd_key, ifd, tag, name in (
+        ("0th", ifd0, piexif.ImageIFD.Software, "Software"),
+        ("0th", ifd0, piexif.ImageIFD.Make, "Make"),
+        ("0th", ifd0, piexif.ImageIFD.Artist, "Artist"),
+        ("0th", ifd0, piexif.ImageIFD.ImageDescription, "ImageDescription"),
+        ("Exif", ifde, piexif.ExifIFD.UserComment, "UserComment"),
     ):
-        if any(token in _exif_text(ifd0, tag).lower() for token in AI_GENERATOR_TOKENS):
-            add("0th", ifd0, tag, name)
+        value = ifd.get(tag)
+        text = value.decode("latin-1", "replace") if isinstance(value, bytes) else ""
+        if any(token in text.lower() for token in AI_GENERATOR_TOKENS) or _structured_generator_from_metadata(text):
+            add(ifd_key, ifd, tag, name)
     # (c) TC260 AIGC block in ImageDescription (0th) or UserComment (Exif sub-IFD).
     if _is_aigc_exif_value(ifd0.get(piexif.ImageIFD.ImageDescription)):
         add("0th", ifd0, piexif.ImageIFD.ImageDescription, "ImageDescription")
@@ -1170,6 +1220,11 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
                         result[key] = str(value)
     except Exception as exc:
         logger.debug("PIL could not open %s for AI-metadata scan: %s", image_path, exc)
+
+    from remove_ai_watermarks._internal.isobmff import ai_metadata_tags
+
+    for key, value in ai_metadata_tags(image_path).items():
+        result.setdefault(key, value[:200] + ("…" if len(value) > 200 else ""))
 
     # C2PA manifest fields from the single canonical parser (_internal/c2pa.py).
     c2pa = extract_c2pa_info(image_path)
@@ -1632,11 +1687,11 @@ def remove_ai_metadata(
     with open(source_path, "rb") as f:
         head = f.read(26)
     if source_path.suffix.lower() in _STREAMING_ISOBMFF_EXTS and is_isobmff(head):
-        stripped, tc260_blanked = strip_isobmff_media_file(source_path, output_path)
+        stripped, native_ai_blanked = strip_isobmff_media_file(source_path, output_path)
         logger.info(
-            "Stream-blanked %d AI-provenance box(es) and %d native TC260 tag(s) → %s",
+            "Stream-blanked %d AI-provenance box(es) and %d native AI metadata tag(s) → %s",
             stripped,
-            tc260_blanked,
+            native_ai_blanked,
             output_path,
         )
         return output_path
@@ -1714,8 +1769,9 @@ def remove_ai_metadata(
         return output_path
 
     # Read image and filter metadata
-    with Image.open(source_path) as img:
-        img = img.copy()
+    with Image.open(source_path) as source_image:
+        source_exif_bytes = exif_bytes_from_image(source_image)
+        img = source_image.copy()
         # Pick the save format. Honor the caller's output extension (so a deliberate
         # source.png -> output.jpg conversion still works) UNLESS the SOURCE is misnamed
         # -- a lossless PNG/WebP whose extension lies (served as .jpg). There the output
@@ -1761,6 +1817,10 @@ def remove_ai_metadata(
             # Description fields. Share this decision with the lossless PNG walker.
             if _keep_standard_text_metadata(key, value, keep_standard):
                 kept_meta[key] = str(value) if not isinstance(value, str) else value
+
+        if source_exif_bytes:
+            with contextlib.suppress(Exception):
+                exif_data = piexif.load(source_exif_bytes)
 
         # Apply cleaned metadata
         if save_kwargs["format"] == "PNG" and kept_meta:

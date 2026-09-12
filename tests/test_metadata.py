@@ -945,6 +945,30 @@ class TestExifGenerator:
     def test_clean_image_is_none(self, tmp_clean_png: Path):
         assert exif_generator(tmp_clean_png) is None
 
+    def test_nested_generation_model_in_webp_user_comment(self, tmp_path: Path):
+        import json
+
+        payload = json.dumps(
+            {
+                "generationParams": {
+                    "modelName": "Nano Banana synthetic fixture",
+                    "prompt": "private prompt must not become the platform label",
+                }
+            }
+        )
+        exif = piexif.dump({"Exif": {piexif.ExifIFD.UserComment: payload.encode("utf-8")}})
+        source = tmp_path / "generated.webp"
+        Image.new("RGB", (32, 32)).save(source, "WEBP", lossless=True, exif=exif)
+
+        assert exif_generator(source) == "Nano Banana synthetic fixture"
+        assert (
+            identify(source, check_visible=False).platform == "Nano Banana synthetic fixture (embedded generator tag)"
+        )
+
+        output = tmp_path / "clean.webp"
+        remove_ai_metadata(source, output)
+        assert exif_generator(output) is None
+
 
 _FAKE_SIG = "A" * 120  # 64+ base64 chars; real Grok payloads are 300-1004
 _FAKE_UUID = "12345678-1234-1234-1234-123456789abc"
@@ -970,11 +994,47 @@ def _grok_jpeg(tmp_path: Path, *, signature: str = _FAKE_SIG, artist: str = _FAK
     return path
 
 
+def _grok_imagemagick_png(tmp_path: Path) -> Path:
+    """Write the ImageMagick raw-profile EXIF form seen on converted PNGs."""
+    exif = piexif.dump(
+        {
+            "0th": {
+                piexif.ImageIFD.ImageDescription: f"Signature: {_FAKE_SIG}".encode("latin1"),
+                piexif.ImageIFD.Artist: _FAKE_UUID.encode("latin1"),
+                piexif.ImageIFD.Make: b"Canon",
+            },
+            "Exif": {},
+            "GPS": {},
+            "1st": {},
+        }
+    )
+    profile = (
+        "\nexif\n"
+        + f"{len(exif):8d}\n"
+        + "\n".join(exif.hex()[start : start + 72] for start in range(0, len(exif) * 2, 72))
+    )
+    info = PngInfo()
+    info.add_text("Raw profile type exif", profile)
+    path = tmp_path / "grok-imagemagick.png"
+    Image.new("RGB", (64, 64), (70, 80, 90)).save(path, pnginfo=info)
+    return path
+
+
 class TestXaiSignature:
     """xAI / Grok's EXIF Signature + UUID-Artist provenance scheme."""
 
     def test_signature_plus_uuid_detected(self, tmp_path: Path):
         assert xai_signature(_grok_jpeg(tmp_path)) is True
+
+    def test_imagemagick_png_raw_exif_profile_detected(self, tmp_path: Path):
+        path = _grok_imagemagick_png(tmp_path)
+
+        with Image.open(path) as image:
+            assert "exif" not in image.info
+            assert image.getexif()
+
+        assert xai_signature(path) is True
+        assert "xai_signature" in get_ai_metadata(path)
 
     def test_real_grok_sample_detected(self):
         # Real committed Grok download (data/fixtures/provenance/grok-1.jpg); the EXIF
@@ -1168,6 +1228,21 @@ class TestRemoveAiExif:
         remove_ai_metadata(src, out)
         assert xai_signature(out) is False
         assert has_ai_metadata(out) is False
+
+    def test_grok_raw_profile_stripped_on_png_output(self, tmp_path: Path):
+        src = _grok_imagemagick_png(tmp_path)
+        out = tmp_path / "clean.png"
+
+        remove_ai_metadata(src, out)
+
+        assert xai_signature(out) is False
+        with Image.open(out) as image:
+            assert image.getexif().get(piexif.ImageIFD.Make) == "Canon"
+
+    def test_non_text_exif_value_does_not_break_app_metadata_scrub(self):
+        from remove_ai_watermarks.metadata import _app_metadata_evidence
+
+        assert _app_metadata_evidence((1, 2)) == (None, None)
 
     def test_generator_make_token_stripped(self, tmp_path: Path):
         # Ideogram's EXIF Make="Ideogram AI" must be scrubbed on removal.
@@ -1390,6 +1465,37 @@ class TestAIGCLabel:
         assert info is not None
         assert info["Label"] == "1"
         assert info["ContentProducer"] == "001191440300708461136T1308L"
+
+    def test_parses_lower_camel_case_tc260_fields(self, tmp_path: Path):
+        import json
+
+        from remove_ai_watermarks.metadata import aigc_label
+
+        p = tmp_path / "aigc-lower-camel.jpg"
+        payload = json.dumps(
+            {
+                "data": {
+                    "AIGC": {
+                        "label": "1",
+                        "contentProducer": "synthetic-producer",
+                        "produceId": "synthetic-id",
+                    }
+                }
+            }
+        )
+        exif = {"Exif": {piexif.ExifIFD.UserComment: payload.encode("ascii")}}
+        Image.new("RGB", (32, 32)).save(p, exif=piexif.dump(exif))
+
+        info = aigc_label(p)
+
+        assert info == {
+            "Label": "1",
+            "ContentProducer": "synthetic-producer",
+            "ProduceID": "synthetic-id",
+        }
+        out = tmp_path / "clean-lower-camel.jpg"
+        remove_ai_metadata(p, out)
+        assert aigc_label(out) is None
 
     def test_has_ai_metadata_detects_raw_json_exif_form(self, tmp_path: Path):
         assert has_ai_metadata(self._aigc_exif_jpeg(tmp_path))

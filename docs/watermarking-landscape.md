@@ -27,6 +27,9 @@ provider. For AI claims, exact product mappings in `claim_generator` therefore
 take precedence over issuer attribution. Supported mappings include Higgsfield
 AI, Recraft, Topaz Labs Image API, and TikTok Ad Creative Toolbox; an unknown
 claim generator still falls back to the certificate issuer.
+Exact claim-generator mappings also cover `Grok Imagine` as xAI Grok Imagine
+and `Suno` as Suno. Both can carry a valid AI source claim without a separately
+readable issuer, so issuer-only attribution leaves the platform blank.
 
 **OpenRouter raster metadata survey (2026-09-02):** a paid Recraft V3 API
 output carried a valid C2PA claim with `claim_generator` `recraft.ai`, a
@@ -37,11 +40,11 @@ container metadata. Their absence is evidence about those exact files and API
 routes, not a claim that every Krea or Riverflow export is metadata-free.
 
 **ByteDance Volcano Engine (Volcengine)** — the cloud behind Doubao / Jimeng — signs its AI image output with a cert from `certificate_center@volcengine.com` + `trainedAlgorithmicMedia` (issuer `b"volcengine"` → "ByteDance (Volcano Engine)", platform "ByteDance Volcano Engine"); note this is the C2PA-signed surface, distinct from the XMP/PNG TC260 `AIGC` label Doubao also uses. ByteDance's **international brand (BytePlus / Seedream / Seededit)** signs the same content as **"Byteplus Pte. Ltd."**. The bare `volcengine` needle missed it, so BytePlus output was mis-attributed to "Adobe Firefly" through an incidental "Adobe XMP" toolkit string. Issuer `b"Byteplus"` maps directly to "BytePlus (ByteDance)". ByteDance's consumer app **Dreamina** (the international Jimeng brand) signs as **"Bytedance Pte. Ltd."** with a `Dreamina/x.y` claim generator but, unlike the Volcano Engine surface, ships **no `trainedAlgorithmicMedia`**. Issuer `b"Dreamina"` maps to "ByteDance Dreamina" with **`asserts_ai=True`**. Registering the broader **issuer** `b"Bytedance Pte"` was deliberately avoided because that same entity also signs non-AI CapCut edits; keying on the `Dreamina` generator token is precise.
-- **EXIF/XMP/PNG-text generator tag (caught by `exif_generator`):** **Ideogram** writes EXIF `Make="Ideogram AI"` (collected 2026-05-24 — no C2PA, no SynthID, no imwatermark; the Make tag is the only signal). Additional verified generator stamps include **NovelAI** (`Software`, `Source`, and `Title` PNG text chunks), **Reve** (`Software` or XMP `CreatorTool` = `reve.com`), and **Aphrodite AI** (`Make` or `Software` = `Aphrodite AI`).
+- **EXIF/XMP/PNG-text generator tag (caught by `exif_generator`):** **Ideogram** writes EXIF `Make="Ideogram AI"` (collected 2026-05-24 — no C2PA, no SynthID, no imwatermark; the Make tag is the only signal). Additional verified generator stamps include **NovelAI** (`Software`, `Source`, and `Title` PNG text chunks), **Reve** (`Software` or XMP `CreatorTool` = `reve.com`), and **Aphrodite AI** (`Make` or `Software` = `Aphrodite AI`). A JSON `generationParams.modelName` value is parsed structurally and reduced to a recognized model name, rather than exposing its surrounding prompt JSON as a platform label.
 - **App-export provenance and AIGC JSON:** supported ByteDance-family exports can place a JSON object in EXIF `ImageDescription` or `UserComment`, independently of C2PA or TC260. Exact `product` values for Doubao, Xinghui, and Dreamina are removable product provenance, but do not alone prove that the pixels were generated. Dreamina additionally requires `exportType=generation` for that verdict. A nested Aweme `aigc_type=1` or private ByteDance `aigc_label_type=1` / `2` is an AIGC disclosure; `0` is inconclusive and can occur on a Dreamina generation export. Plain Aweme, retouch, and `lv` exports are preserved. The lower-case private field is deliberately not interpreted as the normative TC260 `Label`, whose values `1` / `2` / `3` mean generated / possibly generated / suspected generated under [GB 45438-2025](https://www.tc260.org.cn/upload/2025-03-15/1742009439794081593.pdf).
-- **xAI / Grok — its own EXIF signature scheme, NOT C2PA (DETECTED by `metadata.xai_signature`, built 2026-05-26).**
+- **xAI / Grok legacy JPEG EXIF signature scheme (DETECTED by `metadata.xai_signature`, built 2026-05-26).**
 
-Grok JPEG downloads (Aurora model) carry **no C2PA, no XMP, no SynthID, no IPTC** — only EXIF `Artist` = a UUID and EXIF `ImageDescription` = `Signature: <base64>` (a crypto signature, unverifiable locally without xAI's public key). This empirically kills the earlier unverified "xAI signs C2PA as xAI" lead — xAI is not even a C2PA member. `exif_generator` misses it (neither field holds an `AI_GENERATOR_TOKENS` token), so a dedicated detector `xai_signature(path)` matches the pair (`ImageDescription ~ ^Signature: [A-Za-z0-9+/=]{64,}` AND UUID `Artist`); wired into `has_ai_metadata`, `get_ai_metadata` (key `xai_signature`), and `identify` (signal `xai_signature`, platform "xAI (Grok / Aurora)").
+The sampled Grok JPEG downloads from the Aurora route carry **no C2PA, no XMP, no SynthID, no IPTC** — only EXIF `Artist` = a UUID and EXIF `ImageDescription` = `Signature: <base64>` (a crypto signature, unverifiable locally without xAI's public key). This is route-specific, not a product-wide no-C2PA claim: newer Grok Imagine output can carry a valid AI-source C2PA claim whose `claim_generator` is `Grok Imagine`. `exif_generator` misses the legacy pair (neither field holds an `AI_GENERATOR_TOKENS` token), so a dedicated detector `xai_signature(path)` matches it (`ImageDescription ~ ^Signature: [A-Za-z0-9+/=]{64,}` AND UUID `Artist`); wired into `has_ai_metadata`, `get_ai_metadata` (key `xai_signature`), and `identify` (signal `xai_signature`, platform "xAI (Grok / Aurora)").
 
 **Format confirmed stable across n=3 genuine generations:** exactly three EXIF tags (`Artist`, `ExifOffset`, `ImageDescription`), `Signature:` prefix constant, base64 payload 300-1004 chars. Two capture facts: (a) the `Artist` UUID **equals the public image id** in the asset URL (`https://imagine-public.x.ai/imagine-public/images/<uuid>.jpg`), so it is NOT a private per-user secret — only the `Signature` blob is; (b) the Grok web-UI image is a re-encoded **WebP with no signature** — the EXIF survives only in the *original* JPEG (download button or that public tokenless URL), which is why screenshots / re-encodes are metadata-stripped. A real fixture `data/fixtures/provenance/grok-1.jpg` plus **synthetic** JPEG fixtures (fake UUID + fake `Signature:` blob) cover the detector; never add a real Grok image carrying private content (the repo is public).
 
@@ -49,7 +52,10 @@ Grok JPEG downloads (Aurora model) carry **no C2PA, no XMP, no SynthID, no IPTC*
 JPEG EXIF, which deletes the xAI Signature and UUID Artist pair plus supported
 AI generator values while retaining unrelated camera and editor EXIF. The
 shared `xai_signature_pair` helper is the single source of truth for the
-pair. On the ISOBMFF path, `blank_ai_exif_tokens` provides the corresponding
+pair. Converted PNGs can retain the same pair in an ImageMagick raw EXIF
+profile; Pillow exposes that form through `getexif()` even when `info["exif"]`
+is absent, so detection, removal, and portable records share that fallback. On
+the ISOBMFF path, `blank_ai_exif_tokens` provides the corresponding
 in-place scrub for supported EXIF values, TC260 AIGC blocks, and the xAI pair.
 - **China TC260 AIGC label (caught by `AIGC_MARKERS` / `metadata.aigc_label`, surfaced by `identify` as the `aigc` signal):** China-served generators embed an XMP `<TC260:AIGC>{"Label":"1","ContentProducer":...}` block — China's mandatory AI-content labeling (TC260 namespace `tc260.org.cn/ns/AIGC`). The label says only "this is AI", but its `ContentProducer` names the signing entity — `001` + `1` + an 18-char Unified Social Credit Code + a 5-digit product suffix, normalized by `metadata.uscc_of`, or for a few generators a bare product name. `KnownMark.tc260_producer_codes` maps the codes settled per vendor by `scripts/vendor_cohort_harvest.py` to registry mark keys, so an AIGC image relaxes only the detector of the product it actually carries; an unmapped or absent producer leaves every product strict. The same mapping supplies the manufacturer for provenance-conflict checks. A code identifies a legal entity, not necessarily one brand, so a hosting or aggregating platform that signs for several apps is a recall bet rather than a proof.
 
@@ -88,7 +94,10 @@ payloads. Removal remuxes either container through ffmpeg with stream copy.
 
 Native TC260 MP4/MOV tags do not live in those top-level provenance boxes.
 `tc260_aigc_payloads` separately seeks through `moov.udta.meta.keys/ilst`, so
-the normative tag is also found when a large `mdat` precedes `moov`.
+the normative tag is also found when a large `mdat` precedes `moov`. The parser
+canonicalizes known fields across PascalCase and lowerCamelCase serializations.
+The same keyed metadata-list walk exposes generation `workflow` and `prompt`
+entries, including ComfyUI exports, and blanks them in place during removal.
 
 **Meta-box XMP and EXIF removal are handled in place:** an AI-label XMP packet
 stored as a meta-box `mime` item is blanked by

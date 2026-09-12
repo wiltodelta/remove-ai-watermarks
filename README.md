@@ -133,6 +133,8 @@ inspection includes the native TC260 `AIGC` tag in
 `moov.udta.meta.keys/ilst`, including a `moov` placed after the media payload,
 plus the QuickTime-form `meta` variants Doubao's iOS export writes (a bare
 `meta` box as a direct `moov` child, and a keyless `hdlr=mdir` metadata list).
+Keyed `workflow` and `prompt` entries in the same metadata-list structure are
+also detected and removed, including ComfyUI exports.
 MKV and WebM inspection reads the normative
 `Segment.Tags.Tag.SimpleTag` placement. AVI uses `LIST/INFO/AIGC`, while FLV
 uses `script.onMetaData.AIGC`. The non-ISOBMFF formats are remuxed with stream
@@ -350,9 +352,9 @@ Visible mark support includes:
 - one calibrated Samsung Galaxy AI label variant.
 
 Metadata and provenance inspection covers C2PA, EXIF, XMP, IPTC, common
-generator parameters, China TC260 AIGC labels, and several vendor specific
-signals. Optional decoders add support for open DWT-DCT watermarks and Adobe
-TrustMark.
+generator parameters in image and video containers, China TC260 AIGC labels,
+and several vendor specific signals. Optional decoders add support for open
+DWT-DCT watermarks and Adobe TrustMark.
 
 The exact support matrix, including important locale and detector limits, lives
 in [supported signals](docs/supported-signals.md). The
@@ -369,8 +371,9 @@ Visible removal follows three steps:
 
 Metadata removal uses format aware stripping. JPEG metadata removal preserves
 the encoded image scan instead of recompressing it. Native MP4/MOV TC260 values
-are blanked without changing box sizes or media offsets. Other supported
-containers use their corresponding metadata path.
+and keyed generation parameters are blanked without changing box sizes or
+media offsets. Other supported containers use their corresponding metadata
+path.
 
 Invisible removal is different. It regenerates the image through a diffusion
 pipeline to disrupt pixel and frequency domain watermarks. This changes the

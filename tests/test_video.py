@@ -65,6 +65,30 @@ def _video_with_tc260(path: Path, *, media_payload: bytes = _VIDEO_PAYLOAD) -> P
     return path
 
 
+def _video_with_comfyui_metadata(path: Path, *, media_payload: bytes = _VIDEO_PAYLOAD) -> Path:
+    workflow = b'{"nodes":[{"type":"KSampler"}],"app":"ComfyUI"}'
+    prompt = b'{"1":{"class_type":"KSampler"}}'
+    keys = _box(
+        b"keys",
+        b"\x00\x00\x00\x00"
+        + (4).to_bytes(4, "big")
+        + _metadata_key(b"workflow")
+        + _metadata_key(b"prompt")
+        + _metadata_key(b"title")
+        + _metadata_key(b"software"),
+    )
+    ilst = _box(
+        b"ilst",
+        _metadata_value(1, workflow)
+        + _metadata_value(2, prompt)
+        + _metadata_value(3, b"standard title")
+        + _metadata_value(4, b"ordinary editor"),
+    )
+    meta = _box(b"meta", b"\x00\x00\x00\x00" + keys + ilst)
+    path.write_bytes(_MP4_FTYP + _box(b"mdat", media_payload) + _box(b"moov", _box(b"udta", meta)))
+    return path
+
+
 def _hdlr(handler: bytes) -> bytes:
     # version/flags + pre_defined + handler_type + reserved[3]; the TC260 walker
     # never parses it, but a real-shaped hdlr keeps the fixture honest.
@@ -564,6 +588,24 @@ class TestVideoDependencies:
 
 
 class TestVideoMetadataApi:
+    def test_inspects_and_removes_comfyui_mp4_metadata(self, tmp_path: Path):
+        from remove_ai_watermarks.video import inspect_video_metadata, remove_video_metadata
+
+        source = _video_with_comfyui_metadata(tmp_path / "source.mp4")
+        output = tmp_path / "clean.mp4"
+
+        report = inspect_video_metadata(source)
+        assert set(report.markers) >= {"workflow", "prompt"}
+
+        result = remove_video_metadata(source, output)
+        cleaned = output.read_bytes()
+        assert result.remaining == {}
+        assert len(cleaned) == source.stat().st_size
+        assert _VIDEO_PAYLOAD in cleaned
+        assert b"standard title" in cleaned
+        assert b"ordinary editor" in cleaned
+        assert b"ComfyUI" not in cleaned
+
     def test_top_level_api_is_lazy_exported(self):
         import remove_ai_watermarks as raiw
 

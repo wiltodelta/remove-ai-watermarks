@@ -464,6 +464,8 @@ class TestIdentifyNonPng:
     @pytest.mark.parametrize(
         ("claim_generator", "platform"),
         [
+            ("Grok Imagine", "xAI Grok Imagine"),
+            ("Suno", "Suno"),
             ("Higgsfield AI", "Higgsfield AI"),
             ("recraft.ai", "Recraft"),
             ("Topaz Labs Image API", "Topaz Labs"),

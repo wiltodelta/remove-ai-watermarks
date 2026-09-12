@@ -222,7 +222,9 @@ alone is spaced out). The MP4/MOV/M4V/M4A removal path first validates the top-l
 box walk, then copies the source to a sibling temporary file in bounded chunks.
 Supported C2PA/JUMBF/AI-label boxes become same-size `free` boxes with blank
 payloads; TC260 removal changes the four-byte key to `free` and blanks only the
-validated JSON value with same-length spaces. This preserves every box size,
+validated JSON value with same-length spaces. Keyed generation metadata such
+as `workflow` and `prompt` uses the same structural walk; removal blanks the
+complete key and value in place. This preserves every box size,
 `stco`/`co64` offset, encoded stream byte, and source-sized memory bound.
 Publication is atomic, and a malformed top-level walk is copied unchanged. A
 generic `AIGC` key whose value has no TC260 field is ignored.
@@ -541,10 +543,18 @@ Key contracts:
   asserting that the pixels were generated; explicit `aigc_info` discriminator
   values and Dreamina `exportType=generation` do assert AI origin. Ordinary
   Aweme, retouch, and `lv` editor exports are preserved.
+- EXIF reads fall back to Pillow's decoded `getexif()` mapping when a container
+  exposes no ordinary `info["exif"]` blob. This covers ImageMagick PNG raw EXIF
+  profiles and keeps portable-record identification aligned with the file path.
+- Structured `generationParams.modelName` JSON is reduced to its recognized
+  model name before attribution, so prompts and the surrounding JSON never
+  become a platform label.
 - ISOBMFF containers use
   [`_internal/isobmff.py`](../src/remove_ai_watermarks/_internal/isobmff.py).
 - Native MP4/MOV TC260 `AIGC` entries are read from
   `moov.udta.meta.keys/ilst` and blanked without changing box sizes.
+- Native MP4/MOV `workflow` and `prompt` entries use that keyed metadata-list
+  reader and the same offset-preserving removal path.
 - Native MKV/WebM TC260 `AIGC` entries are read from
   `Segment.Tags.Tag.SimpleTag` and removed through the ffmpeg stream-copy path.
 - Native AVI and FLV TC260 entries are read from `LIST/INFO/AIGC` and

@@ -25,7 +25,16 @@ def _report(**overrides):
 
 
 def test_gap_markers_are_case_insensitive():
-    assert "c2pa" in gap._marker_hits(b"UPPERCASE C2PA MANIFEST")
+    assert "ComfyUI" in gap._marker_hits(b"COMFYUI WORKFLOW")
+
+
+def test_gap_markers_require_structural_provenance_evidence():
+    noise = b"c2pa digitalSourceType Samsung Galaxy Doubao PhotoEditor_Re_Edit Signature: " + b"A" * 80
+    assert gap._marker_hits(noise) == []
+
+    tc260 = b'{"AIGC":{"label":"1","contentProducer":"synthetic"}}'
+    assert "TC260 AIGC" in gap._marker_hits(tc260)
+    assert "Samsung genAIType" in gap._marker_hits(b'PhotoEditor_Re_Edit_Data{"genAIType":1}')
 
 
 def test_gap_candidates_cover_more_than_blind_unknowns():

@@ -50,6 +50,7 @@ from remove_ai_watermarks._internal.schema import require_schema_version
 from remove_ai_watermarks.metadata import (
     QUICK_SCAN_BYTES,
     SAMSUNG_EDITOR_MARKER,
+    exif_bytes_from_image,
     exif_text,
     read_file_tail,
 )
@@ -267,7 +268,10 @@ def _decoder_info(image_path: Path) -> dict[str, Any]:
         with Image.open(image_path) as img:
             # PIL types this mapping with a non-string key union (a DPI tuple key
             # exists), so the keys are normalized here rather than assumed.
-            return {str(key): value for key, value in img.info.items()}
+            info = {str(key): value for key, value in img.info.items()}
+            if "exif" not in info and (exif_bytes := exif_bytes_from_image(img)):
+                info["exif"] = exif_bytes
+            return info
     except (UnidentifiedImageError, ImportError) as exc:  # unsupported optional decoder
         logger.debug("PIL info unavailable for %s: %s", image_path, exc)
         return {}
@@ -392,6 +396,10 @@ def collect_metadata_record(
                 issues.append({"stage": "trailer", "code": "collection-failed"})
             try:
                 info = _decoder_info(image_path)
+                if container == "isobmff":
+                    from remove_ai_watermarks._internal.isobmff import ai_metadata_tags
+
+                    info.update(ai_metadata_tags(image_path, strict=True))
                 exif = _exif_pairs(info)
             except Exception as exc:
                 logger.debug("metadata decoder collection failed for %s: %s", image_path, exc)

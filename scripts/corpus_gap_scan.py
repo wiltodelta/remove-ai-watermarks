@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
 from collections import Counter
 from datetime import date
 from importlib.metadata import version
@@ -40,7 +41,14 @@ from _plain_console import Console, Table
 
 from remove_ai_watermarks.identify import _metadata_region as identify_metadata_region
 from remove_ai_watermarks.identify import identify
-from remove_ai_watermarks.metadata import scan_head
+from remove_ai_watermarks.metadata import (
+    IPTC_AI_FIELD_MARKERS,
+    IPTC_AI_MARKERS,
+    aigc_label_from_metadata,
+    c2pa_marker_in,
+    samsung_genai_in,
+    scan_head,
+)
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -51,22 +59,10 @@ console = Console()
 # below is the primary guard, this list is the second. Group: C2PA/JUMBF infra,
 # AI source-type / labeling schemes, and distinctive generator name strings.
 MARKERS: tuple[bytes, ...] = (
-    # C2PA / JUMBF infrastructure and AI source-type / labeling schemes.
-    b"c2pa",
-    b"jumbf",
-    b"contentauth",
+    # AI source-type / labeling schemes that are meaningful by presence.
     b"trainedAlgorithmicMedia",
-    b"digitalSourceType",
-    b'"AIGC"',
-    b"<TC260:AIGC>",
-    b"TC260:AIGC",
-    b"tc260.org.cn",
     b"AISystemUsed",
-    b"SynthID",
     b"hf-job-id",
-    b"genAIType",
-    b"PhotoEditor_Re_Edit",
-    b"Signature:",
     # Distinctive multi-word generator strings only. Bare single words (Luma,
     # Gemini, Sora, ...) are omitted: they collide with unrelated metadata prose
     # (e.g. "Luma" in Lightroom's EnhanceDenoiseLumaAmount), defeating precision.
@@ -80,12 +76,11 @@ MARKERS: tuple[bytes, ...] = (
     b"Adobe Firefly",
     b"Black Forest",
     b"volcengine",
-    b"Doubao",
-    b"\xe8\xb1\x86\xe5\x8c\x85",
     b"Nano Banana",
     b"Stability AI",
-    b"Samsung Galaxy",
 )
+_XAI_SIGNATURE_RE = re.compile(rb"Signature:\s*[A-Za-z0-9+/=]{64,}")
+_UUID_RE = re.compile(rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
 
 REPORT_FIELDS: tuple[str, ...] = (
     "path",
@@ -122,9 +117,20 @@ def _row(rep, *, path: str, suffix: str, lib_version: str) -> dict[str, str]:  #
 
 
 def _marker_hits(region: bytes) -> list[str]:
-    """Return marker labels found case-insensitively in one metadata region."""
+    """Return high-precision marker labels found in one metadata region."""
     folded = region.lower()
-    return sorted({marker.decode("latin-1", "replace") for marker in MARKERS if marker.lower() in folded})
+    hits = {marker.decode("latin-1", "replace") for marker in MARKERS if marker.lower() in folded}
+    if c2pa_marker_in(region):
+        hits.add("C2PA/JUMBF")
+    if aigc_label_from_metadata(region) is not None:
+        hits.add("TC260 AIGC")
+    if any(marker in region for marker in IPTC_AI_MARKERS + IPTC_AI_FIELD_MARKERS):
+        hits.add("IPTC AI disclosure")
+    if samsung_genai_in(region) is not None:
+        hits.add("Samsung genAIType")
+    if _XAI_SIGNATURE_RE.search(region) and _UUID_RE.search(region):
+        hits.add("xAI signature pair")
+    return sorted(hits)
 
 
 def _marker_hits_for_path(path: Path) -> list[str]:
