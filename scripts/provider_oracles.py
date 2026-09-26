@@ -297,7 +297,9 @@ def _pixel_fingerprint(path: Path) -> tuple[str, int, int, str]:
     """Return a bounded-memory RGBA pixel hash, width, height, and format."""
     with Image.open(path) as image:
         image.load()
-        image_format = image.format
+        # iPhone JPEGs are MPO: a JPEG primary image followed by an HDR gain map.
+        # PIL decodes the primary frame, which is what a provider checks.
+        image_format = "JPEG" if image.format == "MPO" else image.format
         if image_format not in {"JPEG", "PNG", "WEBP"}:
             raise ValueError(f"unsupported image format: {image_format or 'unknown'}")
         digest = hashlib.sha256()

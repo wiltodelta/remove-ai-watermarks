@@ -50,6 +50,7 @@ from remove_ai_watermarks.video_encoding import (
 from remove_ai_watermarks.video_temporal import stabilize_filled_frame
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
 
     from numpy.typing import NDArray
@@ -80,6 +81,19 @@ _HAILUO_STRONG_CONFIDENCE = 0.34
 _KLING_WEAK_CONFIDENCE = 0.20
 _KLING_STRONG_CONFIDENCE = 0.24
 _KLING_MIN_WHITE_FRACTION = 0.02
+# The Hailuo label is white. A Hailuo 2.3 clip served by Higgsfield (2026-09-25)
+# scored 0.33-0.35 on wood grain, above the real label's 0.31, with no bright
+# low-saturation pixel in the box; the real label and the synthetic example
+# measure 1.00 and 0.15.
+_HAILUO_MIN_WHITE_FRACTION = 0.02
+# Vidu (ShengShu) "Vidu AI" logo plus wordmark, bottom-right. Measured 2026-09-24 on
+# the one real Vidu Q3 export (fixture visible/vidu/provider-original.mp4): 0.72-0.73
+# on every frame at 1080p, 720p and 480p re-encodes, 0.60 at 360p. The maximum over
+# the 956 other videos of the local corpus and every tracked fixture (every 12th
+# frame) was 0.41; none reached 0.52. One positive clip is a thin cohort: the
+# floors sit between the two with margin on both sides.
+_VIDU_WEAK_CONFIDENCE = 0.52
+_VIDU_STRONG_CONFIDENCE = 0.58
 _MIN_STABLE_FRAMES = 5
 _MIN_VEO_STABLE_FRAMES = 12
 _MIN_FIXED_MARK_STABLE_FRAMES = 12
@@ -94,6 +108,10 @@ _VEO_DIAMOND_PROFILES = (
 _DOLA_RELATIVE_HEIGHTS = tuple(value / 1000 for value in range(22, 41))
 _HAILUO_RELATIVE_HEIGHTS = tuple(value / 1000 for value in range(28, 56, 3))
 _KLING_RELATIVE_HEIGHTS = tuple(value / 1000 for value in range(24, 49, 3))
+_VIDU_RELATIVE_HEIGHTS = tuple(value / 1000 for value in range(34, 61, 3))
+# ShengShu (北京生数科技有限公司), Vidu's maker, as the USCC inside a TC260
+# ContentProducer. Verified against the Beijing municipal list of 2025-03-03.
+VIDU_TC260_PRODUCER_CODES = ("91110108MACC4D63XF",)
 _HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
 
 
@@ -308,6 +326,45 @@ def _kling_logo_template() -> NDArray[Any]:
     return _crop_nonzero(template)
 
 
+def _vidu_capsule(height: int, width: int, angle: float, stroke: int) -> NDArray[Any]:
+    canvas = Image.new("L", (200, 200), 0)
+    ImageDraw.Draw(canvas).rounded_rectangle(
+        (100 - width // 2, 100 - height // 2, 100 + width // 2, 100 + height // 2),
+        radius=width // 2,
+        outline=255,
+        width=stroke,
+    )
+    rotation = cv2.getRotationMatrix2D((100, 100), angle, 1.0)
+    return _crop_nonzero(cv2.warpAffine(np.asarray(canvas, dtype=np.uint8), rotation, (200, 200)))
+
+
+@lru_cache(maxsize=1)
+def _vidu_template() -> NDArray[Any]:
+    """Return a synthetic Vidu logo plus "Vidu AI" wordmark silhouette.
+
+    The logo is two outlined capsules leaning into a V; the text is font-rendered.
+    Proportions follow the measured 1080p mark (232 x 50 px: logo 65 x 50, text
+    155 x 35 centered 12 px after it). No pixels come from an export.
+    """
+    canvas = np.zeros((100, 464), dtype=np.uint8)
+    logo = np.zeros((100, 130), dtype=np.uint8)
+    left = _vidu_capsule(96, 40, 24, 11)
+    left = cv2.resize(left, (left.shape[1] * 100 // left.shape[0], 100))
+    logo[:, : left.shape[1]] = np.maximum(logo[:, : left.shape[1]], left)
+    right = _vidu_capsule(96, 40, -24, 11)
+    right = cv2.resize(right, (right.shape[1] * 100 // right.shape[0], 100))
+    offset = 130 - right.shape[1]
+    logo[:, offset:] = np.maximum(logo[:, offset:], right)
+    canvas[:, :130] = logo
+    text = Image.new("L", (600, 140), 0)
+    ImageDraw.Draw(text).text(
+        (4, 10), "Vidu AI", font=_scalable_default_font(96), fill=255, stroke_width=1, stroke_fill=255
+    )
+    word = cv2.resize(_crop_nonzero(np.asarray(text, dtype=np.uint8)), (310, 70), interpolation=cv2.INTER_AREA)
+    canvas[15:85, 154:464] = np.maximum(canvas[15:85, 154:464], word)
+    return canvas
+
+
 def _top_hat(gray: NDArray[Any]) -> NDArray[Any]:
     kernel = np.ones((7, 7), dtype=np.uint8)
     return cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
@@ -348,6 +405,7 @@ def _template_sources() -> dict[str, NDArray[Any]]:
         "seedance": _seedance_template(),
         "dola": _dola_template(),
         "hailuo": _hailuo_template(),
+        "vidu": _vidu_template(),
         "kling-logo": _kling_logo_template(),
         # The Doubao video mark is the same "豆包AI生成" run the image engine
         # matches (its synthetic alpha asset), bottom-right on video frames.
@@ -676,6 +734,22 @@ def detect_dola_frame(
     )
 
 
+def _white_fraction(roi: NDArray[Any]) -> float:
+    """Share of bright, low-saturation pixels, the color of the white video labels."""
+    if roi.size == 0:
+        return 0.0
+    if roi.ndim == 2:
+        return float(np.mean(roi >= 180))
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    return float(np.mean((hsv[:, :, 1] <= 55) & (hsv[:, :, 2] >= 180)))
+
+
+def _reaches_kling_edge(region: Region, frame_width: int, frame_height: int) -> bool:
+    """Whether a Kling candidate box reaches the bottom-right frame edge."""
+    x, y, width, height = region
+    return x + width >= frame_width * 0.96 and y + height >= frame_height * 0.94
+
+
 def detect_hailuo_frame(
     image_bgr: NDArray[Any],
     *,
@@ -696,6 +770,8 @@ def detect_hailuo_frame(
         return detection
     frame_width = image_bgr.shape[1]
     x, y, width, height = detection.region
+    if _white_fraction(image_bgr[y : y + height, x : x + width]) < _HAILUO_MIN_WHITE_FRACTION:
+        return FrameLocalization(frame_index, 0.0, None)
     horizontal_padding = round(height * 1.25)
     region = _bounded_region(
         x - horizontal_padding,
@@ -709,6 +785,24 @@ def detect_hailuo_frame(
         frame_index,
         detection.confidence,
         region,
+    )
+
+
+def detect_vidu_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate the strongest fixed Vidu logo-plus-wordmark candidate."""
+    return _detect_fixed_mark(
+        image_bgr,
+        "vidu",
+        relative_heights=_VIDU_RELATIVE_HEIGHTS,
+        search_origin=(0.70, 0.84),
+        kernel_fraction=0.18,
+        normalized=None if prepared is None else (prepared.normalized_gray, prepared.normalized_scale),
+        frame_index=frame_index,
     )
 
 
@@ -762,9 +856,7 @@ def detect_kling_frame(
     edge_candidates = [
         candidate
         for candidate in expanded
-        if candidate.region is not None
-        and candidate.region[0] + candidate.region[2] >= frame_width * 0.96
-        and candidate.region[1] + candidate.region[3] >= frame_height * 0.94
+        if candidate.region is not None and _reaches_kling_edge(candidate.region, frame_width, frame_height)
     ]
     font_candidate = None if not edge_candidates else max(edge_candidates, key=lambda candidate: candidate.confidence)
 
@@ -782,18 +874,19 @@ def detect_kling_frame(
     logo_x: int | None = None
     if logo.region is not None and logo.confidence >= 0.44:
         logo_x, logo_y, _, logo_height = logo.region
-        logo_candidate = FrameLocalization(
-            frame_index,
-            logo.confidence,
-            _bounded_region(
-                logo_x - round(logo_height * 0.2),
-                logo_y - round(logo_height * 0.25),
-                round(logo_height * 7.8),
-                round(logo_height * 1.5),
-                frame_width=frame_width,
-                frame_height=frame_height,
-            ),
+        logo_region = _bounded_region(
+            logo_x - round(logo_height * 0.2),
+            logo_y - round(logo_height * 0.25),
+            round(logo_height * 7.8),
+            round(logo_height * 1.5),
+            frame_width=frame_width,
+            frame_height=frame_height,
         )
+        # The swirl arm must reach the same frame edge as the text arm: a swirl
+        # match on wood grain 11% short of the right edge covered every frame of
+        # a Higgsfield Cinema Studio clip (2026-09-25).
+        if _reaches_kling_edge(logo_region, frame_width, frame_height):
+            logo_candidate = FrameLocalization(frame_index, logo.confidence, logo_region)
 
     best = font_candidate or logo_candidate
     if (
@@ -808,13 +901,7 @@ def detect_kling_frame(
     if best is None or best.region is None:
         return FrameLocalization(frame_index, 0.0, None)
     x, y, width, height = best.region
-    roi = image_bgr[y : y + height, x : x + width]
-    if roi.ndim == 2:
-        white_fraction = float(np.mean(roi >= 180))
-    else:
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        white_fraction = float(np.mean((hsv[:, :, 1] <= 55) & (hsv[:, :, 2] >= 180)))
-    if white_fraction < _KLING_MIN_WHITE_FRACTION:
+    if _white_fraction(image_bgr[y : y + height, x : x + width]) < _KLING_MIN_WHITE_FRACTION:
         return FrameLocalization(frame_index, 0.0, None)
     return best
 
@@ -1044,13 +1131,31 @@ VISIBLE_MARK_POLICIES: dict[str, VisibleMarkPolicy] = {
         # a MiniMax TC260 label only drops the strong-frame requirement for an
         # already-stable run (see has_hailuo_video_provenance).
     ),
+    "vidu": VisibleMarkPolicy(
+        weak_floor=_VIDU_WEAK_CONFIDENCE,
+        strong_floor=_VIDU_STRONG_CONFIDENCE,
+        transition_floor=0.45,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.80,
+        padding_fraction=0.12,
+        mask_style="box",
+        # No provenance_weak_floor: a ShengShu TC260 label confirms the vendor
+        # (has_vidu_video_provenance) but does not lower the measured bar.
+    ),
     "kling": VisibleMarkPolicy(
         weak_floor=_KLING_WEAK_CONFIDENCE,
         strong_floor=_KLING_STRONG_CONFIDENCE,
         transition_floor=0.30,
         min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
         cover_after_confirmation=True,
-        anchor_iou=0.80,
+        # Kling's per-frame score does not separate texture from the label: over
+        # 1008 local videos the top clip, an OpenArt export with no Kling mark,
+        # scored 0.81 against 0.63 for the real overlay, and none of 68 inspected
+        # clips between 0.24 and 0.81 showed one (2026-09-25). The overlay's box
+        # is identical on every frame, while texture matches drift a few pixels, so
+        # a run must stay anchored far tighter than the shared 0.80.
+        anchor_iou=0.95,
         padding_fraction=0.12,
         mask_style="box",
         accepts_provenance=False,
@@ -1145,10 +1250,18 @@ def _stabilize_localizations(
     # the generator name. Veo may also cover the sequence without provenance
     # after its longer, strong fixed-position run. Cover low-contrast transition
     # frames with the nearest confirmed position.
+    #
+    # The carry stops ``min_stable_frames`` after the last frame that still shows the
+    # mark. China's labeling rules (CAC Measures, Article 4) require a video label only
+    # on the opening frames; without this bound a label seen for 2 s had its box
+    # inpainted over the whole clip (measured 2026-09-23: 240 of 240 frames for a
+    # 48-frame label on every policy with cover_after_confirmation). No committed
+    # provider clip relied on a tail carry longer than zero frames.
     confirmed_positions = [position for position, region in enumerate(accepted) if region is not None]
     if (provenance or cover_after_confirmation) and confirmed_positions:
         confirmed_regions = [accepted[position] for position in confirmed_positions]
         carry_position = confirmed_positions[0]
+        last_supported = confirmed_positions[-1]
         for position, region in enumerate(accepted):
             if region is not None:
                 carry_position = position
@@ -1163,6 +1276,9 @@ def _stabilize_localizations(
                 )
             ):
                 accepted[position] = raw.region
+                last_supported = max(last_supported, position)
+                continue
+            if position > last_supported + min_stable_frames:
                 continue
             accepted[position] = accepted[carry_position]
 
@@ -1252,6 +1368,7 @@ def scan_video_marks(
                 detect_doubao_frame,
                 detect_dola_frame,
                 detect_hailuo_frame,
+                detect_vidu_frame,
                 detect_kling_frame,
             ),
             strict=True,
@@ -1534,13 +1651,65 @@ def has_bytedance_video_provenance(markers: dict[str, str]) -> bool:
     return ("bytedance" in identity or "byteplus" in identity) and "trainedalgorithmicmedia" in source_type
 
 
+def tc260_producer_in(producer: str, codes: Iterable[str]) -> bool:
+    """Whether a TC260 ``ContentProducer`` names one of ``codes`` (USCC-normalized, casefolded)."""
+    from remove_ai_watermarks.metadata import uscc_of
+
+    code = uscc_of(producer.strip()).casefold()
+    return bool(code) and code in {candidate.casefold() for candidate in codes}
+
+
 def has_doubao_video_provenance(markers: dict[str, str]) -> bool:
     """Whether the structural TC260 producer identifies registered Doubao provenance."""
-    from remove_ai_watermarks.metadata import uscc_of
     from remove_ai_watermarks.watermark_registry import get_mark
 
-    producer = uscc_of(markers.get("aigc_producer", "").strip()).casefold()
-    return producer in {code.casefold() for code in get_mark("doubao").tc260_producer_codes}
+    return tc260_producer_in(markers.get("aigc_producer", ""), get_mark("doubao").tc260_producer_codes)
+
+
+# Tokens of the C2PA issuer each mark's own vendor signs with, compared casefolded.
+_VIDEO_MARK_ISSUER_TOKENS: dict[str, tuple[str, ...]] = {
+    "sora": ("openai",),
+    "veo": ("google",),
+    "seedance": ("bytedance", "byteplus"),
+    "doubao": ("bytedance", "byteplus"),
+    "dola": ("bytedance", "byteplus"),
+    "hailuo": ("minimax",),
+    "vidu": ("shengshu", "vidu"),
+    "kling": ("kling", "kuaishou"),
+}
+
+
+def contradicts_video_provenance(mark: str, markers: dict[str, str]) -> bool:
+    """Whether provenance names a producer other than the visible mark's vendor.
+
+    Kling alone also reads the TC260 producer. The Kling detector's thresholds are
+    low (0.20/0.24) and it scores any white
+    Latin wordmark in the bottom-right corner: a real Vidu Q3 export (2026-09-23,
+    "Vidu AI" logo plus wordmark) scored 0.56 on the ring template and 0.37-0.40 on
+    the font templates, a stable 193/193-frame run. The same file's TC260 label
+    names Vidu's producer, so a present, non-Kling producer vetoes the visual match.
+    A missing label is not evidence either way and leaves the visual path alone.
+
+    A C2PA manifest that itself claims AI generation by another vendor contradicts
+    any mark: a Veo 3.1 Lite clip with Google's C2PA (Higgsfield, 2026-09-24) scored
+    0.61 for Kling on wood texture, against 0.63 on the real Kling original, a stable
+    192-frame run; a Gemini Omni 1.1 Flash clip with Google's C2PA (Runway,
+    2026-09-25) scored 0.61-0.67 for Sora on a steam wisp over five frames. A
+    re-signing platform (YouTube) records no AI source type, so it vetoes nothing.
+    """
+    producer = markers.get("aigc_producer", "").strip()
+    if mark == "kling" and producer:
+        from remove_ai_watermarks.watermark_registry import get_mark
+
+        return not tc260_producer_in(producer, get_mark("kling").tc260_producer_codes)
+    issuer = markers.get("issuer", "").casefold()
+    claims_ai = "trainedalgorithmicmedia" in markers.get("source_type", "").casefold()
+    return bool(issuer) and claims_ai and not any(token in issuer for token in _VIDEO_MARK_ISSUER_TOKENS[mark])
+
+
+def has_vidu_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether a TC260 label names ShengShu, Vidu's maker, as the producer."""
+    return tc260_producer_in(markers.get("aigc_producer", ""), VIDU_TC260_PRODUCER_CODES)
 
 
 def has_hailuo_video_provenance(markers: dict[str, str]) -> bool:

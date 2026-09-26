@@ -829,6 +829,43 @@ class TestC2paBufferScans:
         ]
         assert synthid_evidence_vendors_in(b"c2pa Google trainedAlgorithmicMedia") == ["Google LLC"]
 
+    @pytest.mark.parametrize(
+        ("descriptions", "expected"),
+        [([], ["Google LLC"]), (["Added imperceptible SynthID watermark"], ["Google LLC"])],
+    )
+    def test_structured_google_photos_edit_reads_the_synthid_action(self, descriptions, expected):
+        actions = [{"action": "c2pa.deleted", "digitalSourceType": "compositeWithTrainedAlgorithmicMedia"}]
+        actions += [{"action": "c2pa.edited", "description": text} for text in descriptions]
+        store = {
+            "active_manifest": "edit",
+            "manifests": {
+                "edit": {
+                    "signature_info": {"issuer": "Google LLC", "common_name": "Google Photos"},
+                    "assertions": [{"label": "c2pa.actions.v2", "data": {"actions": actions}}],
+                }
+            },
+        }
+
+        assert c2pa_info_from_manifest_store(store).get("synthid_vendors") == expected
+
+    def test_google_photos_ai_edit_establishes_synthid_without_an_action(self):
+        """Byte-scan path: Google's checker found SynthID on every Photos AI edit tested."""
+        from remove_ai_watermarks._internal.c2pa import synthid_evidence_vendors_in
+
+        edit = b"c2pa Google LLC Google Photos c2pa.deleted compositeWithTrainedAlgorithmicMedia"
+        assert synthid_evidence_vendors_in(edit) == ["Google LLC"]
+        assert synthid_evidence_vendors_in(edit + b" Added imperceptible SynthID watermark") == ["Google LLC"]
+        # An OpenAI generation edited in Photos keeps its own action-based evidence.
+        assert synthid_evidence_vendors_in(edit + b" OpenAI c2pa.watermarked.unbound") == ["Google LLC", "OpenAI"]
+
+    def test_youtube_reencode_needs_a_recorded_synthid_action(self):
+        """YouTube re-signs every upload as Google LLC; only a SynthID action in the chain counts."""
+        from remove_ai_watermarks._internal.c2pa import synthid_evidence_vendors_in
+
+        upload = b"c2pa Google LLC YouTube Video Processing Services c2pa.transcoded trainedAlgorithmicMedia"
+        assert synthid_evidence_vendors_in(upload) == []
+        assert synthid_evidence_vendors_in(upload + b" Added imperceptible SynthID watermark") == ["Google LLC"]
+
     def test_fingerprint_does_not_suppress_fallback_google_synthid(self):
         from remove_ai_watermarks._internal.c2pa import _populate_registry_fields
 
@@ -1124,3 +1161,78 @@ class TestC2paReaderFailureIsVisible:
         records = self._records(caplog, str(target))
 
         assert records == []
+
+
+class TestC2pa24Assertions:
+    """C2PA 2.4 AI disclosure and ingredient digitalSourceType (spec 2.4, April 2026)."""
+
+    @staticmethod
+    def _store(assertions: list[dict], ingredients: list[dict] | None = None) -> dict:
+        manifest: dict = {"claim_generator": "some-editor/1.0", "assertions": assertions}
+        if ingredients is not None:
+            manifest["ingredients"] = ingredients
+        return {"active_manifest": "active", "manifests": {"active": manifest}}
+
+    @pytest.mark.parametrize(
+        ("oversight", "kind"),
+        [("fully_autonomous", "generated"), ("prompt_guided", "generated"), ("human_validated", "enhanced")],
+    )
+    def test_ai_disclosure_alone_asserts_ai_with_the_spec_kind(self, oversight: str, kind: str):
+        store = self._store(
+            [
+                {
+                    "label": "c2pa.ai-disclosure",
+                    "data": {
+                        "modelType": "diffusion",
+                        "modelName": "Example Diffusion 3",
+                        "contentProfile": {"humanOversightLevel": oversight},
+                    },
+                }
+            ]
+        )
+
+        info = c2pa_info_from_manifest_store(store)
+
+        assert info["ai_source_kind"] == kind
+        assert info["ai_disclosure"] == "Example Diffusion 3"
+        assert info["human_oversight"] == oversight
+
+    def test_digital_source_type_still_decides_the_kind_over_disclosure(self):
+        store = self._store(
+            [
+                {
+                    "label": "c2pa.actions.v2",
+                    "data": {"actions": [{"action": "c2pa.created", "digitalSourceType": "trainedAlgorithmicMedia"}]},
+                },
+                {
+                    "label": "c2pa.ai-disclosure",
+                    "data": {"modelType": "diffusion", "contentProfile": {"humanOversightLevel": "human_validated"}},
+                },
+            ]
+        )
+
+        assert c2pa_info_from_manifest_store(store)["ai_source_kind"] == "generated"
+
+    def test_ingredient_digital_source_type_is_read(self):
+        store = self._store(
+            [],
+            ingredients=[
+                {
+                    "title": "background.png",
+                    "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+                }
+            ],
+        )
+
+        assert c2pa_info_from_manifest_store(store)["ai_source_kind"] == "generated"
+
+    def test_manifest_without_either_signal_stays_unclaimed(self):
+        assert "ai_source_kind" not in c2pa_info_from_manifest_store(self._store([]))
+
+
+def test_byte_fallback_reads_ai_disclosure_label():
+    from remove_ai_watermarks._internal.c2pa import _populate_registry_fields
+
+    info: dict = {}
+    assert _populate_registry_fields(b"jumb c2pa c2pa.ai-disclosure modelType human_validated", info) is True
+    assert info["ai_source_kind"] == "enhanced"

@@ -283,6 +283,14 @@ def _video_mark_frame(key: str, w: int, h: int) -> np.ndarray:
         tmpl, scale, x, y = templates["dola"], 0.036, int(w * 0.70), int(h * 0.88)
     elif key == "hailuo":
         tmpl, scale, x, y = templates["hailuo"], 0.052, int(w * 0.34), int(h * 0.82)
+    elif key == "vidu":
+        # Logo plus wordmark bottom-right, at the measured 1080p geometry: 4.6% of
+        # the short side tall, ~3% off the right and bottom edges.
+        tmpl = templates["vidu"]
+        th = max(8, round(short * 0.046))
+        tw = max(1, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = w - tw - round(short * 0.029), h - th - round(short * 0.033)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 250)
     elif key == "kling":
         # The FULL mark: swirl logo left of the text run, flush against the
         # bottom-right EDGE. The font arm is edge-gated (region must reach

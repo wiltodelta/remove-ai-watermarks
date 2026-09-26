@@ -109,7 +109,12 @@ Oracles and checkpoints are pinned as in the kernel document.
 
 ## Follow-ups
 
-- A keyed-scheme perspective needs a scheme with actual key control; WmForger
-  and WMCopier diffusion-attack baselines remain the map's heavyweight item.
+- A keyed-scheme perspective needs a scheme with actual key control. WmForger
+  ([arXiv:2510.20468](https://arxiv.org/abs/2510.20468), NeurIPS 2025) is a
+  gradient attack on an image preference model, not a diffusion attack, and its
+  code ships MIT-licensed in `facebookresearch/videoseal`, so it can run against
+  the pinned VideoSeal oracle and the local TrustMark decoder. WMCopier
+  ([arXiv:2503.22330](https://arxiv.org/abs/2503.22330)) has public code but no
+  license, so its outputs cannot be published here.
 - A general remover-trace detector would need features beyond one band ratio
   and validation against removals this project did not produce.

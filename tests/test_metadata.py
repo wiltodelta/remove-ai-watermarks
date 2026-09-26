@@ -23,6 +23,7 @@ from remove_ai_watermarks.metadata import (
     iptc_ai_system,
     remove_ai_metadata,
     samsung_genai,
+    scan_head,
     strip_and_verify,
     synthid_source,
     xai_signature,
@@ -1775,7 +1776,7 @@ class TestAIGCLabel:
 
 
 class TestHuggingFaceJob:
-    """Hugging Face-hosted job marker (``hf-job-id`` PNG text chunk)."""
+    """Higgsfield job marker (``hf-job-id`` PNG text chunk)."""
 
     def _hf_png(self, tmp_path: Path, job_id: str = "ec8380a6-2091-423a-b835-209420f99ee1") -> Path:
         p = tmp_path / "hfjob.png"
@@ -2430,3 +2431,117 @@ class TestDisplayTagsSurviveTheStrip:
         with Image.open(out) as im:
             assert im.info.get("icc_profile") == source_icc
             assert im.getexif().get(0x0112) == self.ORIENT
+
+
+class TestContainerRouting:
+    """Containers the PIL re-save used to corrupt or the head window used to miss."""
+
+    @staticmethod
+    def _gif_with_xmp(path: Path) -> None:
+        colors = [(200, 30, 30), (30, 200, 30), (30, 30, 200)]
+        frames = [Image.new("RGB", (16, 16), color).convert("P") for color in colors]
+        frames[0].save(
+            path,
+            save_all=True,
+            append_images=frames[1:],
+            duration=100,
+            loop=0,
+            comment=b"trainedAlgorithmicMedia",
+        )
+        data = path.read_bytes()
+        # An XMP application extension ("XMP DataXMP") carrying an AI source type,
+        # inserted before the first image descriptor.
+        xmp = b"<x:xmpmeta Iptc4xmpExt:DigitalSourceType=trainedAlgorithmicMedia/>"
+        blocks = b"".join(bytes([len(xmp[i : i + 255])]) + xmp[i : i + 255] for i in range(0, len(xmp), 255))
+        extension = b"\x21\xff\x0bXMP DataXMP" + blocks + b"\x00"
+        # Insert right after the header, screen descriptor and global colour table.
+        packed = data[10]
+        blocks_start = 13 + (3 * (2 ** ((packed & 0x07) + 1)) if packed & 0x80 else 0)
+        path.write_bytes(data[:blocks_start] + extension + data[blocks_start:])
+
+    def test_gif_strip_keeps_every_frame_and_the_gif_container(self, tmp_path: Path):
+        src = tmp_path / "anim.gif"
+        self._gif_with_xmp(src)
+        assert b"trainedAlgorithmicMedia" in src.read_bytes()
+
+        out = tmp_path / "clean.gif"
+        remove_ai_metadata(src, out)
+
+        cleaned = out.read_bytes()
+        assert cleaned[:6] == b"GIF89a"
+        assert b"trainedAlgorithmicMedia" not in cleaned
+        assert b"NETSCAPE2.0" in cleaned
+        with Image.open(src) as before, Image.open(out) as after:
+            assert after.format == "GIF"
+            assert after.n_frames == before.n_frames == 3
+            for index in range(3):
+                before.seek(index)
+                after.seek(index)
+                assert after.convert("RGB").tobytes() == before.convert("RGB").tobytes()
+
+    def test_tiff_strip_is_refused_instead_of_rewritten_as_png(self, tmp_path: Path):
+        src = tmp_path / "scan.tif"
+        Image.new("RGB", (8, 8)).save(src)
+        with pytest.raises(ValueError, match="TIFF/DNG"):
+            remove_ai_metadata(src, tmp_path / "clean.tif")
+        assert not (tmp_path / "clean.tif").exists()
+
+    def test_c2pa_chunk_after_large_wav_data_reaches_the_head_scan(self, tmp_path: Path):
+        # C2PA puts a RIFF manifest in the last top-level chunk; audio longer than the
+        # head window pushed it out of every byte detector's view.
+        payload = b"c2pa trainedAlgorithmicMedia"
+        pcm = b"\x00" * (2 * 1024 * 1024)
+        fmt = struct.pack("<4sIHHIIHH", b"fmt ", 16, 1, 1, 8000, 16000, 2, 16)
+        body = fmt + b"data" + struct.pack("<I", len(pcm)) + pcm + b"C2PA" + struct.pack("<I", len(payload)) + payload
+        wav = tmp_path / "long.wav"
+        wav.write_bytes(b"RIFF" + struct.pack("<I", 4 + len(body)) + b"WAVE" + body)
+
+        assert b"trainedAlgorithmicMedia" in scan_head(wav)
+
+
+class TestTc260AudioPlacements:
+    """TC260-PG-202510A (2025-08) placements of the implicit label in audio files."""
+
+    LABEL = (
+        '{"Label":"1","ContentProducer":"001191110108MACC4D63XF10306","ProduceID":"x",'
+        '"ReservedCode1":"","ContentPropagator":"","PropagateID":"","ReservedCode2":""}'
+    )
+
+    def test_wav_riff_aigc_chunk_is_read_and_stripped(self, tmp_path: Path):
+        label = self.LABEL.encode()
+        fmt = struct.pack("<4sIHHIIHH", b"fmt ", 16, 1, 1, 8000, 16000, 2, 16)
+        pcm = b"\x00" * 16000
+        body = fmt + b"data" + struct.pack("<I", len(pcm)) + pcm
+        body += b"AIGC" + struct.pack("<I", len(label)) + label + (b"\x00" if len(label) % 2 else b"")
+        wav = tmp_path / "voice.wav"
+        wav.write_bytes(b"RIFF" + struct.pack("<I", 4 + len(body)) + b"WAVE" + body)
+
+        assert "aigc_label" in get_ai_metadata(wav)
+
+    @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg writes the ID3 and Vorbis tags")
+    @pytest.mark.parametrize("suffix", [".mp3", ".flac", ".ogg"])
+    def test_ffmpeg_written_label_is_read_and_stripped(self, tmp_path: Path, suffix: str):
+        # The guide's own examples write the label with `ffmpeg -metadata AIGC=...`:
+        # an ID3v2 TXXX frame described "AIGC" in MP3, a Vorbis comment elsewhere.
+        source = tmp_path / f"voice{suffix}"
+        subprocess.run(  # noqa: S603
+            [
+                str(shutil.which("ffmpeg")),
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1",
+                "-metadata",
+                f"AIGC={self.LABEL}",
+                str(source),
+            ],
+            check=True,
+        )
+        assert "aigc_label" in get_ai_metadata(source)
+
+        cleaned = tmp_path / f"clean{suffix}"
+        remove_ai_metadata(source, cleaned)
+        assert "aigc_label" not in get_ai_metadata(cleaned)

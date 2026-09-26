@@ -59,3 +59,4 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [C2PA resolution research](c2pa-resolution-research.md) (measured resolver contracts, the privacy gradient, and the decision to never resolve over the network)
 - [External benchmark licensing](external-benchmark-licensing.md) (ETI license-blocked, W-Bench dataset MIT with non-commercial code, verified 2026-09-07)
 - [Chroma1 engine research](chroma1-engine-research.md)
+- [Research sweep, September 2026](research-sweep-2026-09.md) (survey of every covered area, where each finding landed, and open items)

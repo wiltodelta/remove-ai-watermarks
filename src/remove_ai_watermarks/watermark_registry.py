@@ -457,6 +457,7 @@ _ENGINE_CLASS: dict[str, tuple[str, str]] = {
     "microsoft": ("microsoft_engine", "MicrosoftEngine"),
     "generic_ai_label": ("generic_ai_label_engine", "GenericAiLabelEngine"),
     "openart": ("openart_engine", "OpenArtEngine"),
+    "wan": ("wan_engine", "WanEngine"),
 }
 
 
@@ -714,12 +715,24 @@ _REGISTRY: tuple[KnownMark, ...] = (
         tc260_producer_codes=("91440101MA9Y9T4H7A",),
     ),
     _text_mark(
+        "wan",
+        "Wan logo and wordmark",
+        "bottom-right",
+        platform="Alibaba Wan (visible Wan mark detected)",
+        manufacturer="alibaba",
+        # Tongyi Yunqi (Hangzhou) Information Technology, owned by Alibaba Cloud and
+        # Tongyi Lab: the ContentProducer on the measured Wan export.
+        tc260_producer_codes=("91330106MA2CFLDG4R",),
+    ),
+    _text_mark(
         "kling",
         "Kling AI 可灵AI / KlingAI 3.0 text",
         "bottom-right",
         platform="Kuaishou Kling AI (visible 可灵AI / KlingAI 3.0 mark detected)",
         manufacturer="kuaishou",
-        tc260_producer_codes=("91110108335469089C",),
+        # Kling 3.0 Turbo video served by Higgsfield (2026-09-24) names the
+        # producer by the bare string "kling" instead of a USCC.
+        tc260_producer_codes=("91110108335469089C", "kling"),
     ),
     _text_mark(
         "yuanbao",

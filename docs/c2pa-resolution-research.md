@@ -12,7 +12,7 @@ API: a standard way of retrieving manifest stores from a resolution endpoint
 given **a soft binding value, a manifest identifier, or an asset** - three
 input modes that are exactly three privacy exposure levels. The algorithm
 registry (`c2pa-org/softbinding-algorithm-list`) carries the endpoint URIs in
-`softBindingResolutionApis`. As of the packaged revision `c0218cd628c9`,
+`softBindingResolutionApis`. As of the packaged revision `1b3ef637890e`,
 8 of 53 entries publish them.
 
 ## Measured contracts

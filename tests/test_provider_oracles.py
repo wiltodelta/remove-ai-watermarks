@@ -313,6 +313,26 @@ def test_prepare_strips_image_metadata_without_changing_pixels(
     assert oracles.verify_batch(manifest_path)["complete"] is False
 
 
+def test_prepare_accepts_an_iphone_mpo_jpeg(tmp_path: Path) -> None:
+    # iPhone and Google Photos iOS exports are MPO (JPEG plus an HDR gain map).
+    source = tmp_path / "iphone.jpg"
+    primary = Image.new("RGB", (64, 48), (200, 120, 40))
+    gain_map = Image.new("RGB", (32, 24), (90, 90, 90))
+    primary.save(source, "MPO", save_all=True, append_images=[gain_map])
+    with Image.open(source) as image:
+        assert image.format == "MPO"
+    output_dir = tmp_path / "oracle-batch"
+
+    manifest_path = oracles.prepare_batch(
+        "gemini-web", [source], output_dir=output_dir, repository_root=oracles.REPOSITORY_ROOT
+    )
+
+    row = json.loads(manifest_path.read_text(encoding="utf-8"))["rows"][0]
+    assert row["media_type"] == "image"
+    assert row["pixels_preserved"] is True
+    assert row["format"] == "jpeg"
+
+
 def test_prepare_keeps_non_image_bytes_exact(tmp_path: Path) -> None:
     source = tmp_path / "clip.mp4"
     source.write_bytes(b"synthetic video fixture")

@@ -20,7 +20,7 @@ remove-ai-watermarks visible image.png --mark gemini -o clean.png
 remove-ai-watermarks visible image.png --keep-metadata -o clean.png
 ```
 
-Image mark keys: `gemini`, `doubao`, `jimeng`, `qwen`, `kling`, `yuanbao`,
+Image mark keys: `gemini`, `doubao`, `jimeng`, `qwen`, `wan`, `kling`, `yuanbao`,
 `samsung`, `runninghub`, `baidu`, `liblib`, `liblib_pill`, `microsoft`,
 `generic_ai_label`, `openart`, `jimeng_pill`. Default
 `--mark auto` removes every selected match. `microsoft` is the top-right AI
@@ -125,7 +125,7 @@ remove-ai-watermarks video batch ./videos --mode all
 ```
 
 Video mark keys: `sora`, `veo`, `seedance`, `doubao`, `dola`, `hailuo`,
-`kling`. Default `--mark auto` picks the first temporally stable match in that
+`vidu`, `kling`. Default `--mark auto` picks the first temporally stable match in that
 order.
 
 `video invisible` and `video all --invisible` accept MP4, MOV, and M4V only.

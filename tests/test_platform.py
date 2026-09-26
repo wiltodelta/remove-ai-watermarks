@@ -346,6 +346,41 @@ class TestVendorForStrength:
         ):
             assert vendor_for_strength(Path("x.png")) == expected
 
+    @pytest.mark.parametrize(("integrity", "expected"), [("valid", "google"), ("invalid", None)])
+    def test_google_photos_ai_edit_keeps_the_google_cohort(self, integrity, expected):
+        """A Photos AI edit carries SynthID although its manifest records no SynthID action."""
+        from remove_ai_watermarks._internal.c2pa import c2pa_info_from_manifest_store
+        from remove_ai_watermarks._internal.watermark_profiles import vendor_for_strength
+
+        info = c2pa_info_from_manifest_store(
+            {
+                "active_manifest": "edit",
+                "manifests": {
+                    "edit": {
+                        "signature_info": {"issuer": "Google LLC", "common_name": "Google Photos"},
+                        "assertions": [
+                            {
+                                "label": "c2pa.actions.v2",
+                                "data": {
+                                    "actions": [
+                                        {
+                                            "action": "c2pa.deleted",
+                                            "digitalSourceType": "compositeWithTrainedAlgorithmicMedia",
+                                        }
+                                    ]
+                                },
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+        assert info["synthid_vendors"] == ["Google LLC"]
+        info.update(c2pa_integrity=integrity, c2pa_signature="valid", c2pa_signer_validity="valid")
+        # The real synthid_source reads the manifest, so an invalid binding drops the cohort.
+        with patch("remove_ai_watermarks._internal.c2pa.extract_c2pa_info", return_value=info):
+            assert vendor_for_strength(Path("x.png")) == expected
+
     def test_both_issuers_google_wins(self):
         # The more-robust watermark wins -> safer (higher) strength.
         from remove_ai_watermarks._internal.watermark_profiles import vendor_for_strength

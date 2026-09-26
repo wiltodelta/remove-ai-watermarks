@@ -40,7 +40,8 @@ never silently triggers a Web upload.
 
 The old Google SynthID Detector portal does not work. On 2026-09-07, the
 official `labs.google/synthid` entry point redirected a signed-in browser to a
-Google 404. Historical corpus rows may still name `synthid-portal`; that value
+Google 404; on 2026-09-23 it redirected to
+`deepmind.google.com/frontiers/synthid`, which also returned 404. Historical corpus rows may still name `synthid-portal`; that value
 describes how an old result was obtained and is not an operational surface.
 Google's newer Search verification entry point did not provide an independent
 oracle allowance in the session tested on 2026-09-13. Lens accepted the

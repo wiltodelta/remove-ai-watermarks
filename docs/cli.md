@@ -17,7 +17,7 @@ defaults. This page focuses on choosing the right command.
 | `classify` | `remove-ai-watermarks[classify]` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
-| Adobe TrustMark signals in `identify` on Python 3.11-3.12 | `remove-ai-watermarks[trustmark]` |
+| Adobe TrustMark signals in `identify` | `remove-ai-watermarks[trustmark]` |
 | `visible` and `erase` with OpenCV | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | `visible` or `erase` with MI-GAN | `remove-ai-watermarks[migan]` |
 | `visible` or `erase` with big-LaMa | `remove-ai-watermarks[lama]` |

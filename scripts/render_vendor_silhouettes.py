@@ -81,6 +81,9 @@ MARKS = {
     "chromastudio_alpha.png": "ChromaStudio.ai",
     "digenai_alpha.png": "DIGENAI",
     "gendo_alpha.png": "GendoAI",
+    # Alibaba Wan (通义万相) bottom-right logo plus "Wan" wordmark. Sentinel:
+    # drawn by draw_wan(), not font-rendered alone.
+    "wan_alpha.png": "Wan logo + Wan",
     # Jianying / 剪映, the China product in the CapCut family, stamps 剪映AI
     # bottom-right (the international CapCut pill sits top-left).
     "jianying_alpha.png": "剪映AI",
@@ -300,10 +303,65 @@ def draw_samsung_en(width: int = 335) -> np.ndarray:
     return arr[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
 
 
+def draw_wan(width: int = 335) -> np.ndarray:
+    """Alibaba Wan logo plus "Wan" wordmark, bottom-right, light-glyph class.
+
+    Geometry measured on the one real Wan 2.7 Pro export (2048 px square,
+    2026-09-23): logo 102 x 103 px, a 19 px gap, then "Wan" 147 px wide with a
+    51 px cap height centered on the logo; 268 x 103 overall. The logo is
+    approximated as a hexagon with a central triangular hole and three pinwheel
+    cuts; the wordmark is Avenir Next Demi Bold, the nearest installed geometric sans.
+    Hole size, cut width and weight were chosen by the best match to the real mark
+    over a small grid (0.66 vs 0.60-0.65 for the neighbors).
+    """
+    import math
+
+    k = width / 268
+    h = round(103 * k)
+    im = Image.new("L", (width, h), 0)
+    d = ImageDraw.Draw(im)
+    logo = round(102 * k)
+    cx, cy, radius = logo / 2, h / 2, logo / 2
+    d.polygon(
+        [
+            (cx + radius * math.cos(math.radians(60 * i)), cy + radius * 0.98 * math.sin(math.radians(60 * i)))
+            for i in range(6)
+        ],
+        fill=255,
+    )
+    inner = [
+        (
+            cx + radius * 0.42 * math.cos(math.radians(90 + 120 * i)),
+            cy + radius * 0.42 * math.sin(math.radians(90 + 120 * i)),
+        )
+        for i in range(3)
+    ]
+    d.polygon(inner, fill=0)
+    cut = max(2, round(logo * 0.05))
+    for i, (px, py) in enumerate(inner):
+        angle = math.radians(90 + 120 * i + 90)
+        d.line(
+            [(px, py), (px + radius * 1.2 * math.cos(angle), py + radius * 1.2 * math.sin(angle))], fill=0, width=cut
+        )
+    text = "Wan"
+    probe = ImageDraw.Draw(Image.new("L", (10, 10)))
+    font = _fit_font(
+        "/System/Library/Fonts/Avenir Next.ttc",
+        lambda f: probe.textbbox((0, 0), text, font=f)[3] - probe.textbbox((0, 0), text, font=f)[1] >= round(51 * k),
+        index=2,
+    )
+    bb = probe.textbbox((0, 0), text, font=font)
+    d.text((round((102 + 19) * k) - bb[0], round(h / 2 - (bb[3] - bb[1]) / 2) - bb[1]), text, font=font, fill=255)
+    arr = np.array(im)
+    ys, xs = np.where(arr > 0)
+    return arr[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+
+
 _CUSTOM_RENDERERS = {
     "catlogo_alpha.png": draw_catlogo,
     "microsoft_alpha.png": draw_msbadge,
     "samsung_en_alpha.png": draw_samsung_en,
+    "wan_alpha.png": draw_wan,
 }
 
 

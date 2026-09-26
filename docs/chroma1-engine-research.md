@@ -10,6 +10,12 @@
 > [supported signals](supported-signals.md), [known limitations](known-limitations.md),
 > and [module internals](module-internals.md). Nothing here is shipped.
 
+Correction 2026-09-23: the claim below is out of date. diffusers now ships
+`Flux2KleinInpaintPipeline`, whose `strength` argument drives `get_timesteps`
+and `scheduler.scale_noise` (checked against the installed 0.40.0 source); with an all-white mask it is partial-noise img2img, and FLUX.2 klein 4B
+is Apache-2.0. A measured FLUX.2 klein global stage is a pending experiment, not
+a shipped profile.
+
 Cited experiment behind issue #88 ("Please integrate Flux 2"): FLUX.2 has no
 native strength img2img anywhere (BFL reference code or diffusers; its image
 inputs are reference conditioning and outputs start from pure noise), so the

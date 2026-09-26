@@ -707,7 +707,7 @@ combines synthetic multi-scale visual matching with temporal consistency, so an
 isolated lookalike in one frame is not enough to authorize inpainting.
 `mark="auto"` is the default: it evaluates all providers in one decode pass and
 selects the first stable match in specificity order (`sora`, `veo`, `seedance`,
-`doubao`, `dola`, `hailuo`, `kling`). Provider confidence values are calibrated
+`doubao`, `dola`, `hailuo`, `vidu`, `kling`). Provider confidence values are calibrated
 independently and are not compared across detectors. Pass one of those explicit
 values to restrict the scan to a single provider. The Veo detector recognizes
 the current four-point diamond and the

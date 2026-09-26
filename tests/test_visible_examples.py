@@ -32,6 +32,7 @@ _PROVIDER_ORIGINALS = {
     "kling": "provider-original-direct.png",
     "microsoft": "provider-original.png",
     "qwen": "provider-original.png",
+    "wan": "provider-original.png",
     "yuanbao": "provider-original.png",
 }
 _VIDEO_PROVIDER_ORIGINALS = {
@@ -39,6 +40,7 @@ _VIDEO_PROVIDER_ORIGINALS = {
     "kling": "provider-original.mp4",
     "sora": "provider-original.mp4",
     "veo": "provider-original.mp4",
+    "vidu": "provider-original.mp4",
 }
 
 

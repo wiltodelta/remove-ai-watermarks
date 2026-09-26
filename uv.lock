@@ -1066,7 +1066,7 @@ wheels = [
 
 [package.optional-dependencies]
 http = [
-    { name = "aiohttp", marker = "python_full_version < '3.13'" },
+    { name = "aiohttp" },
 ]
 
 [[package]]
@@ -1461,15 +1461,15 @@ name = "lightning"
 version = "2.6.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fsspec", extra = ["http"], marker = "python_full_version < '3.13'" },
-    { name = "lightning-utilities", marker = "python_full_version < '3.13'" },
-    { name = "packaging", marker = "python_full_version < '3.13'" },
-    { name = "pytorch-lightning", marker = "python_full_version < '3.13'" },
-    { name = "pyyaml", marker = "python_full_version < '3.13'" },
-    { name = "torch", marker = "python_full_version < '3.13'" },
-    { name = "torchmetrics", marker = "python_full_version < '3.13'" },
-    { name = "tqdm", marker = "python_full_version < '3.13'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "fsspec", extra = ["http"] },
+    { name = "lightning-utilities" },
+    { name = "packaging" },
+    { name = "pytorch-lightning" },
+    { name = "pyyaml" },
+    { name = "torch" },
+    { name = "torchmetrics" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/39/b8/fbf1469d917c3ed3b22e00ab3a852fb9a5f85b9dc7f7060eedc3449098e7/lightning-2.6.6.tar.gz", hash = "sha256:1c6329e241f8a85f29fedead89c1ee138b36caa08de60c260c6a7eaee81c8295", size = 659902, upload-time = "2026-09-10T09:41:03.009Z" }
 wheels = [
@@ -1481,8 +1481,8 @@ name = "lightning-utilities"
 version = "0.15.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "packaging", marker = "python_full_version < '3.13'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "packaging" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f1/45/7fa8f56b17dc0f0a41ec70dd307ecd6787254483549843bef4c30ab5adce/lightning_utilities-0.15.3.tar.gz", hash = "sha256:792ae0204c79f6859721ac7f386c237a33b0ed06ba775009cb894e010a842033", size = 33553, upload-time = "2026-02-22T14:48:53.348Z" }
 wheels = [
@@ -3179,14 +3179,14 @@ name = "pytorch-lightning"
 version = "2.6.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fsspec", extra = ["http"], marker = "python_full_version < '3.13'" },
-    { name = "lightning-utilities", marker = "python_full_version < '3.13'" },
-    { name = "packaging", marker = "python_full_version < '3.13'" },
-    { name = "pyyaml", marker = "python_full_version < '3.13'" },
-    { name = "torch", marker = "python_full_version < '3.13'" },
-    { name = "torchmetrics", marker = "python_full_version < '3.13'" },
-    { name = "tqdm", marker = "python_full_version < '3.13'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "fsspec", extra = ["http"] },
+    { name = "lightning-utilities" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "torch" },
+    { name = "torchmetrics" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/97/e4/5025cb42311b4f8cc6d1b12cd81399ca433159f8e3831ab229c5a6c5177e/pytorch_lightning-2.6.6.tar.gz", hash = "sha256:52c52b20522dd3d3feb3bb3aae2dbe3f291e8e836d4111a74cfd72e9df018834", size = 662507, upload-time = "2026-09-10T09:41:16.684Z" }
 wheels = [
@@ -3480,7 +3480,7 @@ all = [
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
-    { name = "trustmark", marker = "python_full_version < '3.13'" },
+    { name = "trustmark" },
 ]
 classify = [
     { name = "huggingface-hub" },
@@ -3614,7 +3614,7 @@ text-restoration = [
     { name = "transformers" },
 ]
 trustmark = [
-    { name = "trustmark", marker = "python_full_version < '3.13'" },
+    { name = "trustmark" },
 ]
 video = [
     { name = "av" },
@@ -3691,7 +3691,7 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'qwen-zimage'", specifier = ">=0.20.0" },
     { name = "transformers", marker = "extra == 'classify'", specifier = ">=5,<6" },
     { name = "transformers", marker = "extra == 'diffusion'", specifier = ">=5,<6" },
-    { name = "trustmark", marker = "python_full_version < '3.13' and extra == 'trustmark'", specifier = ">=0.8.0" },
+    { name = "trustmark", marker = "extra == 'trustmark'", specifier = ">=0.9.2" },
 ]
 provides-extras = ["pixels", "heif", "visible", "video", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "classify", "classify-onnx", "source-classify", "lama", "migan", "dev", "all"]
 
@@ -4076,10 +4076,11 @@ name = "torchmetrics"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "lightning-utilities", marker = "python_full_version < '3.13'" },
+    { name = "lightning-utilities" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "packaging", marker = "python_full_version < '3.13'" },
-    { name = "torch", marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "packaging" },
+    { name = "torch" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/81/34/39b8b749333db56c0585d7a11fa62a283c087bb1dfc897d69fb8cedbefb1/torchmetrics-1.9.0.tar.gz", hash = "sha256:a488609948600df52d3db4fcdab02e62aab2a85ef34da67037dc3e65b8512faa", size = 581765, upload-time = "2026-03-09T17:41:22.443Z" }
 wheels = [
@@ -4174,13 +4175,14 @@ name = "trustmark"
 version = "0.9.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "einops", marker = "python_full_version < '3.13'" },
-    { name = "lightning", marker = "python_full_version < '3.13'" },
+    { name = "einops" },
+    { name = "lightning" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "omegaconf", marker = "python_full_version < '3.13'" },
-    { name = "six", marker = "python_full_version < '3.13'" },
-    { name = "torch", marker = "python_full_version < '3.13'" },
-    { name = "torchvision", marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "omegaconf" },
+    { name = "six" },
+    { name = "torch" },
+    { name = "torchvision" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/53/41/32e84596af94e8696c55060d55eb9eed9d99722a673d12212a1c0c4ef1d2/trustmark-0.9.2.tar.gz", hash = "sha256:bcaa3bc38ead1c0558df81932672f34e306efaed31389da57dbed100e236b28a", size = 63780, upload-time = "2026-09-08T10:58:11.601Z" }
 

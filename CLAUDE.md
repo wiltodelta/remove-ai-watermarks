@@ -8,6 +8,7 @@ The project gives users control over provenance marks on content they generated 
 
 - Add visible templates only for AI-generation labels.
 - Do not add stock, agency, or classifieds marks to `watermark_registry.py`.
+- Do not add templates for regulator-defined disclosure icons (EU Code of Practice Annex 1).
 - Keep `erase --region` generic and user-directed; do not build an automatic stock-watermark remover on it.
 
 Full boundary and legal context: [`docs/legal-and-safety.md`](docs/legal-and-safety.md).

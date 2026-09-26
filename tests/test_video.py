@@ -7,6 +7,7 @@ import io
 import json
 import shutil
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import cv2
@@ -20,7 +21,6 @@ from remove_ai_watermarks.metadata import C2PA_UUID
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 
 _MP4_FTYP = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
@@ -968,7 +968,7 @@ class TestVideoProvenanceApi:
         assert report.visible_mark == "sora"
         assert report.visible_detected_frames == 5
         assert report.total_frames == 5
-        assert tuple(VIDEO_VISIBLE_MARKS) == ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "kling")
+        assert tuple(VIDEO_VISIBLE_MARKS) == ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
 
     def test_reports_unknown_instead_of_clean(self, tmp_path: Path):
         from remove_ai_watermarks.video import identify_video
@@ -2122,6 +2122,120 @@ class TestAdditionalProviderTemporalArbiter:
         assert stabilize(weak) == [None] * 12
         assert stabilize(strong) == [box] * 12
 
+    # Producer codes as they appear on real exports: Vidu (measured on a Vidu Q3
+    # export, 2026-09-23) and Kling (the registered image producer).
+    _VIDU_PRODUCER = "001191110108MACC4D63XF10306"
+    _KLING_PRODUCER = "001191110108335469089C10100"
+
+    def test_non_kling_tc260_producer_vetoes_kling_video_mark(self):
+        # A real Vidu "Vidu AI" logo plus wordmark formed a stable 193-frame kling run
+        # and was reported as Kling. The TC260 producer contradicts it.
+        from remove_ai_watermarks.video import _visible_removal_plan
+        from remove_ai_watermarks.video_visible import FrameLocalization, VideoScan
+
+        scan = VideoScan(
+            width=1920,
+            height=1080,
+            fps=24.0,
+            detections=tuple(FrameLocalization(index, 0.56, self._KLING_BOX) for index in range(12)),
+        )
+
+        vetoed, _, _ = _visible_removal_plan("kling", scan, {"aigc_producer": self._VIDU_PRODUCER})
+        kept, _, _ = _visible_removal_plan("kling", scan, {"aigc_producer": self._KLING_PRODUCER})
+        unlabeled, _, _ = _visible_removal_plan("kling", scan, {})
+
+        assert vetoed == [None] * 12
+        assert kept == [self._KLING_BOX] * 12
+        assert unlabeled == [self._KLING_BOX] * 12
+
+    def test_shengshu_tc260_label_confirms_vidu(self):
+        from remove_ai_watermarks.video_visible import has_vidu_video_provenance
+
+        assert has_vidu_video_provenance({"aigc_producer": self._VIDU_PRODUCER})
+        assert not has_vidu_video_provenance({"aigc_producer": self._KLING_PRODUCER})
+        assert not has_vidu_video_provenance({})
+
+    @pytest.mark.parametrize(
+        ("producer", "platform"),
+        [
+            # Producer values as measured on Higgsfield video downloads, 2026-09-24.
+            ("kling", "Kuaishou Kling AI"),
+            ("001191330106MA2CFLDG4R10001", "Alibaba Tongyi (Wan, HappyHorse)"),
+            ("MiniMax", "MiniMax Hailuo AI"),
+            ("91110108MACC4D63XF", "ShengShu Vidu"),
+            ("91110000000000000X", "China AIGC-labeled content (TC260 standard)"),
+        ],
+    )
+    def test_tc260_producer_names_the_video_platform(self, producer: str, platform: str):
+        from remove_ai_watermarks.video import _platform_from_video_metadata
+
+        markers = {"aigc_label": "China AIGC label (TC260)", "aigc_producer": producer}
+        assert _platform_from_video_metadata(markers) == platform
+
+    def test_bare_kling_tc260_producer_keeps_the_kling_mark(self):
+        from remove_ai_watermarks.video_visible import contradicts_video_provenance
+
+        assert not contradicts_video_provenance("kling", {"aigc_producer": "kling"})
+
+    def test_non_kling_c2pa_ai_claim_vetoes_kling_video_mark(self):
+        # Veo 3.1 Lite from Higgsfield carries Google's C2PA and scored above the
+        # Kling floor on wood texture on all 192 frames (2026-09-24).
+        from remove_ai_watermarks.video_visible import contradicts_video_provenance
+
+        ai = "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        assert contradicts_video_provenance("kling", {"issuer": "Google LLC", "source_type": ai})
+        assert not contradicts_video_provenance("kling", {"issuer": "Kuaishou", "source_type": ai})
+        # A re-signing platform records no AI source type and vetoes nothing.
+        assert not contradicts_video_provenance("kling", {"issuer": "YouTube"})
+        assert not contradicts_video_provenance("kling", {"source_type": ai})
+
+    @pytest.mark.parametrize(
+        ("mark", "own_issuer"),
+        [
+            ("sora", "OpenAI"),
+            ("veo", "Google LLC"),
+            ("seedance", "BytePlus"),
+            ("doubao", "ByteDance"),
+            ("dola", "ByteDance"),
+            ("hailuo", "MiniMax"),
+            ("vidu", "ShengShu"),
+            ("kling", "Kuaishou"),
+        ],
+    )
+    def test_another_vendor_c2pa_ai_claim_vetoes_every_video_mark(self, mark: str, own_issuer: str):
+        # Gemini Omni 1.1 Flash via Runway carries Google's C2PA and scored above the
+        # strict Sora floor on a steam wisp for five frames (2026-09-25).
+        from remove_ai_watermarks.video import VIDEO_VISIBLE_MARKS
+        from remove_ai_watermarks.video_visible import contradicts_video_provenance
+
+        ai = "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        foreign = "RUNWAY AI, INC." if mark != "sora" else "Google LLC"
+        assert mark in VIDEO_VISIBLE_MARKS
+        assert contradicts_video_provenance(mark, {"issuer": foreign, "source_type": ai})
+        assert not contradicts_video_provenance(mark, {"issuer": own_issuer, "source_type": ai})
+        assert not contradicts_video_provenance(mark, {"issuer": foreign})
+
+    @pytest.mark.parametrize("mark", ["veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling"])
+    def test_opening_only_label_is_not_carried_over_the_clean_rest(self, mark: str):
+        # China's labeling rules require a video label only on the opening frames. A
+        # 2 s label at 24 fps used to be carried over every later, clean frame.
+        from remove_ai_watermarks.video_visible import (
+            VISIBLE_MARK_POLICIES,
+            FrameLocalization,
+            stabilize_localizations,
+        )
+
+        policy = VISIBLE_MARK_POLICIES[mark]
+        score = max(policy.strong_floor, policy.weak_floor) + 0.05
+        box = (1700, 980, 200, 60)
+        detections = [FrameLocalization(index, score, box) for index in range(48)]
+        detections += [FrameLocalization(index, 0.0, None) for index in range(48, 240)]
+
+        accepted = stabilize_localizations(mark, detections)
+
+        assert accepted[:48] == [box] * 48
+        assert accepted[48 + policy.min_stable_frames + 1 :] == [None] * (240 - 48 - policy.min_stable_frames - 1)
+
     def test_hailuo_provenance_accepts_sub_strong_stable_run(self):
         # A TC260 label naming MiniMax relaxes only the strong-frame requirement:
         # the entry bar stays the measured weak floor (0.30), so a stable run
@@ -2197,18 +2311,19 @@ class TestVideoVisibleScan:
             "detect_seedance_frame",
             "detect_dola_frame",
             "detect_hailuo_frame",
+            "detect_vidu_frame",
             "detect_kling_frame",
         ):
             monkeypatch.setattr(video_visible, detector_name, fake_detector)
 
         scans = scan_video_marks(
             tmp_path / "synthetic.mp4",
-            ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "kling"),
+            ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling"),
         )
 
-        assert set(scans) == {"sora", "veo", "seedance", "doubao", "dola", "hailuo", "kling"}
+        assert set(scans) == {"sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling"}
         assert all(scan.timestamps == (0.25,) for scan in scans.values())
-        assert len(prepared_ids) == 6
+        assert len(prepared_ids) == 7
         assert len(set(prepared_ids)) == 1
 
 
@@ -2694,7 +2809,7 @@ class TestVideoVisibleApi:
         )
 
         def fake_scan(_source: Path, marks: tuple[str, ...]):
-            assert marks == ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "kling")
+            assert marks == ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
             return {
                 "sora": sora_scan,
                 "veo": sora_scan,
@@ -2914,7 +3029,7 @@ class TestVideoVisibleCli:
 
         assert result.exit_code == 0, result.output
         assert "temporally stable" in result.output
-        assert "auto|sora|veo|seedance|doubao|dola|hailuo|kling" in result.output
+        assert "auto|sora|veo|seedance|doubao|dola|hailuo|vidu|kling" in result.output
         assert "--temporal-consistency" in result.output
 
     def test_reports_removed_frames(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -2942,3 +3057,210 @@ class TestVideoVisibleCli:
         assert result.exit_code == 0, result.output
         assert "10/12 frames" in result.output
         assert "Audio watermark: UNVERIFIED" in result.output
+
+
+class TestGeminiOmniRealSamples:
+    """Real Gemini Omni outputs: app export with the visible diamond, and API output without it."""
+
+    _DIR = Path(__file__).resolve().parents[1] / "data" / "fixtures" / "provenance"
+
+    def test_app_export_carries_the_veo_diamond_and_google_synthid(self):
+        from remove_ai_watermarks.video import identify_video
+
+        report = identify_video(self._DIR / "google-gemini-omni-app.mp4")
+
+        assert report.visible_mark == "veo"
+        assert report.visible_detected_frames == report.total_frames == 240
+        assert report.metadata_markers["c2pa_validation_state"] == "Valid"
+        assert report.metadata_markers["synthid_watermark"] == "present according to Google LLC provenance"
+
+    def test_api_output_has_google_synthid_and_no_visible_mark(self):
+        from remove_ai_watermarks.video import identify_video
+
+        report = identify_video(self._DIR / "google-gemini-omni-flash-api.mp4")
+
+        assert report.visible_mark is None
+        assert report.visible_detected_frames == 0
+        assert report.platform == "Google (Gemini / Imagen)"
+        assert report.metadata_markers["c2pa_validation_state"] == "Valid"
+        assert report.metadata_markers["synthid_watermark"] == "present according to Google LLC provenance"
+
+
+class TestYouTubeReencodedSamples:
+    """YouTube re-signs every upload as Google LLC ("YouTube Video Processing Services").
+
+    Real Studio downloads (2026-09-24) of two uploads: an xAI Grok video, whose own
+    self-signed manifest the reader drops, and a Gemini Omni Flash video, whose
+    manifest survives as the ingredient with its SynthID action.
+    """
+
+    _DIR = Path(__file__).resolve().parents[1] / "data" / "fixtures" / "provenance"
+
+    def test_reencoded_grok_is_not_read_as_google_ai(self):
+        from remove_ai_watermarks.video import identify_video
+
+        report = identify_video(self._DIR / "youtube-reencode-grok.mp4", check_visible=False)
+
+        assert report.is_ai_generated is None
+        assert report.confidence == "unknown"
+        assert report.platform is None
+        assert "synthid_watermark" not in report.metadata_markers
+        assert report.metadata_markers["actions"] == "opened, transcoded"
+        assert any("no AI claim" in caveat for caveat in report.caveats)
+
+    def test_reencoded_gemini_keeps_its_ingredient_synthid(self):
+        from remove_ai_watermarks.video import identify_video
+
+        report = identify_video(self._DIR / "youtube-reencode-gemini-omni-flash.mp4", check_visible=False)
+
+        assert report.is_ai_generated is True
+        assert report.platform == "Google (Gemini / Imagen)"
+        assert report.metadata_markers["synthid_watermark"] == "present according to Google LLC provenance"
+
+    def test_runway_gen45_video_is_attributed_to_runway(self):
+        from remove_ai_watermarks.video import identify_video
+
+        report = identify_video(self._DIR / "runway-gen45-video.mp4", check_visible=False)
+
+        assert report.is_ai_generated is True
+        assert report.platform == "Runway"
+        assert report.metadata_markers["issuer"] == "Runway"
+        assert "synthid_watermark" not in report.metadata_markers
+
+    @pytest.mark.parametrize(
+        ("name", "platform"),
+        [
+            ("higgsfield-kling-3-0-turbo.mp4", "Kuaishou Kling AI"),
+            ("higgsfield-happyhorse.mp4", "Alibaba Tongyi (Wan, HappyHorse)"),
+            ("higgsfield-minimax-h3.mp4", "MiniMax Hailuo AI"),
+            ("dreamina-seedance-2-mini.mp4", "ByteDance Dreamina"),
+        ],
+    )
+    def test_aggregator_video_names_its_generator(self, name: str, platform: str):
+        from remove_ai_watermarks.video import identify_video
+
+        report = identify_video(self._DIR / name, check_visible=False)
+
+        assert report.is_ai_generated is True
+        assert report.platform == platform
+
+    @staticmethod
+    def _frames(path: Path, indices: tuple[int, ...]):
+        import cv2
+
+        cap = cv2.VideoCapture(str(path))
+        frames = {}
+        index = 0
+        while len(frames) < len(indices):
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if index in indices:
+                frames[index] = frame
+            index += 1
+        cap.release()
+        assert sorted(frames) == sorted(indices)
+        return frames
+
+    def test_kling_swirl_on_wood_short_of_the_edge_is_rejected(self):
+        # Higgsfield Cinema Studio v2 (2026-09-25): the swirl arm matched wood
+        # grain at 0.52-0.56 on these frames, 11% short of the right edge, and
+        # the run covered every frame. Its provenance is Kling, so no veto applies.
+        from remove_ai_watermarks.video_visible import _KLING_WEAK_CONFIDENCE, detect_kling_frame
+
+        for index, frame in self._frames(self._DIR / "higgsfield-cinema-studio-v2.mp4", (0, 3, 4, 7)).items():
+            assert detect_kling_frame(frame, frame_index=index).confidence < _KLING_WEAK_CONFIDENCE
+
+    def test_hailuo_candidate_without_white_label_pixels_is_rejected(self):
+        # Hailuo 2.3 via Higgsfield (2026-09-25) scored 0.34-0.36 on wood grain,
+        # above the real label, on every frame; the box holds no white pixel.
+        from remove_ai_watermarks.video_visible import detect_hailuo_frame
+
+        for index, frame in self._frames(self._DIR / "higgsfield-hailuo-2-3.mp4", (0, 1, 2, 3)).items():
+            assert detect_hailuo_frame(frame, frame_index=index).region is None
+
+    def test_drifting_kling_match_on_texture_is_not_a_run(self):
+        # Higgsfield Genjutsu motion control (2026-09-25): the wordmark arm matched
+        # wood grain at 0.22-0.32 on every frame, reaching the frame edge with white
+        # highlights, while its box drifted by a few pixels. A real Kling overlay
+        # keeps an identical box, so the run must stay anchored within 0.95 IoU.
+        from remove_ai_watermarks.video_visible import scan_video_marks, stabilize_localizations
+
+        texture = scan_video_marks(
+            self._DIR / "higgsfield-genjutsu-motion-control.mp4", ("kling",), collect_timestamps=False
+        )
+        real = scan_video_marks(
+            self._DIR.parent / "visible" / "kling" / "provider-original.mp4", ("kling",), collect_timestamps=False
+        )
+        assert not any(stabilize_localizations("kling", texture["kling"].detections))
+        assert all(stabilize_localizations("kling", real["kling"].detections))
+
+    def test_google_c2pa_vetoes_a_sora_match_on_steam(self):
+        # Gemini Omni 1.1 Flash via Runway (2026-09-25): a steam wisp scored 0.61-0.67
+        # on the Sora template for five frames, a stable run above the strict floor,
+        # and the report named OpenAI Sora over the file's valid Google C2PA.
+        from remove_ai_watermarks.video import _visible_removal_plan, identify_video
+        from remove_ai_watermarks.video_visible import scan_video_marks, stabilize_localizations
+
+        clip = self._DIR.parents[1] / "captures" / "2026-09" / "runway" / "gemini-omni-1-1-flash.mp4"
+        scan = scan_video_marks(clip, ("sora",), collect_timestamps=False)["sora"]
+        assert any(stabilize_localizations("sora", scan.detections))
+        markers = identify_video(clip, check_visible=False).metadata_markers
+        assert not any(_visible_removal_plan("sora", scan, markers)[0])
+
+    def test_real_kling_and_hailuo_labels_still_pass_the_new_gates(self):
+        from remove_ai_watermarks.video_visible import (
+            _HAILUO_WEAK_CONFIDENCE,
+            _KLING_WEAK_CONFIDENCE,
+            detect_hailuo_frame,
+            detect_kling_frame,
+        )
+
+        visible = self._DIR.parent / "visible"
+        kling = self._frames(visible / "kling" / "provider-original.mp4", (30,))[30]
+        hailuo = self._frames(visible / "hailuo" / "provider-original.mp4", (30,))[30]
+        assert detect_kling_frame(kling, frame_index=30).confidence >= _KLING_WEAK_CONFIDENCE
+        assert detect_hailuo_frame(hailuo, frame_index=30).confidence >= _HAILUO_WEAK_CONFIDENCE
+
+    def test_veo_provenance_vetoes_a_kling_match(self):
+        # Veo 3.1 Lite via Higgsfield: the Kling detector matched wood texture on all
+        # 192 frames. Its Google C2PA must veto Kling; a real bare "kling" producer
+        # must not.
+        from remove_ai_watermarks.video import identify_video
+        from remove_ai_watermarks.video_visible import contradicts_video_provenance
+
+        veo = identify_video(self._DIR / "higgsfield-veo-3-1-lite.mp4", check_visible=False)
+        kling = identify_video(self._DIR / "higgsfield-kling-3-0-turbo.mp4", check_visible=False)
+
+        assert veo.platform == "Google (Gemini / Imagen)"
+        assert contradicts_video_provenance("kling", veo.metadata_markers)
+        assert not contradicts_video_provenance("kling", kling.metadata_markers)
+
+    def test_original_grok_video_is_xai_without_synthid(self):
+        from remove_ai_watermarks.video import identify_video
+
+        report = identify_video(self._DIR / "xai-grok-imagine-video.mp4", check_visible=False)
+
+        assert report.is_ai_generated is True
+        assert report.platform == "xAI Grok Imagine"
+        assert "synthid_watermark" not in report.metadata_markers
+
+    @pytest.mark.parametrize(
+        ("markers", "expected"),
+        [
+            ({"c2pa_manifest": "store", "issuer": "Google LLC", "actions": "opened, transcoded"}, False),
+            ({"c2pa_manifest": "store", "issuer": "Google LLC", "source_type": "algorithmicMedia"}, False),
+            ({"c2pa_manifest": "store", "issuer": "Google LLC", "source_type": "trainedAlgorithmicMedia"}, True),
+            (
+                {"c2pa_manifest": "store", "issuer": "TikTok", "source_type": "compositeWithTrainedAlgorithmicMedia"},
+                True,
+            ),
+            ({"c2pa_manifest": "store", "issuer": "xAI Grok Imagine"}, True),
+            ({"c2pa_manifest": "store", "claim_generator": "Grok Imagine"}, True),
+            ({"c2pa_manifest": "store", "aigc_label": "China AIGC label (TC260)"}, True),
+        ],
+    )
+    def test_only_an_ai_claim_makes_c2pa_markers_an_ai_signal(self, markers: dict[str, str], expected: bool):
+        from remove_ai_watermarks.video import _video_markers_claim_ai
+
+        assert _video_markers_claim_ai(markers) is expected

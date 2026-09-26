@@ -24,9 +24,12 @@ removal.
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/wiltodelta)
 [![skills.sh](https://skills.sh/b/wiltodelta/remove-ai-watermarks)](https://skills.sh/wiltodelta/remove-ai-watermarks)
 
-> This project is for lawful use on content you own. It does not target stock
-> agency previews or other watermarks that protect third party paid content.
-> See [scope, safety, and legal notes](docs/legal-and-safety.md).
+> This is a research project on AI provenance signals, for lawful use on content
+> you own. It is provided as is, without warranty or liability, and each user is
+> responsible for how they use it. It does not target stock agency previews or
+> other watermarks that protect third party paid content. Some jurisdictions,
+> including China, restrict removing AI labels or supplying tools that do. See
+> [scope, safety, and legal notes](docs/legal-and-safety.md).
 
 ## Choose what you want to do
 
@@ -490,7 +493,7 @@ invisible removal.
   detail.
 - Visible video removal recognizes the moving Sora 2 wordmark, the current Veo
   diamond plus legacy `Veo` text, the Seedance boxed `AI` label, and the fixed
-  Doubao, Dola, Hailuo AI, and Kling AI labels. It does not recognize the older Sora Turbo
+  Doubao, Dola, Hailuo AI, Vidu, and Kling AI labels. It does not recognize the older Sora Turbo
   corner swirl or unregistered layouts from those providers.
   The classical OpenCV backend can smear structured backgrounds; use MI-GAN or
   LaMa when recovery quality matters.

@@ -17,7 +17,7 @@ The examples demonstrate DETECTION geometry and house style, not vendor raster
 fidelity; real-world variants (fonts, opacities, sizes) are covered by the
 engines' recorded calibration evidence.
 
-The Qwen, Kling, Yuanbao, Baidu, Jimeng, LiblibAI, Microsoft, Sora, Hailuo, and Veo
+The Qwen, Kling, Yuanbao, Baidu, Jimeng, LiblibAI, Microsoft, Sora, Hailuo, Veo, Vidu, and Wan
 directories additionally contain real provider-marked sources. These files
 retain the source bytes and names used here are deliberately distinct from the
 generated canonical examples. The current LiblibAI output exercises the
@@ -37,6 +37,8 @@ metadata-corroborated compact-pill path, not the historical wordmark detector:
 | `hailuo/provider-original.mp4` | Authenticated Hailuo AI MiniMax H3 generation, downloaded with `With Watermark` selected on 2026-09-03 | `6152609e0339c443af79e244440e1b1050f3c615a50f76bfaf6146584e68142f` | Hailuo, 124/124 stable frames |
 | `kling/provider-original.mp4` | Authenticated Kling AI VIDEO 3.0 generation, downloaded 2026-09-04 | `f3e8d6a765fca699036d68fde28eb16f7aed97b6702f06f318e61ae8d4e53a69` | Kling, 121/121 stable frames |
 | `veo/provider-original.mp4` | Authenticated Google Flow Veo 3.1 Fast generation with `Visible watermarking` enabled, downloaded 2026-09-03 | `e778194b545e34dafd2d5be58691031a070862890c41e6c527a652a114a7c7a4` | Veo, 192/192 stable frames |
+| `vidu/provider-original.mp4` | Authenticated Vidu Q3 text-to-video generation on the free trial, downloaded 2026-09-23 | `8e9f2a8bd190e5cfc662151aeef63cbc3372619678e2d37b3432b4fea113fb1c` | Vidu, 193/193 stable frames |
+| `wan/provider-original.png` | Authenticated Wan 2.7 Pro image generation on free daily credits, downloaded 2026-09-23 | `583df0ec34d88653fc82c658728780f474a959eb246156649e5d5dde956fc474` | Wan, confidence 0.66 |
 
 OpenNoMark describes its corpus as real-image examples and distributes the
 repository under CC BY-NC-SA 4.0. Its license text is reproduced in
@@ -52,6 +54,16 @@ still-life prompt recorded in `../README.md`, carries the visible top-right
 `975290d4-9c2f-4359-ad5a-92c5b5b850a4`. Microsoft does not claim ownership of
 AI-service output; the maintainer distributes this generated output under the
 repository license.
+
+The Vidu file is the original 1920 x 1080 HEVC MP4, 8 seconds, of a neutral
+coffee-cup scene generated on the maintainer's free Vidu account. It carries the
+bottom-right `Vidu AI` logo and wordmark on every frame and a TC260 AIGC label in
+the MP4 `AIGC` key naming ShengShu (USCC `91110108MACC4D63XF`) as producer. The
+Wan file is the original 2048 x 2048 PNG of a neutral coffee-mug scene from the
+maintainer's Wan account, with the bottom-right logo and `Wan` wordmark and an
+XMP TC260 label naming Tongyi Yunqi (Hangzhou), USCC `91330106MA2CFLDG4R`. The
+service reported `noWaterMark: true` for that file, yet the mark is present. The
+maintainer distributes both outputs under the repository license.
 
 The Sora frame is the original JPEG frame
 `images/train/images/failed_image_000016_frame_000150.jpg` from LLinked's

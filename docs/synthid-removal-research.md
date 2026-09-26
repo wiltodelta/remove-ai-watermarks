@@ -233,9 +233,14 @@ regeneration is already in [synthid.md](synthid.md#23-removal-attacks-and-forens
 | Google to [The Verge, 2026-04-14](https://www.theverge.com/ai-artificial-intelligence/911579/google-synthid-ai-watermarking-system-reverse-engineered) | reverse-SynthID does not systematically remove SynthID | Google spokesperson on the spectral bypass | Agrees with our V4 audit and with Bypass: reconstruction or decoder confusion, not a payload delete |
 
 Quiet pixel-only removal is not a published result on production
-OpenAI or Google SynthID. Every paper that "beats" a watermark either
-redraws the image, attacks an open encoder, or reports PSNR in the same
-19-25 dB band as our 16-32 scramble.
+OpenAI or Google SynthID (still true in the 2026-09-22 literature sweep).
+Against open encoders the fidelity band has moved: re-watermarking
+([arXiv:2605.16796](https://arxiv.org/abs/2605.16796)), WmForger
+([arXiv:2510.20468](https://arxiv.org/abs/2510.20468)) and Hide&Seek
+([arXiv:2603.01067](https://arxiv.org/abs/2603.01067)) report roughly 30 dB,
+and SPFM-Net and FDDWAN (arXiv:2607.27811, 2607.27800) claim 40-45 dB, but on
+small images and with bit error rates that leave much of the payload intact.
+None of these is a result on a production closed watermark.
 
 ## Product remainder for removal
 

@@ -796,6 +796,116 @@ class TestIdentifyRealSamples:
         assert r.is_ai_generated is True
         assert any("IPTC" in w for w in r.watermarks)
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "google-nano-banana.png",
+            "google-nano-banana-2.jpg",
+            "google-nano-banana-pro.jpg",
+            "google-nano-banana-2-lite.jpg",
+        ],
+    )
+    def test_gemini_api_image_carries_google_c2pa_and_synthid(self, name: str):
+        # Real Gemini API outputs (2026-09-24), one per image model: valid Google C2PA
+        # with a SynthID action and no visible sparkle.
+        r = identify(SAMPLES_DIR / name, check_visible=True, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.ai_source_kind == "generated"
+        assert r.platform == "Google (Gemini / Imagen)"
+        assert r.c2pa_validation["state"] == "Valid"
+        assert "SynthID watermark (present according to Google LLC provenance)" in r.watermarks
+        assert not any("sparkle" in watermark.lower() for watermark in r.watermarks)
+
+    def test_runway_gen4_image_is_attributed_to_runway(self):
+        # Real Runway Gen-4 image artifact (2026-09-24): C2PA signed "RUNWAY AI, INC.",
+        # c2pa.created with software agent "Runway Image Generation", no visible mark.
+        r = identify(SAMPLES_DIR / "runway-gen4-image.png", check_visible=True, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.ai_source_kind == "generated"
+        assert r.platform == "Runway"
+        assert "C2PA Content Credentials (Runway)" in r.watermarks
+        assert not any("SynthID" in watermark for watermark in r.watermarks)
+
+    def test_dreamina_export_is_attributed_through_its_transcode_signer(self):
+        # Real Dreamina Seedream 5.0 Pro image (2026-09-24): the active claim is
+        # "ByteDance Media Transcode Service", the "Dreamina/7.5.0" generator sits in
+        # the ingredient. The generic signer label used to win over the product.
+        r = identify(SAMPLES_DIR / "dreamina-seedream-5-pro.jpg", check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.platform == "ByteDance Dreamina"
+
+    @pytest.mark.parametrize("name", ["higgsfield-gpt-image.jpg", "higgsfield-kling-o1.png"])
+    def test_non_google_provenance_vetoes_a_sparkle_on_texture(self, name: str):
+        # Higgsfield downloads (2026-09-24): a valid OpenAI C2PA and a Kuaishou TC260
+        # label, each scoring 0.53 as a Gemini sparkle on wood texture.
+        r = identify(SAMPLES_DIR / name, check_visible=True, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert not any("Gemini visible" in watermark for watermark in r.watermarks)
+        assert any("not reported as a Gemini mark" in caveat for caveat in r.caveats)
+
+    def test_google_provenance_keeps_the_sparkle(self):
+        # The veto is for other vendors only: a Google-signed Gemini image keeps it.
+        path = Path(__file__).resolve().parents[1] / "data/calibration/gemini/gemini_black_2048.png"
+        r = identify(path, check_visible=True, check_invisible=False)
+        assert any("Gemini visible" in watermark for watermark in r.watermarks)
+        assert not any("not reported as a Gemini mark" in caveat for caveat in r.caveats)
+
+    def test_higgsfield_job_breaks_the_upstream_manifest(self):
+        # FLUX.2 Pro via Higgsfield: Black Forest Labs signed the image, then
+        # Higgsfield inserted its hf-job-id chunk, so the data hash no longer matches.
+        r = identify(SAMPLES_DIR / "higgsfield-flux-2-pro.png", check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.confidence == "medium"
+        assert r.platform == "Higgsfield (model not identified)"
+        assert "C2PA Content Credentials (invalid asset binding or signature)" in r.watermarks
+        assert "Higgsfield job (hf-job-id)" in r.watermarks
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            SAMPLES_DIR / "google-photos-ios-edit.jpg",
+            *(
+                SAMPLES_DIR.parents[1] / "captures" / "2026-09" / "google-photos" / name
+                for name in ("ask-dog-to-cat.jpg", "eraser-glasses.jpg", "gphotos-5.jpg", "gphotos-6.jpg")
+            ),
+        ],
+        ids=lambda path: path.name,
+    )
+    def test_google_photos_ai_edit_reports_synthid(self, path: Path):
+        # Real Google Photos iOS AI edits (Ask, eraser and two others, 2026-09-23 to
+        # 2026-09-25): valid Google C2PA signed "Google Photos", no SynthID action.
+        # Google's checker found SynthID on all four captures.
+        r = identify(path, check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.ai_source_kind == "enhanced"
+        assert r.platform == "Google Photos (AI edit)"
+        assert r.c2pa_validation["state"] == "Valid"
+        assert any("SynthID" in watermark for watermark in r.watermarks)
+        assert any("Google Photos AI edit" in caveat for caveat in r.caveats)
+
+    def test_apple_image_playground_attributed(self):
+        # Real Image Playground export (2026-09-23): XMP photoshop:Credit plus the IPTC
+        # digitalSourceType, no C2PA. The credit names the platform; the IPTC
+        # value alone would leave it undetermined.
+        r = identify(SAMPLES_DIR / "apple-image-playground.png", check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.platform == "Apple Image Playground"
+        assert not any("C2PA" in watermark for watermark in r.watermarks)
+
+    def test_apple_generative_edit_clean_up_attributed(self, tmp_path: Path):
+        # Real Photos Clean Up credit, iPhone on iOS 27.0 (measured 2026-09-23). It does not
+        # contain the older "Apple Photos Clean Up" substring, so it needs its own
+        # entry or the platform falls back to undetermined.
+        p = tmp_path / "apple_generative_edit.jpg"
+        p.write_bytes(
+            b'\xff\xd8\xff\xe1<x:xmpmeta photoshop:Credit="Apple Photos Generative Edit: Clean Up" '
+            b"Iptc4xmpExt:DigitalSourceType=compositeWithTrainedAlgorithmicMedia></x:xmpmeta>\xff\xd9"
+        )
+        r = identify(p, check_visible=False, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert r.platform == "Apple Photos (Clean Up AI edit)"
+        assert r.ai_source_kind == "enhanced"
+
     def test_apple_clean_up_attributed(self, tmp_path: Path):
         # Apple Photos Clean Up (Apple Intelligence object removal) marks the
         # AI edit via photoshop:Credit next to compositeWithTrainedAlgorithmicMedia
@@ -1017,7 +1127,7 @@ class TestIdentifyAigcPngChunk:
         assert "doubao" in signal.detail
 
 
-# ── Hugging Face-hosted job marker (medium confidence) ─────────────
+# ── Higgsfield job marker, hf-job-id (medium confidence) ───────────
 
 
 class TestIdentifyHuggingFaceJob:
@@ -1039,7 +1149,7 @@ class TestIdentifyHuggingFaceJob:
         assert r.is_ai_generated is True
         assert r.confidence == "medium"
         assert r.platform is not None
-        assert "Hugging Face" in r.platform
+        assert r.platform == "Higgsfield (model not identified)"
         signal = next(s for s in r.signals if s.name == "hf_job")
         assert signal.confidence == "medium"
 
@@ -2050,3 +2160,88 @@ class TestRegistryScansSkipTheCodedPixels:
         blob = b"\xff\xd8" + b"not really a jpeg, no valid marker chain here" * 4
 
         assert _metadata_region(blob) == blob
+
+
+class TestGooglePhotosSynthIdScope:
+    """A Google Photos AI edit reports SynthID without a recorded SynthID action.
+
+    Google documents SynthID only for Reimagine (blog.google, 2025-08-20), but its
+    checker found the mark on all four Photos AI edits tested on 2026-09-25.
+
+    The manifest shape mirrors a real Google Photos iOS object-removal edit captured
+    2026-09-23: signer common name "Google Photos", actions opened + deleted, the
+    deleted action typed compositeWithTrainedAlgorithmicMedia, no SynthID action.
+    """
+
+    @staticmethod
+    def _report(tmp_path: Path, *, common_name: str, extra_actions: list[dict]):
+        store = {
+            "active_manifest": "edit",
+            "validation_results": {
+                "activeManifest": {
+                    "success": [{"code": "assertion.dataHash.match"}, {"code": "claimSignature.validated"}],
+                    "failure": [],
+                }
+            },
+            "manifests": {
+                "edit": {
+                    "claim_generator_info": [{"name": "Google C2PA SDK for iOS"}],
+                    "signature_info": {"issuer": "Google LLC", "common_name": common_name},
+                    "assertions": [
+                        {
+                            "label": "c2pa.actions.v2",
+                            "data": {
+                                "actions": [
+                                    {"action": "c2pa.opened"},
+                                    {
+                                        "action": "c2pa.deleted",
+                                        "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/"
+                                        "compositeWithTrainedAlgorithmicMedia",
+                                    },
+                                    *extra_actions,
+                                ]
+                            },
+                        }
+                    ],
+                }
+            },
+        }
+        info = c2pa_info_from_manifest_store(store)
+        # The file's bytes carry the same manifest text the reader parsed.
+        scan = b"jumb c2pa " + json.dumps(store).encode()
+        evidence = ProvenanceEvidence(
+            path=tmp_path / "edit.jpg",
+            c2pa_info=info,
+            ai_metadata={},
+            scan=scan,
+            iptc_ai_system=None,
+            aigc_label=None,
+            exif_generator=None,
+            xai_signature=False,
+            huggingface_job=None,
+            samsung_genai=None,
+        )
+        return identify_from_evidence(evidence)
+
+    def test_photos_edit_without_synthid_action_claims_synthid(self, tmp_path: Path):
+        report = self._report(tmp_path, common_name="Google Photos", extra_actions=[])
+
+        assert report.is_ai_generated is True
+        assert report.ai_source_kind == "enhanced"
+        assert report.platform == "Google Photos (AI edit)"
+        assert any("SynthID" in mark for mark in report.watermarks)
+        assert any("Google Photos AI edit" in caveat for caveat in report.caveats)
+
+    def test_photos_edit_with_synthid_action_claims_synthid(self, tmp_path: Path):
+        synthid_action = {"action": "c2pa.edited", "description": "Added imperceptible SynthID watermark"}
+
+        report = self._report(tmp_path, common_name="Google Photos", extra_actions=[synthid_action])
+
+        assert any("SynthID" in mark for mark in report.watermarks)
+        assert report.platform == "Google Photos (AI edit)"
+
+    def test_other_google_signers_keep_synthid_without_the_action(self, tmp_path: Path):
+        report = self._report(tmp_path, common_name="Google Media Processing Services", extra_actions=[])
+
+        assert any("SynthID" in mark for mark in report.watermarks)
+        assert not any("Google Photos AI edit" in caveat for caveat in report.caveats)

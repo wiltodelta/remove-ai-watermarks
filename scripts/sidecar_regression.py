@@ -74,7 +74,7 @@ _LEGACY_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("samsung_genai", ("genaitype", "photoeditor_re_edit")),
     ("soft_binding", ("soft binding", "soft-binding", "invismark")),
     ("c2pa_cloud", ("cloud manifest",)),
-    ("hf_job", ("hf-job", "hugging face job")),
+    ("hf_job", ("hf-job", "higgsfield job", "hugging face job")),
     ("exif_generator", ("exif", "software tag", "png text")),
 )
 

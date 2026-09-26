@@ -141,9 +141,9 @@ text-draft = [
 # because it pulls torch and downloads model weights on first use. identify()
 # guards the import and skips the TrustMark signal when absent.
 trustmark = [
-    # The supported TrustMark floor includes releases requiring NumPy <2,
-    # without CPython 3.13+ wheels. Keep the established Python support range.
-    "trustmark>=0.8.0; python_version < '3.13'",
+    # 0.9.2 (2026-09-08) dropped the NumPy <2 pin that kept earlier releases off
+    # CPython 3.13+; its 13 detector tests pass on 3.13 with NumPy 2.5.3.
+    "trustmark>=0.9.2",
 ]
 # Metadata-free photo classifier (Model 1 then gated Model 2). CPU torch is
 # enough. identify never imports this extra. Weights download on first use.

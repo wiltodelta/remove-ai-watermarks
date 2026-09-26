@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from remove_ai_watermarks.video_visible import VideoScan
 
 VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".flv"})
-VIDEO_VISIBLE_MARKS = ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "kling")
+VIDEO_VISIBLE_MARKS = ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
 _ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v"})
 _EBML_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".webm", ".mkv"})
 _RIFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".avi"})
@@ -221,6 +221,7 @@ _VISIBLE_PLATFORM = {
     "doubao": "ByteDance Doubao",
     "dola": "ByteDance Dola",
     "hailuo": "MiniMax Hailuo AI",
+    "vidu": "ShengShu Vidu",
     "kling": "Kuaishou Kling AI",
 }
 
@@ -279,11 +280,13 @@ def _visible_removal_plan(
     """
     from remove_ai_watermarks.video_visible import (
         VISIBLE_MARK_POLICIES,
+        contradicts_video_provenance,
         has_bytedance_video_provenance,
         has_doubao_video_provenance,
         has_hailuo_video_provenance,
         has_sora_provenance,
         has_veo_provenance,
+        has_vidu_video_provenance,
         stabilize_localizations,
     )
 
@@ -294,8 +297,11 @@ def _visible_removal_plan(
         "doubao": has_doubao_video_provenance,
         "dola": has_bytedance_video_provenance,
         "hailuo": has_hailuo_video_provenance,
+        "vidu": has_vidu_video_provenance,
     }.get(selected_mark)
     policy = VISIBLE_MARK_POLICIES[selected_mark]
+    if contradicts_video_provenance(selected_mark, markers):
+        return [None] * len(selected_scan.detections), policy.padding_fraction, policy.mask_style
     regions = stabilize_localizations(
         selected_mark,
         selected_scan.detections,
@@ -337,6 +343,54 @@ def _select_stable_visible_mark(
     return None
 
 
+# C2PA fields that describe a manifest without asserting AI. A platform that
+# re-signs every upload (YouTube, "opened" and "transcoded") leaves only these,
+# and the signer's name alone is not an AI generator claim.
+_C2PA_STRUCTURAL_MARKERS = frozenset(
+    {
+        "c2pa_manifest",
+        "claim_generator",
+        "c2pa_spec",
+        "issuer",
+        "actions",
+        "c2pa_validation_source",
+        "c2pa_validation_state",
+        "c2pa_integrity",
+        "c2pa_signature",
+        "c2pa_signer_trust",
+        "c2pa_signer_validity",
+    }
+)
+
+
+def _video_markers_claim_ai(markers: dict[str, str]) -> bool:
+    """Return whether the metadata asserts AI, mirroring the image path's C2PA rule.
+
+    A marker outside the C2PA structure (a digital source type, SynthID, a TC260
+    label, an xAI signature) asserts AI. A C2PA manifest with nothing else does
+    so only through an AI-generator identity: a registered AI signer or an AI
+    product named as the claim generator.
+    """
+    from remove_ai_watermarks._internal.constants import (
+        C2PA_AI_TOOLS,
+        C2PA_CLAIM_GENERATOR_PLATFORMS,
+        C2PA_IDENTITY_AI_ORGS,
+    )
+
+    source_type = markers.get("source_type", "")
+    if any(key not in _C2PA_STRUCTURAL_MARKERS and key != "source_type" for key in markers):
+        return True
+    if "trainedalgorithmicmedia" in source_type.casefold() or source_type.startswith("c2pa.ai-disclosure"):
+        return True
+    issuer = markers.get("issuer", "")
+    generator = markers.get("claim_generator", "")
+    return (
+        any(org in issuer for org in C2PA_IDENTITY_AI_ORGS)
+        or any(token in generator.casefold() for token, _ in C2PA_CLAIM_GENERATOR_PLATFORMS)
+        or any(token.decode() in generator for token in C2PA_AI_TOOLS)
+    )
+
+
 def _platform_from_video_metadata(markers: dict[str, str]) -> str | None:
     """Map supported C2PA-derived marker text to its generating platform."""
     from remove_ai_watermarks._internal.constants import C2PA_AI_VENDORS
@@ -347,6 +401,37 @@ def _platform_from_video_metadata(markers: dict[str, str]) -> str | None:
     for vendor in C2PA_AI_VENDORS:
         if vendor.platform is not None and vendor.needle is not None and vendor.needle.casefold() in marker_text:
             return vendor.platform
+    if "aigc_label" in markers:
+        return _tc260_video_platform(markers.get("aigc_producer", "")) or (
+            "China AIGC-labeled content (TC260 standard)"
+        )
+    return None
+
+
+def _tc260_video_platform(producer: str) -> str | None:
+    """Name the organization a TC260 ``ContentProducer`` identifies, if registered.
+
+    Codes come from the registry rows (plus the Vidu constant); the labels name
+    the producer, not one product, because one code can cover several models (the
+    Tongyi Yunqi code signs both Wan and HappyHorse video, measured 2026-09-24).
+    MiniMax writes its bare name instead of a USCC.
+    """
+    from remove_ai_watermarks.video_visible import VIDU_TC260_PRODUCER_CODES, tc260_producer_in
+    from remove_ai_watermarks.watermark_registry import get_mark
+
+    labels = {
+        "kling": _VISIBLE_PLATFORM["kling"],
+        "doubao": _VISIBLE_PLATFORM["doubao"],
+        "qwen": "Alibaba Cloud Qwen",
+        "wan": "Alibaba Tongyi (Wan, HappyHorse)",
+    }
+    for key, label in labels.items():
+        if tc260_producer_in(producer, get_mark(key).tc260_producer_codes):
+            return label
+    if tc260_producer_in(producer, VIDU_TC260_PRODUCER_CODES):
+        return _VISIBLE_PLATFORM["vidu"]
+    if tc260_producer_in(producer, ("MiniMax",)):
+        return _VISIBLE_PLATFORM["hailuo"]
     return None
 
 
@@ -396,11 +481,18 @@ def identify_video(
             selected_mark, _scan, regions, _padding, _mask_style = selected
             detected_frames = sum(region is not None for region in regions)
 
-    has_signal = bool(markers) or selected_mark is not None
+    claims_ai = _video_markers_claim_ai(markers)
+    has_signal = claims_ai or selected_mark is not None
     caveats = ["No public local decoder can verify proprietary pixel watermarks such as video SynthID."]
     if not check_visible:
         caveats.append("Visible video-mark detection was skipped.")
-    if not has_signal:
+    if not has_signal and markers:
+        caveats.append(
+            f"A C2PA manifest signed by {markers.get('issuer', 'an unregistered signer')} records "
+            f"{markers.get('actions', 'no actions')} and no AI claim, as a platform re-encode does "
+            "(YouTube re-signs every upload); that is unknown, not proof that the video is clean."
+        )
+    elif not has_signal:
         caveats.append("No supported signal was found; absence is unknown, not proof that the video is clean.")
     return VideoProvenanceReport(
         source=source_path,
@@ -410,6 +502,8 @@ def identify_video(
             _VISIBLE_PLATFORM.get(selected_mark)
             if selected_mark is not None
             else _platform_from_video_metadata(markers)
+            if claims_ai
+            else None
         ),
         visible_mark=selected_mark,
         visible_detected_frames=detected_frames,

@@ -80,6 +80,17 @@ Known examples:
   requires LiblibAI metadata or the bottom-center wordmark and a flat footprint;
   `--sensitivity strict` leaves this corroboration-only component untouched.
 - Kling AI support covers the calibrated variants rather than every Kling AI label.
+- Dreamina's boxed `AI` badge (top-left, images and video) is deliberately not
+  registered; see the EU disclosure-icon boundary in
+  [legal-and-safety.md](legal-and-safety.md) and the decision in
+  [research-sweep-2026-09.md](research-sweep-2026-09.md#decisions).
+- The Gemini sparkle detector scores up to 0.67 on non-Gemini images (whiteboard
+  photos, UI screenshots, digital art, wood grain), while real Gemini sparkles
+  start near 0.55. `identify` drops a sparkle when trusted provenance names
+  another AI vendor, for example a valid non-Google C2PA claim or a registered
+  TC260 producer, and says so in a caveat. The visible removal path does not
+  read that provenance, so it can still fill a sparkle-shaped patch on such an
+  image; without provenance the false positive stays in both paths.
 
 Use `erase --region` when you can see and select an unsupported or missed mark.
 
@@ -231,7 +242,11 @@ cleaned.
 Whether a given carrier's audio actually holds a mark the verifier reads has not
 been established -- that needs a provider verdict, which has not been obtained.
 Treat a clean local report on a clip with generated audio as unproven, not as a
-guarantee, and check the audio separately when it matters.
+guarantee, and check the audio separately when it matters. The question is no
+longer Google-only: since 2026 OpenAI (ChatGPT and API audio) and ElevenLabs
+also embed SynthID in generated audio, and Microsoft lists provenance for its
+Azure speech and GPT audio models, so voice-over or music from those services
+muxed into any video survives this path unchanged.
 
 The public video results make that boundary explicit without decoding audio:
 `visual_invisible_action` records whether video pixels were regenerated, while
@@ -404,7 +419,18 @@ The contracts, the privacy gradient, and the reasoning are recorded in
 
 Screenshots, social platforms, and re-encoding can remove metadata while a
 pixel watermark remains. `identify` therefore reports unknown rather than
-clean when no supported signal is found.
+clean when no supported signal is found. Aggregators strip it too: Higgsfield
+serves Google and xAI outputs without their C2PA, and its Soul v1, Soul Cinema
+and Wan 2.2 downloads carry no signal at all (2026-09-24).
+
+### GIF, TIFF, and DNG metadata
+
+GIF metadata removal walks the file's blocks and drops comment and application
+extensions (XMP, C2PA) while copying every frame, palette and LZW stream
+verbatim; the looping extension and, with standard metadata kept, the ICC
+profile survive. TIFF and DNG are refused with an error: the generic re-save
+used to write PNG bytes under the original name and drop pages, depth and raw
+data, and no lossless TIFF tag editor is implemented yet.
 
 ### JPEG XL is metadata only
 
@@ -455,7 +481,25 @@ Historical Sora Turbo exports use a small OpenAI swirl in the corner rather
 than the moving mascot-and-wordmark design; that earlier variant is not
 detected by the `sora` video mark. Hailuo AI and Kling AI coverage is specific to the
 verified lower-edge layouts; a new provider layout needs a separate calibrated
-silhouette. Other provider video labels are not supported yet. Google video
+silhouette. Other provider video labels are not supported yet. The `vidu`
+video mark and the `wan` image mark are each calibrated on one real export, so
+their gates are provisional: other resolutions, layouts, or a Wan video label
+may be missed. The Kling detector still scores the Vidu wordmark; `vidu` comes
+first in the selection order. A C2PA manifest from another vendor that claims AI
+generation vetoes any video mark, and a TC260 label naming a non-Kling producer
+also vetoes a Kling match: the Kling detector scored 0.61 on wood texture in a
+Veo 3.1 Lite clip, against 0.63 on a real Kling original, and the Sora detector
+scored 0.61-0.67 on steam in a Gemini Omni clip. Without such provenance, those
+false positives remain. Two wood-grain false positives whose provenance matched the mark are
+closed by shape and color rather than provenance: a Kling swirl candidate must
+reach the bottom-right edge like the wordmark, and a Hailuo candidate must hold
+white label pixels (Higgsfield Cinema Studio v2 and Hailuo 2.3, 2026-09-25).
+A Kling run must also keep its box within 0.95 IoU of the run's first frame,
+because the per-frame Kling score does not separate texture from the label (a
+Genjutsu clip's wood grain drifted a few pixels while a real overlay never
+moves).
+A label shown only on the opening frames, as China's labeling rules allow, is
+filled for at most `min_stable_frames` beyond its last detected frame. Google video
 SynthID has an oracle-certified VAE removal path, while other proprietary
 invisible video watermarks have no registered attack.
 
@@ -544,9 +588,8 @@ The `trustmark` extra adds Adobe TrustMark decoding. The implementation retains
 an additional JPEG re-encode gate and requires the binary payload and schema to
 remain identical because isolated decoder hits can otherwise be content noise.
 It accepts Variant P schemas 0-2. Variant Q requires a different model, and
-schema 3 is rejected at the measured precision threshold. Its NumPy 1.x runtime
-limits the extra to Python 3.11-3.12; the rest of the package remains supported
-through Python 3.14. The current TrustMark dependency line resolves
+schema 3 is rejected at the measured precision threshold. The extra requires
+`trustmark>=0.9.2`, which supports NumPy 2 and Python 3.13-3.14. The current TrustMark dependency line resolves
 `lightning` and `pytorch-lightning` 2.6.6, which contain the published fixes
 for their checkpoint-loading advisories. The calibration history is in
 [module internals](module-internals.md#metadata-and-provenance).

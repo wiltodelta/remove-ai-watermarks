@@ -176,7 +176,10 @@ def _isobmff_regions(image_path: Path, head: bytes) -> bytes:
     out = bytearray(head[:HEAD_WINDOW])
     out += scan_c2pa_region(image_path, strict=True)
     for payload in tc260_aigc_payloads(image_path, strict=True):
-        out += payload
+        # Keep the key with its value, as the RIFF regions keep the chunk id: with
+        # ``moov`` after ``mdat`` the header window holds no ``AIGC`` key, and the
+        # scan parser anchors on it (Higgsfield MP4 downloads, 2026-09-24).
+        out += b"AIGC" + payload
     return bytes(out)
 
 

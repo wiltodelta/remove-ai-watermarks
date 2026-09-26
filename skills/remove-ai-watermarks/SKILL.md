@@ -1,6 +1,6 @@
 ---
 name: remove-ai-watermarks
-description: "Removes and identifies AI watermarks and provenance marks in images and video the user generated or edited. Covers Gemini sparkles, SynthID, Microsoft InvisMark, Meta Content Seal, C2PA, EXIF/XMP/IPTC metadata, and Sora/Veo/Seedance/Doubao/Dola/Hailuo/Kling labels. Use when the user wants to strip or clean AI watermarks and generation labels, or asks whether a file was AI-generated or carries AI provenance, even if they do not name remove-ai-watermarks. Do not use for stock-agency, marketplace, classifieds, or other third-party paid-asset watermarks."
+description: "Removes and identifies AI watermarks and provenance marks in images and video the user generated or edited. Covers Gemini sparkles, SynthID, Microsoft InvisMark, Meta Content Seal, C2PA, EXIF/XMP/IPTC metadata, and Sora/Veo/Seedance/Doubao/Dola/Hailuo/Vidu/Kling and Wan labels. Use when the user wants to strip or clean AI watermarks and generation labels, or asks whether a file was AI-generated or carries AI provenance, even if they do not name remove-ai-watermarks. Do not use for stock-agency, marketplace, classifieds, or other third-party paid-asset watermarks."
 license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Some video writes need ffmpeg. Installer may be uv, pipx, or pip.
 metadata:
@@ -33,6 +33,12 @@ and supplies the box themselves.
 Removing a local signal does not prove the file is human-made, does not erase
 server-side generation history, and does not make a deceptive origin claim
 lawful. If the user wants to present generated work as human-made, stop.
+
+The project is research software provided without warranty; the user is
+responsible for lawful use. Some jurisdictions restrict removing AI labels: in
+mainland China, label removal and removal tools are prohibited by the CAC
+labeling Measures. Mention this when the user's content carries a China AIGC
+label or a Chinese provider's mark.
 
 ## Workflow
 

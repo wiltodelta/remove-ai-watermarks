@@ -1,0 +1,135 @@
+sha256,path,stored,service,source_name,captured,ai_from_metadata,platform
+5ade61fc4cd869e2487745af61c7e23d008a3e9c2b5c440d2ffe16c2d3a32315,data/fixtures/provenance/apple-image-playground.png,existing,apple,image-playground-panda.png,2026-09-23,True,Apple Image Playground
+f11595c6a9c0a72d4712d228354f589078d6940e529538cb009c799d8b8410d7,data/fixtures/provenance/google-gemini-omni-app.mp4,existing,gemini-omni,omni-wm-toggled.mp4,2026-09-23,True,Google (Gemini / Imagen)
+cbbf831fb5d394436feb2f022d46e8933989f003acb9616e907791bca8a5dd6d,data/captures/2026-09/grok/download-0.jpg,new,grok,download-0.jpg,2026-09-23,True,xAI Grok Imagine
+c6e3329009260cd230deaadd0cc7293269a94c4628010cd7eeb3d390b76cc0c2,data/fixtures/provenance/xai-grok-imagine-video.mp4,existing,grok,video-0.mp4,2026-09-23,True,xAI Grok Imagine
+8e9f2a8bd190e5cfc662151aeef63cbc3372619678e2d37b3432b4fea113fb1c,data/fixtures/visible/vidu/provider-original.mp4,existing,vidu,vidu-free-q3.mp4,2026-09-23,True,ShengShu Vidu
+583df0ec34d88653fc82c658728780f474a959eb246156649e5d5dde956fc474,data/fixtures/visible/wan/provider-original.png,existing,wan,wan-image-0.png,2026-09-23,True,China AIGC-labeled content (TC260 standard)
+040e5c5fe2d7d82b467c54ce2558e4d5c0705e676f00464577f29c211bc7784f,data/captures/2026-09/dreamina/gpt-image-2-5-flare.png,new,dreamina,gpt-image-2-5-flare.png,2026-09-24,True,ByteDance Dreamina
+acfc163bac69099e0d20ed26ec5f70537f21cac7b33ebb8fd7e03dfee287fa9a,data/captures/2026-09/dreamina/gpt-image-2-5-sunburst.png,new,dreamina,gpt-image-2-5-sunburst.png,2026-09-24,True,ByteDance Dreamina
+047d62991a5adde4d246acf69d543b3f7a4c382e86523a57fbb0732bc7695a47,data/captures/2026-09/dreamina/gpt-image-2.png,new,dreamina,gpt-image-2.png,2026-09-24,True,ByteDance Dreamina
+a48fc7da8b8bcc4519802e4db57942840aadf113d13c0fb5efc591a5b21617cc,data/captures/2026-09/dreamina/minimax-h3.mp4,new,dreamina,minimax-h3.mp4,2026-09-24,True,ByteDance Dreamina
+885a47916a72c39ec2e5bea6a295215144979b26c811d7ca63a0473742a90a91,data/captures/2026-09/dreamina/nano-banana-pro.jpeg,new,dreamina,nano-banana-pro.jpeg,2026-09-24,True,ByteDance Dreamina
+615fa80ca5bcca828f2c058a6021e53b73e196b36950446beed3f83d1a9fcb03,data/captures/2026-09/dreamina/nano-banana.jpeg,new,dreamina,nano-banana.jpeg,2026-09-24,True,ByteDance Dreamina
+233a79d0d482bb964a67280b71e7999defb0587b64b6d0a84371dea61f670bc2,data/captures/2026-09/dreamina/seedance-1-0-fast.mp4,new,dreamina,seedance-1-0-fast.mp4,2026-09-24,True,ByteDance Dreamina
+48df1fc4860c29cbe0cc5ebdd36526c1a75e1e8fffa745bc2798871701abaf94,data/captures/2026-09/dreamina/seedance-1-0.mp4,new,dreamina,seedance-1-0.mp4,2026-09-24,True,ByteDance Dreamina
+561fc4ea7a536e415ef0dc2f466fc35925ad61159f1ea2856d7f525bc86a34ce,data/captures/2026-09/dreamina/seedance-1-5-pro.mp4,new,dreamina,seedance-1-5-pro.mp4,2026-09-24,True,ByteDance Dreamina
+f58dd63abc2553c9b70d6cda8a068e874e59b5f3eb6d0f3db9ab08fefe9f3c3f,data/captures/2026-09/dreamina/seedance-2-0-fast.mp4,new,dreamina,seedance-2-0-fast.mp4,2026-09-24,True,ByteDance Dreamina
+d2712d4804074ac08e28fc77ff1c1ff986e6c4bbaf3ae9737f743719e51a59de,data/fixtures/provenance/dreamina-seedance-2-mini.mp4,existing,dreamina,seedance-2-0-mini.mp4,2026-09-24,True,ByteDance Dreamina
+375dde6314547b7b7c83a058a2e785c45b47ffee9198e81644e804d5769ba9a2,data/captures/2026-09/dreamina/seedance-2-0.mp4,new,dreamina,seedance-2-0.mp4,2026-09-24,True,ByteDance Dreamina
+ff29e21fd43b79fb9ddb097c4164f02da8b3f56afd27f8fbff851a7763bc9d33,data/captures/2026-09/dreamina/seedance-2-5.mp4,new,dreamina,seedance-2-5.mp4,2026-09-24,True,ByteDance Dreamina
+5d5a5e7c3f9434245eec4505cb6665fe57df2bf8da99a6f31302c8efacb4c9c8,data/captures/2026-09/dreamina/seedream-3-0.jpeg,new,dreamina,seedream-3-0.jpeg,2026-09-24,True,ByteDance Dreamina
+a24e9f7c6ee07b60ac9af9f061746a39b305db89006eb92cca19f926bc8ee89e,data/captures/2026-09/dreamina/seedream-3-1.jpeg,new,dreamina,seedream-3-1.jpeg,2026-09-24,True,ByteDance Dreamina
+ebe832110f0408a7b8cb65721213aec41bac70bfc580ef27d8c627639ceb7f2e,data/captures/2026-09/dreamina/seedream-4-0.jpeg,new,dreamina,seedream-4-0.jpeg,2026-09-24,True,ByteDance Dreamina
+8ba87f6aa7e5b441a236ead9f325fe5cf74ec638bd359f2f87f91831bb3bdb4a,data/captures/2026-09/dreamina/seedream-4-1.jpeg,new,dreamina,seedream-4-1.jpeg,2026-09-24,True,ByteDance Dreamina
+e2d14b3df27f22c53ca79f3372251ae04bf6607dab9ff86a16c365a667abc277,data/captures/2026-09/dreamina/seedream-4-5.jpeg,new,dreamina,seedream-4-5.jpeg,2026-09-24,True,ByteDance Dreamina
+d54e8825d180fbdd6350c320b558015efb98f20839d3ce51ce9e939e59d6d870,data/captures/2026-09/dreamina/seedream-4-6.jpeg,new,dreamina,seedream-4-6.jpeg,2026-09-24,True,ByteDance Dreamina
+25375e8f0485c1742e35d6f81da79fc64cb4029e4b4a36fb56e419a1646907f1,data/captures/2026-09/dreamina/seedream-4-7.jpeg,new,dreamina,seedream-4-7.jpeg,2026-09-24,True,ByteDance Dreamina
+41ad0748d6894d40cde35f352082eb5608f3ee83216e120b7499afd0284703db,data/captures/2026-09/dreamina/seedream-5-0-lite.jpeg,new,dreamina,seedream-5-0-lite.jpeg,2026-09-24,True,ByteDance Dreamina
+27ead86c611fbea25b5f50dfb120c1614f891f1ca07a707edfb1184f5d5109c5,data/captures/2026-09/dreamina/seedream-5-pro-2.jpeg,new,dreamina,seedream-5-pro-2.jpeg,2026-09-24,True,ByteDance Dreamina
+2393cb470dc7c69de4c421f338aeb08192ed916515bc095a3afcd2ef4af89c90,data/fixtures/provenance/dreamina-seedream-5-pro.jpg,existing,dreamina,seedream-5-pro.jpeg,2026-09-24,True,ByteDance Dreamina
+2e23ade5758aa6f42eb12261b22fd686e7f17b6a26414046c1afa1012c886e04,data/captures/2026-09/higgsfield/flux-2-flex.png,new,higgsfield,flux-2-flex.png,2026-09-24,True,Higgsfield (model not identified)
+5d1f676ec1d3ab6684f75292d0c26bdaf2dc0cd93b3a4e657611d0fe34f6e880,data/captures/2026-09/higgsfield/flux-2-max.png,new,higgsfield,flux-2-max.png,2026-09-24,True,Higgsfield (model not identified)
+4382b0c2a5f3d2b2c52f070ba9a12ffa259b4e0bad2446a65134cd700a06cb0a,data/fixtures/provenance/higgsfield-flux-2-pro.png,existing,higgsfield,flux-2-pro.png,2026-09-24,True,Higgsfield (model not identified)
+e4eed8c3a5b1d99f3dce1ff16aa90ceb790a308c4ce623a9056cc711d4c5685f,data/captures/2026-09/higgsfield/gpt-image-1-5.png,new,higgsfield,gpt-image-1-5.png,2026-09-24,True,Higgsfield (model not identified)
+197eb0d30a4967cdf19e68226e9fa9aa6723613a3feab1bd9553b8b4287dae61,data/captures/2026-09/higgsfield/gpt-image-2-5-flare.png,new,higgsfield,gpt-image-2-5-flare.png,2026-09-24,True,Higgsfield (model not identified)
+3c20bc41a016117651142b4c3911237e6183ecfe2f53d97338b7beefc30cdea6,data/captures/2026-09/higgsfield/gpt-image-2-5-sunburst.png,new,higgsfield,gpt-image-2-5-sunburst.png,2026-09-24,True,Higgsfield (model not identified)
+f079e02f2b79f5ddf7f06d29de9f7b0a9ae7746c9a1e340555a9998f91637e59,data/captures/2026-09/higgsfield/gpt-image-2.png,new,higgsfield,gpt-image-2.png,2026-09-24,True,Higgsfield (model not identified)
+4cb06b2084f2f1907421fbab38ccc459ea2cb33859005e69c07c3ea524dc0f6d,data/fixtures/provenance/higgsfield-gpt-image.jpg,existing,higgsfield,gpt-image.jpeg,2026-09-24,True,OpenAI (ChatGPT / GPT Image / DALL·E / Sora)
+eb47fb7ed862e1e828627457f4a438f63dd27aa0d2c7e492d62d31d2c7939feb,data/captures/2026-09/higgsfield/grok-imagine-2-0.png,new,higgsfield,grok-imagine-2-0.png,2026-09-24,True,Higgsfield (model not identified)
+90d31906f629c4a99f60d115762fe003fc00dcdcabc895b2179e78e30407ef69,data/captures/2026-09/higgsfield/grok-imagine.png,new,higgsfield,grok-imagine.png,2026-09-24,True,Higgsfield (model not identified)
+6ad75936db0bb172423564dd24d27bddb992917263555ecb5697cd2f354deeac,data/fixtures/provenance/higgsfield-kling-o1.png,existing,higgsfield,kling-o1.png,2026-09-24,True,China AIGC-labeled content (TC260 standard)
+5365087f32d3bf8047375722835b3d8e75aa5d0f97afd5d59edfab5ae18f8b41,data/captures/2026-09/higgsfield/nano-banana-2-lite.png,new,higgsfield,nano-banana-2-lite.png,2026-09-24,True,Higgsfield (model not identified)
+8511db22012b878b996c1993285943eebe87dfbbc3d7d262f112a6a8f36c70bf,data/captures/2026-09/higgsfield/nano-banana-2.png,new,higgsfield,nano-banana-2.png,2026-09-24,True,Higgsfield (model not identified)
+dec96b39618905556a6d0592041d38aae0fb69e462b7dd4f3295242ff2b72543,data/captures/2026-09/higgsfield/nano-banana-pro.png,new,higgsfield,nano-banana-pro.png,2026-09-24,True,Higgsfield (model not identified)
+c1e3ad5ace74231a0106827a26cef9e3caf1424977b073ccba19a13f1eb3be3f,data/captures/2026-09/higgsfield/nano-banana.png,new,higgsfield,nano-banana.png,2026-09-24,True,Higgsfield (model not identified)
+776cba6484b751e729778253ba885f7042a9b53aa72d8315d27303533d2e3681,data/captures/2026-09/higgsfield/recraft-v4-1-utility.png,new,higgsfield,recraft-v4-1-utility.png,2026-09-24,True,Higgsfield (model not identified)
+1e68c02f97f4f2af68c1096e2631def01e6dc1bf388eaad2eae27a93f67c730a,data/captures/2026-09/higgsfield/recraft-v4-1.png,new,higgsfield,recraft-v4-1.png,2026-09-24,True,Higgsfield (model not identified)
+6153f35d8a7505162118f884ffc79f2f311a840251b799f8095fee06b4d615f8,data/captures/2026-09/higgsfield/seedream-4-0.png,new,higgsfield,seedream-4-0.png,2026-09-24,True,Higgsfield (model not identified)
+30d53dbfc5bd80b0c4a7435f02955590408ad206fe41017d29ce82a8e13667c8,data/captures/2026-09/higgsfield/seedream-4-5.png,new,higgsfield,seedream-4-5.png,2026-09-24,True,Higgsfield (model not identified)
+a86d007946c30c0fee139434d1cf6884e142ea11db3afb7911057e9415110d06,data/captures/2026-09/higgsfield/seedream-5-flash.png,new,higgsfield,seedream-5-flash.png,2026-09-24,True,Higgsfield (model not identified)
+5ad760ca1ecf73fea60c78520f1903ba3fd6c2b5e4d45e963558a945c91e9007,data/captures/2026-09/higgsfield/seedream-5-lite.png,new,higgsfield,seedream-5-lite.png,2026-09-24,True,Higgsfield (model not identified)
+2d64e99f5281fe10ad955429b26720dd2092bf7e943456b39f68564eb35c8e59,data/captures/2026-09/higgsfield/seedream-5-pro.png,new,higgsfield,seedream-5-pro.png,2026-09-24,True,Higgsfield (model not identified)
+0d3a70c1382639241d8b55966b19965ad42824aad60663a20a5f5bc810101cc6,data/captures/2026-09/higgsfield/soul-cinema.png,new,higgsfield,soul-cinema.png,2026-09-24,,
+fd5703240e9c045dbfb52c5fbef90802974f06aec716f482e8af74ef91288104,data/captures/2026-09/higgsfield/soul-v1.png,new,higgsfield,soul-v1.png,2026-09-24,,
+91a2160b5a72f23776ac25207250359e7f86ade761b531247856a47488a50e63,data/captures/2026-09/higgsfield/soul2-image.png,new,higgsfield,soul2-image.png,2026-09-24,True,Higgsfield (model not identified)
+f5f0b26198f8f1da107280b3c2c20c82897c3d522e27ba0acc4cf9eb8f74650a,data/captures/2026-09/higgsfield/flux-3-video.mp4,new,higgsfield,flux-3-video.mp4,2026-09-24,True,Black Forest Labs (FLUX)
+967dcb6022e19f55639ff705a58e5252a62a24405f247dcffefcc0f610149c30,data/fixtures/provenance/higgsfield-happyhorse.mp4,existing,higgsfield,happyhorse.mp4,2026-09-24,True,"Alibaba Tongyi (Wan, HappyHorse)"
+7011c92d52ec624da12600f24a4abb8d997f26cdea62d6f5a8d1940bc7ffcc9c,data/fixtures/provenance/higgsfield-kling-3-0-turbo.mp4,existing,higgsfield,kling-3-0-turbo.mp4,2026-09-24,True,Kuaishou Kling AI
+5fe5b9d08b9fb41a4d3eea470d443eb5df520235300e65134090338701215a43,data/fixtures/provenance/higgsfield-minimax-h3.mp4,existing,higgsfield,minimax-h3.mp4,2026-09-24,True,MiniMax Hailuo AI
+7d4ffa63755d605538c9a73059b4f6354a57e4f21100a92497aebc3c19dc3485,data/fixtures/provenance/higgsfield-veo-3-1-lite.mp4,existing,higgsfield,veo-3-1-lite.mp4,2026-09-24,True,Google (Gemini / Imagen)
+07fcc98ddc21f80d2c4b918c8afa9298ddab4ae49fc6428c8e464a9b69c9db21,data/captures/2026-09/higgsfield/wan-2-5.mp4,new,higgsfield,wan-2-5.mp4,2026-09-24,True,"Alibaba Tongyi (Wan, HappyHorse)"
+40a828d0360820019f3033c367283652df0a99c21150bafaddbc9a92437e743f,data/captures/2026-09/higgsfield/wan-2-2.png,new,higgsfield,wan-2-2.png,2026-09-24,,
+c3563b5413fe3d54ccc3f60c834c32e02f3dab7a830262bf38b6e0a700a0ac16,data/captures/2026-09/higgsfield/z-image.png,new,higgsfield,z-image.png,2026-09-24,True,Higgsfield (model not identified)
+1fd7cccffb25f18e74fa5ebc639672f1361db6137e6b9e848bc33fc1f583c0fe,data/fixtures/provenance/google-nano-banana.png,existing,nb-api,gemini-2.5-flash-image.png,2026-09-24,True,Google (Gemini / Imagen)
+5fd14ce6d32f3806f0128f952eb30d36f7dad384a9eec728e5efbdb46ebca7db,data/fixtures/provenance/google-nano-banana-pro.jpg,existing,nb-api,gemini-3-pro-image.jpg,2026-09-24,True,Google (Gemini / Imagen)
+977110ac48678627d907d635ac1b110b930044c350b669fb5f927a500e7d95ac,data/fixtures/provenance/google-nano-banana-2.jpg,existing,nb-api,gemini-3.1-flash-image.jpg,2026-09-24,True,Google (Gemini / Imagen)
+df4f422b9e77d6b08d3e6d095299f0cdf6d48f6c770632bb042a6c7b09627334,data/fixtures/provenance/google-nano-banana-2-lite.jpg,existing,nb2-lite,nb2lite-1.jpg,2026-09-24,True,Google (Gemini / Imagen)
+3d7dddd333ca6b576b3d7dc5220df42cbef3ea388bd4688f5671cdd796dcb805,data/captures/2026-09/nb2-lite/nb2lite-2.jpg,new,nb2-lite,nb2lite-2.jpg,2026-09-24,True,Google (Gemini / Imagen)
+e04a0ed3976bdff9df7ffdc318296cadcca3ba6e7166c81247c27a09ba39fe5c,data/captures/2026-09/nb2-lite/nb2lite-3.jpg,new,nb2-lite,nb2lite-3.jpg,2026-09-24,True,Google (Gemini / Imagen)
+fb034e94e4cbca9e0b56d82389d361fda0d6191f7e16f37ac6c55cd62a3621f7,data/fixtures/provenance/google-gemini-omni-flash-api.mp4,existing,omni-flash,omni-flash-1.mp4,2026-09-24,True,Google (Gemini / Imagen)
+25b2dc2a3c147dd8f04457a6b85183edd6ee235abdfe92c162c41c25812b0d9a,data/captures/2026-09/runway/flux-2-klein.png,new,runway,flux-2-klein.png,2026-09-24,True,Black Forest Labs (FLUX)
+e9b75d61adef6842c602767c4c0a5217de816927fd257ba1675e7e4a4dd043d0,data/captures/2026-09/runway/flux-2-max.jpg,new,runway,flux-2-max.jpg,2026-09-24,True,Black Forest Labs (FLUX)
+12262d853760b4e6dab7a896b833331ee5af43cd6e9467b899b7de76c7361d8d,data/fixtures/provenance/runway-gen4-image.png,existing,runway,gen4-image-artifact.png,2026-09-24,True,Runway
+98c0040b60aad1187c45df5fd4d6e8a11762950329b1a89183d6a58d5b947ad2,data/fixtures/provenance/runway-gen45-video.mp4,existing,runway,gen45-video-artifact.mp4,2026-09-24,True,Runway
+eaec9e1c3a6c46c14d6ab8d12954b875e7482c8fde2a6d53ccd2a0b77c227a0b,data/captures/2026-09/runway/gpt-image-1-5.png,new,runway,gpt-image-1-5.png,2026-09-24,True,OpenAI (ChatGPT / GPT Image / DALL·E / Sora)
+2905127c3caabf13906abe6abaef8096209ee9e6e961e899b112f82ebb6e0c4f,data/captures/2026-09/runway/gpt-image-1-mini.png,new,runway,gpt-image-1-mini.png,2026-09-24,True,OpenAI (ChatGPT / GPT Image / DALL·E / Sora)
+22fb128833cb401a02b72a4ef5f23a577224a97950f296d03433224fb2249afd,data/captures/2026-09/runway/gpt-image-2-5-flare.png,new,runway,gpt-image-2-5-flare.png,2026-09-24,True,OpenAI (ChatGPT / GPT Image / DALL·E / Sora)
+249b0d0f3fe3decc140a4ba234aee862d107b7a181bb47882f280cbddd325bfe,data/captures/2026-09/runway/gpt-image-2-5-sunburst.png,new,runway,gpt-image-2-5-sunburst.png,2026-09-24,True,OpenAI (ChatGPT / GPT Image / DALL·E / Sora)
+8c0d4d0e739e559035a16bdc276fe8d517d4561736e56c0ddf8d1da46181dfbd,data/captures/2026-09/runway/gpt-image-2.png,new,runway,gpt-image-2.png,2026-09-24,True,OpenAI (ChatGPT / GPT Image / DALL·E / Sora)
+9f7fae91c8faf9eb5554443d395dfd3b23204702b32feb19e1904ab3009d8c29,data/captures/2026-09/runway/grok-imagine-2-0-or-quality-a.jpg,new,runway,grok-imagine-2-0-or-quality-a.jpg,2026-09-24,True,xAI Grok Imagine
+99c7873a4c3de880af9daeb5c0fa753232313d4e4689f0976bbd020d2b420465,data/captures/2026-09/runway/grok-imagine-2-0-or-quality-b.jpg,new,runway,grok-imagine-2-0-or-quality-b.jpg,2026-09-24,True,xAI Grok Imagine
+001007bdeda172730028b2d54eb1b2acd90f6396800c10e2be2efe777faa1718,data/captures/2026-09/runway/grok-imagine.jpg,new,runway,grok-imagine.jpg,2026-09-24,True,xAI Grok Imagine
+14e97f57d83f5438a13b89175eb995ec07f817432642466b1bdb8572f7573da2,data/captures/2026-09/runway/ideogram-4-0.png,new,runway,ideogram-4-0.png,2026-09-24,True,Ideogram
+8a651b72eed17775e222c1a40b5bbea6e69715a27d6c8e8e0e3d4c5d0723909c,data/captures/2026-09/runway/ideogram-p-image.png,new,runway,ideogram-p-image.png,2026-09-24,True,Ideogram
+3132a2e7198ecd3dead3042cebc6c9091264638bf63b40d5027ff058bd043547,data/captures/2026-09/runway/kling-o3-standard.mp4,new,runway,kling-o3-standard.mp4,2026-09-24,True,Kuaishou Kling AI
+b95f4a9f2706fc4f3c8716f6daa016029e55f07177dfd2efd8fedbaf67094981,data/captures/2026-09/runway/ltx-2-5-fast.mp4,new,runway,ltx-2-5-fast.mp4,2026-09-24,,
+b374c9d29c094a2fd1b0b6257c989a43d155ce62d9fdc3d445707978cd7dd1e5,data/captures/2026-09/runway/meta-muse-image.png,new,runway,meta-muse-image.png,2026-09-24,True,
+fbc0313aea807e67d1bb904cac7b47c9163b1ac8435d4774d4b63e99ba1975df,data/captures/2026-09/runway/nano-banana-2-lite.jpg,new,runway,nano-banana-2-lite.jpg,2026-09-24,True,Google (Gemini / Imagen)
+a32344cb19bbd6607733aa138b45b66e919f827cdfcdfc0d7da8de75906237a9,data/captures/2026-09/runway/nano-banana-2-via-runway.png,new,runway,nano-banana-2-via-runway.png,2026-09-24,True,Google (Gemini / Imagen)
+d2b82a1907056f8f022308fdd16e701238da816a9c9c339d7fa54999af2cf12e,data/captures/2026-09/runway/nano-banana-pro.png,new,runway,nano-banana-pro.png,2026-09-24,True,Google (Gemini / Imagen)
+077e552f16ab1de180e3487e85567f5e0565e1bd6e942dc1d585309a105fa19a,data/captures/2026-09/runway/nano-banana.png,new,runway,nano-banana.png,2026-09-24,True,Google (Gemini / Imagen)
+88f0e48032dee30d1e6237962af74cd38991ab52c1424a4f8e12aadf4e1b9346,data/captures/2026-09/runway/seedance-2-mini.mp4,new,runway,seedance-2-mini.mp4,2026-09-24,True,BytePlus (ByteDance)
+5df40eb93f1b0f4d802bd117fba736ecec9713f5f411c6449726690d94972560,data/captures/2026-09/runway/seedream-5-0.png,new,runway,seedream-5-0.png,2026-09-24,True,BytePlus (ByteDance)
+8275bf3af0c8a3d4815f76a546f29172c31ddd65c7a153e1bd6d6421beb1eccc,data/captures/2026-09/runway/seedream-5-pro.png,new,runway,seedream-5-pro.png,2026-09-24,True,BytePlus (ByteDance)
+9d8f9901115697ca4925f02e3b5c91920fb02579657268c6525c0cd9bcf33d63,data/captures/2026-09/youtube/yt-136-video.mp4,new,youtube,yt-136-video.mp4,2026-09-24,,
+68c87b0697fb954f3533f96ec32875f6dec173c142fd4d4f2552c624c21f7c28,data/captures/2026-09/youtube/yt-398-av1.mp4,new,youtube,yt-398-av1.mp4,2026-09-24,,
+aa2fde5c0444eda05f40db2a8974183284016876c9788f099dda9df5aac1714f,data/fixtures/provenance/youtube-reencode-gemini-omni-flash.mp4,existing,youtube,yt-studio-download.mp4,2026-09-24,True,Google (Gemini / Imagen)
+236dd73a25a893b8f2c7bbdad8e1208341251c2b12e7b261c1fff65bf58277a5,data/fixtures/provenance/youtube-reencode-grok.mp4,existing,youtube,yt-studio-grok.mp4,2026-09-24,,
+7c37874c72d289606e997434ccde73dba3aa89ecdc5adb3dfe64923933da5378,data/captures/2026-09/higgsfield/cinema-studio-3-0.mp4,new,higgsfield,cinema-studio-3-0.mp4,2026-09-25,True,BytePlus (ByteDance)
+485449b69f1013a97970aabc5429327db1ff88559c81e3430c536fab108db7dc,data/fixtures/provenance/higgsfield-cinema-studio-v2.mp4,existing,higgsfield,cinema-studio-v2.mp4,2026-09-25,True,Kuaishou Kling AI
+f7915d8e77eeb6feceff7169aa79c380330aa2f71a71b5eba426c4495cb8d696,data/captures/2026-09/higgsfield/edit-flux-3.mp4,new,higgsfield,edit-flux-3.mp4,2026-09-25,True,Black Forest Labs (FLUX)
+fca47e6aea979b3fb0be01b5775c47f95acde66b4692957aae928a17ce86418d,data/captures/2026-09/higgsfield/edit-gemini-omni-1-1.mp4,new,higgsfield,edit-gemini-omni-1-1.mp4,2026-09-25,True,Google (Gemini / Imagen)
+4f8aff9e6ef05c71a5028f2d3b5c63191b5e6932ebe39827068ae09cfe00e17b,data/captures/2026-09/higgsfield/gemini-omni-flash-1-1.mp4,new,higgsfield,gemini-omni-flash-1-1.mp4,2026-09-25,True,Google (Gemini / Imagen)
+7c9a93140bffb50de173bca7cff1ecb7b2a75f611bf11bb26a54d903c043e5e3,data/captures/2026-09/higgsfield/gemini-omni-flash.mp4,new,higgsfield,gemini-omni-flash.mp4,2026-09-25,True,Google (Gemini / Imagen)
+a3c2e8c506327ff0bdee078372be8d89fb913672f61efc66a4791771026ec0fc,data/fixtures/provenance/higgsfield-genjutsu-motion-control.mp4,existing,higgsfield,genjutsu-motion-control.mp4,2026-09-25,,
+d3b7a9bbe03abdab2b6c0fb009f90a961cb021405ff652c02943e51e01c38ba0,data/captures/2026-09/higgsfield/genjutsu-replace-object.mp4,new,higgsfield,genjutsu-replace-object.mp4,2026-09-25,,
+32ec5b3d70636c6295ff312dadb9fc018e8ff061c7ebe786000fcbbdc2161b6b,data/captures/2026-09/higgsfield/grok-video-1-5.mp4,new,higgsfield,grok-video-1-5.mp4,2026-09-25,True,xAI Grok Imagine
+3811bca40850d8b4caebf3cc0f21b8c414f8b7d7c810f0a72b38b845174bb02e,data/captures/2026-09/higgsfield/grok-video.mp4,new,higgsfield,grok-video.mp4,2026-09-25,True,xAI Grok Imagine
+67f4b6c49f6b93485fd47c457f64d3f721ec326ec57a9fb39488d6b9023528b7,data/fixtures/provenance/higgsfield-hailuo-2-3.mp4,existing,higgsfield,hailuo-2-3.mp4,2026-09-25,True,MiniMax Hailuo AI
+96034f675008efcc09ca25c0739068f6e7301dde3ac67f4cfd14b82c5c7f9cae,data/captures/2026-09/higgsfield/kling-2-6.mp4,new,higgsfield,kling-2-6.mp4,2026-09-25,True,Kuaishou Kling AI
+00a0ab7a2fe37f1c5b3208f9940c928932124015df7391dab4bfa5a9cc21af0c,data/captures/2026-09/higgsfield/kling-3-0.mp4,new,higgsfield,kling-3-0.mp4,2026-09-25,True,Kuaishou Kling AI
+1f8fb86da8d71db7d2e6c4f87a6a2fd5cab69b7824406d7145a2756c2d358e38,data/captures/2026-09/higgsfield/marketing-studio.mp4,new,higgsfield,marketing-studio.mp4,2026-09-25,True,BytePlus (ByteDance)
+bacf6dc7ab9b6dfe67488349ecced76b10221f3c73196a1a4bff163588e7270d,data/captures/2026-09/higgsfield/minimax-h3-max.mp4,new,higgsfield,minimax-h3-max.mp4,2026-09-25,True,MiniMax Hailuo AI
+11b8e1890ac393a41de61f9a39633cefcad45b9e47f82d13a92906ac5f6ced45,data/captures/2026-09/higgsfield/seedance-1-5-pro.mp4,new,higgsfield,seedance-1-5-pro.mp4,2026-09-25,,
+a65d7b57c528f6fa0e6b844d918d16cc6c2260038921d1c7d6d2e2bf60095a26,data/captures/2026-09/higgsfield/seedance-2-0.mp4,new,higgsfield,seedance-2-0.mp4,2026-09-25,True,BytePlus (ByteDance)
+24857c4744ee9a7e4385d1f85df0acdd0aba05f1827210b7b97556d1a9d58841,data/captures/2026-09/higgsfield/seedance-2-5.mp4,new,higgsfield,seedance-2-5.mp4,2026-09-25,True,BytePlus (ByteDance)
+d4aec466d7811ae5670f4db6308f5275d2773653089736849f85f96fe2b262be,data/captures/2026-09/higgsfield/veo-3-1.mp4,new,higgsfield,veo-3-1.mp4,2026-09-25,True,Google (Gemini / Imagen)
+e78ed6fa92814a72a64b6a377bebfd5b65efeae149d49170c68744917e9246b3,data/captures/2026-09/higgsfield/wan-2-6.mp4,new,higgsfield,wan-2-6.mp4,2026-09-25,True,"Alibaba Tongyi (Wan, HappyHorse)"
+f59ae93226bae3cc24598214ff623f99957e127838541b57acd55bd9cdb8e72c,data/captures/2026-09/higgsfield/wan-2-7.mp4,new,higgsfield,wan-2-7.mp4,2026-09-25,True,"Alibaba Tongyi (Wan, HappyHorse)"
+bfb89e7729ef0e54260452f525ebdadd1237fac0902c5bda39edbcd7a48aa6cc,data/captures/2026-09/higgsfield/wan-3-0-prime.mp4,new,higgsfield,wan-3-0-prime.mp4,2026-09-25,True,"Alibaba Tongyi (Wan, HappyHorse)"
+3e982e49d46445143f78a0b445642ce888a23571823e6db74e93c0c7ede3c9c1,data/captures/2026-09/higgsfield/wan-3-0.mp4,new,higgsfield,wan-3-0.mp4,2026-09-25,True,"Alibaba Tongyi (Wan, HappyHorse)"
+7fc933d784dcb1ed4bef0f6d857fe79156c1ef1da9d437d750633217d0da23a8,data/captures/2026-09/google-photos/ask-dog-to-cat.jpg,new,google-photos,ask-dog-to-cat.jpg,2026-09-25,True,Google Photos (AI edit)
+1c8726279b869bc435dd30bcb385d04203dd9af5570b0d2d393ff3f3e5162e5b,data/captures/2026-09/google-photos/eraser-glasses.jpg,new,google-photos,eraser-glasses.jpg,2026-09-25,True,Google Photos (AI edit)
+1abca17d4649e458626864560e5d2db6397eb51d7bc8617f49bc70be0905522e,data/captures/2026-09/google-photos/gphotos-5.jpg,new,google-photos,gphotos-5.jpg,2026-09-24,True,Google Photos (AI edit)
+56817730a46a84975a7ac6d9595d2f68a18676b49fd1be1c5230b517beafa9cc,data/captures/2026-09/google-photos/gphotos-6.jpg,new,google-photos,gphotos-6.jpg,2026-09-24,True,Google Photos (AI edit)
+39f8141415ab51fd6070b6d2591132c81fffa6b44f76f2e5e84b38912b3becc1,data/captures/2026-09/runway/flux-3-video.mp4,new,runway,flux-3-video.mp4,2026-09-25,True,Black Forest Labs (FLUX)
+81cd555906034c4aff6473047a7a898d14ce060dd4e6a3c6226902547446045b,data/captures/2026-09/runway/grok-imagine-1-5-video.mp4,new,runway,grok-imagine-1-5-video.mp4,2026-09-25,True,xAI Grok Imagine
+c255d4a7168197e4ab6af162690d305f3e3f48037b1a5fd9e877ab782539e0fb,data/captures/2026-09/runway/gemini-omni-1-1-flash.mp4,new,runway,gemini-omni-1-1-flash.mp4,2026-09-25,True,Google (Gemini / Imagen)
+a8711432008960149a16afd43704fa673f70826cf527d677aa0c35b7a18502d1,data/captures/2026-09/runway/happyhorse-1-0.mp4,new,runway,happyhorse-1-0.mp4,2026-09-25,True,Alibaba Tongyi (Wan, HappyHorse)
+4c909ca68ecad62c9200727cae2bef5e80678a255b3fd781f7a43ca0b0824f46,data/captures/2026-09/runway/minimax-h3.mp4,new,runway,minimax-h3.mp4,2026-09-25,True,MiniMax Hailuo AI
+c04468ef20081aecf16ee94fe81ddd419ddae36acb678e7e4f26def7a1f7bb72,data/captures/2026-09/google-photos-web/forest-original.jpg,new,google-photos-web,forest-original.jpg,2026-09-26,,
+af0265e41edec3413683f86441a1ffa9c64dbcb7117070d7ccbd2e91c20fd327,data/captures/2026-09/google-photos-web/forest-enhance.jpg,new,google-photos-web,forest-enhance.jpg,2026-09-26,,
+3f42e0877f67c4677f6f52be18146923fc5eeb471f9e0e27b9477d29dc1e6bbb,data/captures/2026-09/google-photos-web/forest-sky-vivid.jpg,new,google-photos-web,forest-sky-vivid.jpg,2026-09-26,,
+c83f903117cc030edf78164430ce59ffa897cb3a9efe464cf257e55644a955fd,data/captures/2026-09/google-photos-web/forest-crop-square.jpg,new,google-photos-web,forest-crop-square.jpg,2026-09-26,,
+e5612ea4bc06df48821d431d8d4758d3c73d1e74bd7b5b5dce921eaffdfbbe93,data/captures/2026-09/higgsfield/edit-kling-3-0-omni.mp4,new,higgsfield,edit-kling-3-0-omni.mp4,2026-09-26,True,Kuaishou Kling AI

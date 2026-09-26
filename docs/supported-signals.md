@@ -14,6 +14,7 @@ The `visible` command registers these mark keys:
 | `doubao` | `豆包AI生成` | Bottom right | Vendor specific text detector. |
 | `jimeng` | `★ 即梦AI` | Bottom right | Vendor specific text detector. |
 | `qwen` | `千问AI生成` or the three-lobe Qwen symbol | Bottom right | Separate strict templates cover the text and Qwen Create symbol variants. |
+| `wan` | Wan logo and `Wan` wordmark | Bottom right, hugging the corner | Provisional: one real Wan 2.7 Pro export. Requires NCC >= 0.55 and a match that ends within 0.015 of the short side from both edges. |
 | `kling` | `可灵AI 3.0` or `KlingAI 3.0` | Bottom right | Separate calibrated silhouettes cover the older CJK and current IMAGE 3.0 Latin variants. |
 | `yuanbao` | `元宝` over `AI生成` | Bottom right | Standard two-line variant only. |
 | `samsung` | `✦ Contenuti generati dall'AI` | Bottom left | Calibrated for the Italian text variant. |
@@ -48,13 +49,14 @@ pill detector; the generic pill shape does not attribute LiblibAI on its own.
 
 | Key | Mark | Motion | Important limit |
 | --- | --- | --- | --- |
-| `sora` | Sora 2 mascot and wordmark | Moves among frame positions | Requires a temporally recurring visual match; the older Sora Turbo corner swirl is a different unsupported mark. |
+| `sora` | Sora 2 mascot and wordmark | Moves among frame positions | Requires a temporally recurring visual match; the older Sora Turbo corner swirl is a different unsupported mark. OpenAI discontinued the Sora app on 2026-04-26 and the Sora API on 2026-09-24, so this covers existing exports only. |
 | `veo` | Current four-point diamond and legacy `Veo` text | Fixed bottom-right corner | Uses separate silhouettes and requires a recurring match; learned fill is preferable on structured backgrounds. |
 | `seedance` | Boxed `AI` label | Fixed bottom-right corner | Requires an anchored recurring match; the full localized box is filled because a thinner synthetic shape mask leaves the real translucent rim behind. |
 | `doubao` | `豆包AI生成` text run | Fixed bottom-right corner | Reuses the image engine's synthetic alpha as the template; a stable run of at least 12 frames at confidence >=0.35 is required. Without Doubao TC260 confirmation, the run also needs a strong anchor at >=0.55. |
 | `dola` | `Dola AI` text | Fixed bottom-right corner | Requires an anchored recurring match; ByteDance or BytePlus provenance can relax only an existing visual run. |
 | `hailuo` | `MINIMAX \| hailuo AI` composite label | Fixed lower edge | Uses a synthetic waveform, text, separator, and ring silhouette; the complete recurring label box is filled. A TC260 label naming MiniMax as producer can relax only an existing stable run. |
-| `kling` | Kling AI swirl, `KLING AI` or `KlingAI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font and capitalization variants, an edge gate, a white-label gate, and anchored temporal recurrence. |
+| `vidu` | Vidu two-loop logo and `Vidu AI` wordmark | Fixed bottom-right corner | Provisional: one real Vidu Q3 export (0.72 per frame at 480-1080p, 0.60 at 360p; the 956 other local videos at most 0.41). Requires an anchored recurring run at >=0.52 with a strong frame at >=0.58. A ShengShu TC260 label confirms the vendor without lowering the bar. |
+| `kling` | Kling AI swirl, `KLING AI` or `KlingAI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font and capitalization variants, an edge gate, a white-label gate, and anchored temporal recurrence. It also scores the Vidu wordmark, so `vidu` is checked first, and a TC260 label naming a non-Kling producer vetoes the match. |
 
 `video identify`, `video visible`, and `video all` share this registry and the
 same temporal arbiter. It is separate from the image registry because selection
@@ -93,12 +95,14 @@ The inspection and stripping code handles signals in these groups:
 - China TC260 AIGC labels in supported image placements and the normative
   MP4/MOV `moov.udta.meta.keys/ilst`, MKV/WebM
   `Segment.Tags.Tag.SimpleTag`, AVI `LIST/INFO/AIGC`, and FLV
-  `script.onMetaData.AIGC` placements;
+  `script.onMetaData.AIGC` placements, plus the audio placements of
+  TC260-PG-202510A: a RIFF `AIGC` chunk in WAV, an ID3v2 `TXXX` frame described
+  `AIGC` in MP3, and an `AIGC=` Vorbis comment in OGG, Opus and FLAC;
 - xAI and Grok signature-plus-UUID pairs in ordinary EXIF, ImageMagick PNG raw
   EXIF profiles, XMP description/creator fields, PNG Description/Author text,
   and IPTC Caption-Abstract/By-line fields;
 - Samsung AI editing markers;
-- Hugging Face job metadata;
+- Higgsfield job metadata (the `hf-job-id` PNG chunk);
 - open Stable Diffusion style DWT-DCT watermarks with the `detect` extra;
 - Adobe TrustMark Variant P schemas 0-2 with the `trustmark` extra. Variant Q
   needs a different model, while schema 3 is deliberately rejected because it
@@ -176,7 +180,17 @@ and `scripts/synthid_runtime/`.
 
 The tool recognizes presence from supported provenance: Google AI C2PA
 under Google's all-media watermark policy, and current OpenAI C2PA carrying an
-explicit `c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action
+explicit `c2pa.watermarked.*` action. Two Google signers are exceptions.
+YouTube re-signs uploads as Google LLC (certificate `YouTube Video Processing
+Services`, actions `opened` and `transcoded`, measured on Studio downloads), so
+a YouTube-signed manifest establishes SynthID only through a SynthID action in
+its chain, as a Gemini ingredient carries; with no AI claim in the chain,
+`video identify` reports unknown. A Photos-signed AI edit is reported as
+"Google Photos (AI edit)" with SynthID present, although the Photos manifest
+records no SynthID action and Google documents the mark only for Reimagine:
+Google's checker found SynthID in all four Photos AI edits tested on 2026-09-25
+(Ask, eraser and two other edits), and a caveat says the claim rests on that
+measurement. Legacy OpenAI C2PA without that action
 does not assert SynthID. GPT Image 2.5 Flare and Sunburst were verified on
 2026-09-15: both API outputs carried valid OpenAI C2PA with
 `c2pa.watermarked.unbound` and exercised the existing model-independent OpenAI
@@ -270,11 +284,16 @@ not a universal clean verdict.
 | ByteDance generators | Doubao and Jimeng marks | No registered pixel decoder | TC260 AIGC, supported C2PA, and exact app-export AIGC disclosures |
 | Qwen | Qwen mark | No registered pixel decoder | TC260 AIGC |
 | Kling AI | Kling AI image and video marks | No registered pixel decoder | TC260 AIGC |
+| Vidu (ShengShu) | Vidu video mark | No registered pixel decoder | TC260 AIGC in the MP4 `AIGC` key |
+| Runway | None measured on paid-plan output | No registered pixel decoder | C2PA signed `RUNWAY AI, INC.` on its own models; third-party models keep their vendor's manifest |
+| Wan (Alibaba) | Wan image mark | No registered pixel decoder | TC260 AIGC in XMP |
 | Hailuo AI / MiniMax video | Hailuo AI composite video label | No registered pixel decoder | TC260 AIGC where present |
 | Baidu | Baidu mark | No registered pixel decoder | TC260 AIGC |
 | LiblibAI | LiblibAI wordmark and compact pill | No registered pixel decoder | TC260 AIGC |
 | RunningHub | RunningHub mark | No registered pixel decoder | TC260 AIGC |
 | Samsung Galaxy AI | One locale specific mark | No registered pixel decoder | C2PA and Samsung markers |
+| Google Photos AI edits | None | SynthID, reported present: Google's checker found it in 4 of 4 Photos AI edits (2026-09-25), though the manifest records no SynthID action | C2PA signed "Google Photos" with a `compositeWithTrainedAlgorithmicMedia` action, plus XMP `photoshop:Credit` `Edited with Google AI` |
+| Apple Image Playground and Photos Clean Up | None | No registered pixel decoder; SynthID announced by Apple for a later update | XMP `photoshop:Credit` (`Apple Image Playground`, `Apple Photos Generative Edit: Clean Up`) plus IPTC digitalSourceType; no C2PA on measured 2026-09 output |
 
 For detector thresholds, measured limits, and incident history, see
 [module internals](module-internals.md) and

@@ -68,9 +68,10 @@ def test_openai_sdk_is_development_only():
     assert "openai" not in _requirement_names("all")
 
 
-def test_trustmark_is_limited_to_its_numpy_compatible_python_range():
-    assert "trustmark" in _requirement_names("trustmark", python_version="3.12")
-    assert "trustmark" not in _requirement_names("trustmark", python_version="3.13")
+def test_trustmark_covers_every_supported_python():
+    # trustmark 0.9.2 dropped its NumPy <2 pin, so the extra is no longer capped at 3.12.
+    for python_version in ("3.12", "3.13", "3.14"):
+        assert "trustmark" in _requirement_names("trustmark", python_version=python_version)
 
 
 def test_extras_use_capability_names_without_legacy_aliases():

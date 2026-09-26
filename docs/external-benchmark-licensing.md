@@ -33,7 +33,9 @@ Sources verified: the Hugging Face dataset `Shilin-LU/W-Bench` at revision
 `c81f3924f0fb` and the VINE repository `Shilin-LU/VINE`.
 
 - **Dataset license: MIT**, declared on the dataset card. The benchmark is
-  legally usable.
+  legally usable as a benchmark, but the MIT tag does not relicense the
+  underlying COCO, Flickr and ShareGPT4V images, whose own terms still apply
+  to any redistribution.
 - **Composition (verified from the card):** 10,000 instances sourced from
   COCO, Flickr, ShareGPT4V and similar datasets, eleven watermarking
   methods, evaluated across four editing profiles - regeneration, global
