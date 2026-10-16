@@ -1,7 +1,7 @@
 """Generated C2PA soft-binding registry; do not edit by hand.
 
 Source: https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json
-Revision: d36d1c1742b1753ca064bb3307abfd95db912a28
+Revision: d5960248ab69c17dc194906d2ef7d11ad164be70
 Source license: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
 Changes: validated, ordered, and reduced to fields used at runtime; descriptions
 are shortened to their first sentence for display.
@@ -12,7 +12,7 @@ from __future__ import annotations
 C2PA_SOFT_BINDING_SOURCE_URL = (
     "https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json"
 )
-C2PA_SOFT_BINDING_SOURCE_REVISION = "d36d1c1742b1753ca064bb3307abfd95db912a28"
+C2PA_SOFT_BINDING_SOURCE_REVISION = "d5960248ab69c17dc194906d2ef7d11ad164be70"
 C2PA_SOFT_BINDING_SOURCE_LICENSE = "CC BY 4.0"
 
 C2PA_SOFT_BINDING_ROWS: tuple[
@@ -629,6 +629,17 @@ C2PA_SOFT_BINDING_ROWS: tuple[
         (),
         "Adobe FlowMark video watermarking variant A",
         "2026-08-13T12:00:00.000Z",
+        (),
+        False,
+    ),
+    (
+        54,
+        "be.immostory.videoseal.1",
+        "watermark",
+        ("video",),
+        ("video/mp4",),
+        "ImmoStory AI deployment of Meta FAIR's Video Seal 1.0 invisible video watermark",
+        "2026-10-12T00:00:00.000Z",
         (),
         False,
     ),

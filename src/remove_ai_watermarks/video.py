@@ -687,6 +687,7 @@ def remove_video_batch(
     """
     import shutil
 
+    from remove_ai_watermarks._internal.output_paths import unique_output_path
     from remove_ai_watermarks.video_encoding import atomic_video_output
 
     directory_path = Path(directory)
@@ -723,7 +724,7 @@ def remove_video_batch(
     invisible_runtime: VideoVaeRuntime | None = None
     invisible_runtime_error: str | None = None
     for source_path in sources:
-        item_output = output_path / source_path.name
+        item_output = unique_output_path(output_path / source_path.name, original=source_path)
         try:
             if mode == "all":
                 if (

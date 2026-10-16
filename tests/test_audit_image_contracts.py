@@ -58,8 +58,10 @@ def test_invisible_batch_passthrough_uses_current_source(tmp_path, monkeypatch, 
     icc, expected = _source(source, orientation=3)
     original_bytes = source.read_bytes()
     destination = out_dir / source.name
+    previous_destination_bytes = None
     if not in_place:
         Image.new("RGB", (96, 64), "blue").save(destination)
+        previous_destination_bytes = destination.read_bytes()
     monkeypatch.setattr(invisible_engine, "is_available", lambda: available)
     monkeypatch.setattr(api._SourceEvidence, "has_invisible_target", lambda self: False)
 
@@ -70,7 +72,18 @@ def test_invisible_batch_passthrough_uses_current_source(tmp_path, monkeypatch, 
     assert summary.items[0].invisible == ("no-signal" if available else "unavailable")
     if in_place:
         assert source.read_bytes() == original_bytes
-    with Image.open(destination) as result:
+    else:
+        assert previous_destination_bytes is not None
+        assert destination.read_bytes() == previous_destination_bytes
+
+    output = summary.items[0].output
+    assert output is not None
+    if in_place:
+        assert output.resolve() == source.resolve()
+    else:
+        assert output == out_dir / "image_1.png"
+
+    with Image.open(output) as result:
         np.testing.assert_array_equal(np.array(ImageOps.exif_transpose(result)), expected)
         assert result.info["icc_profile"] == icc
 

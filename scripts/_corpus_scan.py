@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -10,15 +10,15 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def corpus_day(path: Path, corpus: Path) -> datetime.date | None:
+def corpus_day(path: Path, corpus: Path) -> dt.date | None:
     """Read the leading YYYY-MM-DD corpus segment, if present."""
     try:
-        return datetime.date.fromisoformat(path.relative_to(corpus).parts[0])
+        return dt.date.fromisoformat(path.relative_to(corpus).parts[0])
     except (ValueError, IndexError):
         return None
 
 
-def corpus_files(corpus: Path, since: datetime.date | None, *, suffixes: Collection[str] | None = None) -> list[Path]:
+def corpus_files(corpus: Path, since: dt.date | None, *, suffixes: Collection[str] | None = None) -> list[Path]:
     """Return a deterministic recursive walk, optionally date- and suffix-bounded."""
     if since is None:
         candidates = corpus.rglob("*")

@@ -672,6 +672,7 @@ def remove_batch(
     terminal stage -- ``done`` or ``failed`` -- whatever the mode does in between, so a
     caller driving a progress bar can advance on that alone.
     """
+    from remove_ai_watermarks._internal.output_paths import unique_output_path
     from remove_ai_watermarks._internal.utils import is_supported_format
     from remove_ai_watermarks.optional_deps import pixels_available
 
@@ -686,7 +687,7 @@ def remove_batch(
     errors: list[tuple[Path, str]] = []
     items: list[BatchItemResult] = []
     for img_path in sorted(p for p in src_dir.iterdir() if is_supported_format(p)):
-        out_path = out_dir / img_path.name
+        out_path = unique_output_path(out_dir / img_path.name, original=img_path)
         try:
             result = _run_batch_one(img_path, out_path, mode, backend, sensitivity, invisible, force, engine, say)
         except Exception as exc:
