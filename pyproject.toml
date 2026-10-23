@@ -134,9 +134,13 @@ text-restoration = [
 # PaddleOCR detection plus three script-chosen recognition engines. The models
 # download on first use and are cached by huggingface_hub; never bundled.
 # Keep every Hub extra below 2 so it remains composable with Diffusers (<2).
+# PaddleX, under PaddleOCR, pins opencv-contrib-python==4.10.0.84, which installs
+# into the same cv2 package as opencv-python-headless; mixed versions leave cv2
+# unimportable, so this extra holds headless at the same version.
 text-draft = [
     "paddleocr>=3.3.3",
     "paddlepaddle>=3.0.0",
+    "opencv-python-headless==4.10.0.84",
     "huggingface-hub>=0.20.0,<2",
 ]
 # Adobe TrustMark decoder -- the open, keyless watermark behind Adobe Durable
@@ -234,7 +238,9 @@ build-backend = "hatchling.build"
 # Lock-resolution only; not published metadata. PaddleX 3.7 (the `ocr` extra's
 # PaddleOCR) requires NumPy <2.4, and without this cap `uv lock --upgrade`
 # prefers the newest NumPy and silently downgrades PaddleOCR to 3.4.
-constraint-dependencies = ["numpy<2.4"]
+# opencv-python comes only from the dev group's invisible-watermark; it shares
+# cv2 with the headless and contrib wheels, so it follows the text-draft pin.
+constraint-dependencies = ["numpy<2.4", "opencv-python==4.10.0.84"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/remove_ai_watermarks"]
