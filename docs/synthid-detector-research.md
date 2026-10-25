@@ -601,3 +601,20 @@ not see the oracle mark contrast.
 
 Signed provenance (`identify`). The remote OpenAI oracle is development-only,
 and a research lattice miss is not a clean SynthID negative.
+
+## Replaying preserved research inputs
+
+Descriptor replay, fixed-patch training, and full-image replay have separate
+input requirements. A retained, hash-bound descriptor bank can support new
+learners without reopening source images. A retained raw patch bank can support
+new pixel-model training under its recorded extraction contract. Neither bank
+reconstructs the original image or permits arbitrary new pixel transformations.
+Verify every reused bank against its original receipt, preserve exact outcome
+labels and source exclusions, and report coverage separately for each capability.
+
+When equal native patch inputs occur under distinct source-parent identifiers,
+keep their connected source groups together or exclude the matching input from
+training. Source-disjoint fitting and threshold calibration must both exclude
+the outer evaluation groups. An actual-RGB replay with descriptor-cache reads
+denied separately verifies exported feature inference; it is not an independent
+quality evaluation.
