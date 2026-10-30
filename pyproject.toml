@@ -141,7 +141,7 @@ text-restoration = [
 text-draft = [
     "paddleocr>=3.3.3",
     "paddlepaddle>=3.0.0",
-    "opencv-python-headless==4.10.0.84",
+    "opencv-python-headless==5.0.0.93",
     "huggingface-hub>=0.20.0,<2",
 ]
 # Adobe TrustMark decoder -- the open, keyless watermark behind Adobe Durable
