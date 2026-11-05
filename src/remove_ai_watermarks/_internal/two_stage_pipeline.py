@@ -414,6 +414,21 @@ def composite_face(base: np.ndarray, detail: np.ndarray, mask: np.ndarray, *, fe
     return np.clip(np.rint(merged), 0, 255).astype(np.uint8)
 
 
+def _match_face_tone(base: np.ndarray, detail: np.ndarray) -> np.ndarray:
+    """Keep regenerated texture while matching the global crop's smooth RGB tone."""
+    import cv2
+
+    # The two independently regenerated stages can disagree on skin color. A
+    # feathered mask only spreads that disagreement into a colored jaw/neck patch.
+    # Take the low-frequency correction from the already regenerated global stage,
+    # never from the original pixels that may still carry an invisible watermark.
+    detail_float = detail.astype(np.float32)
+    residual = base.astype(np.float32) - detail_float
+    sigma = max(1.0, min(base.shape[:2]) / 32.0)
+    correction = cv2.GaussianBlur(residual, (0, 0), sigmaX=sigma, sigmaY=sigma)
+    return np.clip(np.rint(detail_float + correction), 0, 255).astype(np.uint8)
+
+
 def _expanded_box(
     box: tuple[int, int, int, int],
     image_size: tuple[int, int],
@@ -951,7 +966,7 @@ class TwoStageZImagePipeline:
             base_crop = base[cy1:cy2, cx1:cx2]
             base[cy1:cy2, cx1:cx2] = composite_face(
                 base_crop,
-                np.asarray(detailed),
+                _match_face_tone(base_crop, np.asarray(detailed)),
                 crop_mask,
                 feather=10,
             )

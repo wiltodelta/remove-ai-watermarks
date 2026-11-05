@@ -4,7 +4,7 @@
 # on it, including the ComfyUI node package. The console script below carries
 # the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.53.0"
+version = "0.54.0"
 description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -243,7 +243,13 @@ build-backend = "hatchling.build"
 # prefers the newest NumPy and silently downgrades PaddleOCR to 3.4.
 # opencv-python comes only from the dev group's invisible-watermark; it shares
 # cv2 with the headless and contrib wheels, so it follows the text-draft pin.
-constraint-dependencies = ["numpy<2.4", "opencv-python==4.10.0.84"]
+constraint-dependencies = [
+    "numpy<2.4",
+    "opencv-python==4.10.0.84",
+    # These C2PA releases omit binary wheels on the affected platforms.
+    "c2pa-python!=0.38.2; sys_platform != 'darwin'",
+    "c2pa-python!=0.38.1; sys_platform == 'win32'",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/remove_ai_watermarks"]

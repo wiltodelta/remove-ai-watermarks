@@ -538,6 +538,47 @@ def test_face_composite_preserves_every_pixel_outside_mask():
     assert np.all(result[12:20, 12:20] == 240)
 
 
+@pytest.mark.parametrize("cast", [(30, -12, -18), (-20, 10, 25), (0, 0, 0)])
+@pytest.mark.parametrize("spatial_cast", [False, True])
+def test_face_stage_matches_global_tone_without_losing_regenerated_detail(monkeypatch, cast, spatial_cast):
+    """Independent global/face colors must not become a patch at the jaw mask."""
+    from remove_ai_watermarks._internal.qwen_zimage_pipeline import QwenZImagePipeline
+
+    yy, xx = np.mgrid[:128, :128]
+    base = np.empty((128, 128, 3), dtype=np.uint8)
+    base[:] = (150, 120, 100)
+    base = base + (xx // 8)[:, :, None].astype(np.uint8)
+    texture = np.where((xx + yy) % 2 == 0, 6, -6)[:, :, None]
+    tone = np.array(cast, dtype=np.float32)
+    if spatial_cast:
+        tone = tone + (xx - 64)[:, :, None] * np.array([0.1, -0.1, 0.05])
+    detail = np.rint(base.astype(np.int16) + tone + texture).astype(np.uint8)
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[32:96, 32:96] = 255
+    runtime = QwenZImagePipeline(device="cuda", torch_dtype=None)
+    pipe = MagicMock(return_value=Image.fromarray(detail))
+    monkeypatch.setattr(runtime, "_load_zimage", lambda: pipe)
+    monkeypatch.setattr(runtime, "_detail_size", lambda *_args: (128, 128))
+
+    result = np.asarray(
+        runtime._run_faces(
+            Image.new("RGB", (128, 128), (190, 90, 60)),
+            Image.fromarray(base),
+            [(16, 16, 112, 112)],
+            [mask],
+            strength=0.1,
+            seed=0,
+        )
+    )
+
+    # The interior keeps the generated texture in the global stage's color frame.
+    expected = base.astype(np.int16) + texture
+    assert np.max(np.abs(result[48:80, 48:80].astype(np.int16) - expected[48:80, 48:80])) <= 1
+    assert np.array_equal(result[:20], base[:20])
+    assert np.array_equal(result[:, :20], base[:, :20])
+    pipe.assert_called_once()
+
+
 def test_profile_defaults_to_four_global_steps_and_a_fixed_seed():
     """The step count belongs to the stage, not to a caller-settable profile knob."""
     from remove_ai_watermarks._internal.qwen_zimage_pipeline import GLOBAL_STEPS

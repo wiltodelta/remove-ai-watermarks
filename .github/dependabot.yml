@@ -20,7 +20,11 @@ updates:
     # Transformers path. Keep Dependabot on the compatible lines until those
     # constraints move. Transformers 5.16+ requires tokenizers 0.23.1+,
     # and Diffusers requires huggingface-hub <2. Mirror the manifest bounds.
+    # PaddleX pins the contrib build; headless must match its shared cv2 files.
     ignore:
+      - dependency-name: "opencv-python-headless"
+        versions:
+          - ">4.10.0.84"
       - dependency-name: "numpy"
         versions:
           - ">=2.4"

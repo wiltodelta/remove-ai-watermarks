@@ -85,6 +85,15 @@ The published extras and Dependabot configuration carry matching bounds:
   certificate acceptance and negative credential, signature, and asset-binding
   validation when upgrading the reader; retain every SDK validation status.
 
+The OpenCV headless pin follows PaddleX's contrib build, and Dependabot excludes
+newer headless builds until that shared runtime can move together. The lock
+regression checks that every OpenCV distribution uses the same build.
+
+C2PA lock constraints exclude incomplete binary releases only on affected operating
+systems. The regression reads the shipping CI matrix, selects each target's locked
+reader by its resolution markers, and verifies that a compatible wheel is present.
+It does not install or execute packages from another platform.
+
 Dependabot ignore entries mirror these compatibility bounds. Its failed
 2026-09-30 run named the active Python 3.11 interpreter in a generic resolver
 hint, but the actual conflicts were the tokenizer and Hub requirements above;

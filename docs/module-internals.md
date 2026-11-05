@@ -2398,9 +2398,21 @@ guards this).
 
 The mechanism is easy to misread from the parameter names, so state it plainly.
 `_run_faces` crops the expanded box from the **original** image, resizes it toward the
-768 px face guide, runs Z-Image over **the entire crop**, resizes back, and only then
-merges through `composite_face`, which cross-fades on a Gaussian-blurred SAM mask with
-`feather=10`. The base it merges into is the global Qwen result.
+768 px face guide, runs Z-Image over **the entire crop**, and resizes back. Before
+merging, `_match_face_tone` removes the smooth RGB difference between the two
+independently regenerated crops. It adds a Gaussian low-pass of `global - detail`
+to the detailed crop, with the spatial scale derived from the crop dimensions.
+This keeps the face stage's fine texture in the global stage's color frame;
+feathering alone would turn a color mismatch into a jaw or neck patch. The color
+donor is the regenerated global result, never the original source pixels.
+`composite_face` then cross-fades on a Gaussian-blurred SAM mask with `feather=10`.
+Pixels beyond the mask's feather support remain exactly the global result.
+
+`test_face_stage_matches_global_tone_without_losing_regenerated_detail` exercises
+the connected face stage with independently colored model output. It guards
+constant and spatially varying casts, retained fine texture, and untouched pixels
+outside the mask support. These controlled model-output tests do not replace
+CUDA end-to-end image review or provider-oracle validation of changed outputs.
 
 Two consequences follow, and both matter when tuning:
 
