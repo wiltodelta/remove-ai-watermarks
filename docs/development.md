@@ -92,7 +92,10 @@ regression checks that every OpenCV distribution uses the same build.
 C2PA lock constraints exclude incomplete binary releases only on affected operating
 systems. The regression reads the shipping CI matrix, selects each target's locked
 reader by its resolution markers, and verifies that a compatible wheel is present.
-It does not install or execute packages from another platform.
+It does not install or execute packages from another platform. Dependabot skips
+these incomplete C2PA versions because its grouped updates force a single version
+across all platforms; the platform-aware lock can retain a version where its
+wheels are available.
 
 Dependabot ignore entries mirror these compatibility bounds. Its failed
 2026-09-30 run named the active Python 3.11 interpreter in a generic resolver

@@ -21,7 +21,12 @@ updates:
     # constraints move. Transformers 5.16+ requires tokenizers 0.23.1+,
     # and Diffusers requires huggingface-hub <2. Mirror the manifest bounds.
     # PaddleX pins the contrib build; headless must match its shared cv2 files.
+    # Grouped updates force one C2PA version across every platform.
     ignore:
+      - dependency-name: "c2pa-python"
+        versions:
+          - "==0.38.1"
+          - "==0.38.2"
       - dependency-name: "opencv-python-headless"
         versions:
           - ">4.10.0.84"
