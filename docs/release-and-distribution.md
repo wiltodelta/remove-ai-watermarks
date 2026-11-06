@@ -43,9 +43,9 @@ The expected sequence:
 
 1. update the version sources and lock file;
 2. run the complete project gate;
-3. commit the release change;
-4. create an annotated `vX.Y.Z` tag;
-5. push the commit and tag;
+3. commit and push the release change;
+4. wait for required CI to pass on that exact commit;
+5. create an annotated `vX.Y.Z` tag on the verified commit and push the tag;
 6. publish the GitHub Release.
 
 `.github/workflows/publish.yml` then:
