@@ -12,7 +12,7 @@ on:
       weights_tag:
         description: "GitHub Release tag holding multi-provider-source-v3.npz"
         required: true
-        default: source-classify-freeze-2026-11-01
+        default: source-classify-freeze-2026-11-09
 
 jobs:
   publish:
