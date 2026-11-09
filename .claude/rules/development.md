@@ -8,6 +8,7 @@ paths:
   - "uv.lock"
   - "maintain.sh"
   - ".github/workflows/*.yml"
+  - "README.md"
   - "docs/cli.md"
   - "docs/python-api.md"
   - "docs/provider-oracles.md"
@@ -89,7 +90,7 @@ A verdict branch must be reachable with the dependency stack as shipped. No C2PA
 
 ## The docs are a seam
 
-`tests/test_docs_cover_the_public_surface.py` reads the live Click tree and `InvisibleOptions` and requires every knob to be named in the user-facing pages. Group option spellings by the Click parameter, never by a `--no-` prefix: a pair such as `--strip-metadata/--keep-metadata` is documented by either spelling.
+`tests/test_docs_cover_the_public_surface.py` reads the live Click tree and `InvisibleOptions` and requires every knob to be named in the user-facing pages. Group option spellings by the Click parameter, never by a `--no-` prefix: a pair such as `--strip-metadata/--keep-metadata` is documented by either spelling. The same module requires every link and image in `README.md` to use an absolute `https://` URL (`raw.githubusercontent.com` for repo images, `github.com/.../blob/main/` for repo files) whose target exists on disk, because PyPI renders `README.md` at `pypi.org/project/remove-ai-watermarks/` without rewriting relative paths.
 
 ## One measurement, one gate seam
 

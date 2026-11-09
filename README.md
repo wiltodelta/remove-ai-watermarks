@@ -8,7 +8,7 @@ Remove AI provenance marks from images and video you generated yourself:
 
 | Before | After |
 | --- | --- |
-| ![Image with a visible Gemini watermark](demo_banana_before.png) | ![Image after visible watermark removal](demo_banana_after.png) |
+| ![Image with a visible Gemini watermark](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/demo_banana_before.png) | ![Image after visible watermark removal](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/demo_banana_after.png) |
 
 ```bash
 uv tool install "remove-ai-watermarks[visible]"   # CLI for visible marks and metadata
@@ -28,7 +28,7 @@ removal.
 [![PyPI](https://img.shields.io/pypi/v/remove-ai-watermarks?logo=pypi&logoColor=white)](https://pypi.org/project/remove-ai-watermarks/)
 [![Python](https://img.shields.io/pypi/pyversions/remove-ai-watermarks?logo=python&logoColor=white)](https://pypi.org/project/remove-ai-watermarks/)
 [![Downloads](https://static.pepy.tech/badge/remove-ai-watermarks/month)](https://pepy.tech/project/remove-ai-watermarks)
-[![License](https://img.shields.io/pypi/l/remove-ai-watermarks?color=blue)](LICENSE)
+[![License](https://img.shields.io/pypi/l/remove-ai-watermarks?color=blue)](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/LICENSE)
 [![Tests](https://github.com/wiltodelta/remove-ai-watermarks/actions/workflows/test.yml/badge.svg)](https://github.com/wiltodelta/remove-ai-watermarks/actions/workflows/test.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/wiltodelta)
 [![skills.sh](https://skills.sh/b/wiltodelta/remove-ai-watermarks)](https://skills.sh/wiltodelta/remove-ai-watermarks)
@@ -39,7 +39,7 @@ removal.
 > responsible for how they use it. It does not target stock agency previews or
 > other watermarks that protect third party paid content. Some jurisdictions,
 > including China, restrict removing AI labels or supplying tools that do. See
-> [scope, safety, and legal notes](docs/legal-and-safety.md).
+> [scope, safety, and legal notes](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/legal-and-safety.md).
 
 ## Choose what you want to do
 
@@ -83,7 +83,7 @@ specialized Python API can inspect and disrupt the validated local
 
 Lower-level and specialized extras include `pixels`, `heif`, `trustmark`,
 `migan`, `lama`, `diffusion`, `classify-onnx`, and `source-classify`. The
-[installation guide](docs/installation.md#feature-extras) documents their exact
+[installation guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/installation.md#feature-extras) documents their exact
 dependency composition, Python compatibility, and model requirements.
 
 ## Quick start
@@ -108,7 +108,7 @@ uv tool install --force "remove-ai-watermarks[classify]"
 remove-ai-watermarks classify image.png
 ```
 
-Guide: [photo pixel classification](docs/photo-classify.md).
+Guide: [photo pixel classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/photo-classify.md).
 
 For a lightweight, abstaining 10-provider source-export and model-version
 signal after metadata removal (`classify_source` and CLI `classify-source`),
@@ -126,12 +126,12 @@ print(result.label, result.version_subfamily, result.reason)
 ```
 
 Install `remove-ai-watermarks[source-classify]`. Guide:
-[source-pipeline classification](docs/source-classify.md).
+[source-pipeline classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify.md).
 
 Signed provenance is the supported route for SynthID and `identify` reads it.
 There is no local SynthID pixel detector in the package. Research on a
 periodic lattice expert is in `scripts/synthid_runtime/` and
-[synthid-detector-research.md](docs/synthid-detector-research.md).
+[synthid-detector-research.md](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/synthid-detector-research.md).
 
 For visible watermark removal, install the pixel dependencies:
 
@@ -279,10 +279,10 @@ remove-ai-watermarks invisible image.png -o clean.png \
   --text-manifest verified-lines.json --force
 ```
 
-See the [CLI guide](docs/cli.md#restore-operator-verified-text) for the manifest
+See the [CLI guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md#restore-operator-verified-text) for the manifest
 schema, compatibility restrictions, and oracle caveats.
 
-See the [installation guide](docs/installation.md) for Homebrew, uv, optional
+See the [installation guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/installation.md) for Homebrew, uv, optional
 features, and development setup.
 
 ## Examples
@@ -319,11 +319,11 @@ remove-ai-watermarks invisible image.png -o clean.png --force
 
 | OpenAI example before | OpenAI example after |
 | --- | --- |
-| [![OpenAI portrait grid before qwen-zimage](data/synthid/originals/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM.png)](data/synthid/originals/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM.png) | [![OpenAI portrait grid after qwen-zimage](docs/images/qwen-zimage/ChatGPT/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM_full_clean.png)](docs/images/qwen-zimage/ChatGPT/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM_full_clean.png) |
+| [![OpenAI portrait grid before qwen-zimage](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/data/synthid/originals/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM.png)](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/data/synthid/originals/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM.png) | [![OpenAI portrait grid after qwen-zimage](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/docs/images/qwen-zimage/ChatGPT/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM_full_clean.png)](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/docs/images/qwen-zimage/ChatGPT/ChatGPT%20Image%20May%2030,%202026,%2010_31_08%20AM_full_clean.png) |
 
 | Gemini example before | Gemini example after |
 | --- | --- |
-| [![Gemini sign before qwen-zimage](data/synthid/originals/Gemini_Generated_Image_633uuy633uuy633u.png)](data/synthid/originals/Gemini_Generated_Image_633uuy633uuy633u.png) | [![Gemini sign after qwen-zimage](docs/images/qwen-zimage/Gemini/Gemini_Generated_Image_633uuy633uuy633u_full_clean.png)](docs/images/qwen-zimage/Gemini/Gemini_Generated_Image_633uuy633uuy633u_full_clean.png) |
+| [![Gemini sign before qwen-zimage](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/data/synthid/originals/Gemini_Generated_Image_633uuy633uuy633u.png)](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/data/synthid/originals/Gemini_Generated_Image_633uuy633uuy633u.png) | [![Gemini sign after qwen-zimage](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/docs/images/qwen-zimage/Gemini/Gemini_Generated_Image_633uuy633uuy633u_full_clean.png)](https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/docs/images/qwen-zimage/Gemini/Gemini_Generated_Image_633uuy633uuy633u_full_clean.png) |
 
 These exact output files were checked with the matching provider verifiers. That
 result applies to these files, not to every seed, image, or future watermark
@@ -405,8 +405,8 @@ and several vendor specific signals. Optional decoders add support for open
 DWT-DCT watermarks and Adobe TrustMark.
 
 The exact support matrix, including important locale and detector limits, lives
-in [supported signals](docs/supported-signals.md). The
-[synthetic example gallery](data/fixtures/visible/README.md) carries one canonical
+in [supported signals](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/supported-signals.md). The
+[synthetic example gallery](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/data/fixtures/visible/README.md) carries one canonical
 sample for every registered image and video mark.
 
 ## How it works
@@ -428,8 +428,8 @@ a diffusion pipeline. Specialized callers can instead decode and disrupt the
 positively identified local Microsoft Paint format with much smaller pixel changes.
 Neither path can guarantee that every proprietary verifier will reject every output.
 
-See [supported signals](docs/supported-signals.md) and
-[known limitations](docs/known-limitations.md) for the full technical boundary.
+See [supported signals](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/supported-signals.md) and
+[known limitations](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/known-limitations.md) for the full technical boundary.
 
 ## Python API
 
@@ -474,7 +474,7 @@ The high level API accepts a file path or a BGR NumPy array. For path inputs it
 also reads provenance metadata, preserves alpha, and can strip AI metadata from
 the written result.
 
-See the [Python API guide](docs/python-api.md) for visible removal, the full
+See the [Python API guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md) for visible removal, the full
 `remove_all` and `remove_batch` pipeline, provenance inspection, metadata
 stripping, and diffusion usage.
 
@@ -493,9 +493,9 @@ Claude Code can add this repository as a plugin marketplace:
 /plugin install remove-ai-watermarks@remove-ai-watermarks
 ```
 
-Codex reads the same skill through [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json).
+Codex reads the same skill through [`.codex-plugin/plugin.json`](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/.codex-plugin/plugin.json).
 The skill refuses stock-agency and other third-party paid-asset marks. See
-[the agent skill guide](docs/agent-skill.md).
+[the agent skill guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/agent-skill.md).
 
 ## MCP server
 
@@ -506,7 +506,7 @@ Context Protocol tools over stdio, each a thin wrapper around one CLI command:
 {"mcpServers": {"remove-ai-watermarks": {"command": "uvx", "args": ["remove-ai-watermarks", "mcp"]}}}
 ```
 
-See [the MCP server guide](docs/mcp-server.md).
+See [the MCP server guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/mcp-server.md).
 
 <!-- mcp-name: io.github.wiltodelta/remove-ai-watermarks -->
 
@@ -521,7 +521,7 @@ invisible removal.
 
 - A missing local signal means unknown, not clean. Proprietary pixel
   watermarks may remain after metadata has been stripped.
-  [What each path leaves behind](docs/known-limitations.md#what-each-path-leaves-behind)
+  [What each path leaves behind](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/known-limitations.md#what-each-path-leaves-behind)
   lists, per command, what may remain and how to check it.
 - Visible removal reconstructs a small region. Results depend on the background
   and selected fill backend.
@@ -578,20 +578,20 @@ rows.
 
 ## Documentation
 
-Start with the [documentation index](docs/index.md).
+Start with the [documentation index](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/index.md).
 
-- [Installation](docs/installation.md)
-- [CLI guide](docs/cli.md)
-- [Python API](docs/python-api.md)
-- [Supported signals](docs/supported-signals.md)
-- [Known limitations](docs/known-limitations.md)
-- [Scope, safety, and legal notes](docs/legal-and-safety.md)
-- [Module internals](docs/module-internals.md)
-- [Release and distribution](docs/release-and-distribution.md)
-- [Agent skill](docs/agent-skill.md)
+- [Installation](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/installation.md)
+- [CLI guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md)
+- [Python API](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md)
+- [Supported signals](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/supported-signals.md)
+- [Known limitations](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/known-limitations.md)
+- [Scope, safety, and legal notes](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/legal-and-safety.md)
+- [Module internals](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/module-internals.md)
+- [Release and distribution](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/release-and-distribution.md)
+- [Agent skill](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/agent-skill.md)
 
 Research notes and historical experiments are listed separately in the
-[documentation index](docs/index.md). They explain past decisions but do not
+[documentation index](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/index.md). They explain past decisions but do not
 define the current public API.
 
 ## Contributing
@@ -603,12 +603,12 @@ uv sync --frozen --extra dev
 bash maintain.sh
 ```
 
-See [module internals](docs/module-internals.md) before changing a subsystem
+See [module internals](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/module-internals.md) before changing a subsystem
 with documented invariants. Report vulnerabilities as described in
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/SECURITY.md).
 
 ## License
 
-[Apache 2.0](LICENSE). Copyright 2025-2026 wiltodelta.
+[Apache 2.0](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/LICENSE). Copyright 2025-2026 wiltodelta.
 
 Made by [Victor Kuznetsov](https://wiltodelta.com/).

@@ -19,7 +19,9 @@ would force noise into the guides.
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
+from urllib.parse import unquote
 
 import click
 
@@ -86,3 +88,35 @@ def test_every_invisible_option_field_is_named_in_the_api_docs() -> None:
         + ", ".join(API_PAGES)
         + f": {undocumented}. Document the field or explain in python-api.md why it is internal."
     )
+
+
+_RAW_PREFIX = "https://raw.githubusercontent.com/wiltodelta/remove-ai-watermarks/main/"
+_BLOB_PREFIX = "https://github.com/wiltodelta/remove-ai-watermarks/blob/main/"
+_MARKDOWN_LINK_RE = re.compile(r"(!?\[[^\[\]]*\]|\])\(([^)]+)\)")
+
+
+def test_readme_links_and_images_work_on_pypi() -> None:
+    """PyPI renders README.md at pypi.org/project/remove-ai-watermarks/ without rewriting relative URLs."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    matches = list(_MARKDOWN_LINK_RE.finditer(readme))
+    assert matches, "README.md has no Markdown links or images; the guard would pass vacuously"
+
+    problems: list[str] = []
+    for match in matches:
+        label, target = match.group(1), match.group(2).strip()
+        is_image = label.startswith("!")
+        if not target.startswith(("https://", "#")):
+            problems.append(f"{label}({target}): relative URL breaks on PyPI")
+            continue
+        if is_image and target.startswith(_BLOB_PREFIX):
+            problems.append(
+                f"{label}({target}): image uses github.com/blob HTML URL instead of raw.githubusercontent.com"
+            )
+            continue
+        for prefix in (_RAW_PREFIX, _BLOB_PREFIX):
+            if target.startswith(prefix):
+                rel_path = unquote(target.removeprefix(prefix).split("#", maxsplit=1)[0])
+                if not (REPO_ROOT / rel_path).is_file():
+                    problems.append(f"{label}({target}): target file {rel_path!r} does not exist in repo")
+
+    assert not problems, "Broken or PyPI-incompatible links in README.md:\n  " + "\n  ".join(problems)
