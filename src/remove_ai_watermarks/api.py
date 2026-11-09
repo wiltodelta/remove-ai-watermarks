@@ -387,13 +387,12 @@ class _SourceEvidence:
         if evidence is None:
             return True
         try:
-            from remove_ai_watermarks._internal.c2pa import c2pa_info_has_removal_hint
-            from remove_ai_watermarks.identify import identify_from_evidence
+            from remove_ai_watermarks.identify import identify_from_evidence, report_has_removal_hint
 
             report = identify_from_evidence(evidence, image_path=self._path, check_invisible=True)
         except Exception:
             return True
-        return report.ai_from_metadata or c2pa_info_has_removal_hint(evidence.c2pa_info)
+        return report_has_removal_hint(report, evidence.c2pa_info)
 
 
 def _provenance_from_report(report: Any, path: Path) -> frozenset[str]:

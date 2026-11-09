@@ -41,7 +41,7 @@ The fixed fields are:
 | `case_id` | Unique case identity. |
 | `pair_id` | Groups related clean, marked, attacked, and removed cases. |
 | `media_type` | `image`, `audio`, or `video` in schema v1. |
-| `adapter` | `dwt-dct`, `trustmark`, or `pixelseal` for `image`; `audioseal` or `perth` for `audio`; `videoseal` for `video`. The loader rejects a known adapter named against the wrong media type. |
+| `adapter` | `dwt-dct`, `trustmark`, `trustmark-q`, `trustmark-c`, `pixelseal`, `videoseal-image`, `perth`, or `treering` for `image`; `audioseal` or `perth` for `audio`; `videoseal` for `video`. The loader rejects a known adapter named against the wrong media type. |
 | `arm` | `positive`, `matched_negative`, `wrong_key`, or `hard_negative`. |
 | `state` | `clean`, `marked`, `attacked`, `removed`, or `forged`. `forged` names an artifact carrying a watermark with a message different from the adapter oracle's fixed one. Expected detection depends on the adapter: PixelSeal and VideoSeal check the fixed message, while AudioSeal's presence rule can still report `detected` for a foreign message. Perth has an implicit fixed mark and no message payload, so it has no meaningful forged arm. The study records message accuracy separately where the scheme exposes a message. |
 | `path`, `sha256` | Artifact path and pinned content digest. |
@@ -216,11 +216,118 @@ and cleaned audio scored 1.000, and the source and output packet streams share
 `sha256:d6be870baea63ef8dceea97b2c04b27a1a35ba3bd1500cd022ccb167fd0795c6`.
 This directly confirms that the current video pipeline does not affect Perth.
 
-PixelSeal removal was not run on this Apple Silicon host. The applicable
-`qwen-zimage`, `sdxl-zimage`, and `chroma-zimage` invisible-removal profiles
-require an NVIDIA CUDA device; MPS is not a supported execution path. The
-missing removed-state rows are therefore an explicit hardware gap, not a clean
-or failed result.
+PixelSeal removal was not run in the initial Apple Silicon baseline because
+`qwen-zimage`, `sdxl-zimage`, and `chroma-zimage` require an NVIDIA CUDA
+device (`mps` is unsupported). `scripts/perth_pixelseal_study.py` now emits
+both `pixelseal` and `videoseal-image` image sets, including `resize-75` and
+`crop-5` geometric attacks alongside `jpeg-q90`, and automatically populates
+the `qwen-zimage`, `sdxl-zimage`, and `chroma-zimage` `removed`-state rows when
+run on a CUDA host with the invisible removal engine installed.
+
+### Modal H100 diffusion-removal evaluation, 2026-11-08
+
+A 210-case CUDA evaluation on `NVIDIA H100 80GB HBM3` (Modal) scored both
+`pixelseal` (`com.aiwatermark.pixelseal.1`) and `videoseal-image`
+(`me.reconize.videoseal.1`, `y_256b_img.jit` with `is_video=False`) across the
+two 512x512 engine-selection study carriers (`openai/00.png` and
+`meta/00.png`), the three 512x512 synthetic cohort carriers (`texture`,
+`gradient`, `low-detail`), all three production invisible-removal profiles at
+their default settings (`qwen-zimage` at resolution-adaptive `s=0.084`,
+`sdxl-zimage` at `s=0.50`, and `chroma-zimage` at `s=0.50`), and a 7-rung
+strength ladder (`s = 0.03, 0.05, 0.084, 0.10, 0.12, 0.25, 0.50`) on the two
+study carriers. The local evaluation archive in
+`.local-eval/pixelseal-videoseal-modal-2026-11-08/` has manifest
+`sha256:f51425edea3402de15318e870b04911944181a16a5e68fc33af97c6cdce66eb4` and
+results
+`sha256:49c72ecfaa6a8a726057a7728b6a836261e4a96052823e67e717c99148ff7a7c`.
+
+| Adapter, cohort, and state | Cases | Detected | Not detected | Bit accuracy | PSNR (dB) |
+| --- | ---: | ---: | ---: | --- | --- |
+| PixelSeal study (`openai-00`, `meta-00`) clean | 2 | 0 | 2 | 0.473-0.504 | - |
+| PixelSeal study marked | 2 | 2 | 0 | 1.000 on both | 46.15-49.46 |
+| PixelSeal study `jpeg-q90` / `resize-75` / `crop-5` | 6 | 6 | 0 | 0.996-1.000 | 15.51-40.05 |
+| PixelSeal study `forged` (seed 8) | 2 | 0 | 2 | 0.469-0.473 | 46.20-49.54 |
+| PixelSeal study `removed-qwen-zimage` (`s=0.084`) | 2 | 0 | 2 | 0.523-0.539 | 22.31-28.56 |
+| PixelSeal study `removed-sdxl-zimage` (`s=0.50`) | 2 | 0 | 2 | 0.488 on both | 18.11-21.68 |
+| PixelSeal study `removed-chroma-zimage` (`s=0.50`) | 2 | 0 | 2 | 0.484-0.504 | 18.13-22.69 |
+| VideoSeal-Image study (`openai-00`, `meta-00`) clean | 2 | 0 | 2 | 0.500-0.551 | - |
+| VideoSeal-Image study marked | 2 | 2 | 0 | 1.000 on both | 43.57-47.06 |
+| VideoSeal-Image study `jpeg-q90` / `resize-75` / `crop-5` | 6 | 6 | 0 | 0.996-1.000 | 15.51-39.69 |
+| VideoSeal-Image study `forged` (seed 8) | 2 | 0 | 2 | 0.469 on both | 43.62-47.26 |
+| VideoSeal-Image study `removed-qwen-zimage` (`s=0.084`) | 2 | 0 | 2 | 0.512-0.535 | 22.30-28.56 |
+| VideoSeal-Image study `removed-sdxl-zimage` (`s=0.50`) | 2 | 0 | 2 | 0.508-0.531 | 18.06-21.39 |
+| VideoSeal-Image study `removed-chroma-zimage` (`s=0.50`) | 2 | 0 | 2 | 0.500-0.523 | 18.15-22.72 |
+| PixelSeal synthetic (`texture`, `gradient`, `low-detail`) marked | 3 | 3 | 0 | 0.996-1.000 | 42.19-57.16 |
+| PixelSeal synthetic `jpeg-q90` / `resize-75` / `crop-5` | 9 | 9 | 0 | 0.902-1.000 | 24.42-56.01 |
+| PixelSeal synthetic `removed` (`qwen`/`sdxl`/`chroma`) | 9 | 0 | 9 | 0.426-0.535 | 17.56-35.51 |
+| VideoSeal-Image synthetic (`texture`, `gradient`, `low-detail`) marked | 3 | 2 | 1 | 1.000, 0.918, 0.891 (`low-detail`) | 39.73-57.74 |
+| VideoSeal-Image synthetic `removed` (`qwen`/`sdxl`/`chroma`) | 9 | 0 | 9 | 0.508-0.562 | 17.58-35.24 |
+
+On both `pixelseal` and `videoseal-image`, all three default invisible-removal
+profiles (`qwen-zimage`, `sdxl-zimage`, and `chroma-zimage`) scored `0/2`
+detected on the study carriers and `0/3` detected on the synthetic carriers,
+driving 256-bit message accuracy from `1.000` down to random chance
+(`0.484-0.539` on the study carriers). On the near-flat `low-detail` synthetic
+carrier, VideoSeal's JND attenuation embedded at `57.74 dB` PSNR (`mae_8bit`
+`0.10`), leaving the unattacked `marked` bit accuracy at `0.891` (`228/256`
+bits, two bits shy of the `0.90` gate), whereas PixelSeal reached `0.996` at
+`57.16 dB` PSNR on the same carrier.
+
+The strength-ladder sweep on the two study carriers shows why ultra-low
+diffusion strengths (`s <= 0.05`) are insufficient even when they drop below the
+`0.90` matched-message threshold:
+
+| Strength `s` | PixelSeal `qwen-zimage` acc | PixelSeal `sdxl-zimage` acc | PixelSeal `chroma-zimage` acc | VideoSeal-Image `qwen-zimage` acc | VideoSeal-Image `sdxl-zimage` acc | VideoSeal-Image `chroma-zimage` acc |
+| ---: | --- | --- | --- | --- | --- | --- |
+| `0.030` | 0.625-0.656 | 0.488-0.527 | 0.535-0.855 | 0.691-0.727 | 0.590-0.652 | 0.832-0.879 |
+| `0.050` | 0.496-0.602 | 0.484-0.504 | 0.484-0.762 | 0.523-0.594 | 0.508-0.578 | 0.684-0.770 |
+| `0.084` | 0.523-0.539 | 0.465-0.488 | 0.531-0.547 | 0.512-0.535 | 0.473-0.492 | 0.480-0.520 |
+| `0.100` | 0.516 on both | 0.453-0.516 | 0.473-0.508 | 0.520-0.531 | 0.508-0.512 | 0.477-0.555 |
+| `0.120` | 0.484-0.547 | 0.496-0.508 | 0.461-0.504 | 0.523-0.559 | 0.512-0.547 | 0.496-0.516 |
+| `0.250` | 0.496-0.531 | 0.469-0.539 | 0.477-0.531 | 0.492-0.500 | 0.500-0.512 | 0.484-0.520 |
+| `0.500` | 0.484-0.535 | 0.488 on both | 0.484-0.504 | 0.527-0.539 | 0.508-0.531 | 0.500-0.523 |
+
+At `s = 0.03` and `s = 0.05`, `chroma-zimage` retains `0.684-0.879` bit
+accuracy and `qwen-zimage` retains `0.594-0.727`. From `s = 0.084` (the
+512x512 resolution-adaptive default of `qwen-zimage`) and `s = 0.100`
+(`QWEN_ZIMAGE_META_STRENGTH`, used when C2PA declares `com.aiwatermark.pixelseal.*`
+or `me.reconize.videoseal.*`) upward, all three pipelines collapse both
+`PixelSeal` and `VideoSeal Image` to the `~0.50` chance baseline (`0.453-0.555`
+bit accuracy), while `qwen-zimage` preserves `28.56 dB` PSNR on `openai-00` and
+`22.30-22.31 dB` PSNR on `meta-00` (`s=0.084`).
+
+### Amazon Bedrock (`Nova Canvas` and `Titan Image Generator`) oracle study, 2026-11-08
+
+Six MIT-0-cleared carriers from `aws-samples/amazon-nova-samples@ad2fe2074cbc260b9f1dbcec94a4ec3561c1159a`
+(three `Nova Canvas Core Model` images: `dog.png` 1280x720, `kites_and_plane.png`
+1024x1024, `phone-001.png` 1280x720; three `Titan Image Generator Core Model`
+images: `ron_ft_1.png` 1024x1024, `smila_ft_1.png` 1024x1024, `ron_ft_2.png`
+768x768) were processed on Modal (`NVIDIA H100 80GB HBM3`) and verified against
+the AWS Bedrock Watermark detection oracle
+(`POST https://bedrock-runtime.us-east-1.amazonaws.com/detect-generated-content`,
+archived locally in `.local-eval/bedrock-nova-study-2026-11-08/`):
+
+| Model family and state | Cases | `GENERATED` | `NOT_GENERATED` | Confidence / PSNR (dB) |
+| --- | ---: | ---: | ---: | --- |
+| Nova Canvas original & lossless `stripped` | 6 | 6 | 0 | `HIGH` on all 6 |
+| Titan Image original & lossless `stripped` | 6 | 6 | 0 | `HIGH` on all 6 |
+| Nova Canvas `jpeg-q90` / `resize-75` / `crop-5` | 9 | 0 | 9 | all 9 cleared without diffusion |
+| Titan Image `jpeg-q90` | 3 | 2 | 1 | `MEDIUM` on `ron_ft_1`, `smila_ft_1`; `NOT_GENERATED` on `ron_ft_2` |
+| Titan Image `resize-75` | 3 | 1 | 2 | `HIGH` on `ron_ft_2`; `NOT_GENERATED` on `ron_ft_1`, `smila_ft_1` |
+| Titan Image `crop-5` | 3 | 2 | 1 | `MEDIUM` on `ron_ft_1`, `ron_ft_2`; `NOT_GENERATED` on `smila_ft_1` |
+| Nova + Titan `removed` (`qwen-zimage` default `0.090-0.099`) | 6 | 0 | 6 | mean `24.45 dB` (`19.56-29.43 dB`) |
+| Nova + Titan `removed` (`sdxl-zimage` default `0.50`) | 6 | 0 | 6 | mean `21.57 dB` (`17.88-24.30 dB`) |
+| Nova + Titan `removed` (`chroma-zimage` default `0.50`) | 6 | 0 | 6 | mean `20.55 dB` (`17.62-24.97 dB`) |
+| Nova + Titan `qwen-zimage` `s = 0.030` | 6 | 0 | 6 | mean `28.02 dB` (`21.92-33.65 dB`) |
+| Nova + Titan `qwen-zimage` `s = 0.050` | 6 | 0 | 6 | mean `26.58 dB` (`20.91-31.96 dB`) |
+| Nova (`kites`) + Titan (`ron_ft_1`) `sdxl-zimage` `s = 0.050` | 2 | 0 | 2 | mean `23.57 dB` (`20.14-27.00 dB`) |
+| Nova (`kites`) + Titan (`ron_ft_1`) `chroma-zimage` `s = 0.050` | 2 | 0 | 2 | mean `26.85 dB` (`22.92-30.79 dB`) |
+
+Because even `s = 0.030` (`qwen-zimage`) and `s = 0.050` (`sdxl-zimage`,
+`chroma-zimage`) clear both `Nova Canvas Core Model` and `Titan Image Generator
+Core Model` (`0/16` detected), the resolution-adaptive `qwen-zimage` default
+(`0.090-0.099` on 768x768-1024x1024) has a `3x` safety margin and needs no
+separate vendor strength override in `watermark_profiles.py`.
 
 ## Audio cohort v1
 

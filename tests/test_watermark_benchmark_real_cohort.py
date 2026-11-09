@@ -129,3 +129,40 @@ def test_real_cohort_requires_provider_balance(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="at least two providers"):
         MODULE.load_real_carriers(source_manifest)
+
+
+def test_real_cohort_supports_videoseal_image_adapter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import videoseal_oracle
+
+    monkeypatch.setattr(videoseal_oracle, "available", lambda: True)
+    monkeypatch.setattr(videoseal_oracle, "load_model", lambda: object())
+    monkeypatch.setattr(
+        videoseal_oracle,
+        "embed_image",
+        lambda _model, pixels, _message: (pixels + 0.01).clip(0.0, 1.0),
+    )
+    source_manifest = _write_source_manifest(
+        tmp_path,
+        [
+            _source_row(tmp_path, "alpha", (20, 80, 140)),
+            _source_row(tmp_path, "beta", (160, 90, 30)),
+        ],
+    )
+
+    manifest = MODULE.build_real_cohort(
+        tmp_path / "cohort",
+        source_manifest=source_manifest,
+        adapters=("videoseal-image",),
+        attacks=("jpeg-q90",),
+        size=256,
+    )
+    rows = MODULE.load_manifest(manifest)
+
+    assert len(rows) == 8
+    assert {row.adapter for row in rows} == {"videoseal-image"}
+    assert {(row.arm, row.state) for row in rows} == {
+        ("matched_negative", "clean"),
+        ("positive", "marked"),
+        ("positive", "attacked"),
+        ("wrong_key", "forged"),
+    }

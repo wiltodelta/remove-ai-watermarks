@@ -393,12 +393,23 @@ def c2pa_vendor_platform(text: str) -> str | None:
 def c2pa_info_has_invismark(info: dict[str, Any]) -> bool:
     """Return whether parsed C2PA info declares Microsoft InvisMark."""
     soft_bindings = info.get("soft_binding_vendors")
-    return isinstance(soft_bindings, list) and "Microsoft InvisMark" in soft_bindings
+    if isinstance(soft_bindings, list) and "Microsoft InvisMark" in soft_bindings:
+        return True
+    soft_binding = info.get("soft_binding")
+    if isinstance(soft_binding, str) and "Microsoft InvisMark" in soft_binding:
+        return True
+    algorithm = info.get("soft_binding_algorithm")
+    return isinstance(algorithm, str) and "com.microsoft.invismark" in algorithm
 
 
 def c2pa_info_has_removal_hint(info: dict[str, Any]) -> bool:
     """Return whether a C2PA AI or watermark claim should keep removal fail-safe."""
-    return bool(info.get("ai_source_kind") or info.get("synthid_watermark") or c2pa_info_has_invismark(info))
+    return bool(
+        info.get("ai_source_kind")
+        or info.get("c2pa_identity_ai")
+        or info.get("synthid_watermark")
+        or c2pa_info_has_invismark(info)
+    )
 
 
 def _has_suffix(codes: list[str], suffixes: tuple[str, ...]) -> bool:
@@ -839,6 +850,7 @@ def _populate_registry_fields(buffer: bytes, info: dict[str, Any]) -> bool:
     if soft_bindings:
         info["soft_binding_vendors"] = soft_bindings
         info["soft_binding"] = ", ".join(soft_bindings)
+        info["soft_binding_algorithm"] = ", ".join(entry.algorithm for entry in soft_binding_entries)
     return ai_source
 
 

@@ -409,6 +409,17 @@ class TestVendorForStrength:
         with patch("remove_ai_watermarks.metadata.synthid_source", side_effect=OSError):
             assert vendor_for_strength(Path("x.png")) is None
 
+    def test_non_png_fallback_invismark_selects_microsoft_floor(self, tmp_path: Path):
+        from remove_ai_watermarks._internal.watermark_profiles import vendor_for_strength
+
+        jpeg = tmp_path / "invismark-fallback.jpg"
+        jpeg.write_bytes(b"\xff\xd8\xff\xeb\x00\x2cc2pa jumb com.microsoft.invismark.1\xff\xd9")
+        with (
+            self._patch(None),
+            patch("remove_ai_watermarks._internal.c2pa.extract_c2pa_info", return_value={}),
+        ):
+            assert vendor_for_strength(jpeg) == "microsoft"
+
 
 # ── Format utilities ────────────────────────────────────────────────
 

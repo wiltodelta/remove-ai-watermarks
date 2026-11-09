@@ -79,10 +79,13 @@ from remove_ai_watermarks.watermark_registry import GEMINI_SPARKLE_TRUST_CONF
 from remove_ai_watermarks.watermark_registry import known_marks as _known_marks
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
     from pathlib import Path
 
     from numpy.typing import NDArray
 
+    from remove_ai_watermarks._internal.constants import C2paSoftBindingAlgorithm
+    from remove_ai_watermarks.trustmark_detector import TrustMarkVariant
     from remove_ai_watermarks.watermark_registry import MarkDetection
 
 logger = logging.getLogger(__name__)
@@ -935,7 +938,11 @@ def _vendor_of(text: str | None) -> str | None:
 # the camera device label is read from this manifest, so an AI marker is a clash
 # only when its source differs from this (i.e. it is genuinely independent).
 _C2PA_MANIFEST_SOURCE = "c2pa_manifest"
-_CLASH_SOURCE: dict[str, str] = {"c2pa": _C2PA_MANIFEST_SOURCE, "synthid": _C2PA_MANIFEST_SOURCE}
+_CLASH_SOURCE: dict[str, str] = {
+    "c2pa": _C2PA_MANIFEST_SOURCE,
+    "synthid": _C2PA_MANIFEST_SOURCE,
+    "invismark": _C2PA_MANIFEST_SOURCE,
+}
 
 
 def _integrity_clashes(
@@ -1081,7 +1088,30 @@ def _invisible_watermark(image_path: Path, decode: _SharedDecode) -> str | None:
     return detect_invisible_watermark(image_path, image=decode.get())
 
 
-def _trustmark(image_path: Path) -> str | None:
+_TRUSTMARK_ALGORITHM_VARIANTS: tuple[tuple[str, TrustMarkVariant], ...] = (
+    ("com.adobe.trustmark.Q", "Q"),
+    ("com.adobe.trustmark.C", "C"),
+)
+
+
+def _trustmark_variants_for_entries(
+    entries: Iterable[C2paSoftBindingAlgorithm],
+) -> tuple[TrustMarkVariant, ...]:
+    """Return the TrustMark decoder variants to check for a file.
+
+    Variant P (``com.adobe.trustmark.P``) always runs first because it is Adobe's
+    shipping default and the only variant safe for blind scanning. Variants Q and C
+    are checked only when the file's C2PA soft-binding assertion names them.
+    """
+    algorithms = {entry.algorithm for entry in entries}
+    return ("P", *(variant for algorithm, variant in _TRUSTMARK_ALGORITHM_VARIANTS if algorithm in algorithms))
+
+
+def _trustmark(
+    image_path: Path,
+    *,
+    variants: Sequence[TrustMarkVariant] = ("P",),
+) -> str | None:
     """Adobe TrustMark scheme name or None.
 
     Optional: needs the ``trustmark`` decoder (extra ``trustmark``). Returns None
@@ -1089,7 +1119,11 @@ def _trustmark(image_path: Path) -> str | None:
     """
     from remove_ai_watermarks.trustmark_detector import detect_trustmark
 
-    return detect_trustmark(image_path)
+    for variant in variants:
+        scheme = detect_trustmark(image_path) if variant == "P" else detect_trustmark(image_path, variant=variant)
+        if scheme is not None:
+            return scheme
+    return None
 
 
 class _SharedDecode:
@@ -1433,7 +1467,14 @@ def _identify_from_evidence(
 
     # ── C2PA soft-binding: a registered watermark or content fingerprint ─
     # Present in the manifest even when the binding cannot be resolved locally.
-    soft_binding = meta.get("soft_binding") or (", ".join(soft_binding_vendors) if soft_binding_vendors else None)
+    has_invismark = (
+        "Microsoft InvisMark" in soft_binding_vendors or c2pa_info_has_invismark(info) or c2pa_info_has_invismark(meta)
+    )
+    soft_binding = (
+        meta.get("soft_binding")
+        or info.get("soft_binding")
+        or (", ".join(soft_binding_vendors) if soft_binding_vendors else None)
+    )
     if soft_binding:
         soft_binding_value = meta.get("soft_binding_value") or info.get("soft_binding_value")
         soft_binding_details = "; ".join(
@@ -1451,7 +1492,7 @@ def _identify_from_evidence(
                 "high" if c2pa_level == "verified" else "medium",
             )
         )
-        if c2pa_info_has_invismark(info):
+        if has_invismark:
             # Keep the generic soft-binding row for schema-1 compatibility, and add
             # the pixel-removal target as its own stable signal for clients that need
             # to select diffusion without parsing human-readable detail.
@@ -1462,6 +1503,10 @@ def _identify_from_evidence(
                     "high" if c2pa_level == "verified" else "medium",
                 )
             )
+            if has_c2pa and c2pa_usable:
+                ai_vendor_claims["invismark"] = "Microsoft"
+                if platform is None or platform.endswith(_NO_AI_GENERATOR_SUFFIX):
+                    platform = "Microsoft (Copilot / Designer)"
         if soft_binding_watermarks:
             watermark_details = (
                 soft_binding_details if not soft_binding_fingerprints else ", ".join(soft_binding_watermarks)
@@ -1595,7 +1640,12 @@ def _identify_from_evidence(
     # The watermark behind Adobe Durable Content Credentials. Decoded locally,
     # but it binds provenance for human-authored content too, so it enriches the
     # watermark inventory without by itself asserting AI origin.
-    if check_invisible and pixel_path is not None and (tm_scheme := _trustmark(pixel_path)) is not None:
+    if (
+        check_invisible
+        and pixel_path is not None
+        and (tm_scheme := _trustmark(pixel_path, variants=_trustmark_variants_for_entries(soft_binding_entries)))
+        is not None
+    ):
         signals.append(Signal("trustmark", tm_scheme, "high"))
         watermarks.append(f"Adobe TrustMark invisible watermark ({tm_scheme})")
         if platform is None:
@@ -1606,7 +1656,7 @@ def _identify_from_evidence(
     exif_gen = any(s.name == "exif_generator" for s in signals)
     xai_sig = any(s.name == "xai_signature" for s in signals)
     ai_from_metadata = bool(
-        (has_c2pa and c2pa_usable and (c2pa_is_ai or synthid))
+        (has_c2pa and c2pa_usable and (c2pa_is_ai or synthid or has_invismark))
         or standalone_iptc
         or iptc_ai
         or aigc
@@ -1616,7 +1666,7 @@ def _identify_from_evidence(
         or xai_sig
     )
     high_ai_from_metadata = bool(
-        (has_c2pa and c2pa_level == "verified" and (c2pa_is_ai or synthid))
+        (has_c2pa and c2pa_level == "verified" and (c2pa_is_ai or synthid or has_invismark))
         or standalone_iptc
         or iptc_ai
         or aigc
@@ -1632,7 +1682,9 @@ def _identify_from_evidence(
         # whiteboard photos reach 0.67, so no threshold separates them. Two
         # Higgsfield downloads (a valid OpenAI C2PA, a Kuaishou TC260 label) scored
         # 0.53 on wood texture (2026-09-24).
-        trusted_claims = {k: v for k, v in ai_vendor_claims.items() if k != "c2pa" or c2pa_level == "verified"}
+        trusted_claims = {
+            k: v for k, v in ai_vendor_claims.items() if k not in ("c2pa", "invismark") or c2pa_level == "verified"
+        }
         non_google = next((v for v in trusted_claims.values() if v != "Google"), None)
         platform = _collect_visible_signals(
             pixel_path, signals, watermarks, platform, decode, caveats, non_google_vendor=non_google
@@ -1753,6 +1805,16 @@ def identify(
     )
 
 
+def report_has_removal_hint(report: ProvenanceReport, c2pa_info: dict[str, Any]) -> bool:
+    """Return whether a report or its raw C2PA info retains a pixel-removal target."""
+    return (
+        report.ai_from_metadata
+        or c2pa_info_has_removal_hint(c2pa_info)
+        or any(s.name == "invismark" for s in report.signals)
+        or any(w.startswith("SynthID watermark") for w in report.watermarks)
+    )
+
+
 def has_invisible_target(image_path: Path) -> bool:
     """True when a locally-detectable invisible/metadata AI signal is present.
 
@@ -1790,4 +1852,4 @@ def has_invisible_target(image_path: Path) -> bool:
     # An asset edit can invalidate the C2PA binding while leaving the declared pixel
     # watermark intact. Keep the removal gate fail-safe without promoting that broken
     # claim back into the provenance verdict.
-    return report.ai_from_metadata or c2pa_info_has_removal_hint(evidence.c2pa_info)
+    return report_has_removal_hint(report, evidence.c2pa_info)

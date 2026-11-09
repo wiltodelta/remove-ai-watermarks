@@ -393,10 +393,19 @@ def test_jsonl_writer_refuses_overwrite_and_emits_strict_json(tmp_path: Path) ->
 def test_builtin_adapters_name_their_exact_source_files() -> None:
     adapters = MODULE.default_adapters()
 
-    assert set(adapters) == {"dwt-dct", "trustmark", "pixelseal", "audioseal", "perth", "videoseal"}
+    assert set(adapters) == {
+        "dwt-dct",
+        "trustmark",
+        "pixelseal",
+        "videoseal-image",
+        "audioseal",
+        "perth",
+        "videoseal",
+    }
     assert adapters["dwt-dct"].source_file.name == "invisible_watermark.py"
     assert adapters["trustmark"].source_file.name == "trustmark_detector.py"
     assert adapters["pixelseal"].source_file.name == "pixelseal_oracle.py"
+    assert adapters["videoseal-image"].source_file.name == "videoseal_oracle.py"
     assert adapters["audioseal"].source_file.name == "audioseal_oracle.py"
     assert adapters["perth"].source_file.name == "perth_oracle.py"
     assert adapters["videoseal"].source_file.name == "videoseal_oracle.py"
@@ -776,3 +785,33 @@ def test_run_benchmark_records_videoseal_temporal_evidence(tmp_path: Path, monke
 
     record = json.loads(output.read_text(encoding="utf-8"))
     assert record["detection"]["temporal"]["frames"] == 3
+
+
+def test_videoseal_image_adapter_enforces_image_media_and_records_bit_accuracy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import videoseal_oracle
+
+    artifact = _image(tmp_path / "marked.png", 100)
+    video_row = _row(artifact)
+    video_row["adapter"] = "videoseal-image"
+    video_row["media_type"] = "video"
+    with pytest.raises(ValueError, match="'videoseal-image' measures image artifacts, not video"):
+        MODULE.load_manifest(_write_manifest(tmp_path / "bad.jsonl", [video_row]))
+
+    monkeypatch.setattr(videoseal_oracle, "load_model", lambda: object())
+    monkeypatch.setattr(
+        videoseal_oracle,
+        "read_image",
+        lambda _model, _pixels: videoseal_oracle.VideoSealImageReading(
+            bit_accuracy=0.95,
+            decoded_bits=(1,) * 8 + (0,) * 8,
+        ),
+    )
+
+    adapter = MODULE.default_adapters()["videoseal-image"]
+    outcome = adapter.detect(artifact, np.full((32, 40, 3), 100, dtype=np.uint8))
+
+    assert outcome.status == "detected"
+    assert outcome.label == "ff00"
+    assert outcome.message_bit_accuracy == 0.95

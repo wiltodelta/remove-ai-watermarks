@@ -202,6 +202,23 @@ The direct call needs the `pixels` extra. It writes atomically only after the
 encoded output no longer decodes as a valid local payload. The result does not
 claim acceptance by a proprietary Microsoft detector.
 
+Callers with the `trustmark` extra can similarly inspect or apply Adobe
+TrustMark's variant-matched neural remover (`"P"`, `"Q"`, or `"C"`) directly:
+
+```python
+from remove_ai_watermarks.trustmark_detector import (
+    detect_trustmark_detailed,
+    remove_trustmark,
+)
+
+detection = detect_trustmark_detailed("adobe.jpg", variant="P")
+if detection is not None:
+    removed = remove_trustmark("adobe.jpg", "clean.jpg", variant=detection.variant)
+```
+
+`remove_trustmark` writes atomically only when the input passes the durable
+re-encode gate for `variant` and the written file no longer passes that gate.
+
 The complete field set, with the shipped defaults:
 
 | Field | Default | Effect |

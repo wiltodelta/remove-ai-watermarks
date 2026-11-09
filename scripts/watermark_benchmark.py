@@ -73,6 +73,7 @@ ADAPTER_MEDIA: dict[str, Media] = {
     "dwt-dct": "image",
     "trustmark": "image",
     "pixelseal": "image",
+    "videoseal-image": "image",
     "audioseal": "audio",
     "perth": "audio",
     "videoseal": "video",
@@ -212,6 +213,25 @@ class PerthAdapter:
         )
 
 
+def _detect_message_image_oracle(
+    image: NDArray[Any],
+    *,
+    module_name: str,
+    read_fn: Any,
+) -> DetectorOutcome:
+    import cv2
+
+    from remove_ai_watermarks.image_io import to_bgr
+
+    rgb = cv2.cvtColor(to_bgr(image), cv2.COLOR_BGR2RGB)
+    reading = read_fn(_oracle_model(module_name), rgb)
+    return DetectorOutcome(
+        status="detected" if reading.detected else "not_detected",
+        label=reading.label if reading.detected else None,
+        message_bit_accuracy=reading.bit_accuracy,
+    )
+
+
 @dataclass(frozen=True)
 class PixelSealAdapter:
     """Adapter for PixelSeal's fixed-message image verifier."""
@@ -227,18 +247,29 @@ class PixelSealAdapter:
         return available()
 
     def detect(self, path: Path, image: NDArray[Any]) -> DetectorOutcome:
-        import cv2
         from pixelseal_oracle import read
 
-        from remove_ai_watermarks.image_io import to_bgr
+        return _detect_message_image_oracle(image, module_name="pixelseal_oracle", read_fn=read)
 
-        rgb = cv2.cvtColor(to_bgr(image), cv2.COLOR_BGR2RGB)
-        reading = read(_oracle_model("pixelseal_oracle"), rgb)
-        return DetectorOutcome(
-            status="detected" if reading.detected else "not_detected",
-            label=reading.label if reading.detected else None,
-            message_bit_accuracy=reading.bit_accuracy,
-        )
+
+@dataclass(frozen=True)
+class VideoSealImageAdapter:
+    """Adapter for VideoSeal's 256-bit image mode (me.reconize.videoseal.1)."""
+
+    name: str
+    source_file: Path
+
+    @property
+    def available(self) -> bool:
+        """Probe the optional stack only when a VideoSeal image row is evaluated."""
+        from videoseal_oracle import available
+
+        return available()
+
+    def detect(self, path: Path, image: NDArray[Any]) -> DetectorOutcome:
+        from videoseal_oracle import read_image
+
+        return _detect_message_image_oracle(image, module_name="videoseal_oracle", read_fn=read_image)
 
 
 def sha256_file(path: Path) -> str:
@@ -495,6 +526,10 @@ def default_adapters() -> dict[str, DetectorAdapter]:
         "pixelseal": PixelSealAdapter(
             name="pixelseal",
             source_file=pixel_oracle_source,
+        ),
+        "videoseal-image": VideoSealImageAdapter(
+            name="videoseal-image",
+            source_file=video_oracle_source,
         ),
         "audioseal": FunctionAdapter(
             name="audioseal",

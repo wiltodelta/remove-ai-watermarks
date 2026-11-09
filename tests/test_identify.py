@@ -1672,6 +1672,112 @@ class TestIdentifySoftBinding:
         assert watermark_id in soft_binding.detail
         assert any(signal.name == "invismark" for signal in report.signals)
 
+    def test_invismark_asserts_ai_and_microsoft_platform_on_store_and_raw_fallback(self, tmp_path: Path):
+        store_record = {
+            "c2pa_store": {
+                "active_manifest": "paint",
+                "manifests": {
+                    "paint": {
+                        "assertions": [
+                            {
+                                "label": "c2pa.soft-binding",
+                                "data": {
+                                    "alg": "com.microsoft.invismark.1",
+                                    "blocks": [{"scope": "the entire image", "value": "uuid-1"}],
+                                },
+                            }
+                        ]
+                    }
+                },
+            }
+        }
+        store_report = identify_from_evidence(evidence_from_metadata_record(store_record, path=tmp_path / "paint.png"))
+        assert store_report.is_ai_generated is True
+        assert store_report.ai_from_metadata is True
+        assert store_report.platform == "Microsoft (Copilot / Designer)"
+        assert any(signal.name == "invismark" for signal in store_report.signals)
+
+        fallback_path = tmp_path / "fallback.jpg"
+        fallback_path.write_bytes(b"\xff\xd8\xff\xe1 c2pa jumb com.microsoft.invismark.1 \xff\xd9")
+        fallback_report = identify(fallback_path, check_visible=False, check_invisible=False)
+        assert fallback_report.is_ai_generated is True
+        assert fallback_report.ai_from_metadata is True
+        assert fallback_report.platform == "Microsoft (Copilot / Designer)"
+        assert any(signal.name == "invismark" for signal in fallback_report.signals)
+
+    def test_invismark_participates_in_integrity_clashes_as_c2pa_manifest_source(self):
+        # Multi-actor Microsoft Designer wrapping OpenAI in one C2PA manifest does not clash.
+        assert (
+            _integrity_clashes(
+                {"c2pa": "OpenAI", "invismark": "Microsoft"},
+                "Microsoft (Copilot / Designer)",
+                camera_has_ai_marker=False,
+            )
+            == []
+        )
+        # Independent external stamp (EXIF generator) naming Ideogram clashes with InvisMark.
+        clashes = _integrity_clashes(
+            {"invismark": "Microsoft", "exif_generator": "Ideogram"},
+            "Microsoft (Copilot / Designer)",
+            camera_has_ai_marker=False,
+        )
+        assert len(clashes) == 1
+        assert "Microsoft" in clashes[0]
+        assert "Ideogram" in clashes[0]
+
+    def test_removal_hints_include_c2pa_identity_ai_and_fallback_soft_binding_signals(self, tmp_path: Path):
+        from remove_ai_watermarks._internal.c2pa import c2pa_info_has_removal_hint
+        from remove_ai_watermarks.identify import report_has_removal_hint
+
+        assert c2pa_info_has_removal_hint({"c2pa_identity_ai": True}) is True
+
+        fallback_path = tmp_path / "broken-invismark.jpg"
+        fallback_path.write_bytes(b"\xff\xd8\xff\xe1 c2pa jumb com.microsoft.invismark.1 \xff\xd9")
+        invalid_info = {
+            "has_c2pa": True,
+            "soft_binding": "Microsoft InvisMark",
+            "soft_binding_algorithm": "com.microsoft.invismark.1",
+            "c2pa_validation_source": "reader",
+            "c2pa_integrity": "invalid",
+            "c2pa_signature": "valid",
+            "c2pa_signer_validity": "valid",
+        }
+        evidence = _evidence(fallback_path, invalid_info, fallback_path.read_bytes())
+        report = identify_from_evidence(evidence)
+        assert report.is_ai_generated is None
+        assert report_has_removal_hint(report, {}) is True
+
+    def test_c2pa_soft_binding_corroborates_trustmark_variant_q_and_c(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from PIL import Image
+
+        from remove_ai_watermarks import trustmark_detector
+
+        path = tmp_path / "trustmark-q.jpg"
+        Image.new("RGB", (32, 32)).save(path, "JPEG")
+        data = path.read_bytes()
+        segment = _jpeg_segment(0xEB, b"c2pa jumb com.adobe.trustmark.Q")
+        path.write_bytes(data[:2] + segment + data[2:])
+
+        called_variants: list[str] = []
+
+        def fake_detect(_path: Path, *, variant: str = "P") -> str | None:
+            called_variants.append(variant)
+            if variant == "Q":
+                return "Adobe TrustMark (variant Q, schema 1)"
+            return None
+
+        monkeypatch.setattr(trustmark_detector, "detect_trustmark", fake_detect)
+
+        report = identify(path, check_visible=False, check_invisible=True)
+
+        assert called_variants == ["P", "Q"]
+        assert any(
+            signal.name == "trustmark" and signal.detail == "Adobe TrustMark (variant Q, schema 1)"
+            for signal in report.signals
+        )
+
 
 class TestIdentifyIptcAi:
     """IPTC 2025.1 AISystemUsed drives an AI verdict + platform attribution."""

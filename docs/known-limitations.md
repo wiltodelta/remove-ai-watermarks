@@ -141,6 +141,13 @@ signal, and has no external detector that recognizes the positive control. The
 supported claim is therefore local payload invalidation, not certified removal by
 Microsoft.
 
+Adobe TrustMark also has a direct neural removal path in
+`trustmark_detector.remove_trustmark` (`trustmark` extra) using the upstream
+variant-matched removal network (`P`, `Q`, or `C`). It writes atomically only
+after the re-encoded output no longer passes the durable re-encode gate for that
+variant. Like the local Paint path, it is an explicit library helper rather than
+the default `invisible` diffusion pipeline.
+
 Text, tables, and UI screenshots are the worst case for a forced scrub: the
 model redraws glyphs as plausible-but-wrong shapes. Do not run the invisible
 stage on such content unless a locally-detectable invisible signal exists.
@@ -666,7 +673,10 @@ and transformations. A negative result is not a universal negative.
 The `trustmark` extra adds Adobe TrustMark decoding. The implementation retains
 an additional JPEG re-encode gate and requires the binary payload and schema to
 remain identical because isolated decoder hits can otherwise be content noise.
-It accepts Variant P schemas 0-2. Variant Q requires a different model, and
+It accepts schemas 0-2 across Variants P, Q, and C (`identify` scans Variant P
+by default and adds Variant Q or C when C2PA declares `com.adobe.trustmark.Q` or
+`com.adobe.trustmark.C`, while direct API callers can pass
+`variant="P" | "Q" | "C"` to `detect_trustmark` and `remove_trustmark`), and
 schema 3 is rejected at the measured precision threshold. The extra requires
 `trustmark>=0.9.2`, which supports NumPy 2 and Python 3.13-3.14. The current TrustMark dependency line resolves
 `lightning` and `pytorch-lightning` 2.6.6, which contain the published fixes

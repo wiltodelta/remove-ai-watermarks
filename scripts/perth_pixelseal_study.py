@@ -28,6 +28,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 import perth_oracle  # noqa: E402
 import pixelseal_oracle  # noqa: E402
+import videoseal_oracle  # noqa: E402
 from audioseal_experiment import (  # noqa: E402
     FRAME_COUNT,
     SPEECH_VOICES,
@@ -47,6 +48,7 @@ from audioseal_experiment import (  # noqa: E402
     wav_pcm16_bytes,
 )
 from watermark_benchmark import SCHEMA_VERSION, run_benchmark, sha256_file, write_jsonl  # noqa: E402
+from watermark_benchmark_cohort import attack_image, attack_parameters  # noqa: E402
 
 from remove_ai_watermarks.video import remove_video_visible  # noqa: E402
 
@@ -54,6 +56,7 @@ log = logging.getLogger("perth_pixelseal_study")
 
 RECIPE_VERSION = "perth-pixelseal-study-v2"
 IMAGE_SIZE = 512
+REMOVAL_PROFILES: tuple[str, ...] = ("qwen-zimage", "sdxl-zimage", "chroma-zimage")
 IMAGE_CARRIERS: tuple[Path, ...] = (
     REPO / "data/evaluations/engine-selection/originals/openai/00.png",
     REPO / "data/evaluations/engine-selection/originals/meta/00.png",
@@ -103,47 +106,74 @@ def _row(
     }
 
 
-def _save_rgb(path: Path, values: np.ndarray) -> None:
+def _save_rgb(path: Path, values: np.ndarray) -> Image.Image:
     pixels = np.rint(np.clip(values, 0.0, 1.0) * 255.0).astype(np.uint8)
-    Image.fromarray(pixels, "RGB").save(path)
+    image = Image.fromarray(pixels, "RGB")
+    image.save(path)
+    return image
 
 
-def _build_pixelseal_rows(output_dir: Path, artifacts: Path) -> list[dict[str, object]]:
-    if not pixelseal_oracle.available():
-        failure = pixelseal_oracle.import_failure()
-        raise SystemExit(f"PixelSeal development stack is unavailable: {failure}")
-    model = pixelseal_oracle.load_model()
-    fixed = pixelseal_oracle.message_bits()
-    foreign = pixelseal_oracle.message_bits(seed=8)
-    pins = {
-        "source_commit": pixelseal_oracle.SOURCE_COMMIT,
-        "checkpoint_sha256": pixelseal_oracle.CHECKPOINT_SHA256,
-        "model_card_sha256": pixelseal_oracle.MODEL_CARD_SHA256,
-        "message": list(fixed),
-    }
+def _invisible_engine_available() -> bool:
+    from remove_ai_watermarks.invisible_engine import is_available
+
+    return is_available()
+
+
+def _run_pixelseal_removal_profile(profile: str, source_path: Path, output_path: Path) -> None:
+    from remove_ai_watermarks.invisible_engine import InvisibleEngine
+
+    engine = InvisibleEngine(pipeline=profile)
+    engine.remove_watermark(image_path=source_path, output_path=output_path)
+
+
+def _build_image_seal_rows(
+    output_dir: Path,
+    artifacts: Path,
+    *,
+    adapter: str,
+    stack_label: str,
+    oracle: object,
+    embed_fn: object,
+    pins: dict[str, object],
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    if not oracle.available():  # type: ignore[attr-defined]
+        failure = oracle.import_failure()  # type: ignore[attr-defined]
+        raise SystemExit(f"{stack_label} development stack is unavailable: {failure}")
+    model = oracle.load_model()  # type: ignore[attr-defined]
+    fixed = oracle.message_bits()  # type: ignore[attr-defined]
+    foreign = oracle.message_bits(seed=8)  # type: ignore[attr-defined]
+    source_commit = str(oracle.SOURCE_COMMIT)  # type: ignore[attr-defined]
+    message_seed = int(oracle.MESSAGE_SEED)  # type: ignore[attr-defined]
+    full_pins = {**pins, "message": list(fixed)}
     rows: list[dict[str, object]] = []
     source_manifest = REPO / "data/evaluations/engine-selection/carrier-manifest.csv"
     source_revision = f"engine-selection@sha256:{sha256_file(source_manifest)}"
+    marked_pairs: list[tuple[str, Path, Path]] = []
     for source in IMAGE_CARRIERS:
         provider = source.parent.name
-        pair_id = f"pixelseal-{provider}-00"
+        pair_id = f"{adapter}-{provider}-00"
         clean_path = artifacts / f"{pair_id}-clean.png"
         clean = Image.open(source).convert("RGB").resize((IMAGE_SIZE, IMAGE_SIZE), Image.Resampling.LANCZOS)
         clean.save(clean_path)
         clean_values = np.asarray(clean, dtype=np.float32) / 255.0
 
         marked_path = artifacts / f"{pair_id}-marked.png"
-        _save_rgb(marked_path, np.asarray(pixelseal_oracle.embed(model, clean_values, fixed)))
+        marked_image = _save_rgb(marked_path, np.asarray(embed_fn(model, clean_values, fixed)))  # type: ignore[operator]
         attacked_path = artifacts / f"{pair_id}-jpeg-q90.jpg"
-        Image.open(marked_path).save(attacked_path, quality=90, subsampling=0)
+        marked_image.save(attacked_path, quality=90, subsampling=0)
+        resize_path = artifacts / f"{pair_id}-resize-75.png"
+        attack_image(marked_image, "resize-75").save(resize_path)
+        crop_path = artifacts / f"{pair_id}-crop-5.png"
+        attack_image(marked_image, "crop-5").save(crop_path)
         forged_path = artifacts / f"{pair_id}-forged.png"
-        _save_rgb(forged_path, np.asarray(pixelseal_oracle.embed(model, clean_values, foreign)))
+        _save_rgb(forged_path, np.asarray(embed_fn(model, clean_values, foreign)))  # type: ignore[operator]
+        marked_pairs.append((pair_id, clean_path, marked_path))
 
         common = {
             "root": output_dir,
             "pair_id": pair_id,
             "media_type": "image",
-            "adapter": "pixelseal",
+            "adapter": adapter,
             "source_revision": source_revision,
         }
         rows.extend(
@@ -168,10 +198,10 @@ def _build_pixelseal_rows(output_dir: Path, artifacts: Path) -> list[dict[str, o
                     state="marked",
                     path=marked_path,
                     reference=clean_path,
-                    transform_name="pixelseal-embed",
-                    transform_revision=f"videoseal@{pixelseal_oracle.SOURCE_COMMIT}",
-                    parameters=pins,
-                    seed=pixelseal_oracle.MESSAGE_SEED,
+                    transform_name=f"{adapter}-embed",
+                    transform_revision=f"videoseal@{source_commit}",
+                    parameters=full_pins,
+                    seed=message_seed,
                     expected="detected",
                 ),
                 _row(
@@ -183,7 +213,33 @@ def _build_pixelseal_rows(output_dir: Path, artifacts: Path) -> list[dict[str, o
                     reference=clean_path,
                     transform_name="jpeg",
                     transform_revision="pillow",
-                    parameters={"quality": 90, "subsampling": 0, **pins},
+                    parameters={**attack_parameters("jpeg-q90"), **full_pins},
+                    seed=None,
+                    expected="unresolved",
+                ),
+                _row(
+                    **common,
+                    case_id=f"{pair_id}-resize-75",
+                    arm="positive",
+                    state="attacked",
+                    path=resize_path,
+                    reference=clean_path,
+                    transform_name="resize-75",
+                    transform_revision="pillow",
+                    parameters={**attack_parameters("resize-75"), **full_pins},
+                    seed=None,
+                    expected="unresolved",
+                ),
+                _row(
+                    **common,
+                    case_id=f"{pair_id}-crop-5",
+                    arm="positive",
+                    state="attacked",
+                    path=crop_path,
+                    reference=clean_path,
+                    transform_name="crop-5",
+                    transform_revision="pillow",
+                    parameters={**attack_parameters("crop-5"), **full_pins},
                     seed=None,
                     expected="unresolved",
                 ),
@@ -194,9 +250,9 @@ def _build_pixelseal_rows(output_dir: Path, artifacts: Path) -> list[dict[str, o
                     state="forged",
                     path=forged_path,
                     reference=clean_path,
-                    transform_name="pixelseal-embed-foreign-message",
-                    transform_revision=f"videoseal@{pixelseal_oracle.SOURCE_COMMIT}",
-                    parameters={**pins, "foreign_message": list(foreign), "foreign_message_seed": 8},
+                    transform_name=f"{adapter}-embed-foreign-message",
+                    transform_revision=f"videoseal@{source_commit}",
+                    parameters={**full_pins, "foreign_message": list(foreign), "foreign_message_seed": 8},
                     seed=8,
                     expected="not_detected",
                 ),
@@ -204,7 +260,79 @@ def _build_pixelseal_rows(output_dir: Path, artifacts: Path) -> list[dict[str, o
         )
     del model
     gc.collect()
-    return rows
+
+    if not _cuda_available():
+        removal_summary: dict[str, object] = {
+            "status": "not_run",
+            "reason": "qwen-zimage, sdxl-zimage, and chroma-zimage require an NVIDIA CUDA device",
+            "profiles": [],
+        }
+    elif not _invisible_engine_available():
+        removal_summary = {
+            "status": "not_run",
+            "reason": "invisible removal dependencies are not installed",
+            "profiles": [],
+        }
+    else:
+        for profile in REMOVAL_PROFILES:
+            for pair_id, clean_path, marked_path in marked_pairs:
+                removed_path = artifacts / f"{pair_id}-removed-{profile}.png"
+                _run_pixelseal_removal_profile(profile, marked_path, removed_path)
+                rows.append(
+                    _row(
+                        root=output_dir,
+                        pair_id=pair_id,
+                        media_type="image",
+                        adapter=adapter,
+                        source_revision=source_revision,
+                        case_id=f"{pair_id}-removed-{profile}",
+                        arm="positive",
+                        state="removed",
+                        path=removed_path,
+                        reference=clean_path,
+                        transform_name=f"remove-invisible-{profile}",
+                        transform_revision=RECIPE_VERSION,
+                        parameters={"profile": profile, **full_pins},
+                        seed=0,
+                        expected="unresolved",
+                    )
+                )
+        removal_summary = {
+            "status": "executed",
+            "profiles": list(REMOVAL_PROFILES),
+        }
+    return rows, removal_summary
+
+
+def _build_pixelseal_rows(output_dir: Path, artifacts: Path) -> tuple[list[dict[str, object]], dict[str, object]]:
+    return _build_image_seal_rows(
+        output_dir,
+        artifacts,
+        adapter="pixelseal",
+        stack_label="PixelSeal",
+        oracle=pixelseal_oracle,
+        embed_fn=pixelseal_oracle.embed,
+        pins={
+            "source_commit": pixelseal_oracle.SOURCE_COMMIT,
+            "checkpoint_sha256": pixelseal_oracle.CHECKPOINT_SHA256,
+            "model_card_sha256": pixelseal_oracle.MODEL_CARD_SHA256,
+        },
+    )
+
+
+def _build_videoseal_image_rows(output_dir: Path, artifacts: Path) -> tuple[list[dict[str, object]], dict[str, object]]:
+    return _build_image_seal_rows(
+        output_dir,
+        artifacts,
+        adapter="videoseal-image",
+        stack_label="VideoSeal",
+        oracle=videoseal_oracle,
+        embed_fn=videoseal_oracle.embed_image,
+        pins={
+            "source_commit": videoseal_oracle.SOURCE_COMMIT,
+            "checkpoint_sha256": videoseal_oracle.JIT_SHA256,
+        },
+    )
 
 
 def _extract_audio(ffmpeg: str, source: Path, target: Path) -> None:
@@ -436,7 +564,9 @@ def build_and_run(output_dir: Path) -> Path:
     output_dir.mkdir(parents=True)
     artifacts = output_dir / "artifacts"
     artifacts.mkdir()
-    rows = _build_pixelseal_rows(output_dir, artifacts)
+    rows, removal_summary = _build_pixelseal_rows(output_dir, artifacts)
+    videoseal_rows, videoseal_removal = _build_videoseal_image_rows(output_dir, artifacts)
+    rows.extend(videoseal_rows)
     perth_rows, pass_through = _build_perth_rows(output_dir, artifacts, ffmpeg)
     rows.extend(perth_rows)
     manifest = output_dir / "manifest.jsonl"
@@ -447,10 +577,12 @@ def build_and_run(output_dir: Path) -> Path:
         "pixelseal": {
             "source_commit": pixelseal_oracle.SOURCE_COMMIT,
             "checkpoint_sha256": pixelseal_oracle.CHECKPOINT_SHA256,
-            "removal_profiles": {
-                "status": "not_run" if not _cuda_available() else "available_not_automatic",
-                "reason": "qwen-zimage, sdxl-zimage, and chroma-zimage require an NVIDIA CUDA device",
-            },
+            "removal_profiles": removal_summary,
+        },
+        "videoseal_image": {
+            "source_commit": videoseal_oracle.SOURCE_COMMIT,
+            "checkpoint_sha256": videoseal_oracle.JIT_SHA256,
+            "removal_profiles": videoseal_removal,
         },
         "perth": {
             "source_commit": perth_oracle.SOURCE_COMMIT,

@@ -349,8 +349,9 @@ def vendor_for_strength(image_path: Path) -> Literal["openai", "google", "micros
             c2pa_info_has_invalid_credential,
             c2pa_info_has_invismark,
             extract_c2pa_info,
+            soft_binding_vendors_in,
         )
-        from remove_ai_watermarks.metadata import synthid_source
+        from remove_ai_watermarks.metadata import c2pa_marker_in, scan_head, synthid_source
 
         info = extract_c2pa_info(image_path)
         evidence = (synthid_source(image_path, c2pa_info=info) or "").casefold()
@@ -360,6 +361,15 @@ def vendor_for_strength(image_path: Path) -> Literal["openai", "google", "micros
         return "google"
     if "openai" in evidence:
         return "openai"
-    if not c2pa_info_has_invalid_credential(info) and c2pa_info_has_invismark(info):
+    if c2pa_info_has_invalid_credential(info):
+        return None
+    if c2pa_info_has_invismark(info):
         return "microsoft"
+    if info.get("c2pa_validation_source") != "reader":
+        try:
+            data = scan_head(image_path)
+            if c2pa_marker_in(data) and "Microsoft InvisMark" in soft_binding_vendors_in(data):
+                return "microsoft"
+        except Exception:
+            return None
     return None

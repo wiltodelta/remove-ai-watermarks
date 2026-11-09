@@ -730,11 +730,21 @@ pixel-watermark identifier in Microsoft Paint output. An InvisMark soft binding
 keeps the invisible-removal gate fail-safe even when the C2PA asset binding has
 since become invalid, because metadata damage does not prove the pixel carrier
 disappeared. `identify` retains the generic `soft_binding` signal for schema-1
-compatibility and adds `invismark` as the stable pixel-removal signal.
+compatibility and adds `invismark` as the stable pixel-removal signal across
+the reader, portable-record, and raw-byte fallback paths. When the C2PA manifest
+is structurally usable, `invismark` also asserts AI provenance and sets the
+`"Microsoft (Copilot / Designer)"` fallback platform; in integrity-clash checks
+it shares `_C2PA_MANIFEST_SOURCE` with `c2pa` and `soft_binding` so multi-actor
+Microsoft + OpenAI manifests do not self-clash. `vendor_for_strength` includes
+non-reader fallback containers carrying `com.microsoft.invismark.1` when
+selecting the `"microsoft"` floor.
 Registry entries of type `fingerprint` remain durable-provenance signals but are
 not added to the watermark inventory, do not trigger pixel regeneration, and do
 not suppress independently established SynthID watermark evidence. A registered
-watermark or an unknown soft-binding algorithm keeps that inference fail-safe.
+watermark or an unknown soft-binding algorithm keeps that inference fail-safe,
+and `c2pa_info_has_removal_hint` plus `identify.report_has_removal_hint` keep
+`c2pa_identity_ai` and fallback `invismark`/`soft_binding` signals fail-safe for
+invisible removal even when the C2PA signature or hard binding is invalid.
 
 The local Paint reader treats C2PA as corroboration, not as the pixel detector.
 It extracts 4-by-4 blocks from the luminance Haar LL plane, reads the largest
@@ -1571,8 +1581,13 @@ AI-enhanced composites when the source metadata provides that distinction.
 TrustMark is reported as a watermark signal but does not by itself assert AI
 origin because it can also protect human-authored content. The decoder requests
 binary mode, matching Adobe's Durable Content Credentials example, then requires
-the same payload and schema after a quality-95 JPEG round-trip. Only Variant P
-schemas 0-2 count as positives. Schema 3 is below the precision threshold: all
+the same payload and schema after a quality-95 JPEG round-trip. Uncorroborated
+`identify` scans run Variant P only and accept schemas 0-2; when C2PA soft
+bindings declare `com.adobe.trustmark.Q` or `com.adobe.trustmark.C`, `identify`
+also checks that declared variant under the same re-encode and schema 0-2 gate.
+Direct API callers can pass `variant="P" | "Q" | "C"` to `detect_trustmark`,
+`detect_trustmark_image`, `detect_trustmark_detailed`, and `remove_trustmark`.
+Schema 3 is below the precision threshold: all
 38 measured historical false-positive candidates used it, and six retained the
 same false payload after re-encoding. The official Adobe Variant P schema-1
 fixture in `data/fixtures/provenance/` is the positive regression control.

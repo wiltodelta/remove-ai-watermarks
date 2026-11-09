@@ -50,6 +50,7 @@ from watermark_benchmark_cohort import (  # noqa: E402
     CarrierSpec,
     append_dwt_rows,
     append_trustmark_rows,
+    append_videoseal_image_rows,
     benchmark_dependencies,
     validate_cohort_options,
 )
@@ -60,7 +61,7 @@ RECIPE_VERSION = "watermark-benchmark-real-cohort-v1"
 DEFAULT_SOURCE_MANIFEST = REPO / "data" / "evaluations" / "engine-selection" / "content-manifest.csv"
 REUSE_BASIS = SOURCE_REUSE_BASIS
 DEFAULT_ADAPTERS: tuple[AdapterName, ...] = ("dwt-dct", "trustmark")
-_ADAPTERS = frozenset(DEFAULT_ADAPTERS)
+_ADAPTERS = frozenset(("dwt-dct", "trustmark", "videoseal-image"))
 
 
 def _standardize(carrier: RealCarrier, *, size: int) -> Image.Image:
@@ -172,6 +173,21 @@ def build_real_cohort(
         )
     if "trustmark" in adapters:
         append_trustmark_rows(
+            rows,
+            root=output_dir,
+            artifacts=artifacts,
+            carriers=prepared,
+            attacks=attacks,
+            source_revision=source_revision,
+            dependencies=dependencies,
+            size=size,
+            carrier_metadata=metadata,
+            clean_transform_name="real-carrier-standardize",
+            clean_transform_revision=recipe_revision,
+            attack_transform_revision=helper_revision,
+        )
+    if "videoseal-image" in adapters:
+        append_videoseal_image_rows(
             rows,
             root=output_dir,
             artifacts=artifacts,

@@ -51,12 +51,11 @@ CACHE_DIR = Path(
 
 
 @dataclass(frozen=True)
-class VideoSealReading:
-    """Aggregated decode of one video against the oracle's fixed message."""
+class VideoSealImageReading:
+    """Decoded bits and matched-message accuracy for one image."""
 
     bit_accuracy: float
     decoded_bits: tuple[int, ...]
-    per_frame_bit_accuracy: tuple[float, ...]
 
     @property
     def detected(self) -> bool:
@@ -66,6 +65,13 @@ class VideoSealReading:
     @property
     def label(self) -> str:
         return "".join(f"{byte:02x}" for byte in _bytes(self.decoded_bits))
+
+
+@dataclass(frozen=True)
+class VideoSealReading(VideoSealImageReading):
+    """Aggregated decode of one video against the oracle's fixed message."""
+
+    per_frame_bit_accuracy: tuple[float, ...]
 
 
 def _bytes(bits: Sequence[int]) -> bytes:
@@ -144,13 +150,32 @@ def embed(model: object, frames: object, message: Sequence[int]) -> object:
     return marked.permute(0, 2, 3, 1).numpy()
 
 
-def embed_image(model: object, pixels: object, message: Sequence[int]) -> object:
-    """Embed a message into one RGB image in [0, 1] (H, W, 3)."""
+def _image_pixels_f32(pixels: object) -> object:
+    import numpy as np
+
+    array = np.asarray(pixels)
+    if array.ndim != 3 or array.shape[2] != 3:
+        raise ValueError(f"VideoSeal image mode expects HxWx3 RGB pixels, got {array.shape}")
+    values = array.astype(np.float32) / 255.0 if array.dtype == np.uint8 else np.asarray(array, dtype=np.float32)
+    if not np.isfinite(values).all() or float(values.min()) < 0.0 or float(values.max()) > 1.0:
+        raise ValueError("VideoSeal image RGB pixels must be finite and in [0, 1]")
+    return values
+
+
+def _image_tensor(pixels: object) -> object:
     import numpy as np
     import torch
 
-    array = torch.from_numpy(np.ascontiguousarray(pixels, dtype=np.float32))
-    tensor = array.permute(2, 0, 1).unsqueeze(0)
+    values = _image_pixels_f32(pixels)
+    array = torch.from_numpy(np.ascontiguousarray(values, dtype=np.float32))
+    return array.permute(2, 0, 1).unsqueeze(0)
+
+
+def embed_image(model: object, pixels: object, message: Sequence[int]) -> object:
+    """Embed a message into one RGB image in [0, 1] (H, W, 3)."""
+    import torch
+
+    tensor = _image_tensor(pixels)
     msg = torch.tensor([list(message)], dtype=torch.float32)
     with torch.no_grad():
         marked = model.embed(tensor, msg, is_video=False)
@@ -159,16 +184,29 @@ def embed_image(model: object, pixels: object, message: Sequence[int]) -> object
 
 def decode_image(model: object, pixels: object) -> tuple[int, ...]:
     """Decode the message bits from one RGB image."""
-    import numpy as np
     import torch
 
-    array = torch.from_numpy(np.ascontiguousarray(pixels, dtype=np.float32))
-    tensor = array.permute(2, 0, 1).unsqueeze(0)
+    tensor = _image_tensor(pixels)
     with torch.no_grad():
         predictions = model.detect(tensor, is_video=False)
     if isinstance(predictions, dict):
         predictions = predictions["preds"]
     return tuple(int(bit) for bit in (predictions[:, 1:] > 0).to(torch.int64).view(-1).tolist())
+
+
+def read_image(
+    model: object,
+    pixels: object,
+    *,
+    message: Sequence[int] | None = None,
+) -> VideoSealImageReading:
+    """Decode one image and compare its bits with the oracle's fixed message."""
+    expected = message_bits() if message is None else tuple(message)
+    decoded = decode_image(model, pixels)
+    if len(decoded) != len(expected):
+        raise ValueError(f"decoded bit count {len(decoded)} does not match expected {len(expected)}")
+    accuracy = sum(int(bit == want) for bit, want in zip(decoded, expected, strict=True)) / len(expected)
+    return VideoSealImageReading(bit_accuracy=accuracy, decoded_bits=decoded)
 
 
 def _aggregate_bit_preds(bit_preds: object, aggregation: str) -> object:

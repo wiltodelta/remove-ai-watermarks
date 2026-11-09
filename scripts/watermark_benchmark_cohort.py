@@ -41,7 +41,7 @@ from watermark_benchmark import SCHEMA_VERSION, load_manifest, sha256_file, writ
 log = logging.getLogger(__name__)
 
 RECIPE_VERSION = "watermark-benchmark-cohort-v1"
-AdapterName = Literal["dwt-dct", "trustmark"]
+AdapterName = Literal["dwt-dct", "trustmark", "videoseal-image"]
 AttackName = Literal["jpeg-q90", "resize-75", "crop-5"]
 
 DEFAULT_CARRIERS = (
@@ -54,7 +54,8 @@ DEFAULT_CARRIERS = (
 )
 DEFAULT_DWT_SCHEMES = ("sdxl", "flux", "sd1")
 DEFAULT_ATTACKS: tuple[AttackName, ...] = ("jpeg-q90", "resize-75", "crop-5")
-_ADAPTERS: tuple[AdapterName, ...] = ("dwt-dct", "trustmark")
+DEFAULT_ADAPTERS: tuple[AdapterName, ...] = ("dwt-dct", "trustmark")
+_ADAPTERS: tuple[AdapterName, ...] = ("dwt-dct", "trustmark", "videoseal-image")
 _DWT_SCHEMES = frozenset(DEFAULT_DWT_SCHEMES)
 _ATTACKS = frozenset(DEFAULT_ATTACKS)
 
@@ -541,10 +542,133 @@ def append_trustmark_rows(
         )
 
 
+def append_videoseal_image_rows(
+    rows: list[dict[str, Any]],
+    *,
+    root: Path,
+    artifacts: Path,
+    carriers: Sequence[tuple[CarrierSpec, Image.Image]],
+    attacks: Sequence[AttackName],
+    source_revision: str,
+    dependencies: dict[str, str],
+    size: int,
+    carrier_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+    clean_transform_name: str = "synthetic-carrier",
+    clean_transform_revision: str = RECIPE_VERSION,
+    attack_transform_revision: str = RECIPE_VERSION,
+) -> None:
+    """Append matched 256-bit VideoSeal image cases (me.reconize.videoseal.1)."""
+    import numpy as np
+    import videoseal_oracle
+
+    model = videoseal_oracle.load_model()
+    fixed = videoseal_oracle.message_bits()
+    foreign = videoseal_oracle.message_bits(seed=8)
+    for spec, clean in carriers:
+        clean_path = artifacts / f"{spec.name}--{size}px--clean.png"
+        if not clean_path.exists():
+            save_rgb_png(clean, clean_path)
+        pair_id = f"videoseal-image--{spec.name}--{size}px"
+        base_parameters: dict[str, Any] = {
+            "carrier": spec.name,
+            "size": [size, size],
+            "dependencies": dependencies,
+            "source_commit": videoseal_oracle.SOURCE_COMMIT,
+            "checkpoint_sha256": videoseal_oracle.JIT_SHA256,
+            "message": list(fixed),
+        }
+        if carrier_metadata is not None:
+            base_parameters["source"] = dict(carrier_metadata[spec.name])
+        rows.append(
+            benchmark_row(
+                root=root,
+                case_id=f"{pair_id}--clean",
+                pair_id=pair_id,
+                adapter="videoseal-image",
+                arm="matched_negative",
+                state="clean",
+                path=clean_path,
+                reference=clean_path,
+                source_revision=source_revision,
+                transform_name=clean_transform_name,
+                transform_revision=clean_transform_revision,
+                parameters=base_parameters,
+                seed=spec.seed,
+                expected="not_detected",
+            )
+        )
+        clean_values = np.asarray(clean.convert("RGB"), dtype=np.float32) / 255.0
+        marked_values = np.asarray(videoseal_oracle.embed_image(model, clean_values, fixed))
+        marked = Image.fromarray(np.rint(np.clip(marked_values, 0.0, 1.0) * 255.0).astype(np.uint8), "RGB")
+        marked_path = save_rgb_png(marked, artifacts / f"{spec.name}--{size}px--videoseal-image--marked.png")
+        rows.append(
+            benchmark_row(
+                root=root,
+                case_id=f"{pair_id}--marked",
+                pair_id=pair_id,
+                adapter="videoseal-image",
+                arm="positive",
+                state="marked",
+                path=marked_path,
+                reference=clean_path,
+                source_revision=source_revision,
+                transform_name="videoseal-image-embed",
+                transform_revision=f"videoseal@{videoseal_oracle.SOURCE_COMMIT}",
+                parameters=base_parameters,
+                seed=videoseal_oracle.MESSAGE_SEED,
+                expected="detected",
+            )
+        )
+        for attack in attacks:
+            attacked_path = save_rgb_png(
+                attack_image(marked, attack),
+                artifacts / f"{spec.name}--{size}px--videoseal-image--{attack}.png",
+            )
+            rows.append(
+                benchmark_row(
+                    root=root,
+                    case_id=f"{pair_id}--{attack}",
+                    pair_id=pair_id,
+                    adapter="videoseal-image",
+                    arm="positive",
+                    state="attacked",
+                    path=attacked_path,
+                    reference=clean_path,
+                    source_revision=source_revision,
+                    transform_name=f"videoseal-image-embed-then-{attack}",
+                    transform_revision=attack_transform_revision,
+                    parameters=base_parameters | attack_parameters(attack),
+                    seed=videoseal_oracle.MESSAGE_SEED,
+                    expected="unresolved",
+                )
+            )
+        forged_values = np.asarray(videoseal_oracle.embed_image(model, clean_values, foreign))
+        forged = Image.fromarray(np.rint(np.clip(forged_values, 0.0, 1.0) * 255.0).astype(np.uint8), "RGB")
+        forged_path = save_rgb_png(forged, artifacts / f"{spec.name}--{size}px--videoseal-image--forged.png")
+        rows.append(
+            benchmark_row(
+                root=root,
+                case_id=f"{pair_id}--forged",
+                pair_id=pair_id,
+                adapter="videoseal-image",
+                arm="wrong_key",
+                state="forged",
+                path=forged_path,
+                reference=clean_path,
+                source_revision=source_revision,
+                transform_name="videoseal-image-embed-foreign-message",
+                transform_revision=f"videoseal@{videoseal_oracle.SOURCE_COMMIT}",
+                parameters=base_parameters | {"foreign_message": list(foreign), "foreign_message_seed": 8},
+                seed=8,
+                expected="not_detected",
+            )
+        )
+
+
 def build_cohort(
     output_dir: Path,
     *,
-    adapters: Sequence[AdapterName] = _ADAPTERS,
+    adapters: Sequence[AdapterName] = DEFAULT_ADAPTERS,
     carriers: Sequence[CarrierSpec] = tuple(CarrierSpec(name, seed) for name, seed in DEFAULT_CARRIERS),
     dwt_schemes: Sequence[str] = DEFAULT_DWT_SCHEMES,
     attacks: Sequence[AttackName] = DEFAULT_ATTACKS,
@@ -604,6 +728,26 @@ def build_cohort(
             dependencies=dependencies,
             size=size,
         )
+    if "videoseal-image" in adapters:
+        append_videoseal_image_rows(
+            rows,
+            root=output_dir,
+            artifacts=artifacts,
+            carriers=carrier_images,
+            attacks=attacks,
+            source_revision=source_revision,
+            dependencies=dependencies,
+            size=size,
+        )
+        _append_hard_negative(
+            rows,
+            root=output_dir,
+            artifacts=artifacts,
+            adapter="videoseal-image",
+            source_revision=source_revision,
+            dependencies=dependencies,
+            size=size,
+        )
 
     manifest = output_dir / "manifest.jsonl"
     write_jsonl(manifest, rows)
@@ -625,14 +769,14 @@ def main() -> None:
         action="append",
         choices=_ADAPTERS,
         dest="adapters",
-        help="adapter to include; repeat to select both (default: both)",
+        help="adapter to include; repeat to select multiple (default: dwt-dct and trustmark)",
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
         manifest = build_cohort(
             args.output_dir,
-            adapters=tuple(args.adapters or _ADAPTERS),
+            adapters=tuple(args.adapters or DEFAULT_ADAPTERS),
             size=args.size,
         )
     except (FileExistsError, ImportError, OSError, RuntimeError, ValueError) as exc:

@@ -121,3 +121,25 @@ class TestImageMode:
 
         np.testing.assert_allclose(marked, pixels)
         assert videoseal_oracle.decode_image(Model(), marked) == message
+
+    def test_read_image_scores_uint8_and_float32_pixels(self) -> None:
+        torch = pytest.importorskip("torch")
+        message = (1, 1, 1, 1, 1, 1, 1, 1, 0, 0)
+
+        class Model:
+            def detect(self, tensor: object, *, is_video: bool) -> object:
+                assert is_video is False
+                assert tensor.dtype == torch.float32
+                assert float(tensor.min()) >= 0.0
+                assert float(tensor.max()) <= 1.0
+                return {"preds": torch.tensor([[9.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0]])}
+
+        uint8_pixels = np.full((2, 4, 3), 128, dtype=np.uint8)
+        reading = videoseal_oracle.read_image(Model(), uint8_pixels, message=message)
+
+        assert reading.bit_accuracy == pytest.approx(0.9)
+        assert reading.detected is True
+        assert reading.label == "ff40"
+
+        with pytest.raises(ValueError, match="does not match expected 4"):
+            videoseal_oracle.read_image(Model(), uint8_pixels, message=(1, 0, 1, 0))

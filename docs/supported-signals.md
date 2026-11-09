@@ -121,9 +121,11 @@ The inspection and stripping code handles signals in these groups:
 - Samsung AI editing markers;
 - Higgsfield job metadata (the `hf-job-id` PNG chunk);
 - open Stable Diffusion style DWT-DCT watermarks with the `detect` extra;
-- Adobe TrustMark Variant P schemas 0-2 with the `trustmark` extra. Variant Q
-  needs a different model, while schema 3 is deliberately rejected because it
-  produced persistent false positives on unrelated generators.
+- Adobe TrustMark Variant P schemas 0-2 by default with the `trustmark` extra,
+  plus Variants Q (`com.adobe.trustmark.Q`) and C (`com.adobe.trustmark.C`) when
+  explicitly requested or corroborated by a C2PA soft-binding assertion. Schema
+  3 is deliberately rejected because it produced persistent false positives on
+  unrelated generators.
 
 `identify` combines detected signals into a `ProvenanceReport`. It reports
 unknown when evidence is absent. It never treats missing metadata as proof that
@@ -176,9 +178,10 @@ use their format specific paths.
 
 ## Invisible watermarks
 
-The `invisible` command uses diffusion regeneration. A specialized Python API can
+The `invisible` command uses diffusion regeneration. Specialized Python APIs can
 instead apply decoder-guided disruption to a positively identified local
-Microsoft Paint payload.
+Microsoft Paint payload or official neural removal to a confirmed Adobe
+TrustMark payload.
 
 Current diffusion pipeline values, all CUDA-only:
 
@@ -276,6 +279,26 @@ The seal survives resizing, JPEG recompression, and metadata stripping; it dies
 to center crops of a third to a half, matching the Reuters 2026-07-11 finding
 that Meta's detector missed 55% of cropped Muse images.
 
+Amazon Bedrock (`Nova Canvas Core Model` and `Titan Image Generator Core Model`)
+embeds a proprietary invisible pixel watermark verified through the Bedrock
+Watermark detection console and `POST /detect-generated-content`
+(`DetectGeneratedContent`). A 2026-11-08 evaluation on six MIT-0-cleared
+carriers from `aws-samples/amazon-nova-samples` (three Nova Canvas images at
+1280x720 and 1024x1024 with C2PA signed `Amazon Web Services, Inc.`, and three
+Titan Image Generator images at 1024x1024 and 768x768) confirmed that lossless
+metadata stripping leaves `6/6` detected at `HIGH` confidence (`3/3 Nova Canvas
+Core Model`, `3/3 Titan Image Generator Core Model`). Non-diffusion attacks
+already clear Nova Canvas (`0/3` on `jpeg-q90`, `resize-75`, and `crop-5`),
+while Titan Image partially survives (`2/3` `MEDIUM` on `jpeg-q90`, `1/3`
+`HIGH` on `resize-75`, `2/3` `MEDIUM` on `crop-5`). Diffusion regeneration on
+Modal (`NVIDIA H100 80GB HBM3`) cleared `6/6` across all three default profiles
+(`qwen-zimage` at resolution-adaptive `0.090-0.099`, `sdxl-zimage` at `0.50`,
+and `chroma-zimage` at `0.50`: `0/18` detected) and already cleared `6/6` on
+`qwen-zimage` at `s = 0.03` and `s = 0.05` (`0/12` detected) as well as on
+`sdxl-zimage` and `chroma-zimage` at `s = 0.05`, so the standard
+resolution-adaptive `qwen-zimage` default (`0.090-0.099`) provides a 3x safety
+margin with no separate vendor strength floor needed.
+
 For MP4, MOV, and M4V, `video invisible` or the explicit
 `video all --invisible` option can regenerate the video through a VAE and strip
 source metadata. The shipped profile is oracle-certified, but it is not a local
@@ -302,7 +325,7 @@ not a universal clean verdict.
 | Microsoft image outputs (measured variant) | One top-right white AI-badge variant | No registered pixel decoder | C2PA attribution |
 | Stable Diffusion and SDXL | None registered | Diffusion regeneration; optional open decoder | Embedded parameters and text metadata |
 | FLUX | None registered | Diffusion regeneration; optional open decoder | C2PA for supported sources |
-| Adobe Firefly | None registered | Optional TrustMark Variant P decoder | C2PA |
+| Adobe Firefly | None registered | Optional TrustMark decoder and neural remover (`P`, `Q`, `C`); diffusion fallback when C2PA declares `com.adobe.trustmark.*` | C2PA |
 | Midjourney | None registered | No registered pixel decoder | EXIF, XMP, and IPTC signals |
 | Luma AI | None registered | No registered pixel decoder | PNG text generator tags (Uni-1) |
 | ByteDance generators | Doubao, Jimeng, Dola, and Seedance marks | No registered pixel decoder | TC260 AIGC (Doubao, Jimeng, Volcano Engine), supported C2PA (Dreamina, Dola, Pippit AI, BytePlus), and exact app-export AIGC disclosures |
@@ -313,7 +336,7 @@ not a universal clean verdict.
 | Kling AI | Kling AI image and video marks | No registered pixel decoder | TC260 AIGC and the video SEI tag |
 | Vidu (ShengShu) | Vidu video mark | No registered pixel decoder | TC260 AIGC in the MP4 `AIGC` key |
 | Runway | None measured on paid-plan output | No registered pixel decoder | C2PA signed `RUNWAY AI, INC.` on its own models; third-party models keep their vendor's manifest |
-| Amazon Bedrock (Nova Canvas, Nova Reel) | None | Invisible watermark readable only through the Bedrock API | C2PA signed `Amazon Web Services, Inc.`, claim generator `Amazon Bedrock` |
+| Amazon Bedrock (Nova Canvas, Titan Image, Nova Reel) | None | Diffusion regeneration for Nova Canvas and Titan Image, oracle-verified against `DetectGeneratedContent` (`0/18` across `qwen-zimage`, `sdxl-zimage`, `chroma-zimage`; already `0/6` at `qwen-zimage` `s=0.03`) | C2PA signed `Amazon Web Services, Inc.`, claim generator `Amazon Bedrock` |
 | Wan (Alibaba) | Wan image mark | No registered pixel decoder | TC260 AIGC in XMP |
 | Hailuo AI / MiniMax video | Hailuo AI composite video label | No registered pixel decoder | TC260 AIGC where present |
 | Baidu | Baidu mark | No registered pixel decoder | TC260 AIGC |
