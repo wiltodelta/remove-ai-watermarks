@@ -1782,6 +1782,15 @@ vendor claims (C2PA only when verified) and drops a sparkle on such an image
 with `_SPARKLE_VETOED_CAVEAT`. Google provenance never vetoes. The removal
 arbitration does not see these claims.
 
+When `trust_provenance=False` and fused confidence sits below `_SPARKLE_FP_CONF`
+(`0.65`), `_apply_false_positive_gate` also checks corner placement against the
+frame's expected `WatermarkPosition` before consulting brightness or edge
+gradients: a candidate sitting further than `0.5 * min(width, height)` from the
+bottom or right edge, or an undersized match (`< 0.6 * config.logo_size`) sitting
+further than `2 * config.margin_right` from the corner, is demoted to `0.30`.
+This prevents micro-scale lattice/mesh cells and mid-frame highlights inside the
+`512x512` search window from passing as uncorroborated corner sparkles.
+
 Regression coverage:
 
 - [`test_gemini_engine.py`](../tests/test_gemini_engine.py), including

@@ -341,6 +341,42 @@ class TestSparkleFalsePositiveGate:
         assert det.confidence < 0.5
         assert not det.detected
 
+    @pytest.mark.parametrize(
+        ("width", "height", "scale", "margin_right", "margin_bottom", "alpha_scale", "noise_std", "seed"),
+        [
+            # Micro-scale match (16 px on a >1024 px LARGE frame expecting 96 px) far from the corner.
+            (1874, 2272, 16, 454, 349, 0.65, 28, 7),
+            # Narrow frame where the 512 px window reaches past 0.5 * min(width, height).
+            (458, 779, 46, 26, 331, 0.68, 24, 11),
+        ],
+        ids=["undersized-off-corner", "outside-corner-quadrant"],
+    )
+    def test_implausible_corner_geometry_is_demoted(
+        self,
+        width: int,
+        height: int,
+        scale: int,
+        margin_right: int,
+        margin_bottom: int,
+        alpha_scale: float,
+        noise_std: int,
+        seed: int,
+    ):
+        """Matches inside the 512 px window whose corner margins or scale-vs-tier ratio
+        are geometrically implausible for a bottom-right sparkle are demoted without
+        provenance."""
+        x, y = WatermarkPosition(margin_right, margin_bottom, scale).get_position(width, height)
+        rng = np.random.default_rng(seed)
+        img = rng.normal(110, noise_std, (height, width, 3)).astype(np.float32)
+        alpha = self.engine.get_interpolated_alpha(scale)
+        a = np.clip(alpha * alpha_scale, 0.0, 1.0)[:, :, None]
+        img[y : y + scale, x : x + scale] = a * 255.0 + (1.0 - a) * img[y : y + scale, x : x + scale]
+        strict, relaxed = self.engine.detect_watermark_both(np.clip(img, 0, 255).astype(np.uint8))
+        assert 0.50 <= relaxed.confidence < self.engine._SPARKLE_FP_CONF
+        assert relaxed.detected
+        assert strict.confidence <= 0.30
+        assert not strict.detected
+
 
 class TestDecorativeGlyphFalsePositive:
     """Incident 2026-08-27, documented in full in ``docs/module-internals.md``

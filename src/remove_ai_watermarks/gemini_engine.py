@@ -146,6 +146,9 @@ class GeminiEngine:
     _SPARKLE_FP_GRAD = 0.55
     _SPARKLE_KEEP_CONF = 0.52
     _SPARKLE_WHITE_SAT = 0.20
+    _FP_MAX_CORNER_AXIS_FRAC = 0.5
+    _FP_OFF_CORNER_MARGIN_MULT = 2
+    _FP_OFF_CORNER_MIN_SCALE_FRAC = 0.6
     _CORNER_PROMOTE_NCC = 0.85
     _CORNER_PROMOTE_FRAC = 0.20
     _CORNER_PROMOTE_MIN = 96
@@ -280,7 +283,31 @@ class GeminiEngine:
         result.detected = result.confidence >= 0.35
         return result
 
+    def _has_plausible_corner_geometry(self, width: int, height: int, candidate: _Candidate) -> bool:
+        config = get_watermark_config(width, height)
+        margin_right = width - candidate.x - candidate.scale
+        margin_bottom = height - candidate.y - candidate.scale
+        max_margin = max(margin_right, margin_bottom)
+        if max_margin > min(width, height) * self._FP_MAX_CORNER_AXIS_FRAC:
+            return False
+        off_corner = max_margin > config.margin_right * self._FP_OFF_CORNER_MARGIN_MULT
+        undersized = candidate.scale < config.logo_size * self._FP_OFF_CORNER_MIN_SCALE_FRAC
+        return not (off_corner and undersized)
+
     def _apply_false_positive_gate(self, image: NDArray[Any], candidate: _Candidate, confidence: float) -> float:
+        height, width = image.shape[:2]
+        if not self._has_plausible_corner_geometry(width, height, candidate):
+            logger.debug(
+                "Sparkle candidate demoted on corner geometry: confidence=%.3f, region=(%d, %d, %d, %d), image=%dx%d",
+                confidence,
+                candidate.x,
+                candidate.y,
+                candidate.scale,
+                candidate.scale,
+                width,
+                height,
+            )
+            return min(confidence, 0.30)
         alpha = self.get_interpolated_alpha(candidate.scale)
         position = (candidate.x, candidate.y)
         margin = self._core_ring_margin(image, alpha, position)
