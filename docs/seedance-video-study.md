@@ -94,8 +94,9 @@ video. The default mode requires constant frame spacing. Use
 `--preserve-timestamps` to process every source frame with its original PTS,
 including variable spacing and nonzero start offsets. This mode cannot be
 combined with `--fps`. It reuses the existing timestamped NUT bridge, restores
-the terminal packet duration through a stream-copy operation when needed, and
-requires the saved file's frame times and video duration to match the source
+the decode-order and presentation-order ends through stream-copy operations
+when needed, including after audio muxing, and requires the saved file's frame
+times and video duration to match the source
 within two microseconds. HDR and high bit depth remain unsupported. Geometry is rounded to the existing engine's eight-pixel
 alignment and never intentionally upscaled. The actual dimensions and frame
 rate appear in the delivered-file measurements.

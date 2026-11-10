@@ -415,8 +415,9 @@ use a separate decoded-pixel codec control. They retain the guide identity,
 reconstruction weight and SSIM implementation in their evidence; returning
 source detail may also return the signal.
 Its optional timestamped
-path reuses the visible pipeline's NUT bridge, restores the terminal packet
-duration, and verifies delivered PTS and video end before accepting fidelity.
+path reuses the visible pipeline's NUT bridge, restores the decode-order and
+presentation-order ends before and after audio muxing, and verifies delivered
+PTS and video end before accepting fidelity.
 It hashes saved artifacts, snapshots its principal source files, and keeps
 fidelity separate from captured provider evidence. The development-only
 `scripts/capcut_receipts.py` checks selected-file hashes, one-upload/job-poll
@@ -443,8 +444,14 @@ ordinary video-pixel result with explicit experimental/profile/quality fields.
 No provider oracle runs in the installed pipeline.
 
 The experimental engine reuses the timestamped NUT writer and shared encoder
-and mux boundary. It restores the last video packet duration when required,
-checks the saved output clock and decoded frame count before atomic publication,
+and mux boundary. `video_encoding.video_end_repair` treats the final decode
+packet and final presentation frame separately, because B-frame reordering can
+put them at different packet indices. It derives both durations from the
+original integer stream window, retains PTS/DTS, and gives the movie edit list
+the video packet clock's precision. Repairs run after the final audio mux as
+well, because remuxing can recalculate the presentation end. Full packet
+lists are read only for an actual repair; source and duration-only probes read
+stream fields. The engine checks the saved output clock and decoded frame count before atomic publication,
 and measures PSNR/flow-aligned temporal residual at delivered geometry. Encoded
 guides and masters are task-owned temporary files, with bounded pixel batches.
 The profile accepts SDR 8-bit MP4 with even dimensions and handles visible

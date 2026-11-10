@@ -15,7 +15,6 @@ import shutil
 import subprocess
 from contextlib import suppress
 from dataclasses import replace
-from fractions import Fraction
 from itertools import chain
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -35,6 +34,7 @@ from remove_ai_watermarks.video_encoding import (
     raw_video_command,
     staged_video_output,
     start_raw_video_encoder,
+    video_end_repair,
 )
 from remove_ai_watermarks.video_invisible import (
     RegenerationMetrics,
@@ -86,10 +86,18 @@ def _restore_texture(source: NDArray[Any], guide: NDArray[Any]) -> NDArray[Any]:
     return np.clip(np.rint(low_guide + original - low_original), 0, 255).astype(np.uint8)
 
 
-def _clock(path: Path) -> dict[str, Any]:
+def _clock(path: Path, *, include_packets: bool = False) -> dict[str, Any]:
+    entries = "stream=time_base,start_pts,duration_ts,duration"
+    if include_packets:
+        entries += ":packet=pts,dts,duration"
     raw = _run_ffprobe(
         path,
-        ("-select_streams", "v:0", "-show_entries", "stream=time_base,duration:packet=duration"),
+        (
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            entries,
+        ),
         purpose="experimental Seedance video clock",
         output_format="json",
     )
@@ -104,19 +112,12 @@ def _match_video_end(encoded: Path, source: Path) -> None:
     target = float(original_stream["duration"])
     if abs(float(candidate_stream["duration"]) - target) <= 0.000002:
         return
-    duration = round(
-        int(original["packets"][-1]["duration"])
-        * Fraction(original_stream["time_base"])
-        / Fraction(candidate_stream["time_base"])
-    )
-    if duration <= 0:
-        raise ValueError("Source has no usable terminal frame duration")
+    repair = video_end_repair(original, _clock(encoded, include_packets=True))
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise RuntimeError("Video processing requires ffmpeg on PATH")
     with TemporaryDirectory(prefix="seedance-clock-", dir=encoded.parent) as directory:
         retimed = Path(directory) / "retimed.mp4"
-        last = len(candidate["packets"]) - 1
         _run_command(
             [
                 ffmpeg,
@@ -130,7 +131,9 @@ def _match_video_end(encoded: Path, source: Path) -> None:
                 "-c",
                 "copy",
                 "-bsf:v",
-                f"setts=pts=PTS:dts=DTS:duration='if(eq(N,{last}),{duration},DURATION)'",
+                repair.bitstream_filter,
+                "-movie_timescale",
+                str(repair.movie_timescale),
                 "-avoid_negative_ts",
                 "disabled",
                 "-movflags",
@@ -196,6 +199,7 @@ def _encode_frames(
             finish_raw_video_encoder(encoder, encoded, operation="Experimental Seedance encode")
             _match_video_end(encoded, source)
             mux_encoded_video(encoded, source, temporary, strip_metadata=True, copy_input_timestamps=True)
+            _match_video_end(temporary, source)
         except Exception:
             if writer is not None:
                 with suppress(Exception):

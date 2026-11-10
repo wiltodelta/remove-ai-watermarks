@@ -19,7 +19,6 @@ import tempfile
 import time
 from contextlib import suppress
 from dataclasses import replace
-from fractions import Fraction
 from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -47,6 +46,7 @@ from remove_ai_watermarks.video_encoding import (  # noqa: E402
     raw_video_command,
     staged_video_output,
     start_raw_video_encoder,
+    video_end_repair,
 )
 from remove_ai_watermarks.video_invisible import (  # noqa: E402
     _decode_frame_latents,
@@ -165,10 +165,18 @@ def temporal_frames(frames: Iterable[NDArray[Any]]) -> Iterator[NDArray[Any]]:
         previous, current, previous_pair = current, following, following_pair
 
 
-def video_clock(path: Path) -> dict[str, Any]:
+def video_clock(path: Path, *, include_packets: bool = False) -> dict[str, Any]:
+    entries = "stream=time_base,start_pts,duration_ts,duration"
+    if include_packets:
+        entries += ":packet=pts,dts,duration"
     payload = _run_ffprobe(
         path,
-        ["-select_streams", "v:0", "-show_entries", "stream=time_base,duration:packet=duration"],
+        [
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            entries,
+        ],
         purpose="research video clock",
         output_format="json",
     )
@@ -188,14 +196,7 @@ def match_video_end(encoded: Path, source: Path) -> None:
     target_duration = float(original_stream["duration"])
     if abs(float(candidate_stream["duration"]) - target_duration) <= 0.000002:
         return
-    duration = round(
-        int(original["packets"][-1]["duration"])
-        * Fraction(original_stream["time_base"])
-        / Fraction(candidate_stream["time_base"])
-    )
-    if duration <= 0:
-        raise ValueError("Source has no usable terminal packet duration")
-    last_packet = len(candidate["packets"]) - 1
+    repair = video_end_repair(original, video_clock(encoded, include_packets=True))
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise RuntimeError("ffmpeg is required")
@@ -209,11 +210,13 @@ def match_video_end(encoded: Path, source: Path) -> None:
             "-i",
             str(encoded),
             "-map",
-            "0:v:0",
+            "0",
             "-c",
             "copy",
             "-bsf:v",
-            f"setts=pts=PTS:dts=DTS:duration='if(eq(N,{last_packet}),{duration},DURATION)'",
+            repair.bitstream_filter,
+            "-movie_timescale",
+            str(repair.movie_timescale),
             "-avoid_negative_ts",
             "disabled",
             str(retimed),
@@ -277,6 +280,8 @@ def encode_frames(
             if timestamps:
                 match_video_end(encoded, source)
             mux_encoded_video(encoded, source, temporary, strip_metadata=True, copy_input_timestamps=bool(timestamps))
+            if timestamps:
+                match_video_end(temporary, source)
         except Exception:
             if writer is not None:
                 with suppress(Exception):
@@ -379,6 +384,7 @@ def encode_lowpass64(source: Path, output: Path, *, lowpass: bool) -> None:
         result.check_returncode()
         match_video_end(encoded, source)
         mux_encoded_video(encoded, source, temporary, strip_metadata=True, copy_input_timestamps=True)
+        match_video_end(temporary, source)
 
 
 def suppression_status(

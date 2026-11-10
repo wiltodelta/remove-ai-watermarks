@@ -14,7 +14,7 @@ import pytest
 
 import remove_ai_watermarks as raiw
 from remove_ai_watermarks import video_seedance as seedance
-from remove_ai_watermarks.video_encoding import VideoEncodeProfile, probe_video_timestamps
+from remove_ai_watermarks.video_encoding import VideoEncodeProfile, probe_video_timestamps, video_end_repair
 from remove_ai_watermarks.video_invisible import RegenerationMetrics
 
 if TYPE_CHECKING:
@@ -428,3 +428,27 @@ def test_cli_forwards_profile_quality_and_names_experiment(tmp_path, monkeypatch
     if command != "batch":
         assert "experimental Seedance profile" in result.output
         assert "calibrated SynthID" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("packet_pts", "decode_duration", "final_pts", "presentation_duration"),
+    [([2000, 3900, 3600], 200, 3900, 100), ([2000, 3600, 3700], 300, 3700, 300)],
+)
+def test_end_repair_separates_decode_and_presentation_clocks(
+    packet_pts, decode_duration, final_pts, presentation_duration
+):
+    source = {"streams": [{"time_base": "1/1000", "start_pts": 1000, "duration_ts": 1000}]}
+    encoded = {
+        "streams": [{"time_base": "1/2000"}],
+        "packets": [
+            {"dts": 1600, "pts": packet_pts[0]},
+            {"dts": 3200, "pts": packet_pts[1]},
+            {"dts": 3400, "pts": packet_pts[2]},
+        ],
+    }
+    repair = video_end_repair(source, encoded)
+    assert repair.last_packet_index == 2
+    assert repair.last_packet_duration == decode_duration
+    assert repair.final_frame_pts == final_pts
+    assert repair.final_frame_duration == presentation_duration
+    assert repair.movie_timescale == 2000

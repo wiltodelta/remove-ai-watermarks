@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
-    from typing import BinaryIO
+    from typing import Any, BinaryIO
 
 log = logging.getLogger(__name__)
 
@@ -167,6 +167,58 @@ def _pixel_component_depth(pixel_format: object, raw_bits: object) -> int | None
         except (ImportError, ValueError):
             pass
     return max(depths) if depths else None
+
+
+@dataclass(frozen=True)
+class VideoEndRepair:
+    """Durations for the separate decode-order and presentation-order ends."""
+
+    last_packet_index: int
+    last_packet_duration: int
+    final_frame_pts: int
+    final_frame_duration: int
+    movie_timescale: int
+
+    @property
+    def bitstream_filter(self) -> str:
+        return (
+            "setts=pts=PTS:dts=DTS:duration='"
+            f"if(eq(N,{self.last_packet_index}),{self.last_packet_duration},"
+            f"if(eq(PTS,{self.final_frame_pts}),{self.final_frame_duration},DURATION))'"
+        )
+
+
+def video_end_repair(source_clock: dict[str, Any], encoded_clock: dict[str, Any]) -> VideoEndRepair:
+    """Fit both packet ends to the original stream window without moving PTS/DTS."""
+    try:
+        source = source_clock["streams"][0]
+        encoded = encoded_clock["streams"][0]
+        source_base = Fraction(source["time_base"])
+        encoded_base = Fraction(encoded["time_base"])
+        packets = encoded_clock["packets"]
+        source_duration = int(source["duration_ts"]) * source_base
+        end_pts = round((int(source["start_pts"]) * source_base + source_duration) / encoded_base)
+        final_pts = max(int(packet["pts"]) for packet in packets)
+        presentation_duration = end_pts - final_pts
+        decode_duration = round(source_duration / encoded_base) - (int(packets[-1]["dts"]) - int(packets[0]["dts"]))
+        if int(packets[-1]["pts"]) == final_pts:
+            decode_duration = max(decode_duration, presentation_duration)
+    except (KeyError, IndexError, TypeError, ValueError, ZeroDivisionError) as exc:
+        raise ValueError("Could not read the terminal video packet clocks") from exc
+    if (
+        source_base <= 0
+        or encoded_base <= 0
+        or source_duration <= 0
+        or min(presentation_duration, decode_duration) <= 0
+    ):
+        raise ValueError("Encoded packet clocks do not fit the source video window")
+    return VideoEndRepair(
+        last_packet_index=len(packets) - 1,
+        last_packet_duration=decode_duration,
+        final_frame_pts=final_pts,
+        final_frame_duration=presentation_duration,
+        movie_timescale=encoded_base.denominator,
+    )
 
 
 def _run_ffprobe(
