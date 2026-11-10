@@ -12,7 +12,6 @@ import json
 import logging
 import math
 import platform
-import resource
 import shutil
 import subprocess
 import sys
@@ -71,6 +70,15 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 LOWPASS64_FILTER = "scale=64:36:flags=area,gblur=sigma=1,scale={width}:{height}:flags=bicubic"
+
+
+def peak_process_rss_bytes() -> int | None:
+    """Return the Unix process high-water mark, or None when unavailable."""
+    try:
+        import resource
+    except ImportError:
+        return None
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * (1 if sys.platform == "darwin" else 1024)
 
 
 def json_safe(value: Any) -> Any:
@@ -764,9 +772,7 @@ def run(
                     reconstruction_weight=weight,
                 )
     verify_artifacts(report)
-    report["peak_process_rss_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (
-        1 if sys.platform == "darwin" else 1024
-    )
+    report["peak_process_rss_bytes"] = peak_process_rss_bytes()
     report["complete"] = True
     write_json(output_dir / "results.json", report)
 

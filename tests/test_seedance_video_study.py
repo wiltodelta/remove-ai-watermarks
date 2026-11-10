@@ -16,6 +16,11 @@ import pytest
 import seedance_video_study as study
 from click.testing import CliRunner
 
+requires_ffmpeg = pytest.mark.skipif(
+    not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+    reason="ffmpeg and ffprobe are required for video integration tests",
+)
+
 
 def captured_receipt(row, verdict):
     """Synthetic transport fixture, never a real provider observation."""
@@ -195,6 +200,7 @@ def test_saved_artifact_change_invalidates_evidence(tmp_path):
         study.verify_artifacts(report)
 
 
+@requires_ffmpeg
 def test_local_full_clip_run_and_assessment(tmp_path):
     source = tmp_path / "synthetic.mp4"
     writer = cv2.VideoWriter(str(source), cv2.VideoWriter_fourcc(*"mp4v"), 12, (64, 48))
@@ -263,6 +269,7 @@ def test_conflicting_detector_responses_do_not_pass():
     assert study.suppression_status(candidate, rows, observations) == "unverified"
 
 
+@requires_ffmpeg
 def test_opt_in_lowpass_suppresses_texture_and_preserves_audio_and_timing(tmp_path):
     silent, source = tmp_path / "silent.mp4", tmp_path / "synthetic.mp4"
     yy, xx = np.indices((144, 256))
@@ -371,6 +378,7 @@ def test_opt_in_lowpass_suppresses_texture_and_preserves_audio_and_timing(tmp_pa
 
 
 @pytest.mark.parametrize("lowpass", [False, True])
+@requires_ffmpeg
 def test_native_lowpass_keeps_variable_frame_clock_and_offset(tmp_path, lowpass):
     source, target = tmp_path / "source.mp4", tmp_path / "target.mp4"
     subprocess.run(  # noqa: S603
@@ -401,6 +409,7 @@ def test_native_lowpass_keeps_variable_frame_clock_and_offset(tmp_path, lowpass)
     assert metrics["video_duration_error_seconds"] == 0
 
 
+@requires_ffmpeg
 def test_reconstruction_mixture_preserves_source_detail_and_uses_native_control(tmp_path, monkeypatch):
     source = tmp_path / "source.mp4"
     yy, xx = np.indices((72, 128))
@@ -482,6 +491,7 @@ def test_cached_flow_matches_independent_blending(monkeypatch):
         np.testing.assert_array_equal(first, second)
 
 
+@requires_ffmpeg
 def test_variable_frame_timing_is_rejected(tmp_path):
     ffmpeg = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
@@ -512,6 +522,7 @@ def test_variable_frame_timing_is_rejected(tmp_path):
 
 
 @pytest.mark.parametrize(("offset", "short_tail"), [(0, False), (500, False), (0, True)])
+@requires_ffmpeg
 def test_timestamped_encoding_and_fidelity_keep_vfr_and_start_offset(tmp_path, monkeypatch, offset, short_tail):
     ffmpeg = shutil.which("ffmpeg")
     assert ffmpeg
@@ -577,3 +588,19 @@ def test_timestamped_encoding_and_fidelity_keep_vfr_and_start_offset(tmp_path, m
     study.encode_frames(study._iter_frames(source), source, retimed, geometry[2])
     with pytest.raises(Exception, match="timestamps changed"):
         study._measure(source, retimed, source_geometry=geometry, duration=None, preserve_timestamps=True)
+
+
+def test_study_imports_and_reports_missing_peak_rss_without_unix_resource(monkeypatch):
+    import builtins
+    import runpy
+
+    original_import = builtins.__import__
+
+    def without_resource(name, *args, **kwargs):
+        if name == "resource":
+            raise ModuleNotFoundError("No module named 'resource'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_resource)
+    namespace = runpy.run_path(study.__file__, run_name="study_without_resource")
+    assert namespace["peak_process_rss_bytes"]() is None

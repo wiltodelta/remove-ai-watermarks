@@ -125,3 +125,5 @@ jobs:
           uv run pytest -vv -o faulthandler_timeout=60
           tests/test_video.py::TestVideoVisibleFullClip
           tests/test_video_fidelity_probe.py
+          tests/test_video_seedance.py
+          tests/test_seedance_video_study.py

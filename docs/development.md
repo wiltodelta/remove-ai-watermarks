@@ -107,9 +107,12 @@ reducing the supported Python range does not fix them.
 `.github/workflows/test.yml` runs Ruff, a test matrix over every supported Python
 minor with default plus development dependencies, cross-platform coverage at the
 oldest and newest minors, and a separate job that installs ffmpeg on Ubuntu to
-run the full-clip video test. Diffusion and model-running tests skip in that
-matrix; metadata, identification, visible removal, the DWT-DCT decoder, and the
-OpenCV eraser remain covered across operating systems.
+run the full-clip video test, experimental Seedance profile tests, and Seedance
+study integration tests. FFmpeg-dependent cases skip when those binaries are
+absent from the general matrix; pure study and profile tests remain active.
+Diffusion and model-running tests skip in that matrix; metadata, identification,
+visible removal, the DWT-DCT decoder, and the OpenCV eraser remain covered across
+operating systems.
 
 A separate `security` job runs the `maintain.sh` lockfile scan, so an advisory
 without a released fix turns `main` red; see

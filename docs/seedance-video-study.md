@@ -114,7 +114,8 @@ The study writes:
   temporal candidate, and VAE candidates. The VAE runtime report fingerprints
   the loaded tensor state and records the scaling factor and device. The final
   process RSS high-water mark includes evaluation and model loading; it is
-  not a per-method memory measurement.
+  not a per-method memory measurement. `peak_process_rss_bytes` is `null` on
+  platforms without the Unix `resource` module, including Windows.
 
 ## Experimental arms
 
@@ -609,3 +610,8 @@ reproduced the checked delivery file byte for byte as well. Synthetic integratio
 tests cover visible-stage ordering, profile validation before processing,
 shared batch runtimes, and CLI forwarding. The built wheel exposes the same
 selectors after installation in a clean environment.
+
+FFmpeg-dependent study tests require both `ffmpeg` and `ffprobe`; pure receipt,
+assessment, texture, and importability checks remain active without them. CI's
+mandatory `video full-clip end-to-end` job installs FFmpeg and runs both the
+study and experimental library suites alongside the existing video checks.
