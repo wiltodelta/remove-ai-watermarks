@@ -152,6 +152,29 @@ user names a device, and never to claim a device the probe did not report.
 Without `-o`, video commands write `<source>_clean` and keep the original.
 Output extension must match the input container.
 
+## Text
+
+```bash
+remove-ai-watermarks text identify article.md
+remove-ai-watermarks text identify article.md --json
+remove-ai-watermarks text metadata article.md --check
+remove-ai-watermarks text metadata article.md --remove -o article_clean.md
+remove-ai-watermarks text invisible article.md -o article_clean.md --seed 0
+remove-ai-watermarks text all article.md -o article_clean.md
+remove-ai-watermarks text all article.md -o article_clean.md --invisible --seed 0
+```
+
+`text identify` and `text metadata` need no optional extras: they inspect and
+strip C2PA 2.3/2.4 Appendix A.8 (`C2PATXT\0`), Appendix A.9 (`-----BEGIN C2PA
+MANIFEST-----`), Appendix A.7 (`text/html` `<head>`), `VSRMark`
+(`com.cognitive-proof.vsrmark.1`), Unicode Tags (`U+E0000`..`U+E007F`), and
+zero-width steganography while preserving valid Emoji `U+FE0E`/`U+FE0F` and
+Emoji `U+200D` ZWJ sequences. Without `-o`, `text` commands write
+`<source>_clean` and keep the original. `text invisible` and `text all
+--invisible` lock code blocks, inline code, LaTeX math, URLs, file paths, HTML
+tags, and Markdown headings verbatim and regenerate unlocked prose spans with an
+unwatermarked local causal LM (needs the `diffusion` extra).
+
 ## MCP server
 
 `remove-ai-watermarks mcp` (since CLI 0.46.0) serves `identify`, `remove`

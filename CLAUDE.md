@@ -9,7 +9,7 @@ The project gives users control over provenance marks on content they generated 
 - Add visible templates only for marks the vendor declares as AI-generation labels, whatever plan hides them; plan-removable product branding ("Made with Gamma") is not one.
 - Do not add stock, agency, or classifieds marks to `watermark_registry.py`.
 - Do not add templates for regulator-defined disclosure icons (EU Code of Practice Annex 1).
-- LLM text watermarks are out of scope.
+- Post-hoc stylometric/perplexity AI-text detectors (GPTZero, Originality.ai, Binoculars) are out of scope; deterministic text provenance (`C2PATXT`, C2PA HTML/ASCII armor, `VSRMark`, Unicode steganography) and span-protected local regeneration for token-level LLM watermarks (`text`) are supported ([`docs/text-watermark-research.md`](docs/text-watermark-research.md)).
 - Keep `erase --region` generic and user-directed; do not build an automatic stock-watermark remover on it.
 
 Full boundary and legal context: [`docs/legal-and-safety.md`](docs/legal-and-safety.md).

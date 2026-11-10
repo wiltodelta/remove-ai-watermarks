@@ -881,3 +881,41 @@ refused several layers down. Read the method signature in
 the CLI guide for the concepts.
 Defaults can differ between the Python method and CLI profile resolution, so
 pass values explicitly when reproducibility matters.
+
+## Identify and clean text provenance and token watermarks
+
+The high-level text API in [`text.py`](../src/remove_ai_watermarks/text.py) is
+re-exported on the top-level `remove_ai_watermarks` package:
+
+```python
+import remove_ai_watermarks as raiw
+
+report = raiw.identify_text("article.md")
+print(report.is_ai_generated, report.confidence, report.signals)
+print(report.vsrmark_payload, report.unicode_tags_payload)
+
+meta = raiw.remove_text_metadata("article.md", "article_clean.md")
+print(meta.removed_signals, meta.removed_codepoints)
+
+# Span-protected prose regeneration for token-level LLM watermarks:
+inv = raiw.remove_text_invisible("article.md", "article_regenerated.md", seed=0)
+print(inv.rewritten_spans, inv.locked_spans, inv.token_watermark_action)
+
+# Combined pipeline (metadata strip + optional prose regeneration):
+combined = raiw.remove_text_all(
+    "article.md",
+    "article_all.md",
+    include_invisible=True,
+)
+```
+
+For local calibration or testing when the deployment's watermark key is known,
+[`remove_ai_watermarks.text`](../src/remove_ai_watermarks/text.py) also provides
+keyed statistical scorers (`score_synthid_text`, `score_gumbel_text`,
+`score_textgrain_text`, `score_textseal2_text`, `score_kgw_text`,
+`score_unigram_text`), factual numeral/entity/polarity verification
+(`verify_text_rewrite_facts`), covert steganography payload decoding
+(`decode_stego_payloads`), and deterministic wrapper encoders
+(`encode_c2patxt`, `encode_c2pa_ascii_armor`, `encode_vsrmark`,
+`encode_unicode_tags`, `encode_innamark`). See
+[text watermark and provenance research](text-watermark-research.md).

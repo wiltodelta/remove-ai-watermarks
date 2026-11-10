@@ -53,13 +53,29 @@ off: the Gemini sparkle, or the
 [visible watermark](https://support.google.com/gemininotebook/answer/16213268)
 that Gemini Notebook, formerly NotebookLM, adds to generated images and videos.
 
-Watermarks in LLM-generated text are out of scope. The Claude and OpenAI text
-marks change which words the model chooses and add no hidden characters
-([Anthropic](https://www.anthropic.com/news/claude-text-watermark),
-[OpenAI](https://help.openai.com/en/articles/8912793-provenance-signals-in-openai-generated-content)).
-Stripping invisible Unicode does not touch them, only a substantial rewrite
-removes them, and their detectors are not public, so no removal could be
-verified.
+Post-hoc stylometric and perplexity AI-text classifiers (such as GPTZero,
+Originality.ai, or Binoculars) are out of scope because they guess from style
+rather than reading a provenance signal. For actual text provenance and
+watermarks, `remove-ai-watermarks text` separates the two physical layers
+([text watermark research](text-watermark-research.md)):
+
+- **Deterministic text provenance and character steganography (`text identify`, `text metadata`)**:
+  C2PA 2.3/2.4 Appendix A.8 (`C2PATXT\0` in Variation Selectors), Appendix A.9
+  (`-----BEGIN C2PA MANIFEST-----` ASCII armor), Appendix A.7 (`text/html`
+  `<script type="application/c2pa">` and `<link rel="c2pa-manifest">`),
+  `VSRMark` (`com.cognitive-proof.vsrmark.1`), Unicode Tags (`U+E0000`..`U+E007F`),
+  and zero-width steganography are locally decoded and stripped losslessly.
+- **Token-level statistical LLM watermarks (`text invisible`, `text all --invisible`)**:
+  Google `SynthID-Text`, Anthropic Claude Fable 5.1/5.2 and Mythos 5.1/5.2
+  ([Anthropic](https://www.anthropic.com/news/claude-text-watermark)), OpenAI
+  GPT-6 Astra `textGrain`
+  ([OpenAI](https://help.openai.com/en/articles/8912793-provenance-signals-in-openai-generated-content)),
+  KGW, and Unigram live in the token choices rather than hidden characters.
+  Stripping invisible Unicode does not touch them, and their production secret
+  keys are not public, so `text invisible` locks low-entropy technical spans
+  (code, math, URLs, paths, HTML tags) verbatim and regenerates unlocked prose
+  spans with an unwatermarked local model without claiming a per-file provider
+  oracle verdict.
 
 The `erase` command is a generic region tool. Users are responsible for having
 the right to edit the selected content.

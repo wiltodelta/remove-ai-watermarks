@@ -931,7 +931,7 @@ def cbor_text_after(payload: bytes, key: bytes) -> str | None:
         return raw.decode("latin1", errors="replace")
 
 
-def _parse_c2pa_chunk(payload: bytes, info: dict[str, Any]) -> None:
+def parse_c2pa_chunk(payload: bytes, info: dict[str, Any]) -> None:
     info.update(_base_info(len(payload), fallback=True))
     _populate_registry_fields(payload, info)
     for key, output_key in ((b"name", "claim_generator"), (b"specVersion", "c2pa_spec")):
@@ -943,6 +943,9 @@ def _parse_c2pa_chunk(payload: bytes, info: dict[str, Any]) -> None:
         info["timestamp"] = timestamps[0]
         if len(timestamps) > 1:
             info["timestamps"] = timestamps[:3]
+
+
+_parse_c2pa_chunk = parse_c2pa_chunk
 
 
 def _extract_c2pa_info_png(image_path: Path) -> dict[str, Any]:

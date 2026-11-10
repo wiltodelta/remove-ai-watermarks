@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import IO, Any, cast
 
 from remove_ai_watermarks import __version__
+from remove_ai_watermarks.text import TEXT_EXTENSIONS
 from remove_ai_watermarks.video import VIDEO_EXTENSIONS
 
 log = logging.getLogger(__name__)
@@ -168,8 +169,14 @@ def _is_video(path: str) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXTENSIONS
 
 
+def _is_text(path: str) -> bool:
+    return Path(path).suffix.lower() in TEXT_EXTENSIONS
+
+
 def _identify_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     path = values["path"]
+    if _is_text(path):
+        return ["text", "identify", "--json", "--", path], None
     prefix = ["video", "identify"] if _is_video(path) else ["identify"]
     return [*prefix, "--json", *([] if values["check_visible"] else ["--no-visible"]), "--", path], None
 
@@ -180,8 +187,11 @@ def _remove_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     output = values.get("output") or str(source.with_stem(source.stem + "_clean"))
     if Path(output).resolve() == source.resolve():
         raise ToolInputError("'output' must differ from the source; the server never overwrites an input")
+    if _is_text(path) and mode == "visible":
+        raise ToolInputError("text files do not have a visible pixel mode; use mode=metadata or mode=all")
+    prefix = ["text"] if _is_text(path) else ["video"] if _is_video(path) else []
     command = ["metadata", "--remove"] if mode == "metadata" else [mode]
-    return [*(["video"] if _is_video(path) else []), *command, "-o", output, "--", path], output
+    return [*prefix, *command, "-o", output, "--", path], output
 
 
 def _batch_command(values: dict[str, Any]) -> tuple[list[str], str | None]:

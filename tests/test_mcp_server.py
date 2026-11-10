@@ -94,6 +94,7 @@ def test_tools_list_exposes_exactly_the_three_tools() -> None:
         ({"path": "a.png"}, ["identify", "--json", "--", "a.png"]),
         ({"path": "a.png", "check_visible": False}, ["identify", "--json", "--no-visible", "--", "a.png"]),
         ({"path": "clip.MP4"}, ["video", "identify", "--json", "--", "clip.MP4"]),
+        ({"path": "note.md"}, ["text", "identify", "--json", "--", "note.md"]),
     ],
 )
 def test_identify_maps_to_the_cli(arguments: dict, expected: list[str]) -> None:
@@ -115,6 +116,8 @@ def test_identify_maps_to_the_cli(arguments: dict, expected: list[str]) -> None:
         ({"path": "a.png", "mode": "all", "output": "o.png"}, ["all", "-o", "o.png", "--", "a.png"]),
         ({"path": "c.mov"}, ["video", "metadata", "--remove", "-o", "c_clean.mov", "--", "c.mov"]),
         ({"path": "c.mp4", "mode": "visible"}, ["video", "visible", "-o", "c_clean.mp4", "--", "c.mp4"]),
+        ({"path": "doc.md"}, ["text", "metadata", "--remove", "-o", "doc_clean.md", "--", "doc.md"]),
+        ({"path": "doc.md", "mode": "all"}, ["text", "all", "-o", "doc_clean.md", "--", "doc.md"]),
     ],
 )
 def test_remove_maps_to_the_cli_and_always_names_an_output(arguments: dict, expected: list[str]) -> None:

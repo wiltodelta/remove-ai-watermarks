@@ -8,9 +8,9 @@ to run the tool. Use the maintainer references only when changing the code.
 | Page | Use it when |
 | --- | --- |
 | [Installation](installation.md) | You need the CLI, an optional model backend, or a development environment. |
-| [CLI guide](cli.md) | You want a command for an image, video metadata or visible marks, a directory, or a specific watermark type. |
+| [CLI guide](cli.md) | You want a command for an image, video, text file, a directory, or a specific watermark type. |
 | [Python API](python-api.md) | You want to call the package from Python. |
-| [Supported signals](supported-signals.md) | You need to know which visible marks, metadata formats, and invisible signals are covered. |
+| [Supported signals](supported-signals.md) | You need to know which visible marks, metadata formats, text wrappers, and invisible signals are covered. |
 | [Known limitations](known-limitations.md) | You need the quality, device, format, or verification boundaries. |
 | [Photo pixel classification](photo-classify.md) | You want `classify` / `classify_pixels`: AI versus camera, optional provider. |
 | [Source-pipeline classification](source-classify.md) | You want an abstaining 10-provider export-pipeline and model-version signal after metadata removal. |
@@ -54,6 +54,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [Provider oracle tooling](provider-oracles.md) (Google, OpenAI, Microsoft, and Meta execution surfaces)
 - [SynthID detector and removal plan](synthid-detector-removal-plan.md) (chronological mixed archive)
 - [Text protection research](text-protection-research.md)
+- [Text watermark and provenance research](text-watermark-research.md) (C2PA 2.3/2.4 text/HTML Appendices A.7/A.8/A.9, `VSRMark`, Unicode steganography, and statistical token watermarks in Google `SynthID-Text`, Anthropic Claude Fable 5.2 / Mythos 5.2, OpenAI GPT-6 Astra `textGrain`, KGW, and Unigram)
 - [Audio provenance experiment](audio-provenance-experiment.md) (local AudioSeal matched-oracle study of video audio tracks across visual cleaning)
 - [VideoSeal temporal evaluation](videoseal-temporal-evaluation.md) (per-frame scores, aggregation matrix, and crf decay on synthetic and real clips)
 - [Temporal video inpainting evaluation](video-inpainting-research.md) (VACE and ROSE against the shipped visible-video fills)

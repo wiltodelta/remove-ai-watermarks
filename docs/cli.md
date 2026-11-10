@@ -321,6 +321,58 @@ fails, and exits nonzero if any item failed. Visible no-op files are copied
 byte-for-byte so the output directory remains complete. `--invisible` is
 available only with `--mode all`.
 
+## Identify and clean text
+
+Inspect deterministic text provenance and character steganography in plain text,
+Markdown, or HTML files:
+
+```bash
+remove-ai-watermarks text identify article.md
+remove-ai-watermarks text identify article.md --json
+```
+
+`text identify` runs with no optional ML or pixel extras. It detects and decodes:
+
+- C2PA 2.3/2.4 Appendix A.8 `C2PATextManifestWrapper` (`C2PATXT\0` encoded in
+  trailing Variation Selectors `U+FE00`..`U+FE0F` and `U+E0100`..`U+E01EF`,
+  prefixed by `U+FEFF`);
+- C2PA 2.3/2.4 Appendix A.9 structured-text ASCII-armored manifest blocks
+  (`-----BEGIN C2PA MANIFEST----- ... -----END C2PA MANIFEST-----`);
+- C2PA 2.3/2.4 Appendix A.7 HTML `<script type="application/c2pa">` and
+  `<link rel="c2pa-manifest">` elements inside `<head>`;
+- `VSRMark` (`com.cognitive-proof.vsrmark.1`, C2PA soft-binding ID 39)
+  interleaved Variation Selector payloads (`VSR1` header + `zlib.crc32`);
+- Unicode Tags (`U+E0000`..`U+E007F`) and zero-width / Variation Selector
+  steganography.
+
+Check or strip deterministic text metadata and character steganography
+losslessly:
+
+```bash
+remove-ai-watermarks text metadata article.md --check
+remove-ai-watermarks text metadata article.md --remove -o article_clean.md
+```
+
+When `-o` is omitted, `text metadata --remove` writes `<source>_clean` and never
+overwrites the input. Valid Emoji presentation selectors (`U+FE0E`/`U+FE0F`) and
+Emoji `U+200D` ZWJ sequences are preserved.
+
+To remove statistical token-level LLM watermarks (Google `SynthID-Text`,
+Anthropic Claude Fable 5.1/5.2 and Mythos 5.1/5.2, OpenAI GPT-6 Astra
+`textGrain`, KGW, Unigram), regenerate unlocked prose spans with an
+unwatermarked local causal LM while locking low-entropy technical spans
+(fenced code blocks, inline code, LaTeX math, URLs, file paths, HTML blocks/tags,
+and Markdown headings) byte-for-byte:
+
+```bash
+remove-ai-watermarks text invisible article.md -o article_clean.md --seed 0
+remove-ai-watermarks text all article.md -o article_clean.md
+remove-ai-watermarks text all article.md -o article_clean.md --invisible --seed 0
+```
+
+See [text watermark and provenance research](text-watermark-research.md) for the
+measured token-perturbation survival tables and architecture.
+
 ## Strip AI metadata from video
 
 Metadata inspection and removal are also available as an isolated operation:

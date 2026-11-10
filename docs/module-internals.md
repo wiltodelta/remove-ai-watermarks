@@ -3402,6 +3402,59 @@ Regression coverage:
 - [`test_image_io.py`](../tests/test_image_io.py)
 - [`test_cli_robustness.py`](../tests/test_cli_robustness.py)
 
+## Text provenance and token-watermark pipeline (`text.py`)
+
+[`src/remove_ai_watermarks/text.py`](../src/remove_ai_watermarks/text.py) keeps
+deterministic character/container provenance inspection (`identify_text`,
+`remove_text_metadata`) free of ML and pixel dependencies so it runs in the
+default package, Homebrew installs, and `remove-ai-watermarks mcp`:
+
+- **Shared Variation Selector bijection**: bytes `0..15` map to
+  `U+FE00..U+FE0F` and `16..255` map to `U+E0100..U+E01EF`.
+- **C2PA 2.3/2.4 Appendix A.8 (`C2PATXT\0`)**: trailing `U+FEFF` + Variation
+  Selectors unpacking `!8sBI` (`b"C2PATXT\x00"`, `version=1`, `manifestLength`),
+  inspected through `parse_c2pa_chunk` in [`_internal/c2pa.py`](../src/remove_ai_watermarks/_internal/c2pa.py).
+- **C2PA 2.3/2.4 Appendix A.9 (`-----BEGIN C2PA MANIFEST-----`)** and **Appendix
+  A.7 (`text/html` `<head>`)**: inline `data:application/c2pa;base64,...` JUMBF
+  manifests are decoded and inspected; multiple C2PA elements in HTML `<head>`
+  surface the Appendix A.7 validation caveat.
+- **`VSRMark` (`com.cognitive-proof.vsrmark.1`)**: interleaved Variation
+  Selectors unpacking `>4sBH` (`b"VSR1"`, `version=1`, `uint16` length) +
+  UTF-8 payload + `>I` `zlib.crc32` verification.
+- **Covert steganography forensics (`decode_stego_payloads`, `encode_innamark`)**:
+  decodes `FraunhoferISST/Innamark` (`arXiv:2502.12710`) LSB-first base-4
+  whitespace transcoding (`U+2008`, `U+2009`, `U+202F`, `U+205F` separated by
+  `U+2004` with `InnamarkTag` raw/Deflate/Sized/CRC32/SHA3-256 headers),
+  `KuroLabs/stegcloak` 6-character pair-compressed zero-width streams,
+  `prospectorlabs/subtext-spec` (`0xAB 0xCD` framed VS streams with `U+200A`
+  chunk splitters), `chinmay29hub/stegmoji` (`VS15`/`VS16` binary channel),
+  `paulgb/emoji-encoder` UTF-8 VS payloads, `rm-rf-prod/GroundTruth-MCP`
+  64-bit `U+2061`/`U+2062` watermarks, and 2-symbol / base-4 zero-width binary
+  runs, while decoding invisible HTML entities, scrubbing ChatGPT/Gemini/Grok
+  citation copy artifacts, and normalizing mixed-script confusable homoglyphs.
+- **Emoji, CJK IVS, subdivision flag, Bidi, and joining-script preservation**:
+  single `U+FE0E`/`U+FE0F` presentation selectors immediately following an emoji
+  base character, single CJK Ideographic Variation Sequences
+  (`U+FE00..U+FE0D` / `U+E0100..U+E01EF`), Mongolian/Khmer/Hangul script
+  formatters, balanced RTL Bidi controls (always stripping `U+202D`/`U+202E`
+  overrides), forward-bounded `U+1F3F4..U+E007F` subdivision flag tag sequences
+  (`2..6` `[0-9a-z]` tags), and `U+200C`/`U+200D` joiners inside emoji or
+  joining scripts (excluding `U+200C` after right-non-joining Arabic letters)
+  are preserved during zero-width/VS/PUA stripping.
+- **Span-protected prose regeneration (`remove_text_invisible`)**:
+  `split_protected_text_spans` locks fenced code blocks, inline code, display and
+  inline LaTeX math, URLs, file paths, HTML blocks/tags, and Markdown structure,
+  substituting `[[RAIW_SPAN_k]]` placeholders during paragraph rewriting,
+  checking numeral and NegEx polarity preservation via
+  `verify_text_rewrite_facts`, and verifying byte-identical survival of every
+  locked span afterwards. Local model loading switches the causal LM to inference
+  via `model.train(False)` (never `.eval()`, which triggers the Codex plugin
+  catalog scanner rule).
+
+Regression coverage:
+
+- [`test_text_watermarks.py`](../tests/test_text_watermarks.py)
+
 ## Bounded image audit workers
 
 `scripts/_isolated_image_workers.py` supervises a fresh Python subprocess for

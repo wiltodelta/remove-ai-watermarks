@@ -56,6 +56,10 @@ removal.
 | Remove a registered visible AI mark from video | `video visible` | No |
 | Process a directory of videos | `video batch` | Depends on mode |
 | Apply the calibrated video-pixel SynthID-removal profile | `video invisible` | Recommended |
+| Identify C2PA text/HTML wrappers, `VSRMark`, and Unicode steganography | `text identify` | No |
+| Strip C2PA text/HTML wrappers, `VSRMark`, and Unicode steganography | `text metadata` | No |
+| Regenerate unlocked prose spans to remove token-level LLM watermarks | `text invisible` | Recommended |
+| Strip text provenance and optionally regenerate prose spans | `text all` | Depends on `--invisible` |
 | Regenerate an image to disrupt invisible watermarks | `invisible` | Required (CUDA) |
 | Run visible, invisible, and metadata removal | `all` | Recommended |
 | Process a directory | `batch` | Depends on mode |

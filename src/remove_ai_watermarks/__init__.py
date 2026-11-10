@@ -14,6 +14,10 @@ High-level API (lazy, so ``import remove_ai_watermarks`` stays cheap)::
     raiw.remove_video_metadata("in.mp4", "out.mp4")     # verified metadata strip
     raiw.remove_video_invisible("in.mp4", "out.mp4")    # calibrated video-pixel regeneration
     raiw.remove_video_visible("in.mp4", "out.mp4")      # stable visible video-mark removal
+    raiw.identify_text("in.md")                         # -> TextProvenanceReport
+    raiw.remove_text_metadata("in.md", "out.md")        # C2PATXT, C2PA HTML/ASCII armor, VSRMark, stego
+    raiw.remove_text_invisible("in.md", "out.md")       # span-protected local prose regeneration
+    raiw.remove_text_all("in.md", "out.md")             # metadata + optional prose regeneration
     raiw.classify_source("in.png")                      # 10-provider source pipeline + version, not SynthID detection
 
 For a provenance verdict use the ``identify`` submodule::
@@ -43,13 +47,25 @@ __all__ = [
     "MetadataStripIncomplete",
     "RemoveAllResult",
     "SourceClassification",
+    "TextAllResult",
+    "TextInvisibleResult",
+    "TextMetadataResult",
+    "TextProvenanceReport",
+    "TextSpan",
+    "TextWatermarkScore",
     "VisibleRemovalResult",
     "__version__",
     "classify_source",
+    "decode_stego_payloads",
+    "encode_innamark",
+    "identify_text",
     "identify_video",
     "inspect_video_metadata",
     "remove_all",
     "remove_batch",
+    "remove_text_all",
+    "remove_text_invisible",
+    "remove_text_metadata",
     "remove_video_all",
     "remove_video_batch",
     "remove_video_invisible",
@@ -57,6 +73,14 @@ __all__ = [
     "remove_video_visible",
     "remove_visible",
     "remove_visible_detailed",
+    "score_gumbel_text",
+    "score_kgw_text",
+    "score_synthid_text",
+    "score_textgrain_text",
+    "score_textseal2_text",
+    "score_unigram_text",
+    "split_protected_text_spans",
+    "verify_text_rewrite_facts",
     "visible_provenance",
 ]
 
@@ -75,6 +99,28 @@ if TYPE_CHECKING:
         visible_provenance,
     )
     from remove_ai_watermarks.source_classify import SourceClassification, classify_source
+    from remove_ai_watermarks.text import (
+        TextAllResult,
+        TextInvisibleResult,
+        TextMetadataResult,
+        TextProvenanceReport,
+        TextSpan,
+        TextWatermarkScore,
+        decode_stego_payloads,
+        encode_innamark,
+        identify_text,
+        remove_text_all,
+        remove_text_invisible,
+        remove_text_metadata,
+        score_gumbel_text,
+        score_kgw_text,
+        score_synthid_text,
+        score_textgrain_text,
+        score_textseal2_text,
+        score_unigram_text,
+        split_protected_text_spans,
+        verify_text_rewrite_facts,
+    )
     from remove_ai_watermarks.video import (
         identify_video,
         inspect_video_metadata,
@@ -109,6 +155,31 @@ def __getattr__(name: str) -> object:
         from remove_ai_watermarks import source_classify
 
         return getattr(source_classify, name)
+    if name in (
+        "TextAllResult",
+        "TextInvisibleResult",
+        "TextMetadataResult",
+        "TextProvenanceReport",
+        "TextSpan",
+        "TextWatermarkScore",
+        "decode_stego_payloads",
+        "encode_innamark",
+        "identify_text",
+        "remove_text_all",
+        "remove_text_invisible",
+        "remove_text_metadata",
+        "score_gumbel_text",
+        "score_kgw_text",
+        "score_synthid_text",
+        "score_textgrain_text",
+        "score_textseal2_text",
+        "score_unigram_text",
+        "split_protected_text_spans",
+        "verify_text_rewrite_facts",
+    ):
+        from remove_ai_watermarks import text
+
+        return getattr(text, name)
     if name in (
         "identify_video",
         "inspect_video_metadata",

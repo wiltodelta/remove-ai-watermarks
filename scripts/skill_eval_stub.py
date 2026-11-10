@@ -24,9 +24,9 @@ import sys
 from pathlib import Path
 
 _FLAG_PREFIX = "-"
-# The only command group; every other first word is already a leaf command, so the
+# The only command groups; every other first word is already a leaf command, so the
 # word after it is the SOURCE argument and must not join the command path.
-_GROUPS = frozenset({"video"})
+_GROUPS = frozenset({"text", "video"})
 
 
 def _subcommand(argv: list[str]) -> str:

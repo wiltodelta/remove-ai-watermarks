@@ -125,7 +125,19 @@ The inspection and stripping code handles signals in these groups:
   plus Variants Q (`com.adobe.trustmark.Q`) and C (`com.adobe.trustmark.C`) when
   explicitly requested or corroborated by a C2PA soft-binding assertion. Schema
   3 is deliberately rejected because it produced persistent false positives on
-  unrelated generators.
+  unrelated generators;
+- Text and HTML provenance and character steganography via `text identify` and
+  `text metadata` ([`text.py`](../src/remove_ai_watermarks/text.py)): C2PA
+  2.3/2.4 Appendix A.8 `C2PATextManifestWrapper` (`C2PATXT\0` in Variation
+  Selectors), Appendix A.9 structured-text ASCII armor
+  (`-----BEGIN C2PA MANIFEST-----`), Appendix A.7 HTML `<script type="application/c2pa">`
+  and `<link rel="c2pa-manifest">`, `VSRMark` (`com.cognitive-proof.vsrmark.1`,
+  `VSR1` + CRC32 in interleaved Variation Selectors), Unicode Tags
+  (`U+E0000`..`U+E007F`), and zero-width steganography. Token-level statistical
+  LLM watermarks (Google `SynthID-Text`, Anthropic Claude Fable 5.1/5.2 and
+  Mythos 5.1/5.2, OpenAI GPT-6 Astra `textGrain`, KGW, Unigram) are handled via
+  span-protected local prose regeneration (`text invisible`, `text all --invisible`);
+  see [text watermark research](text-watermark-research.md).
 
 `identify` combines detected signals into a `ProvenanceReport`. It reports
 unknown when evidence is absent. It never treats missing metadata as proof that

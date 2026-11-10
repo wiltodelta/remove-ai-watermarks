@@ -607,7 +607,7 @@ def _should_skip_invisible_scrub(force: bool, image_path: Path) -> bool:
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging.")
 @click.pass_context
 def main(ctx: click.Context, verbose: bool) -> None:
-    """Remove visible and invisible AI watermarks, plus metadata provenance marks, from images and video."""
+    """Remove visible and invisible AI watermarks, plus metadata provenance marks, from images, video, and text."""
     from dotenv import load_dotenv
 
     load_dotenv()  # Load .env (e.g. HF_TOKEN)
@@ -1490,6 +1490,168 @@ def cmd_video_batch(
         _print_video_audio_unverified()
     if result.failed:
         raise SystemExit(1)
+
+
+# ── Text pipeline ──
+
+
+@main.group("text")
+def cmd_text() -> None:
+    """Process AI provenance wrappers, character steganography, and token watermarks in text files."""
+
+
+@cmd_text.command("identify")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
+def cmd_text_identify(source: Path, as_json: bool) -> None:
+    """Identify C2PA text/HTML wrappers, VSRMark soft bindings, and Unicode steganography in text."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.text import identify_text
+
+    try:
+        report = identify_text(source)
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+    if as_json:
+        click.echo(json.dumps(asdict(report), default=str, indent=2))
+        return
+
+    _banner()
+    verdict = "AI-generated" if report.is_ai_generated else "unknown"
+    console.print(f"  Verdict: {verdict}  (confidence: {report.confidence})")
+    console.print(f"  Platform: {report.platform or 'undetermined'}")
+    if report.signals:
+        console.print(f"  Signals: {', '.join(report.signals)}")
+    else:
+        console.print("  Signals: none found")
+    if report.metadata_markers:
+        console.print(f"  AI metadata markers: {', '.join(sorted(report.metadata_markers))}")
+    else:
+        console.print("  AI metadata markers: none found")
+    if report.vsrmark_payload is not None:
+        console.print(f"  VSRMark payload: {report.vsrmark_payload}")
+    if report.unicode_tags_payload is not None:
+        console.print(f"  Unicode Tags payload: {report.unicode_tags_payload}")
+    if report.caveats:
+        console.print("  Caveats:")
+        for caveat in report.caveats:
+            console.print(f"  - {caveat}")
+
+
+@cmd_text.command("metadata")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--check", is_flag=True, help="Check for AI text metadata and steganography (don't modify).")
+@click.option("--remove", is_flag=True, help="Remove AI text metadata and steganography.")
+@_output_option
+def cmd_text_metadata(
+    source: Path,
+    check: bool,
+    remove: bool,
+    output: Path | None,
+) -> None:
+    """Check or remove C2PA text/HTML wrappers, VSRMark soft bindings, and Unicode steganography."""
+    from remove_ai_watermarks.text import identify_text, remove_text_metadata
+
+    _banner()
+    if not remove:
+        try:
+            report = identify_text(source)
+        except (OSError, UnicodeDecodeError, ValueError) as e:
+            raise click.ClickException(str(e)) from e
+        _print_metadata_report(source, report.has_ai_metadata, report.metadata_markers)
+        return
+
+    try:
+        result = remove_text_metadata(source, output)
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+    if check:
+        _print_metadata_report(source, bool(result.detected_markers), result.detected_markers)
+
+    if result.remaining_markers:
+        console.print(f"  FAILED: {len(result.remaining_markers)} AI text marker(s) survived in {result.output}")
+        console.print(f"    still present: {', '.join(sorted(result.remaining_markers))}")
+        raise SystemExit(1)
+    console.print(
+        f"  Text metadata and steganography stripped ({result.removed_codepoints} codepoint(s) removed) "
+        f"-> {result.output}"
+    )
+    console.print(
+        "  Note: stripping character wrappers does not alter statistical token watermarks; "
+        "use 'text invisible' or 'text all --invisible' to regenerate prose spans."
+    )
+
+
+@cmd_text.command("invisible")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@_output_option
+@click.option("--seed", type=int, default=0, show_default=True)
+def cmd_text_invisible(
+    source: Path,
+    output: Path | None,
+    seed: int,
+) -> None:
+    """Remove statistical token watermarks by regenerating unlocked prose spans."""
+    from remove_ai_watermarks.text import remove_text_invisible
+
+    _banner()
+    console.print(f"  Regenerating unlocked prose spans in {source.name} while locking code, math, and URLs...")
+    try:
+        result = remove_text_invisible(source, output, seed=seed)
+    except (OSError, RuntimeError, UnicodeDecodeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+    console.print(
+        f"  Prose spans regenerated: {result.rewritten_spans} rewritten, "
+        f"{result.locked_spans} locked verbatim ({result.locked_characters} chars) -> {result.output}"
+    )
+
+
+@cmd_text.command("all")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@_output_option
+@click.option(
+    "--invisible/--no-invisible",
+    default=False,
+    help="Opt into span-protected local prose regeneration for statistical token watermarks.",
+)
+@click.option("--seed", type=int, default=0, show_default=True)
+def cmd_text_all(
+    source: Path,
+    output: Path | None,
+    invisible: bool,
+    seed: int,
+) -> None:
+    """Strip deterministic text provenance and optionally regenerate prose spans."""
+    from remove_ai_watermarks.text import remove_text_all
+
+    _banner()
+    stages = (
+        "character provenance + span-protected prose regeneration"
+        if invisible
+        else "character provenance + C2PA wrappers"
+    )
+    console.print(f"  Cleaning {source.name}: {stages}...")
+    try:
+        result = remove_text_all(source, output, include_invisible=invisible, seed=seed)
+    except (OSError, RuntimeError, UnicodeDecodeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+    if result.remaining_markers:
+        console.print(f"  FAILED: {len(result.remaining_markers)} AI text marker(s) survived in {result.output}")
+        raise SystemExit(1)
+    console.print(
+        f"  Text metadata and steganography: stripped ({result.removed_codepoints} codepoint(s) removed) "
+        f"-> {result.output}"
+    )
+    if invisible:
+        console.print(
+            f"  Prose regeneration: {result.rewritten_spans} span(s) rewritten, "
+            f"{result.locked_spans} technical span(s) locked verbatim"
+        )
 
 
 # ── Provenance identification ──
