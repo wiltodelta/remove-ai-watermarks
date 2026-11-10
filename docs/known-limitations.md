@@ -285,6 +285,18 @@ are tracked in `data/evaluations/video-synthid-oracle.csv`.
 
 ### The invisible video path does not touch the audio track
 
+The `seedance-experimental` video profile is a fixed Seedance experiment,
+available through the common invisible/all/batch pipeline and the standalone
+`remove_video_seedance_experimental` API. It accepts SDR 8-bit MP4 with even dimensions and preserves
+the native frame clock and geometry. Its two encoding modes reproduce the
+label-free forest experiment in [the study](seedance-video-study.md), where
+CapCut detected matched controls and did not detect processed outputs.
+This result is scene-dependent; fine texture and color change visibly, and
+there is no runtime CapCut detector or external upload. Visible labels must
+be handled before this pixel stage. Temporary guide/master videos need disk
+space, although pixel processing uses bounded batches. It leaves the default
+video SynthID profile as the default; selecting Seedance is explicit.
+
 `remove_video_invisible` regenerates the video stream and copies the source audio
 verbatim: the extracted audio bitstream of input and output has an identical
 sha256, measured on two carriers. It also strips every metadata marker, so the
@@ -586,8 +598,9 @@ Genjutsu clip's wood grain drifted a few pixels while a real overlay never
 moves).
 A label shown only on the opening frames, as China's labeling rules allow, is
 filled for at most `min_stable_frames` beyond its last detected frame. Google video
-SynthID has an oracle-certified VAE removal path, while other proprietary
-invisible video watermarks have no registered attack.
+SynthID has an oracle-certified VAE removal path. Seedance has the separate
+experimental Python pixel recipe described above, with limited CapCut evidence.
+Other proprietary invisible video watermarks have no registered attack.
 
 Visible removal transcodes the video stream and copies the complete audio
 stream without shortening an audio tail. Completed visible and invisible

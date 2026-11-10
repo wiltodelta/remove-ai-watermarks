@@ -1130,34 +1130,54 @@ def _video_visible_options(f: Any) -> Any:
 def _video_invisible_options(f: Any) -> Any:
     """Apply the shared invisible-video removal options."""
     f = click.option(
+        "--profile",
+        type=click.Choice(["synthid", "seedance-experimental"]),
+        default="synthid",
+        show_default=True,
+        help="Video-pixel profile. Seedance is experimental and uses a fixed recipe.",
+    )(f)
+    f = click.option(
+        "--quality",
+        type=click.Choice(["delivery", "master"]),
+        default="delivery",
+        show_default=True,
+        help="Seedance output quality; master requires --profile seedance-experimental.",
+    )(f)
+    f = click.option(
         "--device",
         type=click.Choice(["auto", "cuda", "mps", "cpu"]),
         default="auto",
         show_default=True,
         help="VAE inference device.",
     )(f)
-    f = click.option("--seed", type=int, default=0, show_default=True)(f)
-    f = click.option("--batch-size", type=click.IntRange(min=1), default=4, show_default=True)(f)
+    f = click.option("--seed", type=int, default=0, show_default=True, help="SynthID noise seed.")(f)
+    f = click.option(
+        "--batch-size",
+        type=click.IntRange(min=1),
+        default=4,
+        show_default=True,
+        help="SynthID inference batch size; Seedance uses a fixed batch size.",
+    )(f)
     f = click.option(
         "--fps",
         type=click.FloatRange(min=1.0),
         default=DEFAULT_VIDEO_SYNTHID_FPS,
         show_default=True,
-        help="Output frame rate, capped at the source frame rate.",
+        help="SynthID output frame rate, capped at the source frame rate.",
     )(f)
     f = click.option(
         "--long-side",
         type=click.IntRange(min=VIDEO_SYNTHID_LATENT_MULTIPLE),
         default=DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
         show_default=True,
-        help="Regenerated video long side in pixels.",
+        help="SynthID output long side in pixels.",
     )(f)
     return click.option(
         "--noise-std",
         type=click.FloatRange(min=0.0, max=1.0),
         default=DEFAULT_VIDEO_SYNTHID_NOISE_STD,
         show_default=True,
-        help="Shared latent-noise strength. Higher values change more detail.",
+        help="SynthID shared latent-noise strength. Higher values change more detail.",
     )(f)
 
 
@@ -1247,6 +1267,15 @@ def cmd_video_metadata(
     _print_metadata_not_a_clean_verdict()
 
 
+def _video_profile_label(profile: str) -> str:
+    """Name the selected recipe without implying a runtime detector verdict."""
+    return (
+        "the experimental Seedance profile"
+        if profile == "seedance-experimental"
+        else "the calibrated SynthID-removal profile"
+    )
+
+
 def _print_video_audio_unverified() -> None:
     """Report the copied-audio boundary without claiming a watermark verdict."""
     console.print("  Audio watermark: UNVERIFIED; source audio copied unchanged if present")
@@ -1259,6 +1288,8 @@ def _print_video_audio_unverified() -> None:
 def cmd_video_invisible(
     source: Path,
     output: Path | None,
+    profile: str,
+    quality: str,
     noise_std: float,
     long_side: int,
     fps: float,
@@ -1266,15 +1297,17 @@ def cmd_video_invisible(
     seed: int,
     device: str,
 ) -> None:
-    """Apply the calibrated SynthID-removal profile to video pixels."""
+    """Regenerate video pixels with an explicitly selected profile."""
     from remove_ai_watermarks.video import remove_video_invisible
 
     _banner()
-    console.print(f"  Regenerating {source.name} with temporally shared VAE noise...")
+    console.print(f"  Regenerating {source.name} with the {profile} profile...")
     try:
         result = remove_video_invisible(
             source,
             output,
+            profile=profile,  # type: ignore[arg-type]
+            quality=quality,  # type: ignore[arg-type]
             noise_std=noise_std,
             long_side=long_side,
             fps=fps,
@@ -1289,7 +1322,7 @@ def cmd_video_invisible(
         console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
         raise SystemExit(1)
     console.print(
-        "  Video pixels: regenerated with the calibrated SynthID-removal profile "
+        f"  Video pixels: regenerated with {_video_profile_label(profile)} "
         f"(not a per-file verification): {result.width}x{result.height}, "
         f"{result.total_frames} frames at {result.fps:.4g} fps -> {result.output}"
     )
@@ -1346,7 +1379,7 @@ def cmd_video_visible(
 @click.option(
     "--invisible/--no-invisible",
     default=False,
-    help="Opt into calibrated lossy regeneration of the video pixels.",
+    help="Opt into lossy video-pixel regeneration with the selected profile.",
 )
 @_video_invisible_options
 def cmd_video_all(
@@ -1356,6 +1389,8 @@ def cmd_video_all(
     backend: str,
     temporal_consistency: bool,
     invisible: bool,
+    profile: str,
+    quality: str,
     noise_std: float,
     long_side: int,
     fps: float,
@@ -1367,7 +1402,9 @@ def cmd_video_all(
     from remove_ai_watermarks.video import remove_video_all
 
     _banner()
-    stages = "visible marks + SynthID + verified AI metadata" if invisible else "visible marks + verified AI metadata"
+    stages = (
+        f"visible marks + {profile} + verified AI metadata" if invisible else "visible marks + verified AI metadata"
+    )
     console.print(f"  Cleaning {source.name}: {stages}...")
     try:
         result = remove_video_all(
@@ -1377,6 +1414,8 @@ def cmd_video_all(
             backend=backend,
             temporal_consistency=temporal_consistency,
             include_invisible=invisible,
+            invisible_profile=profile,  # type: ignore[arg-type]
+            invisible_quality=quality,  # type: ignore[arg-type]
             noise_std=noise_std,
             long_side=long_side,
             fps=fps,
@@ -1400,9 +1439,7 @@ def cmd_video_all(
         )
     console.print(f"  AI metadata: stripped -> {result.output}")
     if result.invisible_removed:
-        console.print(
-            "  Video pixels: regenerated with the calibrated SynthID-removal profile (not a per-file verification)"
-        )
+        console.print(f"  Video pixels: regenerated with {_video_profile_label(profile)} (not a per-file verification)")
     _print_video_audio_unverified()
 
 
@@ -1426,7 +1463,7 @@ def cmd_video_all(
 @click.option(
     "--invisible/--no-invisible",
     default=False,
-    help="Opt into calibrated lossy video-pixel regeneration in all mode.",
+    help="Opt into lossy video-pixel regeneration with the selected profile in all mode.",
 )
 @_video_invisible_options
 def cmd_video_batch(
@@ -1437,6 +1474,8 @@ def cmd_video_batch(
     backend: str,
     temporal_consistency: bool,
     invisible: bool,
+    profile: str,
+    quality: str,
     noise_std: float,
     long_side: int,
     fps: float,
@@ -1458,6 +1497,8 @@ def cmd_video_batch(
             backend=backend,
             temporal_consistency=temporal_consistency,
             include_invisible=invisible,
+            invisible_profile=profile,  # type: ignore[arg-type]
+            invisible_quality=quality,  # type: ignore[arg-type]
             noise_std=noise_std,
             long_side=long_side,
             fps=fps,

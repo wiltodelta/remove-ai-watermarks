@@ -263,60 +263,68 @@ def _tc260_aigc_regions(
     ]
 
 
+def _moov_metadata_items(
+    stream: BinaryIO,
+    moov_payload: int,
+    moov_end: int,
+) -> Iterator[tuple[bytes | None, tuple[int, int] | None, int, int, bytes]]:
+    """Yield bounded keyed or keyless metadata-list values from one ``moov`` box."""
+    for meta_payload, meta_end in _iter_tc260_meta_boxes(stream, moov_payload, moov_end):
+        keys: dict[int, tuple[bytes, tuple[int, int]]] = {}
+        ilst_boxes: list[tuple[int, int]] = []
+        keyed = False
+        for _child_start, child_end, child_type, child_payload in _meta_child_boxes(
+            stream,
+            meta_payload,
+            meta_end,
+        ):
+            if child_type == b"keys":
+                keyed = True
+                keys.update(_metadata_key_indices(stream, child_payload, child_end))
+            elif child_type == b"ilst":
+                ilst_boxes.append((child_payload, child_end))
+        if not ilst_boxes:
+            continue
+        for ilst_payload, ilst_end in ilst_boxes:
+            for _item_start, item_end, item_type, item_payload in iter_file_boxes(
+                stream,
+                ilst_payload,
+                ilst_end,
+            ):
+                index = int.from_bytes(item_type, "big")
+                key = keys.get(index)
+                if keyed and key is None:
+                    # A keyed (ISO) meta box maps items through ``keys``;
+                    # an unmapped index is not an AIGC entry, and reading
+                    # its value would pull arbitrary metadata (e.g. cover
+                    # art) through the JSON parser on every scan. Only the
+                    # keyless QuickTime list falls through to content
+                    # validation below.
+                    continue
+                key_name, key_span = key if key is not None else (None, None)
+                for _data_start, data_end, data_type, data_payload in iter_file_boxes(
+                    stream,
+                    item_payload,
+                    item_end,
+                ):
+                    value_start = data_payload + 8
+                    value_size = data_end - value_start
+                    if data_type != b"data" or value_size < 0 or value_size > MAX_TC260_VALUE_BYTES:
+                        continue
+                    stream.seek(value_start)
+                    value = stream.read(value_size)
+                    if len(value) == value_size:
+                        yield key_name, key_span, value_start, data_end, value
+
+
 def _metadata_items(
     stream: BinaryIO,
     file_size: int,
 ) -> Iterator[tuple[bytes | None, tuple[int, int] | None, int, int, bytes]]:
     """Yield bounded keyed or keyless metadata-list values from a media file."""
     for _moov_start, moov_end, moov_type, moov_payload in iter_file_boxes(stream, 0, file_size):
-        if moov_type != b"moov":
-            continue
-        for meta_payload, meta_end in _iter_tc260_meta_boxes(stream, moov_payload, moov_end):
-            keys: dict[int, tuple[bytes, tuple[int, int]]] = {}
-            ilst_boxes: list[tuple[int, int]] = []
-            keyed = False
-            for _child_start, child_end, child_type, child_payload in _meta_child_boxes(
-                stream,
-                meta_payload,
-                meta_end,
-            ):
-                if child_type == b"keys":
-                    keyed = True
-                    keys.update(_metadata_key_indices(stream, child_payload, child_end))
-                elif child_type == b"ilst":
-                    ilst_boxes.append((child_payload, child_end))
-            if not ilst_boxes:
-                continue
-            for ilst_payload, ilst_end in ilst_boxes:
-                for _item_start, item_end, item_type, item_payload in iter_file_boxes(
-                    stream,
-                    ilst_payload,
-                    ilst_end,
-                ):
-                    index = int.from_bytes(item_type, "big")
-                    key = keys.get(index)
-                    if keyed and key is None:
-                        # A keyed (ISO) meta box maps items through ``keys``;
-                        # an unmapped index is not an AIGC entry, and reading
-                        # its value would pull arbitrary metadata (e.g. cover
-                        # art) through the JSON parser on every scan. Only the
-                        # keyless QuickTime list falls through to content
-                        # validation below.
-                        continue
-                    key_name, key_span = key if key is not None else (None, None)
-                    for _data_start, data_end, data_type, data_payload in iter_file_boxes(
-                        stream,
-                        item_payload,
-                        item_end,
-                    ):
-                        value_start = data_payload + 8
-                        value_size = data_end - value_start
-                        if data_type != b"data" or value_size < 0 or value_size > MAX_TC260_VALUE_BYTES:
-                            continue
-                        stream.seek(value_start)
-                        value = stream.read(value_size)
-                        if len(value) == value_size:
-                            yield key_name, key_span, value_start, data_end, value
+        if moov_type == b"moov":
+            yield from _moov_metadata_items(stream, moov_payload, moov_end)
 
 
 def tc260_aigc_payloads(path: str | Path, *, strict: bool = False) -> tuple[bytes, ...]:
@@ -511,16 +519,17 @@ def heif_transform_applied(path: str | Path) -> bool:
 
 
 def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024, strict: bool = False) -> bytes:
-    """Concatenated payloads of top-level ``uuid`` / ``jumb`` boxes in an ISOBMFF
-    file, found by seeking past other boxes (``mdat`` etc.) by size.
+    """Concatenated payloads of top-level ``uuid`` / ``jumb`` boxes and bounded
+    ``moov`` metadata items in an ISOBMFF file, found by seeking past ``mdat``.
 
     C2PA manifests and XMP packets (incl. AI labels) live in top-level ``uuid``
-    boxes; JPEG-XL uses ``jumb``. In a streaming / non-faststart MP4 the manifest
-    sits AFTER a multi-megabyte ``mdat``, so a fixed first-MB read misses it. This
-    walks box headers (8-16 bytes each) and seeks past payloads it does not need,
-    so it never loads ``mdat`` into memory and works on multi-GB files. Returns
-    the relevant box payloads (capped at ``max_total``), or ``b""`` for a
-    non-ISOBMFF file or on a read error unless ``strict=True``.
+    boxes; JPEG-XL uses ``jumb``; QuickTime and MP4 app/AIGC metadata items live
+    under ``moov.udta.meta`` or ``moov.meta``. In a streaming or non-faststart
+    MP4/MOV those boxes sit AFTER a multi-megabyte ``mdat``, so a fixed first-MB
+    read misses them. This walks box headers (8-16 bytes each) and seeks past
+    payloads it does not need, so it never loads ``mdat`` into memory and works
+    on multi-GB files. Returns the relevant payloads (capped at ``max_total``),
+    or ``b""`` for a non-ISOBMFF file or on a read error unless ``strict=True``.
     """
     collected = bytearray()
     try:
@@ -558,6 +567,15 @@ def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024, stri
                     to_read = min(pos + size - payload_off, max_total - len(collected))
                     if to_read > 0:
                         collected += f.read(to_read)
+                elif box_type == b"moov":
+                    for _key_name, _key_span, _val_start, _val_end, value in _moov_metadata_items(
+                        f,
+                        payload_off,
+                        pos + size,
+                    ):
+                        to_read = min(len(value), max_total - len(collected))
+                        if to_read > 0:
+                            collected += value[:to_read]
                 pos += size
     except OSError:
         if strict:

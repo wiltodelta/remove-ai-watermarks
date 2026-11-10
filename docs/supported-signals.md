@@ -319,6 +319,18 @@ SynthID verifier is an optional per-file audit. A normal Gemini answer may inste
 infer from a visible logo or metadata; asking it to reinterpret a completed
 verifier result is not a second oracle run.
 
+Seedance has an explicit `seedance-experimental` profile in the common video
+invisible/all/batch pipeline (`--profile seedance-experimental` in the CLI),
+with `delivery` and `master` encoding modes. The standalone
+`remove_video_seedance_experimental` function exposes the same recipe.
+The fixed recipe has a positive-control/negative-output CapCut check on an
+owned label-free forest clip. It preserves native geometry, the complete frame
+clock and copied audio, while changing texture and color. This is an explicit
+experimental pixel transform, not a local detector or the default SynthID
+profile. Prepare visible labels separately. See the
+[Python API](python-api.md#experimental-seedance-video-reconstruction) and
+[recorded study](seedance-video-study.md).
+
 The optional `detect` extra is different: it provides a local decoder for the
 open DWT-DCT watermark used by some Stable Diffusion, SDXL, and FLUX workflows.
 That signal is carrier and transformation sensitive, so a negative is still
@@ -340,7 +352,7 @@ not a universal clean verdict.
 | Adobe Firefly | None registered | Optional TrustMark decoder and neural remover (`P`, `Q`, `C`); diffusion fallback when C2PA declares `com.adobe.trustmark.*` | C2PA |
 | Midjourney | None registered | No registered pixel decoder | EXIF, XMP, and IPTC signals |
 | Luma AI | None registered | No registered pixel decoder | PNG text generator tags (Uni-1) |
-| ByteDance generators | Doubao, Jimeng, Dola, and Seedance marks | No registered pixel decoder | TC260 AIGC (Doubao, Jimeng, Volcano Engine), supported C2PA (Dreamina, Dola, Pippit AI, BytePlus), and exact app-export AIGC disclosures |
+| ByteDance generators | Doubao, Jimeng, Dola, and Seedance marks | Experimental Seedance reconstruction through the Python API; no local pixel decoder | TC260 AIGC (Doubao, Jimeng, Volcano Engine), supported C2PA (Dreamina, Dola, Pippit AI, BytePlus), and exact app-export AIGC disclosures |
 | Tencent Yuanbao and WorkBuddy | Yuanbao and WorkBuddy image marks | No registered pixel decoder | TC260 AIGC (with raw-hex SM2 `SecurityData` on Yuanbao) |
 | Meitu, vivo, Xiaomi, and Agnes AI | Generic `AI生成` label on vivo and Xiaomi Gallery AI edits | No registered pixel decoder | TC260 AIGC producer attribution |
 | Sync Labs, PixelBin.io, and TikTok AI | None registered | No registered pixel decoder | C2PA attribution |

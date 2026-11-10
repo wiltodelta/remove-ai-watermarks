@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Some video writes need ffmpeg. Installer may be uv, pipx, or pip.
 metadata:
   author: wiltodelta
-  version: "1.0.16"
+  version: "1.0.17"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -133,6 +133,7 @@ Default: inspect first.
 | AI metadata only | `metadata`, `video metadata`, or `text metadata` | |
 | Known visible AI label on video | `video visible` or `video all` | `video_visible=needs_video_extra`, `needs_ffmpeg`, or `unverified` |
 | Invisible image / image SynthID | `invisible` | `invisible_images=unavailable_no_cuda` |
+| Owned Seedance video, experimental opt-in | `video all --invisible --profile seedance-experimental` | same runtime requirements as Video SynthID; verify profile availability in help |
 | Video SynthID | `video invisible` | `video_invisible=needs_video_and_diffusion_extras`, `needs_ffmpeg`, or `unverified` |
 | Text token watermark / full text clean | `text invisible` or `text all` | `text invisible` and `text all --invisible` need `diffusion` (`torch` + `transformers`) |
 | Everything on an image | `all` | `image_all=do_not_run_writes_nothing` |

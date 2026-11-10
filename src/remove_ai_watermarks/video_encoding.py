@@ -262,7 +262,7 @@ def probe_video_timestamps(source: Path) -> tuple[float, ...]:
     if raw_timestamps is None:
         return ()
     try:
-        timestamps = tuple(float(line) for line in raw_timestamps.splitlines() if line)
+        timestamps = tuple(float(line.split(",", 1)[0]) for line in raw_timestamps.splitlines() if line)
     except ValueError:
         log.warning("ffprobe returned unusable frame timestamps for %s", source)
         return ()

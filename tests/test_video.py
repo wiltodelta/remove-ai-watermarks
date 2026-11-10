@@ -684,7 +684,7 @@ class TestVideoMetadataApi:
 
         result = remove_video_metadata(source, tmp_path / name)
 
-        assert bool(flagged) == bool({"aigc_label", "app_provenance"} & set(result.detected))
+        assert bool(flagged) == bool({"aigc_label", "app_provenance", "app_aigc"} & set(result.detected))
         assert (KLING_SEI_TAG in data) == ("kling_sei" in result.detected)
         assert result.remaining == {}
         cleaned = result.output.read_bytes()
@@ -843,6 +843,47 @@ class TestVideoMetadataApi:
         assert _VIDEO_PAYLOAD in cleaned
         assert _TC260_AIGC not in cleaned
         assert b'"product":"doubao"' not in cleaned
+
+    def test_inspects_and_removes_capcut_ai_metadata_in_late_quicktime_moov_meta(self, tmp_path: Path):
+        from remove_ai_watermarks.video import identify_video, inspect_video_metadata, remove_video_metadata
+
+        media_payload = b"x" * (1024 * 1024 + 64)
+        capcut_ai_json = (
+            b'{"data":{"editType":"default","is_ai_lyric":0,"is_use_ai_video_generation":1,'
+            b'"is_use_vc_sing_clone":1,"is_use_voice_clone":"0","product":"vicut"},'
+            b'"source_platform":"desktop","source_type":"vicut"}'
+        )
+        keys = _box(
+            b"keys",
+            b"\x00\x00\x00\x00" + (1).to_bytes(4, "big") + _metadata_key(b"com.apple.quicktime.artwork"),
+        )
+        ilst = _box(b"ilst", _metadata_value(1, capcut_ai_json))
+        meta = _quicktime_meta(_hdlr(b"mdta"), keys, ilst)
+        source = tmp_path / "source.mov"
+        source.write_bytes(_MP4_FTYP + _box(b"mdat", media_payload) + _box(b"moov", meta))
+
+        inspected = inspect_video_metadata(source)
+        assert inspected.has_ai_metadata is True
+        assert inspected.markers == {"app_aigc": "App AIGC disclosure (ByteDance CapCut AI)"}
+
+        identified = identify_video(source, check_visible=False)
+        assert identified.is_ai_generated is True
+        assert identified.platform == "ByteDance CapCut AI"
+
+        result = remove_video_metadata(source, tmp_path / "clean.mov")
+        cleaned = result.output.read_bytes()
+        assert result.detected == {"app_aigc": "App AIGC disclosure (ByteDance CapCut AI)"}
+        assert result.remaining == {}
+        assert len(cleaned) == source.stat().st_size
+        assert media_payload in cleaned
+        assert capcut_ai_json not in cleaned
+
+        plain_capcut_json = capcut_ai_json.replace(b'"is_use_ai_video_generation":1', b'"is_use_ai_video_generation":0')
+        plain_meta = _quicktime_meta(_hdlr(b"mdta"), keys, _box(b"ilst", _metadata_value(1, plain_capcut_json)))
+        plain_source = tmp_path / "plain.mov"
+        plain_source.write_bytes(_MP4_FTYP + _box(b"mdat", media_payload) + _box(b"moov", plain_meta))
+        assert inspect_video_metadata(plain_source).has_ai_metadata is False
+        assert identify_video(plain_source, check_visible=False).is_ai_generated is None
 
     def test_inspects_native_tc260_in_quicktime_mdir_metadata_list(self, tmp_path: Path):
         # The second Doubao iOS variant: a QuickTime metadata list under
@@ -1355,8 +1396,8 @@ class TestVideoAllCli:
 
         assert result.exit_code == 0, result.output
         assert "--invisible" in result.output
-        assert "calibrated lossy regeneration" in result.output
-        assert "video pixels" in result.output
+        assert "selected profile" in result.output
+        assert "video-pixel" in result.output
 
     def test_reports_locally_verified_result(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from remove_ai_watermarks import video
@@ -1722,7 +1763,7 @@ class TestVideoInvisibleCli:
         result = runner.invoke(main, ["video", "invisible", "--help"])
 
         assert result.exit_code == 0, result.output
-        assert "calibrated SynthID-removal profile to video pixels" in result.output
+        assert "Regenerate video pixels with an explicitly selected profile" in result.output
 
     def test_reports_completed_removal(
         self,
@@ -3558,6 +3599,18 @@ class TestSignalDiscovery20261027VideoGaps:
             ),
             (
                 {
+                    "app_provenance": "App export provenance (ByteDance Doubao)",
+                },
+                "ByteDance Doubao",
+            ),
+            (
+                {
+                    "app_aigc": "App AIGC disclosure (ByteDance CapCut AI)",
+                },
+                "ByteDance CapCut AI",
+            ),
+            (
+                {
                     "aigc_label": "China AIGC label (TC260)",
                     "aigc_producer": "001191110108MA01R70K8D10000",
                 },
@@ -3621,3 +3674,32 @@ class TestSignalDiscovery20261027VideoGaps:
         detection = detect_kling_frame(frame, frame_index=0)
         assert detection.confidence == 0.0
         assert detection.region is None
+
+    def test_dark_text_on_white_ui_card_is_rejected_by_white_label_detectors(self):
+        from remove_ai_watermarks.video_visible import (
+            _hailuo_template,
+            _kling_templates,
+            _white_fraction,
+            detect_hailuo_frame,
+            detect_kling_frame,
+        )
+
+        # A light-mode mobile screen recording has bright white cards and bottom
+        # bars with dark text. The narrow white gaps between dark strokes match
+        # the morphological top-hat template, and the box has >80% white pixels
+        # from the background card, but the strokes are darker than the median.
+        frame = np.full((1920, 1080, 3), 248, dtype=np.uint8)
+        hailuo_strokes = cv2.resize(_hailuo_template(), (302, 50), interpolation=cv2.INTER_AREA)
+        hailuo_alpha = hailuo_strokes[:, :, None].astype(np.float32) / 255.0
+        card = frame[1492:1542, 403:705].astype(np.float32)
+        frame[1492:1542, 403:705] = np.clip(card * (1.0 - hailuo_alpha) + 32.0 * hailuo_alpha, 0, 255).astype(np.uint8)
+
+        kling_strokes = cv2.resize(_kling_templates()[0], (146, 27), interpolation=cv2.INTER_AREA)
+        kling_alpha = kling_strokes[:, :, None].astype(np.float32) / 255.0
+        bar = frame[1840:1867, 785:931].astype(np.float32)
+        frame[1840:1867, 785:931] = np.clip(bar * (1.0 - kling_alpha) + 32.0 * kling_alpha, 0, 255).astype(np.uint8)
+
+        assert _white_fraction(frame[1492:1542, 403:705]) == 0.0
+        assert _white_fraction(frame[1840:1867, 785:931]) == 0.0
+        assert detect_hailuo_frame(frame, frame_index=0).region is None
+        assert detect_kling_frame(frame, frame_index=0).region is None

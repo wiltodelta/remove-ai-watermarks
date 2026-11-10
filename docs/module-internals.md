@@ -204,6 +204,7 @@ video entry point:
 - `remove_video_batch`
 - `remove_video_invisible`
 - `remove_video_metadata`
+- `remove_video_seedance_experimental`
 - `remove_video_visible`
 
 The video API validates both the supported extension and container signature,
@@ -279,7 +280,10 @@ guard it.
 
 App-export JSON in a keyed or keyless metadata item is blanked the same way.
 Dreamina's MP4 export writes it twice, under `LvMetaInfo` and
-`com.apple.quicktime.artwork`. The file-level scan read both from the raw head
+`com.apple.quicktime.artwork`; CapCut (`vicut` / `lv`) writes its export JSON
+under `com.apple.quicktime.artwork` in `moov.meta`, which in non-faststart MOV
+exports sits after `mdat` and is reached through `scan_c2pa_region`'s bounded
+`moov` item walk. The file-level scan read both Dreamina items from the raw head
 bytes while the stripper walked only TC260 and generation keys, so
 `video metadata --remove` exited 1 with both markers still present on the
 tracked Dreamina fixture (found 2026-10-17). Its `UserComment`
@@ -360,7 +364,9 @@ can otherwise synthesize thousands of duplicate frames between CFR timestamps.
 HDR transfer functions and component depths above 8 bits are rejected before
 encoding so the OpenCV boundary cannot silently reduce them to SDR 8-bit.
 `probe_video_timestamps` reads authoritative per-frame display PTS through
-ffprobe. OpenCV timestamps are only a count-matched fallback when ffprobe is
+ffprobe. The CSV reader consumes the first column and ignores appended SEI
+side-data columns; otherwise a valid first row such as `0.000000,` invalidates
+the entire authoritative timeline. OpenCV timestamps are only a count-matched fallback when ffprobe is
 unavailable or fails; this avoids decoder anomalies such as one spurious
 negative first-frame timestamp turning a CFR clip into false VFR. A uniform sequence keeps the
 cheap raw-BGR pipe unless the source starts at a non-zero PTS. A variable or
@@ -398,6 +404,53 @@ reports completed removal without a separate verification-status flag. The compa
 `scripts/video_synthid_sweep.py` imports the same engine helpers to build a
 matched control and candidate grid, preventing research and shipped
 regeneration paths from drifting.
+
+`scripts/seedance_video_study.py` reuses this engine for local, full-clip
+Seedance experiments alongside matched re-encode and motion-aligned temporal
+controls and explicit codec-compression candidates. An opt-in fixed lowpass64
+arm adds a native-size codec control and destructive spatial filtering without
+loading a model. Its filter definition is shared by the frozen plan and encoder.
+Optional VAE/source mixtures stream aligned frame pairs at native geometry and
+use a separate decoded-pixel codec control. They retain the guide identity,
+reconstruction weight and SSIM implementation in their evidence; returning
+source detail may also return the signal.
+Its optional timestamped
+path reuses the visible pipeline's NUT bridge, restores the terminal packet
+duration, and verifies delivered PTS and video end before accepting fidelity.
+It hashes saved artifacts, snapshots its principal source files, and keeps
+fidelity separate from captured provider evidence. The development-only
+`scripts/capcut_receipts.py` checks selected-file hashes, one-upload/job-poll
+bindings and typed file echoes offline. Assessment reports only the generic
+`capcut_signal_status`; it cannot promote a minimal-detail service result into
+a watermark-family verdict.
+It does not introduce a certified Seedance profile. See
+[Seedance video study](seedance-video-study.md) for the experiment and evidence contracts.
+
+[`video_seedance.py`](../src/remove_ai_watermarks/video_seedance.py) packages
+the `remove_video_seedance_experimental` recipe, also dispatched by
+`remove_video_invisible(profile="seedance-experimental")` and the all/batch
+pipeline's `invisible_profile` selector. All/batch requires explicit invisible
+opt-in, validates profile/tuning combinations before the visible stage, and
+runs visible removal before reconstruction. Batch mode reuses one matching VAE
+runtime. The CLI exposes `--profile` and Seedance `--quality` on all three
+pixel-processing commands; SynthID stays the default. Its
+fixed `seedance-texture-v1` profile reconstructs a 512-grid CRF18 guide with
+the pinned SD VAE and zero noise, restores source high-frequency texture with
+a float64 sigma-1 Gaussian split, and encodes a native-size CRF0 master.
+`quality="delivery"` adds the separately checked H.264 High CRF18 encode;
+`quality="master"` retains the master. The high-level result extends the
+ordinary video-pixel result with explicit experimental/profile/quality fields.
+No provider oracle runs in the installed pipeline.
+
+The experimental engine reuses the timestamped NUT writer and shared encoder
+and mux boundary. It restores the last video packet duration when required,
+checks the saved output clock and decoded frame count before atomic publication,
+and measures PSNR/flow-aligned temporal residual at delivered geometry. Encoded
+guides and masters are task-owned temporary files, with bounded pixel batches.
+The profile accepts SDR 8-bit MP4 with even dimensions and handles visible
+labels as a separate input-preparation concern. Coverage in
+`tests/test_video_seedance.py` includes source-detail separation, quantization,
+VFR/nonzero-start/audio-tail preservation, and failure-before-publication.
 
 The engine's `psnr_db` is measured against the already-resized frame and before
 the encoder, so it scores the VAE round trip plus latent noise and cannot see
@@ -514,6 +567,11 @@ right edge, and the run covered every frame. `detect_hailuo_frame` likewise
 rejects a box with under `_HAILUO_MIN_WHITE_FRACTION` bright low-saturation
 pixels: Hailuo 2.3 scored 0.33-0.35 on wood grain, above the real label's 0.31,
 with no white pixel in the box (real label 1.00, synthetic example 0.15).
+`_white_fraction` also requires the bright excursion above the patch median to
+exceed the dark excursion below it, so a light-mode UI card or bottom navigation
+bar with dark text (where the card background supplies >80% white pixels and
+inter-letter gaps correlate with the morphological top-hat template) is rejected
+by both `detect_hailuo_frame` and `detect_kling_frame`.
 Neither gate stopped a Higgsfield Genjutsu clip whose wordmark arm matched wood
 grain at the frame edge (0.22-0.32, white highlights included). Across 1008
 local videos the per-frame Kling score was no discriminator at all: the top
@@ -815,10 +873,16 @@ Key contracts:
 - JPEG stripping walks metadata segments and preserves the entropy-coded image
   scan.
 - Exact app-export JSON disclosures in EXIF `ImageDescription` or `UserComment`
-  share one parser. Known AI-product provenance is removable without by itself
-  asserting that the pixels were generated; explicit `aigc_info` discriminator
-  values and Dreamina `exportType=generation` do assert AI origin. Ordinary
-  Aweme, retouch, and `lv` editor exports are preserved.
+  and in ISOBMFF `moov` metadata items share one parser. Known AI-product
+  provenance is removable without by itself asserting that the pixels were
+  generated; explicit `aigc_info` discriminator values, Dreamina
+  `exportType=generation`, and CapCut (`vicut` / `lv`) AI generation or
+  voice-clone flags (`is_use_voice_clone`, `is_use_ai_video_generation`,
+  `is_use_ai_image_generation`, `is_use_aimusic_bgm`, `is_use_aimusic_vocal`,
+  `is_ai_lyric`, `is_aimusic_mv`, `is_use_jichuang_mode_in_ai_writer`) do assert
+  AI origin. Ordinary Aweme, retouch, and `vicut` / `lv` editor exports without
+  an active AI flag (including desktop CapCut / Jianying exports where
+  `is_use_vc_sing_clone` is hardcoded to `1`) are preserved.
 - EXIF reads fall back to Pillow's decoded `getexif()` mapping when a container
   exposes no ordinary `info["exif"]` blob. This covers ImageMagick PNG raw EXIF
   profiles and keeps portable-record identification aligned with the file path.

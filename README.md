@@ -462,6 +462,13 @@ print(complete.visual_invisible_action, complete.audio.watermark_status)
 batch = raiw.remove_video_batch("videos", "videos_clean")
 cleaned = raiw.remove_video_metadata("input.mp4")
 synthid_cleaned = raiw.remove_video_invisible("input.mp4", "synthid_clean.mp4")
+seedance_experiment = raiw.remove_video_seedance_experimental(
+    "owned-label-cleaned.mp4", "seedance_clean.mp4", quality="delivery"
+)  # experimental pixel reconstruction; handle visible labels first
+seedance_complete = raiw.remove_video_all(
+    "input.mp4", "seedance-clean.mp4",
+    include_invisible=True, invisible_profile="seedance-experimental",
+)  # supported visible removal, then experimental reconstruction
 print(synthid_cleaned.visual_invisible_action, synthid_cleaned.audio.watermark_status)
 visible = raiw.remove_video_visible("input.mp4", "clean.mp4")
 print(visible.mark)

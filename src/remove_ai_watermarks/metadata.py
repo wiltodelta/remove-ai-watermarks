@@ -963,6 +963,14 @@ _APP_PRODUCT_RE = re.compile(r'"product"\s*:\s*"([a-z0-9_]+)"', re.IGNORECASE)
 _APP_EXPORT_TYPE_RE = re.compile(r'"exportType"\s*:\s*"([a-z0-9_]+)"', re.IGNORECASE)
 _APP_AIGC_LABEL_RE = re.compile(r'"aigc_label_type"\s*:\s*[12](?=\s*[,}])', re.IGNORECASE)
 _APP_AIGC_TYPE_RE = re.compile(r'"aigc_type"\s*:\s*1(?=\s*[,}])', re.IGNORECASE)
+_CAPCUT_AI_FLAG_RE = re.compile(
+    r'"(?:'
+    r"is_ai_lyric|is_aimusic_mv|is_use_ai_image_generation|is_use_ai_video_generation|"
+    r"is_use_aimusic_bgm|is_use_aimusic_vocal|is_use_jichuang_mode_in_ai_writer|"
+    r"is_use_voice_clone"
+    r')"\s*:\s*(?:1|"1"|true)(?=\s*[,}])',
+    re.IGNORECASE,
+)
 
 
 def _normalized_app_metadata(value: object) -> str:
@@ -987,6 +995,8 @@ def _app_metadata_evidence(value: object) -> tuple[str | None, str | None]:
     generator = None
     if set(products).intersection({"dreamina", "dreamina_oversea"}) and "generation" in export_types:
         generator = "ByteDance Dreamina"
+    elif set(products).intersection({"vicut", "lv"}) and _CAPCUT_AI_FLAG_RE.search(normalized):
+        generator = "ByteDance CapCut AI"
     elif '"aigc_info"' in normalized.lower():
         if "aweme" in products and _APP_AIGC_TYPE_RE.search(normalized):
             generator = "ByteDance Aweme AI"

@@ -143,7 +143,27 @@ Video mark keys: `sora`, `veo`, `seedance`, `doubao`, `dola`, `hailuo`,
 order.
 
 `video invisible` and `video all --invisible` accept MP4, MOV, and M4V only.
-They are lossy. The shipped noise profile is pinned; do not lower it.
+That is the default SynthID profile. It is lossy; its shipped noise profile
+is pinned, so do not lower it.
+
+For an owned Seedance MP4, explicitly opt into the experimental fixed recipe
+(since CLI 0.56.0):
+
+```bash
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile seedance-experimental
+remove-ai-watermarks video invisible label-cleaned.mp4 -o clean.mp4 --profile seedance-experimental
+remove-ai-watermarks video batch ./videos --invisible --profile seedance-experimental
+```
+
+Seedance requires SDR 8-bit MP4 with even dimensions. `--quality delivery`
+(default) writes H.264 High CRF18; `--quality master` retains a larger
+lossless-coded master. Leave SynthID tuning flags at their defaults; nondefault
+values are rejected for this fixed recipe. All/batch requires `--invisible`
+with this profile. Only all mode runs the supported visible stage first;
+unhandled visible overlays need separate preparation. The experiment has
+matched-control CapCut evidence but performs no per-file detector request.
+These profile options require a build containing the experimental Seedance
+integration; verify `video all --help` before using them.
 
 Unlike the image path, `video invisible`, `video all` and `video batch` do
 accept `--device [auto|cuda|mps|cpu]`. Leave it at `auto`. Set it only when the

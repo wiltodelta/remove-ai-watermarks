@@ -49,6 +49,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [SynthID mark removal research](synthid-removal-research.md)
 - [SynthID identity research](synthid-robust-identity-research.md)
 - [SynthID identity follow-up](synthid-robust-identity-research-2026-06-08.md)
+- [Seedance video study](seedance-video-study.md) (local comparison runner and provider-evidence gates)
 - [Video SynthID quality research](video-synthid-quality-research.md)
 - [OpenAI SynthID oracle ladders](synthid-oracle-ladders.md) (routing hub)
 - [Provider oracle tooling](provider-oracles.md) (Google, OpenAI, Microsoft, and Meta execution surfaces)

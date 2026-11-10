@@ -13,6 +13,7 @@ High-level API (lazy, so ``import remove_ai_watermarks`` stays cheap)::
     raiw.remove_video_batch("videos", "videos_clean")   # complete per-file results
     raiw.remove_video_metadata("in.mp4", "out.mp4")     # verified metadata strip
     raiw.remove_video_invisible("in.mp4", "out.mp4")    # calibrated video-pixel regeneration
+    raiw.remove_video_seedance_experimental("in.mp4", "out.mp4")  # opt-in Seedance experiment
     raiw.remove_video_visible("in.mp4", "out.mp4")      # stable visible video-mark removal
     raiw.identify_text("in.md")                         # -> TextProvenanceReport
     raiw.remove_text_metadata("in.md", "out.md")        # C2PATXT, C2PA HTML/ASCII armor, VSRMark, stego
@@ -38,7 +39,7 @@ _os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 _warnings.filterwarnings("ignore", message=r".*ImageProcessorFast.*")
 
 
-__version__ = "0.55.0"
+__version__ = "0.56.0"
 
 __all__ = [
     "BatchItemResult",
@@ -70,6 +71,7 @@ __all__ = [
     "remove_video_batch",
     "remove_video_invisible",
     "remove_video_metadata",
+    "remove_video_seedance_experimental",
     "remove_video_visible",
     "remove_visible",
     "remove_visible_detailed",
@@ -128,6 +130,7 @@ if TYPE_CHECKING:
         remove_video_batch,
         remove_video_invisible,
         remove_video_metadata,
+        remove_video_seedance_experimental,
         remove_video_visible,
     )
 
@@ -187,6 +190,7 @@ def __getattr__(name: str) -> object:
         "remove_video_batch",
         "remove_video_invisible",
         "remove_video_metadata",
+        "remove_video_seedance_experimental",
         "remove_video_visible",
     ):
         from remove_ai_watermarks import video

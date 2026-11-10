@@ -314,7 +314,9 @@ def test_probe_encode_profile_uses_compatible_defaults_without_ffprobe(
     assert video_encoding.probe_video_encode_profile(tmp_path / "source.mp4") == (video_encoding.VideoEncodeProfile())
 
 
+@pytest.mark.parametrize("first_row", ["0.000000", "0.000000,", "0.000000,H.26[45] User Data Unregistered SEI message"])
 def test_probe_video_timestamps_uses_best_effort_pts(
+    first_row: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -326,7 +328,7 @@ def test_probe_video_timestamps_uses_best_effort_pts(
         "run",
         lambda *_args, **_kwargs: SimpleNamespace(
             returncode=0,
-            stdout="0.000000\n0.041667\n",
+            stdout=f"{first_row}\n0.041667\n",
             stderr="",
         ),
     )

@@ -306,7 +306,19 @@ remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible
 ```
 
 That option is supported only for MP4, MOV, and M4V. It is lossy and uses the
-same oracle-certified profile as `video invisible`.
+same default SynthID profile as `video invisible`. To select the experimental
+Seedance recipe for an owned MP4:
+
+```bash
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile seedance-experimental
+remove-ai-watermarks video batch ./videos --invisible --profile seedance-experimental
+```
+
+The complete pipeline runs supported visible-mark removal before this pixel
+stage. Unsupported visible overlays still require separate preparation.
+`--profile seedance-experimental` requires `--invisible` in all/batch mode.
+The batch keeps one VAE runtime across files and reports unsupported containers
+as per-file failures.
 
 Process all supported files in a top-level directory:
 
@@ -457,6 +469,26 @@ calibrated profile, not that this file received a fresh negative verdict. It
 separately prints `Audio watermark: UNVERIFIED` because source audio is copied
 unchanged when present. `video all` and `video batch` use the same wording and
 never fold the audio status into the visual action.
+
+## Apply the experimental Seedance profile
+
+```bash
+remove-ai-watermarks video invisible input.mp4 -o clean.mp4 --profile seedance-experimental
+```
+
+The fixed recipe accepts owned SDR 8-bit MP4 files with even dimensions. It
+preserves native geometry, frame timestamps, terminal video duration, and source
+audio. `--quality delivery` (default) produces H.264 High CRF18;
+`--quality master` retains the larger lossless-coded YUV420p intermediate.
+`--device` supports the same devices as SynthID. The SynthID tuning options
+(`--noise-std`, `--long-side`, `--fps`, `--batch-size`, `--seed`) must retain
+their defaults when Seedance is selected. `--quality master` is rejected for
+SynthID. The default profile remains `synthid`.
+
+This experimental transform reproduced the matched-control CapCut outcome
+recorded in [the study](seedance-video-study.md). No detector or external upload
+runs during processing. The standalone invisible command expects visible labels
+to have been handled already; `video all` runs its existing visible stage first.
 
 ## Remove a supported visible video mark
 

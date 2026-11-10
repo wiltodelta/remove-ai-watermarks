@@ -589,7 +589,13 @@ always strips verified AI metadata, and writes a same-container output even
 when neither signal is found. This gives callers one predictable output path.
 It does not run lossy invisible regeneration by default.
 
-`include_invisible=True` explicitly adds VAE regeneration for MP4, MOV, or M4V.
+`include_invisible=True` explicitly adds VAE regeneration for MP4, MOV, or M4V
+with the default `invisible_profile="synthid"`. Select
+`invisible_profile="seedance-experimental"` for the experimental MP4 recipe and
+`invisible_quality="delivery"` (default) or `"master"` for its output encode.
+These options also apply to `remove_video_batch(..., mode="all")`.
+`VideoAllResult.invisible_profile` records the selected stage, or `None` when
+it did not run.
 `VideoAllResult.invisible_removed` remains the compatibility boolean for whether
 the visual regeneration stage ran; it is an action record, not a per-file
 watermark verdict. `visual_invisible_action` exposes the same distinction as
@@ -685,6 +691,76 @@ pair from Gemini's built-in SynthID verifier remains an optional per-file audit.
 A response inferred from a visible logo or metadata is not such a verdict, and
 an adversarial follow-up asking ordinary Gemini to reinterpret the verifier is
 not a second oracle run.
+
+## Experimental Seedance video reconstruction
+
+Install `remove-ai-watermarks[video,diffusion]` and FFmpeg, then explicitly opt
+into the experimental Python API:
+
+```python
+import remove_ai_watermarks as raiw
+
+result = raiw.remove_video_seedance_experimental(
+    "owned-label-cleaned.mp4",
+    "seedance-delivery.mp4",
+    device="auto",
+    quality="delivery",
+)
+assert result.experimental
+assert result.profile == "seedance-texture-v1"
+```
+
+`quality="delivery"` writes a native-size H.264 High CRF18 MP4.
+`quality="master"` retains the lossless-coded YUV420p reconstruction before
+that final delivery encode; its H.264 profile and larger size may require
+conversion in downstream editors. Both modes preserve the complete decoded
+frame sequence, presentation timestamps, terminal video duration, and original
+audio stream. They strip AI metadata and publish the output atomically after
+clock and decoded-frame checks. Frame processing is streamed in bounded
+batches; encoded intermediate videos use temporary disk space and are cleaned
+after success or failure.
+
+This API accepts owned SDR 8-bit MP4 videos with even dimensions. `device`
+accepts `auto`, `cuda`, `mps`, or `cpu`. The default output is
+`owned-label-cleaned_seedance_experimental.mp4`; input and output must be
+distinct MP4 paths. The fixed profile uses the pinned SD VAE at a 512-pixel
+working grid, zero latent noise, and sigma-1 source-texture restoration. These
+settings are not exposed as tuning parameters.
+
+The returned `VideoSeedanceExperimentalResult` extends `VideoInvisibleResult`
+with `experimental`, `profile`, and `quality`. Its PSNR and temporal residual
+measure the delivered native-size video. `visual_invisible_action` is
+`regenerated`; copied audio retains an `unverified` watermark status. There
+is no local CapCut detector or automatic external upload in this function.
+Positive-control/negative-output CapCut evidence for the fixed recipe is
+recorded in [the Seedance study](seedance-video-study.md). Fidelity loss can
+be visible and the measured outcome is not a per-file runtime verdict.
+
+The same recipe is integrated into the common pipeline:
+
+```python
+result = raiw.remove_video_all(
+    "owned.mp4", "clean.mp4",
+    include_invisible=True,
+    invisible_profile="seedance-experimental",
+    invisible_quality="delivery",
+)
+```
+
+`remove_video_invisible(..., profile="seedance-experimental", quality="delivery")`
+selects the pixel stage directly and keeps the common `<source>_clean.mp4`
+output convention. Profile selection without `include_invisible=True` in
+all/batch mode is rejected. Nondefault SynthID tuning options are rejected for
+Seedance, whose recipe is fixed. A batch reuses one VAE runtime across files;
+unsupported containers fail their individual rows.
+
+Visible overlays must be removed separately, or disabled in the generator's
+official export, before calling the standalone pixel stage. The function does not locate
+or erase a visible `CapCut AI` label. Existing visible-removal APIs can precede
+it for their supported marks. `remove_video_all` runs the existing visible
+stage before the selected pixel stage. The CLI exposes the same choice through
+`--profile seedance-experimental`; all/batch mode also requires `--invisible`.
+SynthID remains the default.
 
 ## Remove a supported visible video mark
 

@@ -2,7 +2,8 @@
 
 The product path covers provenance identification, container-level AI metadata
 removal, temporally stabilized visible Sora, Veo, Seedance, Dola, Hailuo AI, and
-Kling AI removal, and an oracle-certified opt-in VAE profile for video SynthID.
+Kling AI removal, and explicit VAE profiles for video SynthID and experimental
+Seedance processing.
 The visible pixel path reuses the image package's shared fill backends.
 """
 
@@ -156,6 +157,15 @@ class VideoInvisibleResult(_VideoAudioBoundary):
 
 
 @dataclass(frozen=True)
+class VideoSeedanceExperimentalResult(VideoInvisibleResult):
+    """Experimental Seedance reconstruction, without a per-file detector verdict."""
+
+    quality: Literal["delivery", "master"] = "delivery"
+    profile: Literal["seedance-texture-v1"] = "seedance-texture-v1"
+    experimental: bool = True
+
+
+@dataclass(frozen=True)
 class VideoAllResult(_VideoAudioBoundary):
     """Result of visible, metadata, and optional video-pixel processing."""
 
@@ -168,6 +178,7 @@ class VideoAllResult(_VideoAudioBoundary):
     detected_metadata: dict[str, str]
     remaining_metadata: dict[str, str]
     invisible_removed: bool
+    invisible_profile: Literal["synthid", "seedance-experimental"] | None = None
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -393,6 +404,12 @@ def _platform_from_video_metadata(markers: dict[str, str]) -> str | None:
         return _tc260_video_platform(markers.get("aigc_producer", "")) or (
             "China AIGC-labeled content (TC260 standard)"
         )
+    if (app_aigc := markers.get("app_aigc", "")).startswith("App AIGC disclosure (") and app_aigc.endswith(")"):
+        return app_aigc.removeprefix("App AIGC disclosure (").removesuffix(")")
+    if (app_provenance := markers.get("app_provenance", "")).startswith(
+        "App export provenance ("
+    ) and app_provenance.endswith(")"):
+        return app_provenance.removeprefix("App export provenance (").removesuffix(")")
     if "kling_sei" in markers:
         return _tc260_video_platform("kling")
     if any(key.lower() in LOCAL_GENERATION_METADATA_KEYS for key in markers):
@@ -596,6 +613,38 @@ def remove_video_visible(
     )
 
 
+def _validate_video_profile(
+    profile: str,
+    quality: str,
+    *,
+    enabled: bool = True,
+    noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
+    long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
+    fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
+    batch_size: int = 4,
+    seed: int = 0,
+    model: str = DEFAULT_VIDEO_SYNTHID_VAE,
+) -> None:
+    """Reject incompatible profile options before processing any stage."""
+    if profile not in {"synthid", "seedance-experimental"}:
+        raise ValueError("profile must be synthid or seedance-experimental")
+    if quality not in {"delivery", "master"}:
+        raise ValueError("quality must be delivery or master")
+    if profile != "synthid" and not enabled:
+        raise ValueError("Selecting an invisible profile requires include_invisible=True (--invisible)")
+    if quality != "delivery" and (not enabled or profile != "seedance-experimental"):
+        raise ValueError("quality=master requires the enabled seedance-experimental profile")
+    if profile == "seedance-experimental" and (
+        noise_std != DEFAULT_VIDEO_SYNTHID_NOISE_STD
+        or long_side != DEFAULT_VIDEO_SYNTHID_LONG_SIDE
+        or fps != DEFAULT_VIDEO_SYNTHID_FPS
+        or batch_size != 4
+        or seed != 0
+        or model != DEFAULT_VIDEO_SYNTHID_VAE
+    ):
+        raise ValueError("Seedance uses a fixed recipe; SynthID tuning options must retain their defaults")
+
+
 def remove_video_all(
     source: str | Path,
     output: str | Path | None = None,
@@ -604,6 +653,8 @@ def remove_video_all(
     backend: str = "cv2",
     temporal_consistency: bool = True,
     include_invisible: bool = False,
+    invisible_profile: Literal["synthid", "seedance-experimental"] = "synthid",
+    invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
     fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
@@ -619,12 +670,26 @@ def remove_video_all(
     always strips verified AI metadata. It writes a same-container passthrough
     when neither signal is present, giving product callers one predictable
     output contract. ``include_invisible=True`` additionally runs lossy VAE
-    regeneration with the oracle-certified default profile.
+    regeneration with the oracle-certified default SynthID profile or the
+    explicitly selected experimental Seedance profile.
     """
     from remove_ai_watermarks.metadata import get_ai_metadata
 
+    _validate_video_profile(
+        invisible_profile,
+        invisible_quality,
+        enabled=include_invisible,
+        noise_std=noise_std,
+        long_side=long_side,
+        fps=fps,
+        batch_size=batch_size,
+        seed=seed,
+        model=model,
+    )
     source_path = _video_source(source)
     output_path = _video_output(source_path, output, operation="complete cleaning")
+    if include_invisible and invisible_profile == "seedance-experimental" and source_path.suffix.lower() != ".mp4":
+        raise ValueError("Experimental Seedance processing requires MP4 input")
     if include_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
         raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
@@ -648,6 +713,8 @@ def remove_video_all(
             invisible_result = remove_video_invisible(
                 current_source,
                 output_path,
+                profile=invisible_profile,
+                quality=invisible_quality,
                 noise_std=noise_std,
                 long_side=long_side,
                 fps=fps,
@@ -678,6 +745,7 @@ def remove_video_all(
         detected_metadata=detected_metadata,
         remaining_metadata=remaining_metadata,
         invisible_removed=include_invisible,
+        invisible_profile=invisible_profile if include_invisible else None,
     )
 
 
@@ -690,6 +758,8 @@ def remove_video_batch(
     backend: str = "cv2",
     temporal_consistency: bool = True,
     include_invisible: bool = False,
+    invisible_profile: Literal["synthid", "seedance-experimental"] = "synthid",
+    invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
     fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
@@ -709,6 +779,17 @@ def remove_video_batch(
 
     from remove_ai_watermarks.video_encoding import atomic_video_output
 
+    _validate_video_profile(
+        invisible_profile,
+        invisible_quality,
+        enabled=include_invisible,
+        noise_std=noise_std,
+        long_side=long_side,
+        fps=fps,
+        batch_size=batch_size,
+        seed=seed,
+        model=model,
+    )
     directory_path = Path(directory)
     if not directory_path.exists():
         raise FileNotFoundError(f"Video directory does not exist: {directory_path}")
@@ -749,7 +830,8 @@ def remove_video_batch(
                 if (
                     include_invisible
                     and invisible_runtime is None
-                    and source_path.suffix.lower() in _REGENERATED_VIDEO_EXTENSIONS
+                    and source_path.suffix.lower()
+                    in ({".mp4"} if invisible_profile == "seedance-experimental" else _REGENERATED_VIDEO_EXTENSIONS)
                 ):
                     # Validate the container before paying the multi-GB model
                     # load, then retain one runtime for the complete batch.
@@ -770,6 +852,8 @@ def remove_video_batch(
                     backend=backend,
                     temporal_consistency=temporal_consistency,
                     include_invisible=include_invisible,
+                    invisible_profile=invisible_profile,
+                    invisible_quality=invisible_quality,
                     noise_std=noise_std,
                     long_side=long_side,
                     fps=fps,
@@ -857,6 +941,8 @@ def remove_video_invisible(
     source: str | Path,
     output: str | Path | None = None,
     *,
+    profile: Literal["synthid", "seedance-experimental"] = "synthid",
+    quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
     fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
@@ -866,15 +952,29 @@ def remove_video_invisible(
     device: str = "auto",
     _runtime: VideoVaeRuntime | None = None,
 ) -> VideoInvisibleResult:
-    """Regenerate video pixels through the calibrated SynthID-removal profile.
+    """Regenerate video pixels through SynthID or experimental Seedance processing.
 
     The function also strips source metadata during the transcode. The default
-    profile was calibrated against a provider oracle, but this call performs no
-    per-file verification. Source audio is copied if present and its watermark
-    status remains unverified.
+    SynthID profile was calibrated against a provider oracle; Seedance is
+    experimental. This call performs no per-file verification. Source audio is
+    copied if present and its watermark status remains unverified.
     """
     from remove_ai_watermarks.metadata import get_ai_metadata
 
+    _validate_video_profile(
+        profile,
+        quality,
+        noise_std=noise_std,
+        long_side=long_side,
+        fps=fps,
+        batch_size=batch_size,
+        seed=seed,
+        model=model,
+    )
+    if profile == "seedance-experimental":
+        source_path = Path(source)
+        target = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
+        return remove_video_seedance_experimental(source, target, device=device, quality=quality, _runtime=_runtime)
     source_path = _video_source(source)
     if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
@@ -906,4 +1006,47 @@ def remove_video_invisible(
         noise_std=noise_std,
         metrics=metrics,
         remaining_metadata=get_ai_metadata(output_path),
+    )
+
+
+def remove_video_seedance_experimental(
+    source: str | Path,
+    output: str | Path | None = None,
+    *,
+    device: str = "auto",
+    quality: Literal["delivery", "master"] = "delivery",
+    _runtime: VideoVaeRuntime | None = None,
+) -> VideoSeedanceExperimentalResult:
+    """Apply the experimental Seedance texture-transfer recipe to an owned MP4.
+
+    This pixel stage expects visible AI labels to have been handled separately.
+    It preserves native geometry, all frame timestamps, and source audio, and
+    strips AI metadata. CapCut verification remains a development-only check.
+    ``delivery`` writes H.264 High CRF18; ``master`` retains lossless-coded YUV.
+    Neither mode guarantees unchanged fine detail or a per-file detector result.
+    """
+    from remove_ai_watermarks.metadata import get_ai_metadata
+
+    source_path = _video_source(source)
+    if source_path.suffix.lower() != ".mp4":
+        raise ValueError("Experimental Seedance processing requires MP4 input")
+    if quality not in {"delivery", "master"}:
+        raise ValueError("quality must be delivery or master")
+    _require_video_runtime()
+    from remove_ai_watermarks.video_seedance import regenerate_seedance_experimental
+
+    clean_output = (
+        Path(output) if output is not None else source_path.with_stem(source_path.stem + "_seedance_experimental")
+    )
+    output_path = _video_output(source_path, clean_output, operation="Experimental Seedance processing")
+    metrics = regenerate_seedance_experimental(
+        source_path, output_path, device=device, quality=quality, runtime=_runtime
+    )
+    return VideoSeedanceExperimentalResult(
+        source=source_path,
+        output=output_path,
+        noise_std=0.0,
+        metrics=metrics,
+        remaining_metadata=get_ai_metadata(output_path),
+        quality=quality,
     )

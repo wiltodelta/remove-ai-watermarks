@@ -726,13 +726,27 @@ def detect_dola_frame(
 
 
 def _white_fraction(roi: NDArray[Any]) -> float:
-    """Share of bright, low-saturation pixels, the color of the white video labels."""
+    """Share of bright, low-saturation pixels, the color of the white video labels.
+
+    A light UI card or navigation bar with dark text has a high share of white
+    background pixels, and its narrow inter-letter gaps can correlate with a
+    morphological top-hat template. In that inverted polarity the dark excursion
+    below the patch median exceeds the bright excursion above it, whereas a white
+    label on a darker background has positive bright excursion above the median.
+    """
     if roi.size == 0:
         return 0.0
     if roi.ndim == 2:
-        return float(np.mean(roi >= 180))
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    return float(np.mean((hsv[:, :, 1] <= 55) & (hsv[:, :, 2] >= 180)))
+        value = roi.astype(np.float32)
+        white = roi >= 180
+    else:
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        value = hsv[:, :, 2].astype(np.float32)
+        white = (hsv[:, :, 1] <= 55) & (hsv[:, :, 2] >= 180)
+    median = float(np.median(value))
+    if float(np.mean(np.maximum(0.0, value - median))) < float(np.mean(np.maximum(0.0, median - value))):
+        return 0.0
+    return float(np.mean(white))
 
 
 def _reaches_kling_edge(region: Region, frame_width: int, frame_height: int) -> bool:

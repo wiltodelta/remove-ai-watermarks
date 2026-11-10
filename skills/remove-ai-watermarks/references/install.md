@@ -60,6 +60,7 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Image identify, `visible`, `erase` | `visible` |
 | HEIC / HEIF / AVIF pixels | add `heif` |
 | Video identify / visible / all / batch | `video`, plus ffmpeg |
+| Experimental Seedance video (`--profile seedance-experimental`) | `video,diffusion`, plus ffmpeg |
 | Video SynthID (`video invisible`) | `video,diffusion`, plus ffmpeg |
 | Invisible images | `qwen-zimage`, plus NVIDIA CUDA |
 | Learned image/video fill | add `migan` or `lama` |
