@@ -107,7 +107,7 @@ Pipeline profiles: `qwen-zimage` (the default), `qwen21-zimage`, `sdxl-zimage`,
 `qwen-zimage` extra. `qwen21-zimage` (since CLI 0.51.0) uses `Qwen/Qwen-Image-2.1` under the
 **Qwen Research License** (non-commercial research and personal use only; do
 not use `qwen21-zimage` for commercial workflows).
-Since CLI 0.56.0, `qwen21-zimage` includes bounded geometry by default and local quality acceptance
+Since CLI 0.57.0, `qwen21-zimage` includes bounded geometry by default and local quality acceptance
 under the same license restrictions. Its CLI path does not run automatic OCR.
 It falls back to the shared Qwen-2.1 recipe for tiles and reviewed manifests.
 Quality improvement does not prove watermark removal.

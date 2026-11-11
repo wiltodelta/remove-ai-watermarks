@@ -316,7 +316,7 @@ Canny); because `Qwen/Qwen-Image-2.1` is released under the Qwen Research Licens
 chroma-zimage for Microsoft, and qwen-zimage otherwise, keeping `auto` commercial-safe.
 All are CUDA only.
 
-Since 0.56.0, `qwen21-zimage` includes bounded geometric alignment by default after the shared
+Since 0.57.0, `qwen21-zimage` includes bounded geometric alignment by default after the shared
 Qwen-2.1 global and face stages, accepting a result only when both source MSE and local LPIPS improve.
 It retains the Qwen Research License restrictions. Qualified text geometry can
 be supplied through the Python API; the CLI does not run automatic OCR. See
