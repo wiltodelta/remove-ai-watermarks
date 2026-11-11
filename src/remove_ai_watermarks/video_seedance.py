@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import shutil
 import subprocess
 from contextlib import suppress
 from dataclasses import replace
@@ -47,6 +46,7 @@ from remove_ai_watermarks.video_invisible import (
     load_video_vae_runtime,
 )
 from remove_ai_watermarks.video_temporal import _backward_map, _motion_residual
+from remove_ai_watermarks.video_tools import require_video_tool
 from remove_ai_watermarks.video_visible import _timestamp_time_base, _TimestampedNutWriter
 
 if TYPE_CHECKING:
@@ -113,9 +113,7 @@ def _match_video_end(encoded: Path, source: Path) -> None:
     if abs(float(candidate_stream["duration"]) - target) <= 0.000002:
         return
     repair = video_end_repair(original, _clock(encoded, include_packets=True))
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        raise RuntimeError("Video processing requires ffmpeg on PATH")
+    ffmpeg = require_video_tool("ffmpeg")
     with TemporaryDirectory(prefix="seedance-clock-", dir=encoded.parent) as directory:
         retimed = Path(directory) / "retimed.mp4"
         _run_command(
@@ -230,9 +228,7 @@ def _reconstruct(source: Path, runtime: VideoVaeRuntime, size: tuple[int, int]) 
 
 
 def _encode_delivery(master: Path, source: Path, output: Path) -> None:
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        raise RuntimeError("Video processing requires ffmpeg on PATH")
+    ffmpeg = require_video_tool("ffmpeg")
     profile = probe_video_encode_profile(source)
     time_base = _timestamp_time_base(profile.time_base)
     command = [

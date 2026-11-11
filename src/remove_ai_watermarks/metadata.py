@@ -142,7 +142,7 @@ _STREAMING_ISOBMFF_EXTS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".m
 
 # Non-ISOBMFF audio/video the ISOBMFF box walker can't reach (EBML / framed /
 # RIFF / Vorbis). remove_ai_metadata strips their container metadata losslessly
-# via ffmpeg (`-c copy`), so it needs ffmpeg on PATH for these.
+# via ffmpeg (`-c copy`), using system FFmpeg or the video extra bundle.
 _FFMPEG_STRIP_EXTS: frozenset[str] = frozenset(
     {".webm", ".mkv", ".mka", ".avi", ".flv", ".mp3", ".wav", ".flac", ".ogg", ".oga", ".opus", ".aac"}
 )
@@ -1473,19 +1473,15 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
     Uses a lossless stream copy (``-c copy``), so codec data is untouched and only
     container-level tags/chapters are dropped -- the metadata strip for WebM /
     Matroska (EBML), MP3 (ID3), WAV / FLAC / OGG (RIFF / Vorbis comments) that the
-    ISOBMFF box walker cannot reach. Requires ffmpeg on PATH (raises if absent).
+    ISOBMFF box walker cannot reach. Uses system FFmpeg or the video extra bundle.
     The output extension should match the source so ``-c copy`` can re-mux.
     """
-    import shutil
     import subprocess
 
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        raise RuntimeError(
-            f"ffmpeg is required to strip metadata from {source_path.suffix} files but was not found on "
-            "PATH; install ffmpeg (e.g. `brew install ffmpeg`) or re-encode the file with another tool"
-        )
     from remove_ai_watermarks.video_encoding import atomic_video_output
+    from remove_ai_watermarks.video_tools import require_video_tool
+
+    ffmpeg = require_video_tool("ffmpeg")
 
     cmd = [
         ffmpeg,

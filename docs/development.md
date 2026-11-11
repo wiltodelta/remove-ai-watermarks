@@ -112,7 +112,9 @@ study integration tests. FFmpeg-dependent cases skip when those binaries are
 absent from the general matrix; pure study and profile tests remain active.
 Diffusion and model-running tests skip in that matrix; metadata, identification,
 visible removal, the DWT-DCT decoder, and the OpenCV eraser remain covered across
-operating systems.
+operating systems. Each matrix job requires the offline video payload;
+`test_video_tools.py` then exercises real encoding, probing, audio muxing,
+Seedance delivery, and metadata stripping with an empty `PATH`.
 
 A separate `security` job runs the `maintain.sh` lockfile scan, so an advisory
 without a released fix turns `main` red; see

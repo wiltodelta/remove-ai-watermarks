@@ -264,7 +264,10 @@ class TestSkippedStepsAreFailures:
         assert [p for p in probed if p.name != clean_png.name] == []
 
     def test_metadata_remove_reports_a_missing_ffmpeg_without_a_traceback(self, tmp_path, monkeypatch):
+        from remove_ai_watermarks import video_tools
+
         monkeypatch.setattr(shutil, "which", lambda _name: None)
+        monkeypatch.setattr(video_tools, "_bundled_tools", lambda: None)
         source = tmp_path / "x.webm"
         source.write_bytes(b"\x1a\x45\xdf\xa3\x80")  # an empty EBML header tiles the file
         result = _invoke(["metadata", "--remove", str(source), "-o", str(tmp_path / "out.webm")])

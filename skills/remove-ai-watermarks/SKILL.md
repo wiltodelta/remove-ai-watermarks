@@ -2,7 +2,7 @@
 name: remove-ai-watermarks
 description: "Removes and identifies AI watermarks and provenance marks in images and video the user generated or edited. Covers Gemini sparkles, SynthID, Microsoft InvisMark, Meta Content Seal, C2PA, EXIF/XMP/IPTC metadata, and Sora/Veo/Seedance/Doubao/Dola/Hailuo/Vidu/Kling and Wan labels. Use when the user wants to strip or clean AI watermarks and generation labels, or asks whether a file was AI-generated or carries AI provenance, even if they do not name remove-ai-watermarks. Do not use for stock-agency, marketplace, classifieds, or other third-party paid-asset watermarks."
 license: Apache-2.0
-compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Some video writes need ffmpeg. Installer may be uv, pipx, or pip.
+compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. The video extra includes FFmpeg and ffprobe on supported platforms. Installer may be uv, pipx, or pip.
 metadata:
   author: wiltodelta
   version: "1.0.17"

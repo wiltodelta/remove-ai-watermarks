@@ -171,7 +171,7 @@ def _video_stacks(cli_path: str) -> dict[str, str]:
     native Windows executables) remain unverified; this probe's Python is never a
     substitute for the environment running the installed CLI.
     """
-    unknown = {"pixels": "unknown", "invisible": "unknown"}
+    unknown = {"pixels": "unknown", "invisible": "unknown", "tools": "unknown"}
     try:
         with Path(cli_path).open(encoding="utf-8") as stream:
             lines = [stream.readline() for _ in range(3)]
@@ -199,6 +199,7 @@ def _video_stacks(cli_path: str) -> dict[str, str]:
     if not isinstance(result, dict):
         return unknown
     return {
+        "tools": result.get("tools") if result.get("tools") in {"installed", "missing"} else "unknown",
         "pixels": result.get("pixels") if result.get("pixels") in {"ok", "missing"} else "unknown",
         "invisible": result.get("invisible") if result.get("invisible") in {"installed", "missing"} else "unknown",
     }
@@ -207,7 +208,7 @@ def _video_stacks(cli_path: str) -> dict[str, str]:
 _VIDEO_RUNTIME_CHECK = """
 import json
 import sys
-result = {"pixels": "unknown", "invisible": "unknown"}
+result = {"pixels": "unknown", "invisible": "unknown", "tools": "unknown"}
 try:
     from remove_ai_watermarks.video import _require_video_runtime
     _require_video_runtime()
@@ -226,6 +227,15 @@ try:
         result["invisible"] = "missing"
 except ImportError:
     result["invisible"] = "missing"
+import shutil
+ready = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+if not ready:
+    try:
+        from remove_ai_watermarks.video_tools import bundled_video_tools_available
+        ready = bundled_video_tools_available()
+    except ImportError:
+        ready = False
+result["tools"] = "installed" if ready else "missing"
 sys.stdout.write(json.dumps(result))
 """
 
@@ -305,9 +315,9 @@ def _advice(
     else:
         video_visible = "ok" if ffmpeg else "needs_ffmpeg"
 
-    if no_pixels or "missing" in video.values():
+    if no_pixels or video["pixels"] == "missing" or video["invisible"] == "missing":
         video_invisible = "needs_video_and_diffusion_extras"
-    elif video != {"pixels": "ok", "invisible": "installed"}:
+    elif video["pixels"] != "ok" or video["invisible"] != "installed":
         video_invisible = "unverified"
     else:
         video_invisible = "ok_cpu_or_gpu" if ffmpeg else "needs_ffmpeg"
@@ -350,10 +360,15 @@ def build_report() -> dict[str, Any]:
     installer = _preferred_installer(installers)
     cli = _cli()
     cuda = _has_cuda()
-    ffmpeg = _which("ffmpeg") is not None
+    ffmpeg = _which("ffmpeg") is not None and _which("ffprobe") is not None
     pixels = _pixel_stack(str(cli["path"])) if cli["found"] else "unknown"
     invisible = _invisible_stack(str(cli["path"])) if cli["found"] else "unknown"
-    video = _video_stacks(str(cli["path"])) if cli["found"] else {"pixels": "unknown", "invisible": "unknown"}
+    video = (
+        _video_stacks(str(cli["path"]))
+        if cli["found"]
+        else {"pixels": "unknown", "invisible": "unknown", "tools": "unknown"}
+    )
+    ffmpeg = video.get("tools") == "installed" or (video.get("tools", "unknown") == "unknown" and ffmpeg)
     return {
         "os": os.name,
         "platform": sys.platform,

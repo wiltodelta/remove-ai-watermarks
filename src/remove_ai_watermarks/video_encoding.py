@@ -6,7 +6,6 @@ import json
 import logging
 import math
 import os
-import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -18,6 +17,8 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from typing import Any, BinaryIO
+
+from remove_ai_watermarks.video_tools import find_video_tool, require_video_tool
 
 log = logging.getLogger(__name__)
 
@@ -229,7 +230,7 @@ def _run_ffprobe(
     output_format: str,
 ) -> str | None:
     """Run one ffprobe query with shared logging and failure handling."""
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = find_video_tool("ffprobe")
     if ffprobe is None:
         log.warning("ffprobe is unavailable; cannot inspect %s of %s", purpose, source)
         return None
@@ -395,9 +396,7 @@ def raw_video_command(
     copy_input_timestamps: bool = False,
 ) -> list[str]:
     """Build an ffmpeg command for BGR frames on standard input."""
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        raise RuntimeError("Video processing requires ffmpeg on PATH")
+    ffmpeg = require_video_tool("ffmpeg")
     frame_input = (
         ["-f", "nut", "-i", "pipe:0"]
         if timestamped_input
@@ -450,9 +449,7 @@ def mux_encoded_video(
     copy_input_timestamps: bool = False,
 ) -> None:
     """Copy encoded video and source audio into the final container."""
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        raise RuntimeError("Video processing requires ffmpeg on PATH")
+    ffmpeg = require_video_tool("ffmpeg")
     command = [
         ffmpeg,
         "-y",

@@ -78,10 +78,13 @@ heif = [
 ]
 visible = ["remove-ai-watermarks[pixels]"]
 # Video visible removal uses the shared pixel runtime. PyAV packetizes processed
-# VFR frames with explicit PTS before system ffmpeg encodes them.
+# VFR frames with explicit PTS before FFmpeg encodes them. The full bundle
+# includes both CLI tools, so video installations work without a system FFmpeg.
 video = [
     "remove-ai-watermarks[visible]",
     "av>=18,<19",
+    "portable-ffmpeg-full==0.5.0",
+    "filelock>=3.20",
 ]
 # Open DWT-DCT watermarks used by Stable Diffusion / SDXL / FLUX. The in-tree
 # decoder avoids the upstream invisible-watermark package's mandatory torch and

@@ -2580,6 +2580,30 @@ wheels = [
 ]
 
 [[package]]
+name = "portable-ffmpeg"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/64/d6509bb79c4378efb480150596b2915de183c87b4123cc7c13496126d626/portable_ffmpeg-0.5.0.tar.gz", hash = "sha256:def745c013c687d56c8285734eb5f01741f49bae00b0495ddeaee56a5f5a2b3a", size = 99382, upload-time = "2026-11-01T16:55:18.33Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/f9/c4b061f08fac83490764f01e02114b7fa74e6b0ba0f9d0cf6eccf6efad7d/portable_ffmpeg-0.5.0-py3-none-any.whl", hash = "sha256:98f0f24e85721ea6f4a4998df158600f96a77093d4448b0d4b445eb874a8b2e5", size = 11342, upload-time = "2026-11-01T16:54:55.824Z" },
+]
+
+[[package]]
+name = "portable-ffmpeg-full"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "portable-ffmpeg" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/19/473fcb9720e08de2f18b3a4d4d50d4b048ff0d00fed978f7c1b30def70e0/portable_ffmpeg_full-0.5.0-py3-none-macosx_12_0_arm64.whl", hash = "sha256:c146f8c37e25f964c1333a65e27c42068e2b33b727a0ad67df8b7f523329e3b6", size = 23900365, upload-time = "2026-11-01T16:54:57.531Z" },
+    { url = "https://files.pythonhosted.org/packages/02/92/c30de4e25eb917575ba85adbe3ca2245d5813a76d93156b8f68046668724/portable_ffmpeg_full-0.5.0-py3-none-macosx_12_0_x86_64.whl", hash = "sha256:ee690f9165fe20e7ddea36c0c7f7697494c8f62d36419f7eaf3a6243b07d9485", size = 29741493, upload-time = "2026-11-01T16:55:00.801Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/22/19c9cc6cb788cf0af23d31a62e47b899ebe340d58d9c1c6a0a1f093407af/portable_ffmpeg_full-0.5.0-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:52b3eb145eb259a9a5115860c478a8149cd889dd92e659cb4f0def673c53e7dd", size = 58327661, upload-time = "2026-11-01T16:55:05.578Z" },
+    { url = "https://files.pythonhosted.org/packages/83/a6/791a4c00de84ecfe09c1361894d766750948c098551535c70c430ed7f188/portable_ffmpeg_full-0.5.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:8c5372652d49153687dd3276d8750527cf10dc5088c17122ab755db96c1c728a", size = 66335849, upload-time = "2026-11-01T16:55:10.733Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/30/f905280d9de37b5bf8d89dced7721b41685d5b7a137d7ea862d0483493dd/portable_ffmpeg_full-0.5.0-py3-none-win_amd64.whl", hash = "sha256:cfeb70fbde4582cef12b930ba5fa6cba10657c3bf23a1b36f0baeee089fc0c64", size = 61834962, upload-time = "2026-11-01T16:55:15.721Z" },
+]
+
+[[package]]
 name = "prettytable"
 version = "3.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3489,11 +3513,13 @@ all = [
     { name = "av" },
     { name = "diffsynth" },
     { name = "diffusers" },
+    { name = "filelock" },
     { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "onnxruntime" },
     { name = "opencv-python-headless" },
     { name = "pillow-heif" },
+    { name = "portable-ffmpeg-full" },
     { name = "pywavelets", version = "1.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "pywavelets", version = "1.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "safetensors" },
@@ -3530,6 +3556,7 @@ detect = [
 dev = [
     { name = "audioseal" },
     { name = "av" },
+    { name = "filelock" },
     { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "invisible-watermark" },
@@ -3539,6 +3566,7 @@ dev = [
     { name = "opencv-python-headless" },
     { name = "packaging" },
     { name = "playwright" },
+    { name = "portable-ffmpeg-full" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -3620,8 +3648,10 @@ trustmark = [
 ]
 video = [
     { name = "av" },
+    { name = "filelock" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
+    { name = "portable-ffmpeg-full" },
 ]
 visible = [
     { name = "numpy" },
@@ -3637,6 +3667,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0.0" },
     { name = "diffsynth", marker = "extra == 'qwen-zimage'", specifier = ">=2.0.17,<3" },
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
+    { name = "filelock", marker = "extra == 'video'", specifier = ">=3.20" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
     { name = "huggingface-hub", marker = "extra == 'classify'", specifier = ">=0.20.0,<2" },
     { name = "huggingface-hub", marker = "extra == 'dev'", specifier = ">=0.20.0,<2" },
@@ -3661,6 +3692,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pillow-heif", marker = "extra == 'heif'", specifier = ">=0.13.0" },
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.62,<2" },
+    { name = "portable-ffmpeg-full", marker = "extra == 'video'", specifier = "==0.5.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },

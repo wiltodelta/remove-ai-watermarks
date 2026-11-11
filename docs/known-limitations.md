@@ -542,8 +542,10 @@ orientation is exposed by this plugin neither through `getexif()` nor
 ### Some metadata removal requires ffmpeg
 
 WebM, Matroska, MP3, WAV, FLAC, OGG, Opus, and AAC container metadata is stripped
-through ffmpeg with stream copying. The operation fails if ffmpeg is absent or
-cannot parse the input.
+through FFmpeg with stream copying. The `video` extra supplies FFmpeg and
+ffprobe automatically on the [supported platforms](installation.md#video-processing).
+Base installations need a system FFmpeg for this path. The operation fails if
+no tool is available or the tool cannot parse the input.
 
 ### Video pixel removal is provider-specific
 

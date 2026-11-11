@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 import pytest
 
-from remove_ai_watermarks import optional_deps, video_encoding, video_invisible
+from remove_ai_watermarks import optional_deps, video_encoding, video_invisible, video_tools
 from remove_ai_watermarks.video_synthid import (
     DEFAULT_VIDEO_SYNTHID_FPS,
     DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
@@ -145,7 +145,7 @@ def test_encoder_and_mux_commands_separate_streaming_frames_from_source_audio(
     source = tmp_path / "source.mp4"
     output = tmp_path / "candidate.mp4"
 
-    monkeypatch.setattr(video_encoding.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(video_tools.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     profile = video_encoding.VideoEncodeProfile(
         pixel_format="yuv420p",
         color_range="tv",
@@ -216,7 +216,7 @@ def test_mux_reports_bounded_disk_backed_stderr(
     diagnostic = b"synthetic mux diagnostic"
     tail_diagnostic = b"synthetic mux diagnostic tail"
     caplog.set_level("INFO", logger=video_encoding.__name__)
-    monkeypatch.setattr(video_encoding.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(video_tools.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
 
     def fake_run(_command: list[str], **kwargs: object) -> SimpleNamespace:
         stderr = cast("BinaryIO", kwargs["stderr"])
@@ -243,7 +243,7 @@ def test_timestamped_encoder_reads_nut_and_passes_pts_through(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output = tmp_path / "candidate.mp4"
-    monkeypatch.setattr(video_encoding.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(video_tools.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
 
     command = video_encoding.raw_video_command(
         output,
@@ -274,7 +274,7 @@ def test_probe_encode_profile_preserves_supported_8_bit_properties(
 ) -> None:
     source = tmp_path / "source.mp4"
     source.write_bytes(b"video")
-    monkeypatch.setattr(video_encoding.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    monkeypatch.setattr(video_tools.shutil, "which", lambda _name: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         video_encoding.subprocess,
         "run",
@@ -309,7 +309,8 @@ def test_probe_encode_profile_uses_compatible_defaults_without_ffprobe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(video_encoding.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(video_tools.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(video_tools, "_bundled_tools", lambda: None)
 
     assert video_encoding.probe_video_encode_profile(tmp_path / "source.mp4") == (video_encoding.VideoEncodeProfile())
 
@@ -322,7 +323,7 @@ def test_probe_video_timestamps_uses_best_effort_pts(
 ) -> None:
     source = tmp_path / "source.mp4"
     source.write_bytes(b"video")
-    monkeypatch.setattr(video_encoding.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    monkeypatch.setattr(video_tools.shutil, "which", lambda _name: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         video_encoding.subprocess,
         "run",

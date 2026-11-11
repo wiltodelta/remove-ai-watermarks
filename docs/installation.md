@@ -62,7 +62,8 @@ uv tool install --force "remove-ai-watermarks[visible,heif]"
 Video metadata inspection works with the default package, and MP4 and MOV
 stripping uses the in-tree ISOBMFF box walker. Stripping the non-ISOBMFF
 containers (MKV, WebM, AVI, FLV, and the audio formats) and writing any cleaned
-video need ffmpeg on PATH, for example `brew install ffmpeg`. Stable
+video need FFmpeg. The `video` extra installs both FFmpeg and ffprobe, so no
+separate system installation is needed. Stable
 visible-mark identification and removal, full video cleaning, and visible/all
 batch modes need the `video` extra:
 
@@ -71,7 +72,22 @@ uv tool install --force "remove-ai-watermarks[video]"
 ```
 
 The extra includes the visible pixel runtime and PyAV for preserving variable
-frame timestamps. Video SynthID regeneration also needs the diffusion stack:
+frame timestamps, plus the offline `portable-ffmpeg-full` binary bundle. A complete
+system FFmpeg/ffprobe pair takes precedence; otherwise the library extracts the
+installed bundle on first use, without a network download or changing `PATH`.
+The verified binaries are extracted into `~/.cache/remove-ai-watermarks/ffmpeg`,
+so the installed package directory can be read-only. Separate CLI processes
+serialize extraction through a file lock. Metadata-only installations can still
+use system FFmpeg or add the `video` extra when needed.
+
+The bundle supports Windows x64 (Windows 10 22H2+), macOS Intel/Apple Silicon
+(macOS 12+), and Linux x64/ARM64 (glibc 2.28+, Linux 4.18+). Other platforms need
+a system build and a source installation without the `video` extra, with the
+pixel and PyAV dependencies installed separately. FFmpeg binaries have their
+own GPL and third-party notices; see the
+[distribution's licenses and corresponding source](https://github.com/mrkbac/portable-ffmpeg#licenses-and-corresponding-source).
+
+Video SynthID regeneration and the experimental Seedance profile also need the diffusion stack:
 
 ```bash
 uv tool install --force "remove-ai-watermarks[video,diffusion]"

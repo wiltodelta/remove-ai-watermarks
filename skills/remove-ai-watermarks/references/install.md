@@ -59,9 +59,9 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Metadata inspect and strip | no extra |
 | Image identify, `visible`, `erase` | `visible` |
 | HEIC / HEIF / AVIF pixels | add `heif` |
-| Video identify / visible / all / batch | `video`, plus ffmpeg |
-| Experimental Seedance video (`--profile seedance-experimental`) | `video,diffusion`, plus ffmpeg |
-| Video SynthID (`video invisible`) | `video,diffusion`, plus ffmpeg |
+| Video identify / visible / all / batch | `video` (includes FFmpeg and ffprobe) |
+| Experimental Seedance video (`--profile seedance-experimental`) | `video,diffusion` (includes FFmpeg and ffprobe) |
+| Video SynthID (`video invisible`) | `video,diffusion` (includes FFmpeg and ffprobe) |
 | Invisible images | `qwen-zimage`, plus NVIDIA CUDA |
 | Learned image/video fill | add `migan` or `lama` |
 | Verified text restoration (`--text-manifest`) | add `text-restoration` |
@@ -76,7 +76,13 @@ backends. The command runs visible, then invisible when available, then
 metadata.
 
 ffmpeg is required to write cleaned video and to strip non-ISOBMFF containers
-(MKV, WebM, AVI, FLV). Image work does not need it.
+(MKV, WebM, AVI, FLV). The `video` extra installs an offline binary bundle for
+Windows x64, macOS 12+ Intel/Apple Silicon, and Linux glibc 2.28+ x64/ARM64.
+No separate FFmpeg installation is needed there. The library prefers a complete
+system FFmpeg/ffprobe pair, then uses the bundle without changing `PATH` or
+fetching executables at runtime. First use extracts into the user cache, so the package directory can be read-only.
+The probe checks bundle availability inside the CLI interpreter, without extracting
+it. Image work does not need FFmpeg.
 
 Invisible image removal refuses CPU and MPS at construction. There is no
 fallback profile.

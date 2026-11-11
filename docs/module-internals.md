@@ -329,6 +329,18 @@ normative TC260 video placements. The RIFF walker reads only AVI
 `script.onMetaData.AIGC` string. Both require a recognized TC260 JSON field and
 use the verified ffmpeg stream-copy path for removal.
 
+[`video_tools.py`](../src/remove_ai_watermarks/video_tools.py) resolves a complete
+system FFmpeg/ffprobe pair first, then the offline payload installed by `[video]`.
+Base-only installs retain single-system-tool support. Resolution is lazy and
+never mutates `PATH`. Bundle extraction runs in a captured child interpreter so
+upstream progress cannot corrupt CLI JSON or another thread's stdout, and a
+cross-process file lock serializes first use in
+`~/.cache/remove-ai-watermarks/ffmpeg`. Only the child changes the upstream cache
+location, so installed packages can be read-only. The offline payload must be
+installed before the upstream loader can run; base installs never download tools.
+Encoding, probing, Seedance retiming/delivery, and non-ISOBMFF metadata stripping
+all use this resolver. `test_video_tools.py` exercises them with an empty `PATH`.
+
 [`video_encoding.py`](../src/remove_ai_watermarks/video_encoding.py) owns the
 ffmpeg command and pipe lifecycle shared by visible removal and invisible
 regeneration. It centralizes container codecs, optional audio stream copying,
@@ -371,7 +383,7 @@ unavailable or fails; this avoids decoder anomalies such as one spurious
 negative first-frame timestamp turning a CFR clip into false VFR. A uniform sequence keeps the
 cheap raw-BGR pipe unless the source starts at a non-zero PTS. A variable or
 offset sequence is packetized by the lazy PyAV bridge as rawvideo in an
-in-memory NUT stream with explicit PTS. System ffmpeg reads that stream with
+in-memory NUT stream with explicit PTS. The resolved FFmpeg reads that stream with
 `-fps_mode passthrough`; `-copyts` additionally retains a non-zero video start
 and the corresponding copied-audio offset. No temporary frame sequence or
 second video encoder is introduced.

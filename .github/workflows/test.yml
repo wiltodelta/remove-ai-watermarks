@@ -75,6 +75,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Sync dev environment
         run: uv sync --frozen --extra dev
+      - name: Require offline video payload
+        run: >-
+          uv run --no-sync python -c
+          "from remove_ai_watermarks.video_tools import bundled_video_tools_available; assert bundled_video_tools_available()"
       - name: Run tests
         run: uv run pytest -q
 

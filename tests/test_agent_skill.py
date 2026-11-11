@@ -700,10 +700,10 @@ def test_video_probe_runs_the_cli_interpreter_without_loading_models(tmp_path: P
 
     def run(argv: list[str], timeout: float = 8) -> tuple[int, str, str]:
         calls.append(argv)
-        return 0, json.dumps({"pixels": "ok", "invisible": "installed"}), ""
+        return 0, json.dumps({"pixels": "ok", "invisible": "installed", "tools": "installed"}), ""
 
     probe._run = run
-    assert probe._video_stacks(str(cli)) == {"pixels": "ok", "invisible": "installed"}
+    assert probe._video_stacks(str(cli)) == {"pixels": "ok", "invisible": "installed", "tools": "installed"}
     assert len(calls) == 1
     assert calls[0][:2] == [interpreter, "-c"]
     # Execute the exact child code against the real package's availability seams.
@@ -737,6 +737,7 @@ def test_video_runtime_probe_reports_both_real_availability_seams(
     guard = RuntimeError("missing video") if video_missing else None
     with (
         patch.dict(sys.modules, {"av": SimpleNamespace(), "diffusers": SimpleNamespace(AutoencoderKL=object)}),
+        patch("remove_ai_watermarks.video_tools.bundled_video_tools_available", return_value=True),
         patch.object(video, "_require_video_runtime", side_effect=guard) as checked_video,
         patch.object(video_invisible, "is_available", return_value=not diffusion_missing) as checked_diffusion,
         patch.object(video_invisible, "load_video_vae_runtime", side_effect=AssertionError("model load")),
@@ -748,6 +749,7 @@ def test_video_runtime_probe_reports_both_real_availability_seams(
     assert result == {
         "pixels": "missing" if video_missing else "ok",
         "invisible": "missing" if diffusion_missing else "installed",
+        "tools": "installed",
     }
 
 
@@ -756,4 +758,18 @@ def test_unrecognized_cli_launcher_is_unverified(tmp_path: Path) -> None:
     cli = tmp_path / "launcher"
     cli.write_text('#!/bin/sh\nexec unrecognized-wrapper "$@"\n')
     probe._run = lambda *_a, **_kw: pytest.fail("unknown launcher must not run")
-    assert probe._video_stacks(str(cli)) == {"pixels": "unknown", "invisible": "unknown"}
+    assert probe._video_stacks(str(cli)) == {"pixels": "unknown", "invisible": "unknown", "tools": "unknown"}
+
+
+def test_probe_accepts_bundled_tools_without_system_ffmpeg() -> None:
+    probe = _probe_module()
+    probe._video_stacks = lambda _cli: {"pixels": "ok", "invisible": "installed", "tools": "installed"}
+    probe._which = lambda name: None if name in {"ffmpeg", "ffprobe"} else "/synthetic/executable"
+    probe._has_cuda = lambda: False
+    probe._cli = lambda: {"found": True, "path": "/synthetic/cli", "outdated": False}
+    probe._pixel_stack = lambda _cli: "ok"
+    probe._invisible_stack = lambda _cli: "missing"
+    report = probe.build_report()
+    assert report["ffmpeg"] is True
+    assert report["advice"]["video_visible"] == "ok"
+    assert report["advice"]["video_invisible"] == "ok_cpu_or_gpu"

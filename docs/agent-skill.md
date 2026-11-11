@@ -200,7 +200,9 @@ Write for every harness and a weaker model, not only Claude Opus:
   checked separately in the installed CLI's Python environment:
   `video_stacks.pixels` reports `ok`, `missing`, or `unknown`, and
   `video_stacks.invisible` reports `installed`, `missing`, or `unknown`.
-  These checks load no weights. An unrecognized launcher leaves video
+  `video_stacks.tools` uses the same statuses for a system FFmpeg/ffprobe pair
+  or the installed offline bundle. The top-level `ffmpeg` flag includes that
+  bundle. These checks extract no binaries and load no weights. An unrecognized launcher leaves video
   guidance unverified rather than inferring readiness from image support;
 - uv, pipx, and pip as installer fallbacks;
 - forward slashes only;

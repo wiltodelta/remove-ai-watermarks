@@ -24,8 +24,8 @@ defaults. This page focuses on choosing the right command.
 | `invisible` and `all` (needs CUDA) | `remove-ai-watermarks[qwen-zimage]` |
 | `video metadata` and `video identify --no-visible` | Default package |
 | `video identify` | `remove-ai-watermarks[video]` |
-| `video visible`, `video all`, and visible/all batch modes | `remove-ai-watermarks[video]` plus ffmpeg on PATH |
-| `video invisible` and `video all --invisible` | `remove-ai-watermarks[video,diffusion]` plus ffmpeg on PATH |
+| `video visible`, `video all`, and visible/all batch modes | `remove-ai-watermarks[video]` (includes FFmpeg and ffprobe) |
+| `video invisible` and `video all --invisible` | `remove-ai-watermarks[video,diffusion]` (includes FFmpeg and ffprobe) |
 | HEIC/HEIF/AVIF pixel input | Add `remove-ai-watermarks[heif]` |
 | Every production command and Python-compatible backend | `remove-ai-watermarks[all]` |
 | `mcp` | Default package; each tool needs the extra of the command it runs |
@@ -264,7 +264,7 @@ same limit.
 
 The command also supports the audio and video containers listed in
 [supported signals](supported-signals.md). ffmpeg must be available for the
-non-ISOBMFF audio and video path.
+non-ISOBMFF audio and video path, either from the `video` extra or the system.
 
 ## Identify and clean video
 
