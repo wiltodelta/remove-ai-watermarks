@@ -30,24 +30,47 @@ python3 -m pip install --upgrade "remove-ai-watermarks[visible]"
 
 On Windows, `python` may exist when `python3` does not.
 
-Homebrew is macOS/Linux only and CANNOT carry extras: the formula installs the
-default package, which has no pixel dependencies. `visible`, `erase`, `all`,
-pixel-processing `batch` modes, full `video identify`, and video pixel-processing
-commands stop with an install hint. `identify`, `metadata`,
-`batch --mode metadata`, `video metadata`, `video identify --no-visible`, and
-`video batch --mode metadata` still provide metadata-only results. That is exactly
-what `pixel_stack: missing` means in the probe. Use Homebrew for metadata-only work,
-or when the user asks for brew by name and accepts that limit:
+Homebrew is available on macOS and Linux. Its default installation includes
+`visible`. Every published extra has a matching `--with-<extra>` option:
 
 ```bash
 brew install wiltodelta/tap/remove-ai-watermarks
+brew install wiltodelta/tap/remove-ai-watermarks --with-video --with-diffusion
+brew install wiltodelta/tap/remove-ai-watermarks --with-all
 ```
 
-Reinstalling over a brew build with uv or pipx is the fix; the extra is what
-was missing, not the tool.
+Use `--without-default-extras` for the base metadata-only package, or combine it
+with explicit `--with-<extra>` flags for an exact minimal selection. List current
+options with `brew options wiltodelta/tap/remove-ai-watermarks`. Add features using
+`brew reinstall` with the flags; Homebrew preserves previous flags on reinstall
+and upgrade. Removing old extras requires uninstalling and installing again with
+the complete desired selection. Backend hardware requirements remain unchanged.
+For every public optional backend, select `all,text-draft,classify-onnx` with
+pip/uv/pipx, or combine `--with-all --with-text-draft --with-classify-onnx` in
+Homebrew. Prefer Python 3.12 for this complete selection; optional backends can
+have narrower Python and platform support than the base package.
+
+When the user asks for Homebrew, use that route. A missing pixel stack can be an
+older or explicitly metadata-only build; it does not mean Homebrew lacks extras.
+Without pixel extras, `batch --mode metadata`, `video metadata`,
+`video identify --no-visible`, and `video batch --mode metadata` still work.
 
 After installing, rerun `scripts/probe.py` and confirm `pixel_stack` is `ok`
 before promising a command will work.
+
+Tool installs (uv tool, pipx, Homebrew) isolate their Python environments. For
+library-only options, create an application virtual environment and install the
+needed extras there, or run a script without changing the current project:
+
+```bash
+uv run --no-project --python 3.12 --with "remove-ai-watermarks[all,text-draft,classify-onnx]" python script.py
+```
+
+Read the [Python API guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md)
+for signatures and constraints. OCR proposals need operator verification before
+they become verified-text manifests. Installing the Agent Skill through skills.sh,
+ClawHub, or a plugin copies the same instructions; it does not install the Python
+package or model weights. Probe and install the requested backend in every harness.
 
 Read this file when the probe says the CLI is missing, the extra is wrong,
 ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
@@ -56,7 +79,8 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 
 | Need | Extra |
 | --- | --- |
-| Metadata inspect and strip | no extra |
+| Image/video/text metadata inspect and strip | no extra |
+| Text token-watermark regeneration | `diffusion` |
 | Image identify, `visible`, `erase` | `visible` |
 | HEIC / HEIF / AVIF pixels | add `heif` |
 | Video identify / visible / all / batch | `video` (includes FFmpeg and ffprobe) |

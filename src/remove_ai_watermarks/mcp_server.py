@@ -20,10 +20,12 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from typing import IO, Any, cast
 
 from remove_ai_watermarks import __version__
+from remove_ai_watermarks.integration import input_schema, plan_operation, run_operation
 from remove_ai_watermarks.text import TEXT_EXTENSIONS
 from remove_ai_watermarks.video import VIDEO_EXTENSIONS
 
@@ -34,7 +36,7 @@ log = logging.getLogger(__name__)
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 INSTRUCTIONS = (
-    "Identify and remove AI provenance marks from images and video the user generated "
+    "Identify and remove AI provenance marks from images, video, and text the user generated "
     "or edited themselves: C2PA, IPTC, EXIF and TC260 metadata, visible AI-generator "
     "labels, and supported invisible watermarks. Do not use it on stock, agency, "
     "marketplace or other third-party marks that protect someone else's asset. A "
@@ -211,8 +213,59 @@ _COMMANDS: dict[str, Callable[[dict[str, Any]], tuple[list[str], str | None]]] =
 }
 
 
+@lru_cache(maxsize=1)
+def _operations() -> dict[str, dict[str, Any]]:
+    """Discover the installed command surface without importing Click into MCP."""
+    completed = subprocess.run(
+        [sys.executable, "-m", "remove_ai_watermarks.integration", "catalog"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {operation["id"]: operation for operation in json.loads(completed.stdout)}
+
+
+def tools() -> list[dict[str, Any]]:
+    """Keep convenient legacy tools and expose every installed operation."""
+    return [
+        *TOOLS,
+        *(
+            {
+                "name": operation["id"],
+                "title": operation["title"],
+                "description": operation["description"],
+                "inputSchema": input_schema(operation),
+                "annotations": {"openWorldHint": False},
+            }
+            for operation in _operations().values()
+        ),
+    ]
+
+
 def call_tool(name: str, arguments: dict[str, Any], runner: Runner = run_cli) -> dict[str, Any]:
     """Run one tool and return an MCP ``tools/call`` result."""
+    if name not in _COMMANDS:
+        operation = _operations()[name]
+        try:
+            args, output = plan_operation(operation, arguments)
+            result = run_operation(operation, arguments)
+        except (ValueError, OSError) as exc:
+            return {"content": [{"type": "text", "text": f"Invalid arguments: {exc}"}], "isError": True}
+        token = arguments.get("hf_token")
+        if token:
+            args = ["[redacted]" if arg == token else arg for arg in args]
+        completed = subprocess.CompletedProcess(args, result["exit_code"], result["stdout"], result["stderr"])
+        formatted = _tool_result(completed, args, result["output"])
+        formatted["structuredContent"]["operation"] = name
+        if not args:
+            formatted["structuredContent"]["command"] = [
+                sys.executable,
+                "-m",
+                "remove_ai_watermarks.integration",
+                "execute",
+                name,
+            ]
+        return formatted
     try:
         args, output = _COMMANDS[name](_validated(name, arguments))
     except ToolInputError as exc:
@@ -222,11 +275,16 @@ def call_tool(name: str, arguments: dict[str, Any], runner: Runner = run_cli) ->
     except OSError as exc:  # the child never started, so there is no exit code to relay
         log.warning("CLI command could not start: %s: %s", args, exc)
         return {"content": [{"type": "text", "text": f"The command could not start: {exc}"}], "isError": True}
+    return _tool_result(completed, args, output)
+
+
+def _tool_result(completed: subprocess.CompletedProcess[str], args: list[str], output: str | None) -> dict[str, Any]:
+    """Preserve CLI exit semantics for legacy and catalog-backed operations."""
     code = completed.returncode
     text = completed.stdout.strip()
     stderr = completed.stderr.strip()[-4000:]
     structured: dict[str, Any] = {"command": ["remove-ai-watermarks", *args], "exit_code": code, "output": output}
-    if "--json" in args and code == 0:
+    if ("--json" in args or not args) and code == 0:
         with contextlib.suppress(json.JSONDecodeError):
             structured["report"] = json.loads(text)
     if "report" not in structured:
@@ -280,11 +338,11 @@ def handle(raw: object, runner: Runner = run_cli) -> dict[str, Any] | None:
     elif method == "ping":
         result = {}
     elif method == "tools/list":
-        result = {"tools": TOOLS}
+        result = {"tools": tools()}
     elif method == "tools/call":
         name = params.get("name")
         arguments = _object(params.get("arguments") or {})
-        if not isinstance(name, str) or name not in _COMMANDS:
+        if not isinstance(name, str) or (name not in _COMMANDS and name not in _operations()):
             return _error(request_id, -32602, f"Unknown tool: {name}")
         if arguments is None:
             return _error(request_id, -32602, "arguments must be an object")

@@ -272,3 +272,46 @@ def test_mcp_registry_publishes_on_release_with_an_oidc_token() -> None:
     assert workflow["permissions"]["id-token"] == "write"
     # PyYAML reads the bare `on:` key as the boolean True.
     assert set(workflow[True]) == {"release", "workflow_dispatch"}
+
+
+@pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")
+def test_homebrew_bump_synchronizes_all_published_extra_options(tmp_path: Path) -> None:
+    script = _step("distribute.yml", "homebrew", "Bump the formula")["run"]
+    (tmp_path / "Formula").mkdir()
+    formula = tmp_path / "Formula" / "remove-ai-watermarks.rb"
+    formula.write_text('url "old"\nsha256 "old"\n')
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "sync_remove_ai_watermarks.py").write_text(
+        "import argparse,json\n"
+        "from pathlib import Path\n"
+        "p=argparse.ArgumentParser()\n"
+        "for name in ('formula','version','url','sha256'): p.add_argument('--'+name,required=True)\n"
+        "a=p.parse_args()\n"
+        "Path('sync-call.json').write_text(json.dumps(vars(a)))\n"
+        "Path(a.formula).write_text('artifact and Provides-Extra synchronized\\n')\n"
+    )
+    executable_dir = tmp_path / "bin"
+    executable_dir.mkdir()
+    git = executable_dir / "git"
+    git.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> git-calls.txt\n')
+    git.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": str(executable_dir) + os.pathsep + os.environ["PATH"],
+        "VERSION": "0.56.0",
+        "URL": "https://files.pythonhosted.org/packages/synthetic/remove_ai_watermarks-0.56.0.tar.gz",
+        "SHA": "a" * 64,
+    }
+    result = subprocess.run(["bash", "-eu", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    invocation = tmp_path / "sync-call.json"
+    assert invocation.exists(), "Homebrew bump skipped the published extras inventory"
+    assert json.loads(invocation.read_text()) == {
+        "formula": "Formula/remove-ai-watermarks.rb",
+        "version": env["VERSION"],
+        "url": env["URL"],
+        "sha256": env["SHA"],
+    }
+    assert formula.read_text() == "artifact and Provides-Extra synchronized\n"
+    assert "push" in (tmp_path / "git-calls.txt").read_text().splitlines()

@@ -1014,3 +1014,18 @@ keyed statistical scorers (`score_synthid_text`, `score_gumbel_text`,
 (`encode_c2patxt`, `encode_c2pa_ascii_armor`, `encode_vsrmark`,
 `encode_unicode_tags`, `encode_innamark`). See
 [text watermark and provenance research](text-watermark-research.md).
+
+## Integration operation catalog
+
+`remove_ai_watermarks.integration.operation_catalog()` derives typed operations
+from every non-server CLI leaf, plus `api_classify_onnx` and `api_draft_text` for
+public API-only features. MCP, ComfyUI, and the Space consume the same catalog.
+`input_schema(operation)` provides its JSON Schema; `widget_arguments` translates
+optional visual controls without overriding profile defaults.
+`run_operation(operation, arguments)` validates the payload, preserves the source,
+and runs the selected operation in a child of the current interpreter. It returns
+`exit_code`, `stdout`, `stderr`, and an output path only when a result was written.
+Missing optional backends return installation guidance through the child report.
+Credentials are passed on stdin and redacted from logs and returned diagnostics.
+These adapters expose the same algorithms and hardware requirements as direct
+CLI and Python calls; they do not provide a separate model implementation.

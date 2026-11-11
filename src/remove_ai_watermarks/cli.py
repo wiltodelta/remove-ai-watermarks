@@ -413,9 +413,9 @@ EXIT_NO_VISIBLE_MARK = 2
 def _pixels_required(func: Callable[..., None]) -> Callable[..., None]:
     """Report a missing pixel stack as an install hint instead of a traceback.
 
-    The default package installs WITHOUT ``pixels``, and the Homebrew formula ships
-    exactly that build, so a first run that followed this project's own install
-    instructions died mid-command on a bare ``ModuleNotFoundError: No module named
+    The base package installs WITHOUT ``pixels``. Legacy metadata-only Homebrew
+    builds followed this project's old install instructions and died mid-command
+    on a bare ``ModuleNotFoundError: No module named
     'cv2'`` -- the one moment the user needed the extra named, and the only moment
     they were not told it. ``identify`` and ``metadata`` still answer without the
     stack, so the guard goes on the commands that cannot, not on the group. The video

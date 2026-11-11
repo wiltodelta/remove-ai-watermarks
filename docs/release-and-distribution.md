@@ -62,13 +62,15 @@ PyPI API token from the repository.
 `.github/workflows/distribute.yml` runs on the same published-release event. It
 waits for the matching source distribution to appear on PyPI, then:
 
-- updates the Homebrew tap formula URL and SHA-256;
+- synchronizes the Homebrew tap formula URL, SHA-256, and all published extras
+  through the tap's `scripts/sync_remove_ai_watermarks.py`; a new artifact resets
+  the formula revision, while redistributing the same artifact preserves it;
 - bumps the Hugging Face Space pin and factory-rebuilds the demo on that pin;
 - synchronizes, tests, versions, and publishes the ComfyUI nodes.
 
 Upgrading the Hugging Face Space is dispatched from `distribute.yml`: it runs
 `pin-library.yml` in `wiltodelta/raiw-hf-space`, which bumps
-`remove-ai-watermarks[visible,heif]` in `pyproject.toml`, refreshes `uv.lock`,
+`remove-ai-watermarks[all,classify-onnx,text-draft]` in `pyproject.toml`, refreshes `uv.lock`,
 and pushes. That repository's `sync-to-hf.yml` then mirrors the files onto the
 Space. `distribute.yml` waits for the Hub `requirements.txt` pin to match,
 then factory-rebuilds. The `RAIW_HF_SPACE_TOKEN` repository secret is a
@@ -218,7 +220,7 @@ submission state and links live in
 [`server.json`](../server.json) lists the PyPI package in the
 [official MCP registry](https://registry.modelcontextprotocol.io/) as
 `io.github.wiltodelta/remove-ai-watermarks`, started as
-`uvx remove-ai-watermarks mcp`. The registry accepts it only after PyPI serves a
+the package with Python 3.12 and the complete public extras before `mcp`. The registry accepts it only after PyPI serves a
 release whose description, the README, carries the `mcp-name:` marker, and
 `tests/test_mcp_server.py` pins `server.json` to the package version. The listing
 is not a release surface that blocks a release.

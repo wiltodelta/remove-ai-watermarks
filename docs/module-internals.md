@@ -82,9 +82,8 @@ Important contracts:
   metadata proxy is gone, so neither outcome is a clean verdict.
 - `visible`, `erase`, `all` and `batch` report a missing pixel stack as an
   install hint naming `remove-ai-watermarks[visible]`, not as a traceback. The
-  default package ships without those dependencies and the Homebrew formula
-  installs exactly that build, so a first run following the project's own
-  instructions used to die on `ModuleNotFoundError: No module named 'cv2'`.
+  base package ships without those dependencies, as did legacy metadata-only
+  Homebrew builds, so a first run following the project's old instructions died on `ModuleNotFoundError: No module named 'cv2'`.
   `_pixels_required` wraps the four image commands. Video pixel-processing paths
   reach the same build through `video._require_video_runtime`, which names the
   `video` extra, while `video metadata` and `video identify --no-visible` bypass
@@ -1038,8 +1037,7 @@ metadata extraction from verdict logic:
   historical `get_or_none` contract), but the report now carries a caveat saying
   the detectors did NOT run. Without it, an install lacking the `visible` extra
   dropped `Visible Gemini sparkle` from a marked image and read exactly like a
-  clean scan -- a silent false negative on the one install path Homebrew
-  produces. The caveat names WHICH silence happened: an ImportError on a build
+  clean scan -- a silent false negative in metadata-only installations. The caveat names WHICH silence happened: an ImportError on a build
   `pixels_available()` calls incomplete is the absent extra, and anything else is
   a file that could not be decoded. The two need different fixes, so naming the
   wrong one sends the user to reinstall a working install.
@@ -3626,3 +3624,16 @@ For a diffusion change:
 3. run a real model smoke for the changed model path;
 4. treat provider-verifier results as specific to the exact checked output;
 5. update [known limitations](known-limitations.md).
+
+## Integration operation catalog
+
+`integration.operation_catalog()` derives every non-server CLI leaf and its typed
+parameters from Click. `api_classify_onnx` and `api_draft_text` cover the public
+API-only backends. MCP discovers this catalog in a child process so its transport
+keeps standard-library imports. ComfyUI builds typed nodes and the Space builds
+Gradio controls from the same metadata. `widget_arguments` preserves omitted
+profile defaults; `plan_operation` retains repeatable/negative flags and refuses
+source/output aliasing. Execution uses a fresh child, sends arguments on stdin,
+and redacts credentials from requests, responses, and MCP diagnostics. The Space
+stages uploads per request; callers cannot select server input or output paths.
+Coverage and source-preservation regressions live in `tests/test_integration.py`.

@@ -31,16 +31,42 @@ You can also install the Homebrew package on macOS or Linux:
 brew install wiltodelta/tap/remove-ai-watermarks
 ```
 
-A formula cannot carry extras, so this installs the default package: metadata
-commands work, including `video metadata`, and `video identify --no-visible`
-provides metadata-only provenance inspection. `batch --mode metadata` and
-`video batch --mode metadata` also work. `visible`, `erase`, `all`, pixel-processing
-image batch modes, full `video identify`, and the video pixel-processing commands
-stop with an install hint naming the extra that fixes them. Image `identify` also
-runs, but reports metadata only and says so in its caveats. `metadata --remove`
-works on a file whose markers survive the first strip: the raster normalization
-that recovery needs is skipped rather than crashing, and the survivors are
-reported. Reinstall with uv or pipx to add the extra.
+Homebrew installs the `visible` extra by default. Each extra published with the
+pinned package has a matching `--with-<extra>` option, and options can be combined:
+
+```bash
+# Seedance and SynthID video processing
+brew install wiltodelta/tap/remove-ai-watermarks --with-video --with-diffusion
+
+# The package's all group
+brew install wiltodelta/tap/remove-ai-watermarks --with-all
+
+# Base metadata/provenance tools, without the default pixel dependencies
+brew install wiltodelta/tap/remove-ai-watermarks --without-default-extras
+
+# Base plus HEIF support only
+brew install wiltodelta/tap/remove-ai-watermarks --without-default-extras --with-heif
+
+# List the options for the currently pinned release
+brew options wiltodelta/tap/remove-ai-watermarks
+```
+
+To add features to an existing installation, use `brew reinstall` with the desired
+options. Homebrew retains previously selected options on reinstall and upgrade.
+To remove old extras or replace the selection exactly, uninstall the formula and
+install it again with the complete desired option set. The `all` option uses the
+package's own `all` group; other groups remain individually selectable.
+
+The formula creates an isolated Python environment and installs the requested
+extras with their dependencies. Python is supplied by Homebrew; the `video` extra
+supplies FFmpeg and ffprobe. Models still download on first use, and each backend's
+platform, wheel, and hardware requirements still apply. In particular, image
+regeneration profiles require NVIDIA CUDA; video VAE processing supports CPU,
+MPS, or CUDA with a compatible Torch stack.
+
+Without pixel extras, `identify`, `metadata`, `batch --mode metadata`,
+`video metadata`, `video identify --no-visible`, and `video batch --mode metadata`
+still provide metadata-only results.
 
 ## Visible watermark removal
 
@@ -144,19 +170,19 @@ application actually uses:
 | `pixels` | Shared BGR image runtime and direct local Paint InvisMark disruption | NumPy, headless OpenCV | No |
 | `heif` | HEIC, HEIF, and AVIF pixel decoding | pillow-heif | No |
 | `visible` | Visible mark detection, OpenCV inpainting, and manual erasing | `pixels` | No |
-| `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV | No |
+| `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV, FFmpeg/ffprobe bundle | No |
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |
 | `trustmark` | Adobe TrustMark detection | trustmark | Yes |
 | `classify` | Metadata-free photo AI-versus-camera classifier plus gated provider | `pixels`, Torch, Transformers | Yes |
 | `classify-onnx` | Optional CPU-only ONNX vision runtime for `classify` | `classify`, ONNX Runtime | Yes |
 | `source-classify` | Abstaining 10-provider source-export and model-version classifier, not SynthID detection | `pixels`, Hugging Face Hub | Model download, no Torch |
-| `diffusion` | Torch and Diffusers runtime; video SynthID regeneration | `pixels`, Torch, Diffusers | Yes |
+| `diffusion` | Torch and Diffusers runtime; video regeneration | `pixels`, Torch, Diffusers | Image profiles only |
 | `migan` | MI-GAN ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
 | `lama` | big-LaMa ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
 | `qwen-zimage` | Invisible image-watermark removal, all CUDA-only profiles | `diffusion`, DiffSynth, SentencePiece | Yes |
 | `text-restoration` | Opt-in verified profile-VAE glyph restoration | `qwen-zimage`, `lama` | Yes |
 | `text-draft` | Draft OCR proposals for operator verification | PaddleOCR, PaddlePaddle | Model download, no Torch |
-| `all` | Every production feature available on the active Python | All compatible rows above | Yes |
+| `all` | Production removal and default classifier backends | All runtime branches except proposal-only OCR | Yes |
 | `dev` | Tests, linting, typing, upstream parity checks, and development oracles | `video`, `detect`, OpenAI SDK, upstream invisible-watermark | Yes, for parity tests |
 
 Dependency composition:
@@ -186,8 +212,8 @@ explicitly with another feature when required. `text-draft` is excluded from
 removal path. `classify-onnx` is excluded from `all`; install it only for `backend="onnx"`.
 The TrustMark branch requires `trustmark>=0.9.2`, the first release without a
 NumPy 1.x pin, so it installs on every supported Python; its detector tests pass
-on Python 3.13 with NumPy 2 (checked 2026-09-23). The `all` bundle contains every production branch compatible with
-the active Python and never includes `dev`.
+on Python 3.13 with NumPy 2 (checked 2026-09-23). The `all` bundle selects the production removal and default classifier branches;
+it never includes `dev`. Each selected dependency must support the active platform.
 
 Examples:
 
@@ -218,6 +244,44 @@ their weights on first use.
 
 The old `gpu` and `remove` aliases are intentionally not provided. Use
 `diffusion` and `visible` respectively.
+
+## Installation coverage
+
+The CLI and Python API come from the same package for pip, uv, pipx, Homebrew,
+and source installs. The installer does not select a different implementation.
+An extra adds a backend and its dependencies; a base-only install exposes metadata
+operations and reports missing dependencies for pixel operations.
+
+| Route | Selecting optional features | Interface coverage |
+| --- | --- | --- |
+| pip in a virtual environment | `python -m pip install "remove-ai-watermarks[all,text-draft,classify-onnx]"` | CLI and public Python API |
+| uv tool | `uv tool install --force --python 3.12 "remove-ai-watermarks[all,text-draft,classify-onnx]"` | CLI; use a project environment to import the Python API |
+| pipx | `pipx install --force --python python3.12 "remove-ai-watermarks[all,text-draft,classify-onnx]"` | CLI; its environment is isolated from application Python |
+| Homebrew | `brew install wiltodelta/tap/remove-ai-watermarks --with-all --with-text-draft --with-classify-onnx` | CLI; its environment is isolated from application Python |
+| Source checkout | `uv sync --extra all --extra text-draft --extra classify-onnx` | CLI and public Python API in the project environment |
+| Agent Skill and plugins | Choose the CLI extras through the installation reference | Guides the installed CLI; does not bundle backends |
+| MCP | Start an existing CLI installation, or select extras with `uvx --from` | Every CLI operation and the public API-only backends via the [MCP catalog](mcp-server.md#complete-operation-tools) |
+| ComfyUI nodes | The node package installs the complete public backend set | Existing image tensor nodes plus typed nodes for video, text, classifiers, and every catalog operation |
+| Hugging Face Space | The Space installs the complete public backend set | Image, video, text, and classifier controls; image regeneration needs a CUDA Space |
+
+These full-selection examples include the proposal-only OCR backend that `all`
+intentionally omits. `classify-onnx` is explicit for clarity; `all` already brings
+ONNX Runtime through the image fill backends. `dev` adds development tools and
+oracles, not additional public runtime features.
+
+Python 3.12 is the recommended starting point when every optional backend is
+needed. The package's Python support range does not promise that every third-party
+backend publishes wheels for every Python version or CPU architecture. A resolver
+success verifies dependency compatibility, not model inference. Image regeneration
+still requires NVIDIA CUDA; adding extras cannot supply a missing GPU.
+
+The MCP server, ComfyUI operation nodes, and Space panels use the installed
+library's shared operation catalog, so all CLI parameters reach each interface.
+The catalog also exposes the public API-only ONNX classifier and OCR proposals.
+ComfyUI accepts local file paths; the public Space stages uploads into isolated
+request directories and supplies downloads rather than accepting server paths.
+Hardware requirements still apply. Conda environments can use the pip route;
+this project does not publish a conda package or a standalone Docker image.
 
 ## Install from the repository
 

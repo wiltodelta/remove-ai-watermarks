@@ -4,7 +4,7 @@
 # on it, including the ComfyUI node package. The console script below carries
 # the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.57.0"
+version = "0.58.0"
 description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -95,10 +95,8 @@ detect = [
 ]
 diffusion = [
     "remove-ai-watermarks[pixels]",
-    # A CUDA-enabled torch build is required: invisible-watermark removal has no
-    # CPU, MPS or XPU path. The default PyPI wheel carries CUDA on Linux/Windows;
-    # on macOS there is no CUDA build and this extra installs only for the
-    # non-diffusion imports it shares.
+    # Image regeneration requires NVIDIA CUDA. Video VAE profiles also support
+    # CPU and MPS when the selected Torch stack supports the host platform.
     "torch>=2.0.0",
     "diffusers>=0.38.0",
     # diffusers 0.38's auto-pipeline registry imports ``Qwen3VLForConditional

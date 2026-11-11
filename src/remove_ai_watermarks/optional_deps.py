@@ -32,8 +32,8 @@ def module_available(*names: str) -> bool:
 def pixels_available() -> bool:
     """True when this build's shared pixel dependencies resolve and import.
 
-    The default package ships without the ``visible`` extra -- the Homebrew formula
-    installs exactly that build -- so every visible-mark command and the visible arm
+    A base-only package ships without the ``visible`` extra, so every visible-mark
+    command and the visible arm
     of ``identify`` has to ask this. It is one predicate rather than three, because
     the three places that needed it each grew their own ``exc.name in (...)`` test
     and all three then agreed only by coincidence: an ``ImportError`` raised INSIDE

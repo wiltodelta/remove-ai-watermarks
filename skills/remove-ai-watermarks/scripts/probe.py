@@ -32,10 +32,10 @@ _GPU_MARKERS = ("GPU ", "gpu:")
 # told an agent its CLI was current right before it typed a value that build
 # rejects. tests/test_agent_skill.py pins it against the package version and
 # against every "(since CLI X.Y.Z)" annotation in the skill.
-MIN_CLI_VERSION = (0, 57, 0)
+MIN_CLI_VERSION = (0, 58, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
-# Homebrew formula ships exactly such a build.
+# legacy Homebrew installs can still contain such a build.
 _NO_PIXELS_MARKERS = (
     "visible-mark dependencies are not installed",
     "No module named 'cv2'",
@@ -133,7 +133,7 @@ def _pixel_stack(cli_path: str) -> str:
     """Whether the INSTALLED build can actually run a visible-mark command.
 
     A found binary says nothing about this. The default package ships without the
-    pixel extra, so ``cli.found`` reported "ok" for a Homebrew install whose very
+    pixel extra, so ``cli.found`` reported "ok" for a metadata-only install whose very
     first ``visible`` died on a missing cv2. So ask the real seam: run ``visible``
     on a blank image the probe writes itself. Exit 2 is the documented "no mark
     here", which only a working pixel stack can reach.
@@ -340,7 +340,7 @@ def _advice(
             "The installed CLI has no pixel dependencies. Metadata-only image and video "
             "commands still work, including both metadata batch modes. "
             f"Reinstall with the visible extra using {installer or 'uv, pipx or pip'}. "
-            "A Homebrew install cannot carry extras."
+            "Homebrew users can run brew reinstall wiltodelta/tap/remove-ai-watermarks --with-visible."
         )
     elif pixels == "unknown":
         advice["detail"] = (

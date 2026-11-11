@@ -76,12 +76,13 @@ def test_notifications_get_no_reply_and_unknown_methods_get_method_not_found() -
     assert response["error"]["code"] == -32601
 
 
-def test_tools_list_exposes_exactly_the_three_tools() -> None:
+def test_tools_list_exposes_convenience_and_all_catalog_tools() -> None:
     response = mcp_server.handle(_request("tools/list"))
 
     assert response is not None
     tools = response["result"]["tools"]
-    assert [tool["name"] for tool in tools] == ["identify", "remove", "batch"]
+    assert [tool["name"] for tool in tools[:3]] == ["identify", "remove", "batch"]
+    assert {tool["name"] for tool in tools[3:]} == set(mcp_server._operations())
     assert tools[0]["annotations"]["readOnlyHint"] is True
     for tool in tools:
         assert tool["inputSchema"]["type"] == "object"
@@ -252,7 +253,8 @@ def test_the_official_sdk_client_connects_and_calls_a_tool() -> None:
 
     names, structured = anyio.run(session)
 
-    assert names == ["identify", "remove", "batch"]
+    assert names[:3] == ["identify", "remove", "batch"]
+    assert set(names[3:]) == set(mcp_server._operations())
     assert structured["report"]["platform"] == "Kuaishou Kling AI"
 
 

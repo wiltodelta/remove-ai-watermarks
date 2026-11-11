@@ -194,7 +194,7 @@ Write for every harness and a weaker model, not only Claude Opus:
   CAPABILITY, not presence: it writes a blank PNG with `zlib` and `struct` and
   runs the installed `visible` on it, because exit `2` is a state only a working
   pixel stack reaches. Reporting a found binary as ready is what sent an agent
-  into a missing-cv2 crash on the Homebrew build, which carries no extras. It
+  into a missing-cv2 crash on a legacy metadata-only Homebrew build. It
   also compares the installed release against `MIN_CLI_VERSION`, so a stale CLI
   is named instead of being reported as a broken flag. Video capability is
   checked separately in the installed CLI's Python environment:
@@ -204,7 +204,7 @@ Write for every harness and a weaker model, not only Claude Opus:
   or the installed offline bundle. The top-level `ffmpeg` flag includes that
   bundle. These checks extract no binaries and load no weights. An unrecognized launcher leaves video
   guidance unverified rather than inferring readiness from image support;
-- uv, pipx, and pip as installer fallbacks;
+- Homebrew extra flags, with uv, pipx, and pip as installer fallbacks;
 - forward slashes only;
 - no `allowed-tools` (that field is experimental and host-specific).
 

@@ -303,7 +303,7 @@ def test_extras_named_in_the_skill_exist_in_pyproject() -> None:
 
 # ── A found CLI is not a working CLI ──
 # The probe called any binary on PATH "ok", and the skill installed only when the
-# binary was absent. Homebrew ships the default package, which has no pixel stack,
+# binary was absent. A base-only install has no pixel stack,
 # so the advertised install path produced a CLI whose first `visible` died on a
 # missing cv2 and whose `identify` silently dropped the visible detectors. These
 # tests pin the three halves of that fix: a readable error, an honest report, and a
@@ -439,6 +439,7 @@ def test_probe_reads_capability_not_presence() -> None:
     assert report["advice"]["visible"] == "needs_visible_extra"
     assert report["advice"]["identify"] == "metadata_only_no_pixels"
     assert report["advice"]["next"] == "install_visible"
+    assert "brew reinstall wiltodelta/tap/remove-ai-watermarks --with-visible" in report["advice"]["detail"]
     assert any(call[1:2] == ["visible"] for call in calls), "the probe never exercised the pixel path"
 
 

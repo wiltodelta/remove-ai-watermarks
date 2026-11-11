@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.wiltodelta/remove-ai-watermarks",
   "title": "Remove AI Watermarks",
-  "description": "Identify and remove AI watermarks and provenance metadata from your own images and video.",
-  "version": "0.57.0",
+  "description": "Identify and clean AI watermarks and provenance in your own images, video, and text.",
+  "version": "0.58.0",
   "repository": {
     "url": "https://github.com/wiltodelta/remove-ai-watermarks",
     "source": "github"
@@ -14,7 +14,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "remove-ai-watermarks",
-      "version": "0.57.0",
+      "version": "0.58.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -23,6 +23,18 @@
         {
           "type": "positional",
           "value": "mcp"
+        }
+      ],
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--python",
+          "value": "3.12"
+        },
+        {
+          "type": "named",
+          "name": "--with",
+          "value": "remove-ai-watermarks[all,classify-onnx,text-draft]"
         }
       ]
     }

@@ -65,7 +65,7 @@ REMOVAL_MODULES = ("torch", "diffusers", "diffsynth")
 # before pip ever runs -- another install hint that does not install.
 INVISIBLE_EXTRA = "'remove-ai-watermarks[qwen-zimage]'"
 # The pixel stack every visible-mark command needs. The default package ships without
-# it -- Homebrew installs exactly that build -- so ``visible``, ``erase``, ``all`` and
+# it, as did legacy metadata-only Homebrew builds, so ``visible``, ``erase``, ``all`` and
 # ``batch`` used to die on a bare ``ModuleNotFoundError: No module named 'cv2'``
 # traceback on a first run that followed the project's own install instructions.
 PIXELS_MODULES = ("cv2", "numpy")

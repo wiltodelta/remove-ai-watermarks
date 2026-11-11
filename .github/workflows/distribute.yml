@@ -3,7 +3,7 @@ name: Distribute on release
 # Fans a published GitHub Release out to the channels that need a nudge.
 # PyPI is handled by publish.yml. This workflow event-drives the four channels
 # that would otherwise be manual:
-#   - Homebrew tap: rewrite the formula's url + sha256 to the new sdist.
+#   - Homebrew tap: synchronize the sdist URL, SHA-256, and published extras.
 #   - HF Space: factory-rebuild the version already pinned in the Space repo.
 #   - ComfyUI: sync, test, and publish the node against the exact library release.
 #   - ClawHub: publish the agent skill when its own version moved.
@@ -116,8 +116,8 @@ jobs:
         run: |
           set -euo pipefail
           F=Formula/remove-ai-watermarks.rb
-          sed -i -E "s|url \"[^\"]*\"|url \"$URL\"|" "$F"
-          sed -i -E "s|sha256 \"[^\"]*\"|sha256 \"$SHA\"|" "$F"
+          python3 scripts/sync_remove_ai_watermarks.py --formula "$F" \
+            --version "$VERSION" --url "$URL" --sha256 "$SHA"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$F"

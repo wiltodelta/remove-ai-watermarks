@@ -83,7 +83,8 @@ specialized Python API can inspect and disrupt the validated local
 | Torch-free DWT-DCT detection | `remove-ai-watermarks[detect]` |
 | Direct local Paint InvisMark disruption | `remove-ai-watermarks[pixels]` |
 | Invisible image removal (needs CUDA) | `remove-ai-watermarks[qwen-zimage]` |
-| Every production feature available on the active Python | `remove-ai-watermarks[all]` |
+| Production removal and default classifier backends | `remove-ai-watermarks[all]` |
+| Optional OCR proposals for operator verification | `remove-ai-watermarks[text-draft]` |
 
 Lower-level and specialized extras include `pixels`, `heif`, `trustmark`,
 `migan`, `lama`, `diffusion`, `classify-onnx`, and `source-classify`. The
@@ -520,7 +521,7 @@ The skill refuses stock-agency and other third-party paid-asset marks. See
 Context Protocol tools over stdio, each a thin wrapper around one CLI command:
 
 ```json
-{"mcpServers": {"remove-ai-watermarks": {"command": "uvx", "args": ["remove-ai-watermarks", "mcp"]}}}
+{"mcpServers": {"remove-ai-watermarks": {"command": "uvx", "args": ["--python", "3.12", "--with", "remove-ai-watermarks[all,classify-onnx,text-draft]", "remove-ai-watermarks", "mcp"]}}}
 ```
 
 See [the MCP server guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/mcp-server.md).

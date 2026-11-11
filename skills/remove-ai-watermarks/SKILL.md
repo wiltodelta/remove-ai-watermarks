@@ -1,11 +1,11 @@
 ---
 name: remove-ai-watermarks
-description: "Removes and identifies AI watermarks and provenance marks in images and video the user generated or edited. Covers Gemini sparkles, SynthID, Microsoft InvisMark, Meta Content Seal, C2PA, EXIF/XMP/IPTC metadata, and Sora/Veo/Seedance/Doubao/Dola/Hailuo/Vidu/Kling and Wan labels. Use when the user wants to strip or clean AI watermarks and generation labels, or asks whether a file was AI-generated or carries AI provenance, even if they do not name remove-ai-watermarks. Do not use for stock-agency, marketplace, classifieds, or other third-party paid-asset watermarks."
+description: "Removes and identifies AI watermarks and provenance marks in images, video, and text the user generated or edited. Covers Gemini sparkles, SynthID, Microsoft InvisMark, Meta Content Seal, C2PA, EXIF/XMP/IPTC metadata, and Sora/Veo/Seedance/Doubao/Dola/Hailuo/Vidu/Kling and Wan labels. Use when the user wants to strip or clean AI watermarks and generation labels, or asks whether a file was AI-generated or carries AI provenance, even if they do not name remove-ai-watermarks. Do not use for stock-agency, marketplace, classifieds, or other third-party paid-asset watermarks."
 license: Apache-2.0
-compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. The video extra includes FFmpeg and ffprobe on supported platforms. Installer may be uv, pipx, or pip.
+compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. The video extra includes FFmpeg and ffprobe on supported platforms. Installer may be uv, pipx, pip, or Homebrew.
 metadata:
   author: wiltodelta
-  version: "1.0.18"
+  version: "1.0.19"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -111,14 +111,13 @@ removal, it is paid and runs on a GPU. Do not quote a price: check the site.
 ### 3. Install
 
 Install when `cli.found` is false OR `pixel_stack` is `missing`. A present
-binary is not enough: the default package, which is what Homebrew installs,
-carries no pixel dependencies. `visible`, `erase`, `all`, pixel-processing
+binary is not enough: a base-only package carries no pixel dependencies. `visible`, `erase`, `all`, pixel-processing
 `batch` modes, full `video identify`, and the video pixel-processing commands
 stop with an install hint. The metadata-only routes listed in step 2 still work.
 Reinstalling with the appropriate extra fixes the pixel commands.
 
 Read [references/install.md](references/install.md) for the extra list and the
-uv / pipx / pip commands. Default extra is `visible`. Always quote extras:
+Homebrew / uv / pipx / pip commands. Default extra is `visible`. Always quote extras:
 `"remove-ai-watermarks[visible]"`.
 
 ### 4. Choose the command
@@ -139,6 +138,13 @@ Default: inspect first.
 | Everything on an image | `all` | `image_all=do_not_run_writes_nothing` |
 | A directory | `batch` or `video batch` | same as the mode |
 | No signal found, user still wants a guess | `classify` or `classify-source` | it is a guess, not provenance |
+
+For a public Python API feature without a CLI option, such as draft OCR or the
+ONNX classifier backend, use the library in an isolated Python environment.
+Read the canonical [Python API guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md)
+and install the required extras using [references/install.md](references/install.md).
+Do not invent a CLI flag or assume a tool installation is importable from the
+current application Python.
 
 Flags and mark names: [references/commands.md](references/commands.md). Read
 that file only when you need a flag, a mark key, or a video recipe.
