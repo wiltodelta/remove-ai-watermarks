@@ -102,7 +102,7 @@ uv tool install --force "remove-ai-watermarks[qwen-zimage]"
 ```
 
 The `qwen-zimage`, `qwen21-zimage`, and `sdxl-zimage` profiles run a Z-Image face
-stage on the DiffSynth runtime, so all three need this extra (`qwen21-zimage` uses
+stage on the DiffSynth runtime, so they need this extra (`qwen21-zimage` use
 `Qwen/Qwen-Image-2.1` under the non-commercial Qwen Research License, for research
 and personal use only). `chroma-zimage` uses diffusers'
 ChromaImg2ImgPipeline instead of DiffSynth for its global stage but inherits
@@ -111,6 +111,8 @@ SentencePiece for Chroma1-HD's binary `spiece.model`; without that backend,
 Transformers cannot construct the Chroma tokenizer. It includes the `diffusion`
 dependencies; `diffusion` on its own covers the torch and diffusers imports but
 not the face stage or Chroma tokenizer, so it is not enough to run a removal.
+The extra also installs LPIPS for the default Qwen-2.1 fidelity stages. Its AlexNet
+weights load lazily on CPU and use the Torch cache (`TORCH_HOME`).
 
 **An NVIDIA GPU is required for the diffusion profiles.** `qwen-zimage`,
 `qwen21-zimage`, `sdxl-zimage` and `chroma-zimage` are CUDA-only, and

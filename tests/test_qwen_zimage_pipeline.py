@@ -1508,8 +1508,8 @@ def test_cli_exposes_qwen21_zimage_and_non_commercial_notice():
 
 
 def test_remover_dispatches_qwen21_zimage_to_qwen21_pipeline(monkeypatch):
-    """WatermarkRemover builds Qwen21ZImagePipeline when pipeline is qwen21-zimage."""
-    from remove_ai_watermarks._internal import qwen_zimage_pipeline
+    """WatermarkRemover builds the guarded Qwen-2.1 pipeline when pipeline is qwen21-zimage."""
+    from remove_ai_watermarks._internal import qwen_alignment_pipeline
     from remove_ai_watermarks._internal.watermark_remover import WatermarkRemover
 
     captured: dict[str, Any] = {}
@@ -1518,7 +1518,7 @@ def test_remover_dispatches_qwen21_zimage_to_qwen21_pipeline(monkeypatch):
         def __init__(self, **kwargs: Any) -> None:
             captured.update(kwargs)
 
-    monkeypatch.setattr(qwen_zimage_pipeline, "Qwen21ZImagePipeline", _Recorder)
+    monkeypatch.setattr(qwen_alignment_pipeline, "Qwen21FidelityZImagePipeline", _Recorder)
     remover = WatermarkRemover.__new__(WatermarkRemover)
     remover.configured_profile = "qwen21-zimage"
     remover.model_profile = "qwen21-zimage"
@@ -1529,6 +1529,8 @@ def test_remover_dispatches_qwen21_zimage_to_qwen21_pipeline(monkeypatch):
     remover.controlnet_conditioning_scale = 0.9
     remover.cpu_offload = True
     remover._qwen_zimage_pipeline = None
+    remover._text_region_selector = None
+    remover._fidelity_enabled = True
 
     remover._load_qwen_zimage_pipeline()
 

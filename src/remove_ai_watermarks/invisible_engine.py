@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from numpy.typing import NDArray
+    from PIL import Image
 
 # Suppress verbose deprecation warnings from diffusers/transformers/huggingface_hub
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -161,7 +162,8 @@ class InvisibleEngine:
                 Qwen-Image-2512 Lightning + Canny, then SAM-masked Z-Image face repair),
                 "qwen21-zimage" (NON-COMMERCIAL / PERSONAL & RESEARCH USE ONLY under
                 the Qwen Research License; Qwen-Image-2.1 + texture-fix VAE + Canny,
-                then the same Z-Image face stage), "sdxl-zimage" (the same recipe and
+                then the same Z-Image face stage, with bounded geometry and local
+                quality acceptance enabled by default), "sdxl-zimage" (the same recipe and
                 the same face stage on an SDXL global pass, vendor-adaptive strength
                 because an SDXL global stage needs more of it) or "chroma-zimage" (the
                 same face stage on an Apache-2.0 Chroma1 global pass with its own flat
@@ -199,6 +201,20 @@ class InvisibleEngine:
         a face is detected.
         """
         self._remover.preload(global_only=global_only)
+
+    def set_text_region_selector(self, selector: Callable[[Image.Image], Any] | None) -> None:
+        """Supply independently qualified text geometry for the Qwen-2.1 profile.
+
+        The selector receives an owned RGB image and returns source-coordinate
+        rectangles. It must exclude non-text and visible provider marks. This is
+        neither a reviewed text manifest nor a watermark verification callback.
+        Pass None to disable text reconstruction while retaining alignment.
+        """
+        self._remover.set_text_region_selector(selector)
+
+    def set_fidelity_enabled(self, enabled: bool) -> None:
+        """Switch Qwen-2.1 to its shared baseline without loading another stack."""
+        self._remover.set_fidelity_enabled(enabled)
 
     def remove_watermark(
         self,

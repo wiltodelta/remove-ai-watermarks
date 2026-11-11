@@ -19,6 +19,7 @@ from remove_ai_watermarks._internal.watermark_profiles import (
     QWEN_ZIMAGE_PROFILE,
     REMOVAL_MODULES,
     SDXL_ZIMAGE_PROFILE,
+    fidelity_skip_reason,
     global_offload_supported,
     normalize_profile,
     resolve_effective_profile,
@@ -159,6 +160,28 @@ class WatermarkRemover:
         self.hf_token = hf_token or os.environ.get("HF_TOKEN")
         self._progress_callback = progress_callback
         self._qwen_zimage_pipeline: Any = None
+        self._text_region_selector: Callable[[Image.Image], Any] | None = None
+        self._fidelity_enabled = True
+
+    def set_fidelity_enabled(self, enabled: bool) -> None:
+        """Select fidelity or the shared baseline without reloading model weights."""
+        if self.configured_profile != QWEN21_ZIMAGE_PROFILE:
+            raise ValueError("Fidelity activation requires the qwen21-zimage profile")
+        if type(enabled) is not bool:
+            raise TypeError("Fidelity activation must be boolean")
+        self._fidelity_enabled = enabled
+        if self._qwen_zimage_pipeline is not None:
+            self._qwen_zimage_pipeline.fidelity_enabled = enabled
+
+    def set_text_region_selector(self, selector: Callable[[Image.Image], Any] | None) -> None:
+        """Bind caller-qualified source geometry to the Qwen-2.1 profile."""
+        if self.configured_profile != QWEN21_ZIMAGE_PROFILE:
+            raise ValueError("A text-region selector requires the qwen21-zimage profile")
+        if selector is not None and not callable(selector):
+            raise TypeError("Text-region selector must be callable or None")
+        self._text_region_selector = selector
+        if self._qwen_zimage_pipeline is not None:
+            self._qwen_zimage_pipeline.line_detector = selector
 
     def preload(self, *, global_only: bool = False) -> None:
         """Materialize the selected model stack before the first request."""
@@ -194,8 +217,8 @@ class WatermarkRemover:
                     ChromaZImagePipeline as _Pipeline,
                 )
             elif self.model_profile == QWEN21_ZIMAGE_PROFILE:
-                from remove_ai_watermarks._internal.qwen_zimage_pipeline import (
-                    Qwen21ZImagePipeline as _Pipeline,
+                from remove_ai_watermarks._internal.qwen_alignment_pipeline import (
+                    Qwen21FidelityZImagePipeline as _Pipeline,
                 )
             else:
                 from remove_ai_watermarks._internal.qwen_zimage_pipeline import (
@@ -211,6 +234,9 @@ class WatermarkRemover:
                 keep_face_models_on_device=False if self.cpu_offload else None,
                 keep_global_models_on_device=False if self.cpu_offload else None,
             )
+            if self.model_profile == QWEN21_ZIMAGE_PROFILE:
+                self._qwen_zimage_pipeline.line_detector = self._text_region_selector
+                self._qwen_zimage_pipeline.fidelity_enabled = self._fidelity_enabled
         return self._qwen_zimage_pipeline
 
     def _write_output(self, image: Image.Image, output_path: Path, display_tags_from: Path | None = None) -> None:
@@ -267,7 +293,19 @@ class WatermarkRemover:
             raise ValueError("Verified text restoration is not calibrated with tiled diffusion")
         if fidelity_anchor and self.model_profile != QWEN_ZIMAGE_PROFILE:
             raise ValueError("The fidelity anchor is supported only by the qwen-zimage profile")
-        resolved_strength = resolve_strength(strength, vendor, self.model_profile, size=source.size)
+        fidelity_enabled = (
+            self.model_profile == QWEN21_ZIMAGE_PROFILE
+            and fidelity_skip_reason(
+                enabled=self._fidelity_enabled,
+                tile=tile,
+                has_reviewed_text=text_manifest is not None,
+                size=source.size,
+            )
+            is None
+        )
+        resolved_strength = resolve_strength(
+            strength, vendor, self.model_profile, size=source.size, fidelity_enabled=fidelity_enabled
+        )
         if not 0.0 <= resolved_strength <= 1.0:
             raise ValueError(f"Strength must be between 0.0 and 1.0, got {resolved_strength}")
 

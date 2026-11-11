@@ -128,6 +128,8 @@ qwen-zimage = [
     # Transformers falls through to tiktoken, which cannot parse that file.
     "sentencepiece>=0.2.2,<0.3",
     "torchvision>=0.20.0",
+    # Fixed perceptual acceptance model for qwen21-zimage.
+    "lpips==0.1.4",
 ]
 # Opt-in verified-text reconstruction over qwen-zimage. LaMa removes the changed
 # candidate glyphs before exact Qwen-VAE cores are composited back.

@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. The video extra includes FFmpeg and ffprobe on supported platforms. Installer may be uv, pipx, or pip.
 metadata:
   author: wiltodelta
-  version: "1.0.17"
+  version: "1.0.18"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---

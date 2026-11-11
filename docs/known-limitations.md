@@ -364,13 +364,24 @@ rounding up. Google's source-fresh candidate cleared three independent CJK carri
 types after the original content matrix found CJK and Cyrillic to be the limiting
 strata. The small corpora make these operating points, not universal thresholds.
 
-`qwen21-zimage` uses the same resolution-adaptive unknown curve and Google (`0.35`),
+With fidelity disabled, `qwen21-zimage` uses the same resolution-adaptive unknown curve and Google (`0.35`),
 Microsoft (`0.15`), and Meta (`0.10`) cohorts as `qwen-zimage`, but sets OpenAI to
 `0.20` (`QWEN21_ZIMAGE_OPENAI_STRENGTH = 0.20`): because `Qwen-Image-2.1` +
 `texture-fix-vae` preserves ~3.9 dB higher background fidelity than `Qwen-Image-2512`
 at `0.15625`, the nine-face OpenAI carrier (`10_31_08 AM`, 46.2% face box coverage)
 remained detected after source-cropped `Z-Image` face compositing at `0.15625` and
 cleared at `0.20`.
+
+By default, `qwen21-zimage` adds bounded geometry and optional caller-qualified
+flat-text contours to Qwen-2.1. It uses
+`QWEN21_FIDELITY_GOOGLE_STRENGTH` for Google and otherwise retains the Qwen-2.1
+strength policy. Unsupported paths retain the legacy recipe and operating point.
+The source-error and LPIPS guards measure fidelity, not semantic text accuracy
+or watermark absence. Source-derived geometry can still carry a provider signal;
+an oracle verdict belongs only to the exact submitted artifact and surface.
+One Google Cyrillic-sign output remained indeterminate in the Gemini Web checks;
+that outcome is not watermark clearance.
+See [the profile contract](cli.md#fidelity-profile).
 
 `sdxl-zimage` reads it from the C2PA issuer, on a flat ladder:
 

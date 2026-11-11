@@ -15,6 +15,7 @@ import pytest
 from remove_ai_watermarks._internal.utils import get_image_format, is_supported_format
 from remove_ai_watermarks._internal.watermark_profiles import (
     PROFILE_CHOICES,
+    QWEN21_FIDELITY_GOOGLE_STRENGTH,
     QWEN_ZIMAGE_GOOGLE_STRENGTH,
     QWEN_ZIMAGE_META_STRENGTH,
     QWEN_ZIMAGE_OPENAI_STRENGTH,
@@ -249,7 +250,7 @@ class TestResolveStrength:
         # The floor holds at every size, not only above the curve's top rung.
         assert resolve_strength(None, "google", "qwen-zimage", size=(2000, 1850)) == QWEN_ZIMAGE_GOOGLE_STRENGTH
         assert resolve_strength(None, "openai", "qwen21-zimage", size=(2000, 1850)) == pytest.approx(0.20)
-        assert resolve_strength(None, "google", "qwen21-zimage", size=(2000, 1850)) == QWEN_ZIMAGE_GOOGLE_STRENGTH
+        assert resolve_strength(None, "google", "qwen21-zimage", size=(2000, 1850)) == QWEN21_FIDELITY_GOOGLE_STRENGTH
         assert resolve_strength(None, None, "qwen21-zimage", size=(600, 500)) == pytest.approx(0.084)
 
     def test_qwen_zimage_without_a_size_fails_loudly(self):

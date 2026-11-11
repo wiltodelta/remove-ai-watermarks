@@ -2309,7 +2309,7 @@ is the source of truth for:
 The current profiles are `qwen-zimage` (the default), `qwen21-zimage` (opt-in;
 `Qwen/Qwen-Image-2.1` is under the non-commercial Qwen Research License, for
 research and personal use only), `sdxl-zimage`, `chroma-zimage`, and `auto`, and
-all five are CUDA-only. `controlnet`, `sdxl`, `qwen` and `default` were removed
+all are CUDA-only. `controlnet`, `sdxl`, `qwen` and `default` were removed
 rather than kept as a CPU path, and are rejected rather than aliased onward. `auto`
 is a deterministic per-cohort selection policy:
 sdxl-zimage for Google, chroma-zimage for Microsoft, and qwen-zimage for
@@ -2319,7 +2319,7 @@ It does not run a learned router or classify the image's genre.
 `qwen-zimage` and `qwen21-zimage` resolve global denoise from image area for unknown
 content. Measured provider cohorts bypass that curve with flat operating points
 (`qwen21-zimage` uses `QWEN21_ZIMAGE_OPENAI_STRENGTH = 0.20` for OpenAI and shares
-the Google `0.35`, Microsoft `0.15`, and Meta `0.10` points). The values,
+the baseline Google `0.35`, Microsoft `0.15`, and Meta `0.10` points). The values,
 measurement derivations, and corpus limits are canonical in
 [`known-limitations.md`](known-limitations.md#strength-is-content-and-seed-dependent).
 
@@ -2327,6 +2327,15 @@ For serverless cold starts, `InvisibleEngine.preload(global_only=True)` loads th
 mandatory global stage and YuNet while leaving the optional Z-Image and SAM face
 stack lazy until a face is detected. The default `preload()` still loads every
 stage.
+
+`Qwen21FidelityZImagePipeline` extends the strict alignment experiment with a
+lazy CPU `LocalPerceptualMetric`, registration as the default Qwen-2.1 implementation, and baseline
+fallback for unsupported paths or optional quality-stage failures.
+`InvisibleEngine.set_text_region_selector` binds caller-qualified geometry;
+the library does not choose an OCR model. `set_fidelity_enabled` switches back
+to the shared recipe without replacing the cached pipeline. Google has a separate
+`QWEN21_FIDELITY_GOOGLE_STRENGTH`; unsupported paths resolve the legacy strength
+before the single global pass. The overall default profile and auto routing are unchanged.
 
 **What is deliberately not a parameter.** Model id, step count and CFG are fixed
 by the profile, so none of them appears in `WatermarkRemover.__init__`,
@@ -2474,10 +2483,53 @@ holds `TwoStageZImagePipeline`, the base that owns everything profile-independen
 (the Z-Image face stage with YuNet detection and SAM masks, sizing, compositing,
 the prompt cache, and the `run`/`preload` orchestration). A profile subclass
 implements `_load_global` and `_run_global` for its regeneration model and may
-implement `_vae_roundtrip` to expose that stack's VAE as a verified-text donor;
-nothing else differs, and a test asserts the shared methods are the same objects
-on every subclass. Adding a third global stage means implementing those hooks,
-not inheriting from another profile's pipeline.
+implement `_vae_roundtrip` to expose that stack's VAE as a verified-text donor.
+Optional `_prepare_regeneration` and `_finish_regeneration` hooks support
+request-local extensions before inference and after the shared face stage;
+their base implementations are identities for the registered profiles. Tests
+assert that run, preload and face methods remain the same objects on every
+subclass. Adding a global stage means implementing those hooks, not inheriting
+from another profile's pipeline.
+
+The unregistered experimental `Qwen21AlignmentZImagePipeline` in
+`_internal/qwen_alignment_pipeline.py` reuses the fixed Qwen-2.1 global kernels
+and adds bounded geometry after the completed baseline. Its required
+`perceptual_metric(reference, candidate)` callback supplies a local,
+nonnegative finite distance with lower values indicating greater fidelity.
+Both full-frame RGB MSE and that distance must improve; ties, regressions or
+invalid metric values return the exact baseline image object. Callback images
+are owned copies. Per-request `last_quality` diagnostics reset before inference.
+An optional `line_detector` callback supplies source-image geometry on an owned
+copy before inference; integer boxes are frozen and checked against the source
+bounds. After alignment selection, `text_shapes.restore_contour_glyphs` proposes
+neutral text contours on flat backgrounds using regenerated colors, excluding
+protected faces. The text proposal must improve both metrics over the completed
+baseline and must not regress either metric against the selected alignment.
+Rejected or unchanged proposals retain the exact previous image object.
+`last_text_quality` records this separate decision and resets per request.
+A subsequent color pass considers only lines rejected for colored/low-contrast
+foregrounds, using `restore_contour_glyphs(..., allow_colored=True)` on the
+selected neutral-text output. It retains the flat-background color-line model,
+grouped local source-error guard and regenerated foreground/background colors.
+Both full-frame RGB MSE and perceptual distance must strictly improve over that
+parent. Invalid metrics, ties, regressions or unchanged proposals retain the
+exact parent object. Independent support-mask and protected-face postconditions
+run before selection. Per-request `last_color_quality` records the result and
+resets before inference. The default helper policy remains neutral-only.
+Neither geometry proposals nor the metric gates establish semantic text accuracy.
+Tiling, verified-text combinations and sides below 64 pixels are uncalibrated
+and rejected before the global pass in this strict experimental class. The
+registered fidelity subclass described above provides compatible fallback;
+the strict class itself has no factory entry. Quality selection does not
+establish removal effectiveness.
+
+`_internal/image_alignment.py` contains the CPU-only displacement and weighting
+helpers. Low-pass grayscale controls DIS optical flow; source colors never
+enter the output directly. A bounded smooth flow preserves supplied baseline
+face rectangles, and coarse local-error weights attenuate displacement before
+one Lanczos resampling. The gradient bound is reapplied after weighting. The
+helpers do not promise improvement at every pixel or region, nor any watermark
+verdict. Exact output bytes need independent provider verification.
 
 [`_internal/qwen_zimage_pipeline.py`](../src/remove_ai_watermarks/_internal/qwen_zimage_pipeline.py)
 implements both fixed CUDA-only Qwen two-stage profiles (`QwenZImagePipeline` for

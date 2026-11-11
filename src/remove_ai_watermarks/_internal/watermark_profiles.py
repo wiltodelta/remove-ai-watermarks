@@ -30,6 +30,21 @@ SDXL_ZIMAGE_PROFILE = "sdxl-zimage"
 CHROMA_ZIMAGE_PROFILE = "chroma-zimage"
 AUTO_PROFILE = "auto"
 DEFAULT_PROFILE = QWEN_ZIMAGE_PROFILE
+
+
+def fidelity_skip_reason(*, enabled: bool, tile: bool, has_reviewed_text: bool, size: tuple[int, int]) -> str | None:
+    """Resolve the shared fidelity eligibility policy before strength or inference."""
+    if not enabled:
+        return "disabled"
+    if tile:
+        return "tiled_input"
+    if has_reviewed_text:
+        return "reviewed_text"
+    if min(size) < 64:
+        return "small_input"
+    return None
+
+
 PROFILE_CHOICES = (
     QWEN_ZIMAGE_PROFILE,
     QWEN21_ZIMAGE_PROFILE,
@@ -162,6 +177,12 @@ _QWEN21_ZIMAGE_FLAT_STRENGTH_BY_VENDOR: dict[str, float] = {
     "openai": QWEN21_ZIMAGE_OPENAI_STRENGTH,
 }
 
+QWEN21_FIDELITY_GOOGLE_STRENGTH = 0.45
+_QWEN21_FIDELITY_STRENGTH_BY_VENDOR: dict[str, float] = {
+    **_QWEN21_ZIMAGE_FLAT_STRENGTH_BY_VENDOR,
+    "google": QWEN21_FIDELITY_GOOGLE_STRENGTH,
+}
+
 
 # sdxl-zimage always picks its strength from the vendor. qwen-zimage instead uses
 # the vendor only for measured cohorts and image area for unknown content. An
@@ -288,7 +309,8 @@ def strength_default_help() -> str:
         f"flat OpenAI {QWEN_ZIMAGE_OPENAI_STRENGTH} / Google {QWEN_ZIMAGE_GOOGLE_STRENGTH} / "
         f"Microsoft InvisMark {QWEN_ZIMAGE_MICROSOFT_STRENGTH} / Meta Content Seal "
         f"{QWEN_ZIMAGE_META_STRENGTH} floors; qwen21-zimage uses the same curve and floors "
-        f"with OpenAI {QWEN21_ZIMAGE_OPENAI_STRENGTH}; sdxl-zimage "
+        f"with OpenAI {QWEN21_ZIMAGE_OPENAI_STRENGTH}, local "
+        f"quality acceptance and Google {QWEN21_FIDELITY_GOOGLE_STRENGTH}; sdxl-zimage "
         f"uses OpenAI {SDXL_ZIMAGE_OPENAI_STRENGTH} / Google {SDXL_ZIMAGE_GEMINI_STRENGTH} / "
         f"unknown {SDXL_ZIMAGE_UNKNOWN_STRENGTH}; chroma-zimage uses OpenAI "
         f"{CHROMA_ZIMAGE_OPENAI_STRENGTH} / Microsoft {CHROMA_ZIMAGE_MICROSOFT_STRENGTH} / "
@@ -302,6 +324,7 @@ def resolve_strength(
     pipeline: str | None = None,
     *,
     size: tuple[int, int] | None = None,
+    fidelity_enabled: bool = True,
 ) -> float:
     """Resolve a user override or the calibrated policy for a profile and vendor.
 
@@ -313,7 +336,9 @@ def resolve_strength(
     exceptions bypass the area curve: OpenAI and Microsoft use one additional
     observed cross-source spread over their worst clean boundaries, while Google
     uses a separately repeated cross-source candidate. See the constants' comments
-    for the exact derivations.
+    for the exact derivations. ``fidelity_enabled=False`` selects the legacy
+    Qwen-2.1 operating point for unsupported or explicitly disabled fidelity paths;
+    it does not change other profiles or explicit strength overrides.
     """
     if strength is not None:
         return strength
@@ -326,7 +351,9 @@ def resolve_strength(
     if size is None:
         raise ValueError(f"{normalized or 'qwen-zimage'} resolves strength from image area, so size is required")
     vendor_map = (
-        _QWEN21_ZIMAGE_FLAT_STRENGTH_BY_VENDOR
+        _QWEN21_FIDELITY_STRENGTH_BY_VENDOR
+        if normalized == QWEN21_ZIMAGE_PROFILE and fidelity_enabled
+        else _QWEN21_ZIMAGE_FLAT_STRENGTH_BY_VENDOR
         if normalized == QWEN21_ZIMAGE_PROFILE
         else _QWEN_ZIMAGE_FLAT_STRENGTH_BY_VENDOR
     )
