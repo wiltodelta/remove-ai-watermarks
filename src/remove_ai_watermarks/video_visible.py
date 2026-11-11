@@ -10,7 +10,8 @@ A single frame is never enough to authorize removal: the temporal arbiter
 requires the candidate to recur at the same location across adjacent frames.
 This keeps isolated lookalikes in clean videos from becoming removal masks.
 
-Video pixels are decoded with OpenCV and encoded with the system ``ffmpeg``.
+Video pixels are decoded with OpenCV, with a PyAV codec fallback, and encoded
+with the resolved ``ffmpeg`` executable.
 Variable frame timestamps cross the pipe in a PyAV-muxed NUT stream; uniform
 inputs retain the cheaper raw-BGR pipe. Complete audio is stream-copied from
 the source. The video stream must be transcoded because visible-mark removal
@@ -39,6 +40,7 @@ from PIL import Image, ImageDraw, ImageFont
 from remove_ai_watermarks._internal.tc260_producers import producer_codes_for_mark, producer_for_code
 from remove_ai_watermarks._internal.tc260_producers import tc260_producer_in as tc260_producer_in
 from remove_ai_watermarks.video import VIDEO_VISIBLE_MARKS
+from remove_ai_watermarks.video_decode import open_video_capture
 from remove_ai_watermarks.video_encoding import (
     abort_raw_video_encoder,
     finish_raw_video_encoder,
@@ -1297,7 +1299,7 @@ def _scan_video_detectors(
     collect_timestamps: bool = True,
 ) -> dict[str, VideoScan]:
     """Decode once and collect one untrusted candidate per detector and frame."""
-    capture = cv2.VideoCapture(str(source))
+    capture = open_video_capture(source)
     if not capture.isOpened():
         raise RuntimeError(f"OpenCV could not decode video: {source}")
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -1310,26 +1312,27 @@ def _scan_video_detectors(
     detections: dict[str, list[FrameLocalization]] = {mark: [] for mark in detectors}
     timestamps: list[float] = []
     frame_index = 0
-    while True:
-        ok, frame = capture.read()
-        if not ok:
-            break
-        if collect_timestamps:
-            timestamps.append(float(capture.get(cv2.CAP_PROP_POS_MSEC)) / 1000)
-        if frame.shape[:2] != (height, width):
-            capture.release()
-            raise RuntimeError(f"Video changes frame dimensions at frame {frame_index}: {source}")
-        prepared = _prepare_frame(frame)
-        for mark, detector in detectors.items():
-            detections[mark].append(
-                detector(
-                    frame,
-                    frame_index=frame_index,
-                    prepared=prepared,
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            if collect_timestamps:
+                timestamps.append(float(capture.get(cv2.CAP_PROP_POS_MSEC)) / 1000)
+            if frame.shape[:2] != (height, width):
+                raise RuntimeError(f"Video changes frame dimensions at frame {frame_index}: {source}")
+            prepared = _prepare_frame(frame)
+            for mark, detector in detectors.items():
+                detections[mark].append(
+                    detector(
+                        frame,
+                        frame_index=frame_index,
+                        prepared=prepared,
+                    )
                 )
-            )
-        frame_index += 1
-    capture.release()
+            frame_index += 1
+    finally:
+        capture.release()
     if frame_index == 0:
         raise RuntimeError(f"Video contains no decodable frames: {source}")
     shared_timestamps: tuple[float, ...] = ()
@@ -1340,7 +1343,7 @@ def _scan_video_detectors(
         else:
             if probed_timestamps:
                 log.warning(
-                    "ffprobe/OpenCV frame-count mismatch for %s: timestamps=%s decoded=%s; using decoder timestamps",
+                    "ffprobe/decoder frame-count mismatch for %s: timestamps=%s decoded=%s; using decoder timestamps",
                     source,
                     len(probed_timestamps),
                     frame_index,
@@ -1544,7 +1547,7 @@ def encode_clean_video(
         )
         frame_pipe = process.stdin
 
-        capture = cv2.VideoCapture(str(source))
+        capture = open_video_capture(source)
         if not capture.isOpened():
             abort_raw_video_encoder(process)
             raise RuntimeError(f"OpenCV could not reopen video for removal: {source}")

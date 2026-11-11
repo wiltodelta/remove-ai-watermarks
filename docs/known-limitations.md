@@ -638,7 +638,7 @@ audio offset are preserved through ffmpeg timestamp passthrough.
 The encoder is source-aware for common 8-bit inputs: it probes and preserves
 supported chroma sampling, recognized color metadata, encoder time base, and
 MP4/MOV track timescale instead of accepting ffmpeg's implicit `yuv444p`
-raw-BGR output. OpenCV still decodes through 8-bit BGR, so HDR/high-bit-depth
+raw-BGR output. OpenCV and the PyAV fallback decode through 8-bit BGR, so HDR/high-bit-depth
 inputs are rejected before encoding rather than silently falling back to
 `yuv420p`. The synthetic
 Sora/OpenCV full-clip CI gate covers complete removal, untouched-region PSNR,

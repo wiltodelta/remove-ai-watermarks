@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import cv2
 import numpy as np
 
+from remove_ai_watermarks.video_decode import open_video_capture
 from remove_ai_watermarks.video_encoding import (
     _run_ffprobe,
     abort_raw_video_encoder,
@@ -63,7 +64,7 @@ SeedanceQuality = Literal["delivery", "master"]
 
 
 def _frames(path: Path) -> Iterator[NDArray[Any]]:
-    capture = cv2.VideoCapture(str(path))
+    capture = open_video_capture(path)
     if not capture.isOpened():
         raise RuntimeError(f"Could not decode video: {path}")
     try:

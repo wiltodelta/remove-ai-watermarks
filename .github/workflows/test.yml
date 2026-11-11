@@ -80,7 +80,7 @@ jobs:
           uv run --no-sync python -c
           "from remove_ai_watermarks.video_tools import bundled_video_tools_available; assert bundled_video_tools_available()"
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run pytest -q -n auto
 
   transport-contract-python-314:
     name: versioned transport contracts py3.14

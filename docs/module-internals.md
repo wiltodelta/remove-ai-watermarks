@@ -377,7 +377,7 @@ encoding so the OpenCV boundary cannot silently reduce them to SDR 8-bit.
 `probe_video_timestamps` reads authoritative per-frame display PTS through
 ffprobe. The CSV reader consumes the first column and ignores appended SEI
 side-data columns; otherwise a valid first row such as `0.000000,` invalidates
-the entire authoritative timeline. OpenCV timestamps are only a count-matched fallback when ffprobe is
+the entire authoritative timeline. Decoder timestamps are only a count-matched fallback when ffprobe is
 unavailable or fails; this avoids decoder anomalies such as one spurious
 negative first-frame timestamp turning a CFR clip into false VFR. A uniform sequence keeps the
 cheap raw-BGR pipe unless the source starts at a non-zero PTS. A variable or
@@ -499,6 +499,15 @@ harness that produces the certified rows is the last place that should be exempt
 from the gate. The full-clip oracle floor is
 `noise_std=0.15`: on the public eight-second Veo carrier, `0.10` remained
 detected while `0.15` did not.
+
+[`video_decode.py`](../src/remove_ai_watermarks/video_decode.py) supplies the
+shared capture interface for visible scanning/removal, VAE sampling, and Seedance
+texture reconstruction. OpenCV remains the first choice; when it cannot open a
+stream, PyAV decodes 8-bit BGR frames and retains source geometry, rate, and frame
+PTS. This supports wheels without FFmpeg video I/O, including the checked Intel
+Mac OpenCV wheels. PyAV comes with the `video` extra. Scanners close the capture
+even when a detector fails. Real FFV1 and complete marked-video regressions cover
+pixels, variable timestamps, source preservation, and copied audio.
 
 [`video_visible.py`](../src/remove_ai_watermarks/video_visible.py) implements
 the first pixel stages for Sora, Veo, Seedance, Doubao, Dola, Hailuo AI, Vidu, and Kling AI. The

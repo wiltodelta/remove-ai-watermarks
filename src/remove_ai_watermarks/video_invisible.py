@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 
+from remove_ai_watermarks.video_decode import open_video_capture
 from remove_ai_watermarks.video_encoding import (
     abort_raw_video_encoder,
     finish_raw_video_encoder,
@@ -184,7 +185,7 @@ def paired_psnr(reference: np.ndarray, candidate: np.ndarray) -> float:
 
 
 def _probe_video(source: Path) -> tuple[int, int, float]:
-    capture = cv2.VideoCapture(str(source))
+    capture = open_video_capture(source)
     if not capture.isOpened():
         raise ValueError(f"Could not open video: {source}")
     try:
@@ -233,7 +234,7 @@ def _iter_sampled_frames(
     size: tuple[int, int],
 ) -> Iterable[np.ndarray]:
     """Yield uniformly sampled frames without retaining the full video."""
-    capture = cv2.VideoCapture(str(source))
+    capture = open_video_capture(source)
     if not capture.isOpened():
         raise ValueError(f"Could not open video: {source}")
     sample_period = 1.0 / effective_fps

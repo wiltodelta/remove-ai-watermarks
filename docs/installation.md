@@ -67,6 +67,8 @@ MPS, or CUDA with a compatible Torch stack.
 On Intel Macs, the formula stages checksum-verified build tools from the official
 Rust distribution and uses Homebrew's OpenSSL and pkgconf to compile current
 cryptography dependencies. The compiler is temporary; no manual setup is needed.
+Video engines use the installed PyAV decoder when OpenCV cannot open a stream;
+the `video` extra already supplies it, including on builds without OpenCV FFmpeg support.
 
 Without pixel extras, `identify`, `metadata`, `batch --mode metadata`,
 `video metadata`, `video identify --no-visible`, and `video batch --mode metadata`

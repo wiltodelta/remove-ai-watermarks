@@ -105,7 +105,7 @@ reducing the supported Python range does not fix them.
 ## CI
 
 `.github/workflows/test.yml` runs Ruff, a test matrix over every supported Python
-minor with default plus development dependencies, cross-platform coverage at the
+minor with default plus development dependencies and pytest-xdist, cross-platform coverage at the
 oldest and newest minors, and a separate Ubuntu job that activates the packaged
 offline FFmpeg/ffprobe pair on PATH to
 run the full-clip video test, experimental Seedance profile tests, and Seedance

@@ -2751,7 +2751,8 @@ class TestVideoVisibleEncoding:
 
 
 class TestVideoVisibleFullClip:
-    def test_removes_complete_clip_and_preserves_sequence_and_audio(self, tmp_path: Path):
+    @pytest.mark.parametrize("force_pyav", [False, True])
+    def test_removes_complete_clip_and_preserves_sequence_and_audio(self, tmp_path: Path, monkeypatch, force_pyav):
         from remove_ai_watermarks.metadata import get_ai_metadata
         from remove_ai_watermarks.video import remove_video_all, remove_video_metadata, remove_video_visible
         from remove_ai_watermarks.video_visible import scan_video_marks, stabilize_localizations
@@ -2778,6 +2779,19 @@ class TestVideoVisibleFullClip:
         independent_output = tmp_path / "clean-independent.mp4"
         _write_synthetic_sora_clip(source, source_frames, fps=fps, ffmpeg=ffmpeg)
         _write_synthetic_sora_clip(clean_control, clean_frames, fps=fps, ffmpeg=ffmpeg)
+        if force_pyav:
+            from types import SimpleNamespace
+
+            native_capture = cv2.VideoCapture
+            monkeypatch.setattr(
+                cv2,
+                "VideoCapture",
+                lambda path: (
+                    SimpleNamespace(isOpened=lambda: False, release=lambda: None)
+                    if Path(path) == source
+                    else native_capture(path)
+                ),
+            )
         assert get_ai_metadata(source)
 
         metadata_result = remove_video_metadata(source, metadata_clean)
@@ -2790,6 +2804,9 @@ class TestVideoVisibleFullClip:
             backend="cv2",
             temporal_consistency=False,
         )
+
+        if force_pyav:
+            monkeypatch.setattr(cv2, "VideoCapture", native_capture)
 
         assert metadata_result.remaining == {}
         assert metadata_clean.stat().st_size == source.stat().st_size
