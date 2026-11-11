@@ -22,7 +22,7 @@ import logging
 import math
 import os
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from PIL import Image
 
@@ -497,3 +497,15 @@ class Qwen21ZImagePipeline(TwoStageZImagePipeline):
             dtype=self.torch_dtype,
             rgba=True,
         )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+# Unbound model kernels let experimental siblings share the fixed Qwen-2.1
+# global stack while the common base retains run, preload, and face ownership.
+qwen21_vram_config: Callable[[Any], DiffSynthVramConfig] = Qwen21ZImagePipeline._qwen_vram_config
+qwen21_load_global: Callable[[Any], Any] = Qwen21ZImagePipeline._load_global
+qwen21_run_global: Callable[[Any, Image.Image, float, int | None], Image.Image] = Qwen21ZImagePipeline._run_global
+qwen21_vae_roundtrip: Callable[[Any, Image.Image], Image.Image] = Qwen21ZImagePipeline._vae_roundtrip

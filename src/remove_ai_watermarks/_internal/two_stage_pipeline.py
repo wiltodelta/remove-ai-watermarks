@@ -910,6 +910,25 @@ class TwoStageZImagePipeline:
         """Reconstruct source pixels through the profile's already loaded VAE."""
         raise NotImplementedError(f"{type(self).__name__} does not expose a VAE donor for verified text restoration")
 
+    def _prepare_regeneration(
+        self, image: Image.Image, *, tile: bool, text_manifest: VerifiedTextManifest | None
+    ) -> Any:
+        """Validate an optional extension and freeze its per-request context."""
+        return None
+
+    def _finish_regeneration(
+        self,
+        image: Image.Image,
+        result: Image.Image,
+        boxes: list[tuple[int, int, int, int]],
+        *,
+        strength: float,
+        seed: int | None,
+        context: Any,
+    ) -> Image.Image:
+        """Finish an optional extension after the shared face stage."""
+        return result
+
     @staticmethod
     def _detail_size(
         crop_size: tuple[int, int],
@@ -988,6 +1007,7 @@ class TwoStageZImagePipeline:
         if text_manifest is not None and tile:
             raise ValueError("Verified text restoration is not calibrated with tiled diffusion")
         self._require_cuda()
+        context = self._prepare_regeneration(image, tile=tile, text_manifest=text_manifest)
         seed = resolve_seed(seed)
         donor = None
         if text_manifest is not None:
@@ -1025,6 +1045,7 @@ class TwoStageZImagePipeline:
                 strength=face_strength,
                 seed=seed,
             )
+        result = self._finish_regeneration(image, result, boxes, strength=global_strength, seed=seed, context=context)
         if text_manifest is None:
             return result
         if donor is None:

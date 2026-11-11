@@ -604,12 +604,12 @@ The same option exists on `all` and `batch`, and as
 | Pipeline | When to use it |
 | --- | --- |
 | `qwen-zimage` | Default (Apache-2.0). Qwen-Image-2512 global pass plus a SAM-masked Z-Image face stage |
-| `qwen21-zimage` | Opt-in Qwen-Image-2.1 global pass (`texture-fix-vae` + Canny ControlNet) plus the same Z-Image face stage. **Qwen Research License: non-commercial research, evaluation, and personal use only (not for commercial use)** |
+| `qwen21-zimage` | Opt-in Qwen-Image-2.1 global pass (`texture-fix-vae` + Canny ControlNet) plus the same Z-Image face stage and guarded fidelity refinement. **Qwen Research License: non-commercial research, evaluation, and personal use only (not for commercial use)** |
 | `sdxl-zimage` | The same recipe and face stage on an SDXL global pass, at a higher denoise |
 | `chroma-zimage` | The same face stage on an Apache-2.0 Chroma1 global pass; explicit OpenAI use needs a higher floor than qwen-zimage |
 | `auto` | Pick the commercial-safe engine from provenance: sdxl-zimage for Google, chroma-zimage for Microsoft, qwen-zimage for OpenAI, unknown, and an explicitly selected Meta cohort |
 
-**All five are CUDA-only.** There is no CPU or MPS profile for invisible-watermark
+**All profiles are CUDA-only.** There is no CPU or MPS profile for invisible-watermark
 removal. The former `controlnet`, `sdxl`, `qwen` and `default` profiles were removed
 rather than kept as a CPU path: none of them matched this recipe's face preservation,
 so offering them implied a quality the library no longer delivers. Passing a retired
@@ -628,6 +628,29 @@ deprecated `--auto` is gone. Each profile pins its model stack, its per-stage
 schedule, CFG 1.0 and CUDA, so every one of those flags existed only to be refused
 several layers down. They are not parsed at all now, which fails at the point the
 user can act on rather than after a model load.
+
+### Fidelity profile
+
+`--pipeline qwen21-zimage` retains the Qwen-2.1 global and face stages,
+then tries bounded geometric alignment. Source MSE and CPU LPIPS, evaluated with
+the reference bounded to 1024 pixels per side, must both improve before accepting
+the aligned result. Protected face rectangles remain byte-identical to the
+completed face stage. This quality decision is not watermark-detection evidence.
+
+The CLI supplies no automatic text selector. Python integrations can supply
+independently qualified text geometry for neutral and colored flat-text recovery;
+see [the engine API](python-api.md#fidelity-and-qualified-text-geometry).
+Each accepted text group must improve its local source error, and the complete
+text stage must also pass the perceptual guard. Detector confidence alone is not
+qualification. Textured text can remain regenerated.
+
+The profile uses its own Google operating point; other provider strengths follow
+the Qwen-2.1 policy. Tiled inputs, reviewed manifests, images smaller than 64 pixels
+on either side, and explicit fidelity deactivation retain the shared Qwen-2.1
+recipe and its strength policy. An optional quality-stage error retains the
+completed baseline. The default profile and `auto` routing remain unchanged.
+The Qwen-2.1 profile requires compliance with the non-commercial Qwen Research
+License; it is never selected by `auto`.
 
 ### Restore operator-verified text
 

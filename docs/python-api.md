@@ -846,7 +846,7 @@ to 8-bit SDR.
 
 ## Remove invisible watermarks
 
-Install `remove-ai-watermarks[qwen-zimage]`. All four concrete profiles need it, and all
+Install `remove-ai-watermarks[qwen-zimage]`. All concrete profiles need it, and all
 need an NVIDIA GPU.
 
 ```python
@@ -855,7 +855,7 @@ from pathlib import Path
 from remove_ai_watermarks.invisible_engine import InvisibleEngine
 
 engine = InvisibleEngine(
-    pipeline="qwen-zimage",  # the default; also "qwen21-zimage" (non-commercial), "sdxl-zimage", "chroma-zimage", or "auto"
+    pipeline="qwen-zimage",  # the default; also `qwen21-zimage` (non-commercial), "sdxl-zimage", "chroma-zimage", or "auto"
     device=None,
     cpu_offload=False,
 )
@@ -891,6 +891,25 @@ The `qwen-zimage` extra is required for every profile, including `auto`: each
 concrete engine runs the same DiffSynth Z-Image face stage. `pipeline="auto"`
 selects sdxl-zimage for Google provenance, chroma-zimage for Microsoft, and
 qwen-zimage otherwise, after the vendor is known and before strength resolution.
+
+### Fidelity and qualified text geometry
+
+`InvisibleEngine(pipeline="qwen21-zimage")` selects Qwen-2.1 with fidelity refinement enabled by default,
+under the non-commercial Qwen Research License.
+It aligns geometry without OCR by default. A host integration can call
+`engine.set_text_region_selector(selector)` before processing. The callable
+receives an owned RGB PIL image and returns bounded `(x1, y1, x2, y2)` text
+rectangles. It must independently reject non-text and exclude known visible
+provider marks. A detector score alone does not establish eligibility.
+
+`engine.set_text_region_selector(None)` disables text reconstruction while
+retaining geometric alignment. `engine.set_fidelity_enabled(False)` retains the
+shared Qwen-2.1 recipe and strength policy without reloading model weights;
+restore it with `True` before the next eligible request. These setters accept only
+the Qwen-2.1 profile. Eligibility and quality guards do not establish
+watermark-removal evidence. See [profile limits](cli.md#fidelity-profile).
+
+### Reviewed text manifests
 
 The opt-in verified-text stage uses the same `text_manifest` argument as the CLI:
 
