@@ -1,7 +1,7 @@
 """Generated C2PA soft-binding registry; do not edit by hand.
 
 Source: https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json
-Revision: 258694702b5628d35373182f5b334aa07b6df1ec
+Revision: 8cf0d20ccfbf27742d958c32422a8fa05e593c6f
 Source license: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
 Changes: validated, ordered, and reduced to fields used at runtime; descriptions
 are shortened to their first sentence for display.
@@ -12,7 +12,7 @@ from __future__ import annotations
 C2PA_SOFT_BINDING_SOURCE_URL = (
     "https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json"
 )
-C2PA_SOFT_BINDING_SOURCE_REVISION = "258694702b5628d35373182f5b334aa07b6df1ec"
+C2PA_SOFT_BINDING_SOURCE_REVISION = "8cf0d20ccfbf27742d958c32422a8fa05e593c6f"
 C2PA_SOFT_BINDING_SOURCE_LICENSE = "CC BY 4.0"
 
 C2PA_SOFT_BINDING_ROWS: tuple[
@@ -662,6 +662,28 @@ C2PA_SOFT_BINDING_ROWS: tuple[
         ("image/jpeg", "image/png", "image/tiff", "image/webp"),
         "QuatMark keyed invisible image watermark",
         "2026-10-16T00:00:00.000Z",
+        (),
+        False,
+    ),
+    (
+        57,
+        "com.encypher.text.watermark.1",
+        "watermark",
+        ("text",),
+        (),
+        "Encypher text watermark",
+        "2026-10-19T00:00:00.000Z",
+        (),
+        False,
+    ),
+    (
+        58,
+        "com.encypher.text.fingerprint.1",
+        "fingerprint",
+        ("text",),
+        (),
+        "Encypher text content fingerprint",
+        "2026-10-19T00:00:00.000Z",
         (),
         False,
     ),

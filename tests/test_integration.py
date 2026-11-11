@@ -127,7 +127,7 @@ def test_secret_never_reaches_logs_or_responses(monkeypatch, caplog) -> None:
 
 
 def test_api_onnx_passes_the_selected_backend(monkeypatch, capsys) -> None:
-    from remove_ai_watermarks import classify
+    from remove_ai_watermarks import classify, optional_deps
 
     @dataclasses.dataclass
     class Result:
@@ -140,6 +140,7 @@ def test_api_onnx_passes_the_selected_backend(monkeypatch, capsys) -> None:
         return Result()
 
     monkeypatch.setattr(classify, "classify_pixels", fake)
+    monkeypatch.setattr(optional_deps, "module_available", lambda *modules: True)
     integration._execute(operation("api_classify_onnx"), {"source": "photo.png"})
     assert calls == [(Path("photo.png"), {"backend": "onnx"})]
     assert json.loads(capsys.readouterr().out) == {"label": "unknown"}
