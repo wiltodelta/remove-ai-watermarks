@@ -64,6 +64,10 @@ platform, wheel, and hardware requirements still apply. In particular, image
 regeneration profiles require NVIDIA CUDA; video VAE processing supports CPU,
 MPS, or CUDA with a compatible Torch stack.
 
+On Intel Macs, the formula stages checksum-verified build tools from the official
+Rust distribution and uses Homebrew's OpenSSL and pkgconf to compile current
+cryptography dependencies. The compiler is temporary; no manual setup is needed.
+
 Without pixel extras, `identify`, `metadata`, `batch --mode metadata`,
 `video metadata`, `video identify --no-visible`, and `video batch --mode metadata`
 still provide metadata-only results.

@@ -25,6 +25,11 @@ entries are recorded in the [generated registry snapshot](../src/remove_ai_water
 | `me.deepmark.audio.vigil.128` | watermark | `resolution-api.deepmark.me` | payload-based per vendor site | no | no |
 | `ai.trufo.pawprint.watermark` / `.fingerprint` | both | `c2pa.trufo.ai/v1` | not published publicly | ? | ? |
 | `io.blockfact.audio.watermark.32` | watermark | `api.blockfact.io/api/soft-binding/v1` | not published publicly | ? | ? |
+| `com.etchv.watermark.1` | watermark | `api.etchv.com/c2pa/v1` | request contract unverified | ? | ? |
+
+The Etchv endpoint is declared in the [packaged upstream registry revision](https://github.com/c2pa-org/softbinding-algorithm-list/blob/172efd828087b021ff2f1f79aa5bbe03936ee99d/softbinding-algorithm-list.json).
+This refresh records its URL; the provider's request and privacy contract has not
+been verified. The library does not call it.
 
 Sources, verified 2026-09-07 against the vendors' own pages: the Monolith
 soft-binding documentation (lookup endpoints public by design, "a verifier is

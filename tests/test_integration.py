@@ -93,7 +93,7 @@ def test_invalid_values_are_rejected_before_execution(values) -> None:
 
 def test_real_text_and_image_operations_preserve_inputs(tmp_path: Path) -> None:
     text = tmp_path / "article.txt"
-    text.write_text("My own article.\u200b\u200b\u200b\u200b\u200b")
+    text.write_text("My own article.\u200b\u200b\u200b\u200b\u200b", encoding="utf-8")
     before = hashlib.sha256(text.read_bytes()).hexdigest()
     result = integration.run_operation(operation("cli_text_metadata"), {"source": str(text), "remove": True})
     assert result["exit_code"] == 0, result

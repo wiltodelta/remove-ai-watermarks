@@ -112,18 +112,20 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
-      - name: Install ffmpeg
-        # Third-party apt sources baked into the runner image (google-chrome et
-        # al.) can publish a broken index and fail `apt-get update`, while this
-        # job only needs ffmpeg from Ubuntu's own repositories: drop every
-        # non-Ubuntu source definition before updating.
-        run: |
-          sudo find /etc/apt/sources.list.d -mindepth 1 -maxdepth 1 \
-            ! -name 'ubuntu.sources' -delete
-          sudo apt-get update
-          sudo apt-get install --yes ffmpeg
       - name: Sync dev environment
         run: uv sync --frozen --extra dev
+      - name: Activate the packaged offline FFmpeg tools
+        run: |
+          uv run python - <<'PY'
+          import os
+          from pathlib import Path
+          from remove_ai_watermarks.video_tools import require_video_tool
+
+          os.environ["PATH"] = ""
+          directories = {str(Path(require_video_tool(name)).parent) for name in ("ffmpeg", "ffprobe")}
+          with open(os.environ["GITHUB_PATH"], "a", encoding="utf-8") as output:
+              output.write("\n".join(sorted(directories)) + "\n")
+          PY
       - name: Run full-clip video test
         run: >-
           uv run pytest -vv -o faulthandler_timeout=60

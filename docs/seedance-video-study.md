@@ -614,5 +614,6 @@ selectors after installation in a clean environment.
 
 FFmpeg-dependent study tests require both `ffmpeg` and `ffprobe`; pure receipt,
 assessment, texture, and importability checks remain active without them. CI's
-mandatory `video full-clip end-to-end` job installs FFmpeg and runs both the
+mandatory `video full-clip end-to-end` job activates the packaged offline
+FFmpeg/ffprobe pair and runs both the
 study and experimental library suites alongside the existing video checks.

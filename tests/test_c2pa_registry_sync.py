@@ -101,6 +101,7 @@ def test_packaged_snapshot_preserves_published_resolution_apis():
         "io.blockfact.audio.watermark.32": ("https://api.blockfact.io/api/soft-binding/v1",),
         "com.joinmonolith.sha256": ("https://api.joinmonolith.com/api/c2pa",),
         "studio.aidr.silentcipher.1": ("https://aidr.studio/api/c2pa/v1",),
+        "com.etchv.watermark.1": ("https://api.etchv.com/c2pa/v1",),
     }
     packaged = {entry.algorithm: entry.resolution_apis for entry in C2PA_SOFT_BINDING_REGISTRY}
 

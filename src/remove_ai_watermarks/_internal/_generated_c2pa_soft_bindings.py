@@ -1,7 +1,7 @@
 """Generated C2PA soft-binding registry; do not edit by hand.
 
 Source: https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json
-Revision: 8cf0d20ccfbf27742d958c32422a8fa05e593c6f
+Revision: 172efd828087b021ff2f1f79aa5bbe03936ee99d
 Source license: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
 Changes: validated, ordered, and reduced to fields used at runtime; descriptions
 are shortened to their first sentence for display.
@@ -12,7 +12,7 @@ from __future__ import annotations
 C2PA_SOFT_BINDING_SOURCE_URL = (
     "https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json"
 )
-C2PA_SOFT_BINDING_SOURCE_REVISION = "8cf0d20ccfbf27742d958c32422a8fa05e593c6f"
+C2PA_SOFT_BINDING_SOURCE_REVISION = "172efd828087b021ff2f1f79aa5bbe03936ee99d"
 C2PA_SOFT_BINDING_SOURCE_LICENSE = "CC BY 4.0"
 
 C2PA_SOFT_BINDING_ROWS: tuple[
@@ -524,9 +524,9 @@ C2PA_SOFT_BINDING_ROWS: tuple[
         45,
         "io.blockfact.audio.watermark.32",
         "watermark",
-        ("audio", "image", "video"),
+        ("image",),
         (),
-        "BlockFact invisible watermarking for audio, image, and video provenance",
+        "BlockFact invisible image watermarking for provenance",
         "2026-07-10T16:00:00.000Z",
         ("https://api.blockfact.io/api/soft-binding/v1",),
         False,
@@ -699,6 +699,17 @@ C2PA_SOFT_BINDING_ROWS: tuple[
         ),
         "2026-10-28T00:00:00.000Z",
         ("https://aidr.studio/api/c2pa/v1",),
+        False,
+    ),
+    (
+        61,
+        "com.etchv.watermark.1",
+        "watermark",
+        ("image",),
+        ("image/jpeg", "image/png", "image/webp", "image/tiff", "image/gif"),
+        "Etchv invisible image watermark carrying a 256-bit per-file identifier, embedded before C2PA signing",
+        "2026-10-28T20:00:00.000Z",
+        ("https://api.etchv.com/c2pa/v1",),
         False,
     ),
 )
