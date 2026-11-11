@@ -22,6 +22,14 @@ from remove_ai_watermarks._internal.watermark_remover import WatermarkRemover
 from remove_ai_watermarks.invisible_engine import InvisibleEngine
 
 
+@pytest.fixture
+def removal_runtime(monkeypatch):
+    """Exercise model-free routing without requiring the optional GPU stack."""
+    from remove_ai_watermarks._internal import watermark_remover
+
+    monkeypatch.setattr(watermark_remover, "_HAS_REMOVAL_MODULES", True)
+
+
 def pipeline(**kwargs):
     return profiles.Qwen21FidelityZImagePipeline(device="cuda", torch_dtype=torch.bfloat16, **kwargs)
 
@@ -92,6 +100,7 @@ def test_reviewed_text_still_reaches_the_shared_vae_donor_and_renderer(monkeypat
     restore.assert_called_once_with(source, regenerated, donor, manifest.lines)
 
 
+@pytest.mark.usefixtures("removal_runtime")
 def test_runtime_registration_constructs_the_real_fidelity_class_without_loading_models():
     assert QWEN21_ZIMAGE_PROFILE in PROFILE_CHOICES
     engine = InvisibleEngine(device="cuda", pipeline=QWEN21_ZIMAGE_PROFILE)
@@ -125,6 +134,7 @@ def test_disabled_fidelity_retains_baseline_without_calling_the_text_selector():
     selector.assert_not_called()
 
 
+@pytest.mark.usefixtures("removal_runtime")
 def test_disabled_remover_retains_the_legacy_strength_policy(tmp_path, monkeypatch):
     source = tmp_path / "source.png"
     Image.new("RGB", (64, 64)).save(source)
@@ -137,12 +147,14 @@ def test_disabled_remover_retains_the_legacy_strength_policy(tmp_path, monkeypat
     assert run.call_args.kwargs["strength"] == 0.35
 
 
+@pytest.mark.usefixtures("removal_runtime")
 def test_fidelity_activation_rejects_non_boolean_values():
     engine = InvisibleEngine(device="cuda", pipeline=QWEN21_ZIMAGE_PROFILE)
     with pytest.raises(TypeError, match="boolean"):
         engine.set_fidelity_enabled(1)
 
 
+@pytest.mark.usefixtures("removal_runtime")
 def test_other_model_does_not_silently_accept_a_text_selector():
     engine = InvisibleEngine(device="cuda", pipeline=QWEN_ZIMAGE_PROFILE)
     with pytest.raises(ValueError, match="requires"):
@@ -185,6 +197,7 @@ def test_perceptual_model_is_lazy_cached_and_receives_normalized_owned_rgb(monke
         (False, None, (64, 64), 0.45),
     ],
 )
+@pytest.mark.usefixtures("removal_runtime")
 def test_remover_uses_legacy_google_strength_only_for_legacy_fallback(
     tmp_path, monkeypatch, tile, manifest, size, expected
 ):
