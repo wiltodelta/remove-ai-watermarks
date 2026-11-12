@@ -1,10 +1,10 @@
 {
   "claim": "abstaining 10-provider source-pipeline classification with version subfamily attribution; not SynthID detection",
-  "schema": "multi-provider-source-v3",
-  "artifact_file": "multi-provider-source-v3.npz",
-  "artifact_sha256": "f65dac7cd7a6d8025e0b849bba9117635d6280628c226f47b599332898580f3c",
-  "feature_dimension": 956,
-  "stacked_stage2_dimension": 2600,
+  "schema": "multi-provider-source-v4",
+  "artifact_file": "multi-provider-source-v4.npz",
+  "artifact_sha256": "bc62ee22331c0137e76c53f5026e14d08cae12a3483fa69f3000316806c146a3",
+  "feature_dimension": 512,
+  "stacked_stage2_dimension": 644,
   "classes": [
     "openai",
     "google",
@@ -19,61 +19,63 @@
     "unknown"
   ],
   "corpus_counts": {
-    "total": 204050,
-    "train": 185099,
-    "calibration": 8365,
-    "test": 10586
+    "total": 127001,
+    "train": 105042,
+    "calibration": 8363,
+    "calibration_recomp_neg": 3011,
+    "test": 10585
   },
   "locked_internal_test": {
-    "n": 10586,
-    "binary_roc_auc": 0.9577,
-    "binary_pr_auc": 0.9682,
-    "unknown_specificity": 0.995153117426746,
-    "unknown_fpr": 0.004846882573254021,
-    "photo_fpr": 0.007329363261566651,
-    "structured_fpr": 0.0025466893039049238,
-    "aggregate_target_recall": 0.699685794608897,
+    "n": 10585,
+    "binary_roc_auc": 0.9974117831066663,
+    "binary_pr_auc": 0.9981946495110887,
+    "unknown_specificity": 0.997576024680476,
+    "unknown_fpr": 0.0024239753195240193,
+    "photo_fpr": 0.001374255611543747,
+    "structured_fpr": 0.003397027600849257,
+    "aggregate_target_recall": 0.8134612204398876,
+    "any_ai_recall": 0.8523234661815776,
     "recall": {
-      "openai": 0.7726657645466847,
-      "google": 0.7619392185238785,
-      "bytedance": 0.6889460154241646,
-      "flux": 0.5939572586588062,
-      "stable_diffusion": 0.7151832460732984,
-      "meta": 0.8191489361702128,
-      "midjourney": 0.5772357723577236,
-      "ideogram": 0.4745762711864407,
-      "firefly": 0.5631067961165048,
-      "xai": 0.3541666666666667
+      "openai": 0.9248985115020297,
+      "google": 0.8545586107091172,
+      "bytedance": 0.699228791773779,
+      "flux": 0.8061901252763449,
+      "stable_diffusion": 0.7047120418848167,
+      "meta": 0.8936170212765957,
+      "midjourney": 0.6341463414634146,
+      "ideogram": 0.7542372881355932,
+      "firefly": 0.5825242718446602,
+      "xai": 0.4375
     },
     "precision": {
-      "openai": 0.9785775492716366,
-      "google": 0.975,
-      "bytedance": 0.9962825278810409,
-      "flux": 0.9829268292682927,
-      "stable_diffusion": 0.9799139167862266,
-      "meta": 1.0,
-      "midjourney": 0.9466666666666667,
-      "ideogram": 0.9824561403508771,
-      "firefly": 0.9354838709677419,
+      "openai": 0.964033850493653,
+      "google": 0.9632952691680261,
+      "bytedance": 0.9890909090909091,
+      "flux": 0.94229112833764,
+      "stable_diffusion": 0.953257790368272,
+      "meta": 0.9333333333333333,
+      "midjourney": 0.9285714285714286,
+      "ideogram": 0.7295081967213115,
+      "firefly": 0.967741935483871,
       "xai": 1.0
     },
     "real_variety_specificity": {
-      "photo": 0.9926706367384334,
-      "photo_retouched": 0.9941002949852508,
+      "photo": 0.9986257443884563,
+      "photo_retouched": 0.9970501474926253,
       "classical_inpaint": 1.0,
-      "digital_art": 0.9977324263038548,
-      "game_art": 1.0,
-      "vector": 1.0,
+      "digital_art": 0.9977272727272727,
+      "game_art": 0.9827586206896551,
+      "vector": 0.9925925925925926,
       "interface": 1.0,
-      "diagram": 0.9897959183673469,
+      "diagram": 1.0,
       "chart_data_viz": 1.0,
       "technical_architecture": 1.0,
       "procedural_graphic": 1.0,
       "document": 1.0,
       "gov_scientific_doc": 1.0,
       "receipt_invoice": 1.0,
-      "print_publishing": 0.9956331877729258,
-      "stress_recompressed": 0.9902912621359223,
+      "print_publishing": 1.0,
+      "stress_recompressed": 0.9805825242718447,
       "foreign_ai": 1.0
     }
   },
@@ -97,9 +99,9 @@
       },
       "game_art": {
         "evaluated": 230,
-        "false_positives": 1,
-        "fpr": 0.004347826086956522,
-        "specificity": 0.9956521739130435
+        "false_positives": 0,
+        "fpr": 0.0,
+        "specificity": 1.0
       },
       "interface": {
         "evaluated": 342,
@@ -121,21 +123,21 @@
       },
       "stress_recompressed": {
         "evaluated": 300,
-        "false_positives": 0,
-        "fpr": 0.0,
-        "specificity": 1.0
+        "false_positives": 1,
+        "fpr": 0.0033333333333333335,
+        "specificity": 0.9966666666666667
       }
     }
   },
   "stage2_version_accuracy": {
-    "openai": 0.86468200270636,
-    "google": 0.9370477568740955,
-    "bytedance": 0.9203084832904884,
-    "flux": 0.871039056742815,
-    "stable_diffusion": 0.9078534031413612,
-    "midjourney": 0.9105691056910569,
-    "ideogram": 0.652542372881356,
+    "openai": 0.958302852962692,
+    "google": 0.9729043183742591,
+    "bytedance": 0.9779411764705882,
+    "flux": 0.9616087751371115,
+    "stable_diffusion": 0.9777117384843982,
+    "midjourney": 1.0,
+    "ideogram": 0.7415730337078652,
     "firefly": 1.0,
-    "xai": 0.7291666666666666
+    "xai": 0.7142857142857143
   }
 }

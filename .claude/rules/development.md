@@ -79,7 +79,7 @@ Do not classify an entire module as untestable because its main path downloads a
 - prompt-embedding cache keying, storage round-trip, and the cross-pipeline reuse that lets a stack load without its text encoder, in `test_qwen_zimage_pipeline.py`;
 - the face stack's dtype in `test_qwen_zimage_pipeline.py`: a subclass that changes the pipeline dtype must not change an inherited stage's. When one profile inherits another's stage, guard the invariants that stage relies on;
 - the photo-classify gate in `test_classify.py`: DEFINITELY is ridge AND MLP, POSSIBLY does not emit a provider, and `identify` does not import `remove_ai_watermarks.classify`;
-- the source-export classifier in `test_source_classify.py`: the Hub revision and artifact hash are immutable, the pickle-free schema and exact GELU are validated, threshold mutation changes the real decision, and `identify` never consumes the result as watermark evidence;
+- the source-export classifier in `test_source_classify.py` and `test_source_features_v4.py`: the Hub revision and artifact hash are immutable, the pickle-free `v3`/`v4` schemas, Regime-FiLM `SiLU` residual trunks, and exact `GELU` are validated, threshold mutation changes the real decision, and `identify` never consumes the result as watermark evidence;
 - the `InvisibleOptions` defaults in `test_api.py`, compared field by field with the signature they mirror and without an exception table: a field that needs one belongs elsewhere.
 
 Keep `test_every_field_arrives_at_the_engine_with_the_caller_s_value`, which sets every `InvisibleOptions` field off its default and asserts each value arrives; a defaults comparison does not replace it.

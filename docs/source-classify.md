@@ -16,12 +16,15 @@ Install the lightweight runtime:
 uv add "remove-ai-watermarks[source-classify]"
 ```
 
-It evaluates 956-dimensional forensic, spectral, and cross-channel chroma/grid
-features (`124-d` spatial patch residuals + `768-d` phase-free log-power
-spectrum + `64-d` radial-slope, Nyquist-grid, and azimuthal-anisotropy terms)
-through 10 provider specialists and their subfamily sub-specialists with
-positive-part zero-inflation sub-unit pooling, damped cross-provider margin
-suppression ($\gamma = 0.60$), and stacked Stage-2 version classifiers.
+It evaluates a 512-dimensional physics-grounded forensic, sublattice, spectral,
+sensor, and codec/geometry regime descriptor (`144-d` multi-scale SRM residuals
++ `128-d` phase-invariant modulo-8/16 sublattice and `8x8` DCT grid features +
+`128-d` phase-free radial/azimuthal log-power spectra + `80-d` CFA/PRNU/kurtosis
+sensor cues + `32-d` codec and resize regime features) through a two-tower pure
+NumPy ensemble (Regime-FiLM residual MLP trunks + packed `HistGradientBoosting`
+specialists), 2D multiplicative interaction gates, regime-conditioned null
+standardization, damped cross-provider margin suppression ($\gamma = 0.18$), and
+stacked Stage-2 version classifiers.
 
 It routes across all 10 canonical AI provider classes (`openai`, `google`,
 `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`,
@@ -53,7 +56,7 @@ results.
 
 The first call downloads the exact pinned revision of
 [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify)
-(`multi-provider-source-v3.npz`, verified by SHA-256). Set
+(`multi-provider-source-v4.npz`, verified by SHA-256). Set
 `RAIW_SOURCE_CLASSIFY_WEIGHTS` to the `.npz` file itself or its parent directory
 for an offline deployment.
 

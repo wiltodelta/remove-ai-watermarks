@@ -24,14 +24,14 @@ def test_hub_ids_match_the_runtime_loader() -> None:
 def test_stage_release_copies_only_public_artifacts(tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
-    (source / "multi-provider-source-v3.npz").write_bytes(b"weights")
+    (source / "multi-provider-source-v4.npz").write_bytes(b"weights")
     destination = tmp_path / "stage"
     publish.stage_release(destination, source)
     assert sorted(path.name for path in destination.iterdir()) == sorted(publish.PUBLIC_FILES)
 
 
 def test_stage_release_requires_the_model(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match=r"multi-provider-source-v3\.npz"):
+    with pytest.raises(SystemExit, match=r"multi-provider-source-v4\.npz"):
         publish.stage_release(tmp_path / "stage", tmp_path)
 
 

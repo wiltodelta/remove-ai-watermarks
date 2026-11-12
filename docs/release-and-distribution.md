@@ -97,7 +97,7 @@ later freeze cannot silently change installed clients.
 
 The separate `wiltodelta/raiw-source-classify` model is published with
 `.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
-derivative `multi-provider-source-v3.npz` artifact from the declared GitHub
+derivative `multi-provider-source-v4.npz` artifact from the declared GitHub
 model freeze, verifies its SHA-256, and uploads only that file plus the tracked
 card and aggregate metrics under `docs/source-classify-hf/`. The private corpus,
 catalog, paths, hashes, embeddings, and feature caches are outside this flow.

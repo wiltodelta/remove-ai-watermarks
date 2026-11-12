@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 def _write_synthetic_v3_npz(
     path: Path,
     *,
-    schema: str = source_classify.MODEL_SCHEMA,
+    schema: str = source_classify.MODEL_SCHEMA_V3,
     target_class: str = "openai",
     target_global_bias: float = 4.0,
     target_sub_bias: float = -3.0,
@@ -346,3 +346,198 @@ def test_identify_does_not_import_source_classify(tmp_path: Path) -> None:
     sys.modules.pop("remove_ai_watermarks.source_classify", None)
     identify(img_path, check_visible=False, check_invisible=False)
     assert "remove_ai_watermarks.source_classify" not in sys.modules
+
+
+def _write_synthetic_v4_npz(
+    path: Path,
+    *,
+    target_class: str = "google",
+    target_bias: float = 3.0,
+    router_threshold: float = 1.5,
+) -> Path:
+    """Create a minimal valid pickle-free multi-provider-source-v4 .npz fixture."""
+    d = source_classify.FEATURE_DIM_V4
+    r_dim = source_classify.REGIME_DIM_V4
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    sub_names = [f"{c}:v1" for c in source_classify.ALL_PROVIDER_CLASSES] + [f"{target_class}:v2"]
+    sub_provs = [*list(source_classify.ALL_PROVIDER_CLASSES), target_class]
+    n_subs = len(sub_names)
+    h1, h2 = 8, 8
+
+    payload: dict[str, Any] = {
+        "schema": np.asarray(source_classify.MODEL_SCHEMA_V4),
+        "feature_dim": np.asarray(d, dtype=np.int64),
+        "provider_classes": np.asarray(source_classify.ALL_PROVIDER_CLASSES, dtype="<U32"),
+        "mean": np.zeros(d, dtype=np.float64),
+        "scale": np.ones(d, dtype=np.float64),
+        "sub_names": np.asarray(sub_names, dtype="<U48"),
+        "sub_providers": np.asarray(sub_provs, dtype="<U32"),
+        "trunk_count": np.asarray(1, dtype=np.int64),
+    }
+
+    p = "t1_s0"
+    payload[f"{p}_w_in"] = np.zeros((h1, d), dtype=np.float16)
+    payload[f"{p}_b_in"] = np.zeros(h1, dtype=np.float16)
+    payload[f"{p}_ln0_g"] = np.ones(h1, dtype=np.float16)
+    payload[f"{p}_ln0_b"] = np.zeros(h1, dtype=np.float16)
+    payload[f"{p}_w_film"] = np.zeros((2 * h1, r_dim), dtype=np.float16)
+    payload[f"{p}_b_film"] = np.zeros(2 * h1, dtype=np.float16)
+    payload[f"{p}_w_r1a"] = np.zeros((h1, h1), dtype=np.float16)
+    payload[f"{p}_b_r1a"] = np.zeros(h1, dtype=np.float16)
+    payload[f"{p}_ln1_g"] = np.ones(h1, dtype=np.float16)
+    payload[f"{p}_ln1_b"] = np.zeros(h1, dtype=np.float16)
+    payload[f"{p}_w_r1b"] = np.zeros((h1, h1), dtype=np.float16)
+    payload[f"{p}_b_r1b"] = np.zeros(h1, dtype=np.float16)
+    payload[f"{p}_w_mid"] = np.zeros((h2, h1), dtype=np.float16)
+    payload[f"{p}_b_mid"] = np.zeros(h2, dtype=np.float16)
+    payload[f"{p}_ln2_g"] = np.ones(h2, dtype=np.float16)
+    payload[f"{p}_ln2_b"] = np.zeros(h2, dtype=np.float16)
+    payload[f"{p}_w_r2a"] = np.zeros((h2, h2), dtype=np.float16)
+    payload[f"{p}_b_r2a"] = np.zeros(h2, dtype=np.float16)
+    payload[f"{p}_ln3_g"] = np.ones(h2, dtype=np.float16)
+    payload[f"{p}_ln3_b"] = np.zeros(h2, dtype=np.float16)
+    payload[f"{p}_w_r2b"] = np.zeros((h2, h2), dtype=np.float16)
+    payload[f"{p}_b_r2b"] = np.zeros(h2, dtype=np.float16)
+    payload[f"{p}_w_prov"] = np.zeros((n_cls + 1, h2), dtype=np.float16)
+    b_prov = np.full(n_cls + 1, -2.0, dtype=np.float16)
+    t_idx = source_classify.ALL_PROVIDER_CLASSES.index(target_class)  # type: ignore[arg-type]
+    b_prov[t_idx] = np.float16(2.0)
+    b_prov[-1] = np.float16(0.0)
+    payload[f"{p}_b_prov"] = b_prov
+    payload[f"{p}_w_sub"] = np.zeros((n_subs, h2), dtype=np.float16)
+    b_sub = np.zeros(n_subs, dtype=np.float16)
+    b_sub[-1] = np.float16(1.5)
+    payload[f"{p}_b_sub"] = b_sub
+
+    payload["hgb_names"] = np.asarray(["spec_0"], dtype="<U32")
+    payload["t2_h0_baseline"] = np.asarray(1.25, dtype=np.float32)
+    payload["t2_h0_max_depth"] = np.asarray(1, dtype=np.int16)
+    payload["t2_h0_feat_idx"] = np.zeros((1, 1), dtype=np.int16)
+    payload["t2_h0_thresholds"] = np.asarray([[0.5]], dtype=np.float32)
+    payload["t2_h0_left"] = np.zeros((1, 1), dtype=np.uint8)
+    payload["t2_h0_right"] = np.zeros((1, 1), dtype=np.uint8)
+    payload["t2_h0_values"] = np.asarray([[0.75]], dtype=np.float32)
+
+    d_u = n_cls + 1 + n_subs + 1 + r_dim
+    rb = np.full(n_cls, -1.0, dtype=np.float64)
+    rb[t_idx] = target_bias
+    payload["router_bias"] = rb
+    payload["router_tau_pos"] = np.zeros(d_u, dtype=np.float64)
+    payload["router_tau_neg"] = np.zeros(d_u, dtype=np.float64)
+    payload["gate_idx_a"] = np.zeros(0, dtype=np.int16)
+    payload["gate_idx_b"] = np.zeros(0, dtype=np.int16)
+    payload["gate_sign_a"] = np.zeros(0, dtype=np.float64)
+    payload["gate_sign_b"] = np.zeros(0, dtype=np.float64)
+    payload["gate_tau_a"] = np.zeros(0, dtype=np.float64)
+    payload["gate_tau_b"] = np.zeros(0, dtype=np.float64)
+    payload["router_w"] = np.zeros((3 * d_u, n_cls), dtype=np.float64)
+
+    # null_sig_bias = ln(e^0.75 - 1) so softplus + 0.25 == 1.0 exactly
+    sig_b = float(np.log(np.exp(0.75) - 1.0))
+    payload["null_mu_bias"] = np.zeros(n_cls, dtype=np.float64)
+    payload["null_mu_w"] = np.zeros((r_dim, n_cls), dtype=np.float64)
+    payload["null_sig_bias"] = np.full(n_cls, sig_b, dtype=np.float64)
+    payload["null_sig_w"] = np.zeros((r_dim, n_cls), dtype=np.float64)
+    payload["damping_gammas"] = np.full(n_cls, 0.5, dtype=np.float64)
+    payload["router_thresholds"] = np.full(n_cls, router_threshold, dtype=np.float64)
+    payload["conf_scale"] = np.asarray(1.0, dtype=np.float64)
+
+    payload["stage2_version_classes"] = np.asarray([target_class], dtype="<U32")
+    payload[f"s2_{target_class}_subfamilies"] = np.asarray([f"{target_class}:v1", f"{target_class}:v2"], dtype="<U48")
+    payload[f"s2_{target_class}_hgb_baseline"] = np.asarray([-0.5, 1.5], dtype=np.float32)
+    payload[f"s2_{target_class}_hgb_max_depth"] = np.asarray(1, dtype=np.int16)
+    payload[f"s2_{target_class}_hgb_feat_idx"] = np.zeros((1, 2, 1), dtype=np.int16)
+    payload[f"s2_{target_class}_hgb_thresholds"] = np.full((1, 2, 1), np.inf, dtype=np.float32)
+    payload[f"s2_{target_class}_hgb_left"] = np.zeros((1, 2, 1), dtype=np.uint8)
+    payload[f"s2_{target_class}_hgb_right"] = np.zeros((1, 2, 1), dtype=np.uint8)
+    payload[f"s2_{target_class}_hgb_values"] = np.zeros((1, 2, 1), dtype=np.float32)
+
+    np.savez(path, **payload)
+    return path
+
+
+def test_v4_two_tower_2d_multiplicative_gate_and_regime_null_standardization(tmp_path: Path) -> None:
+    w_base = _write_synthetic_v4_npz(
+        tmp_path / "v4_base.npz",
+        target_class="google",
+        target_bias=2.4,
+        router_threshold=1.5,
+    )
+    x_512 = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+    res0 = source_classify.classify_source_features(x_512, weights_path=w_base)
+    assert res0.label == "google"
+    assert res0.model_revision == source_classify.MODEL_SCHEMA_V4
+    assert res0.version_subfamily == "google:v2"
+    assert res0.fine_subfamily == "google:v2"
+    assert res0.pooled_scores["google"] == pytest.approx(2.4, abs=1e-5)
+
+    # Add a 2D multiplicative gate pairing hgb_0 (raw = 2.0 > 1.0) with regime r[0] (x_512[480] > 1.0)
+    # that boosts flux: when r[0] == 0.0, gate == 0 -> google wins; when r[0] == 3.0, gate == 2.0 -> flux wins!
+    with np.load(w_base, allow_pickle=False) as z:
+        payload = {k: z[k] for k in z.files}
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    n_subs = len(payload["sub_names"])
+    hgb_u_idx = n_cls + 1 + n_subs  # index of t2_h0 in u_vec (value = 1.25 + 0.75 = 2.0)
+    reg0_u_idx = hgb_u_idx + 1  # index of r_std[0] in u_vec
+    d_u = reg0_u_idx + source_classify.REGIME_DIM_V4 - 1 + 1
+
+    payload["gate_idx_a"] = np.asarray([hgb_u_idx], dtype=np.int16)
+    payload["gate_idx_b"] = np.asarray([reg0_u_idx], dtype=np.int16)
+    payload["gate_sign_a"] = np.asarray([1.0], dtype=np.float64)
+    payload["gate_sign_b"] = np.asarray([1.0], dtype=np.float64)
+    payload["gate_tau_a"] = np.asarray([1.0], dtype=np.float64)  # ga = 2.0 - 1.0 = 1.0
+    payload["gate_tau_b"] = np.asarray([1.0], dtype=np.float64)  # gb = ReLU(r[0] - 1.0)
+    w_router = np.zeros((3 * d_u + 1, n_cls), dtype=np.float64)
+    flux_idx = source_classify.ALL_PROVIDER_CLASSES.index("flux")
+    google_idx = source_classify.ALL_PROVIDER_CLASSES.index("google")
+    w_router[-1, flux_idx] = 3.5  # when r[0]=3.0 -> gb=2.0 -> g_2d=2.0 -> flux z_raw = -1.0 + 7.0 = +6.0
+    # Also test regime null dispersion: make google null_mu_w[1] = +2.0 so r[1]=2.0 shifts google null mean up by +4.0!
+    null_mu_w = np.zeros((source_classify.REGIME_DIM_V4, n_cls), dtype=np.float64)
+    null_mu_w[1, google_idx] = 2.0
+    payload["router_w"] = w_router
+    payload["null_mu_w"] = null_mu_w
+
+    w_gated = tmp_path / "v4_gated.npz"
+    np.savez(w_gated, **payload)
+
+    # 1) Single-factor active (hgb_0 > 1.0, but r[0] == 0.0 <= 1.0): 2D gate must be 0 -> google still wins
+    res_single = source_classify.classify_source_features(x_512, weights_path=w_gated)
+    assert res_single.label == "google"
+    assert res_single.pooled_scores["flux"] == pytest.approx(-1.0, abs=1e-5)
+
+    # 2) Regime null shift active (r[1] = 2.0 shifts google mu_r to +4.0 -> google z_std = -1.6 < threshold): abstains!
+    x_null_shifted = x_512.copy()
+    x_null_shifted[source_classify.REGIME_START_V4 + 1] = 2.0
+    res_abstain = source_classify.classify_source_features(x_null_shifted, weights_path=w_gated)
+    assert res_abstain.label == "unknown"
+    assert res_abstain.reason == "abstained"
+
+    # 3) Both 2D gate factors active (r[0] = 3.0 -> g_2d = 2.0 -> flux z_std = +6.0): flux wins cleanly!
+    x_both = x_512.copy()
+    x_both[source_classify.REGIME_START_V4] = 3.0
+    res_both = source_classify.classify_source_features(x_both, weights_path=w_gated)
+    assert res_both.label == "flux"
+    assert res_both.pooled_scores["flux"] == pytest.approx(6.0, abs=1e-5)
+
+
+def test_v4_end_to_end_image_classification_ignores_metadata(tmp_path: Path) -> None:
+    w_v4 = _write_synthetic_v4_npz(
+        tmp_path / "v4_img.npz",
+        target_class="bytedance",
+        target_bias=3.2,
+        router_threshold=1.0,
+    )
+    rng = np.random.default_rng(20261110)
+    pixels = Image.fromarray(rng.integers(0, 256, size=(256, 256, 3), dtype=np.uint8), mode="RGB")
+    clean = tmp_path / "clean_v4.png"
+    tagged = tmp_path / "tagged_v4.png"
+    pixels.save(clean)
+    meta = PngImagePlugin.PngInfo()
+    meta.add_text("Software", "OpenAI GPT-Image")
+    pixels.save(tagged, pnginfo=meta)
+
+    r1 = source_classify.classify_source(clean, weights_path=w_v4)
+    r2 = source_classify.classify_source(tagged, weights_path=w_v4)
+    assert r1.label == r2.label == "bytedance"
+    assert r1.model_revision == source_classify.MODEL_SCHEMA_V4
+    assert r1.scores == r2.scores

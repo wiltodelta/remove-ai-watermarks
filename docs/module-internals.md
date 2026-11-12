@@ -1537,25 +1537,41 @@ both backends explicitly (`tests/test_classify.py` pins the seam). User guide:
 
 [`source_classify.py`](../src/remove_ai_watermarks/source_classify.py) provides
 the opt-in 10-provider source-pipeline classifier (`classify_source` and CLI
-command `classify-source`). It combines the 124-dimensional patch descriptor in
-[`_internal/forensic_124d.py`](../src/remove_ai_watermarks/_internal/forensic_124d.py)
-with the 768-dimensional phase-free spectrum in
-[`_internal/source_spectral.py`](../src/remove_ai_watermarks/_internal/source_spectral.py),
-expands the 892-d vector to 956-d with 64 cross-channel chroma, radial-slope,
-Nyquist-grid, and azimuthal-anisotropy features, and scores 10 global provider
-units and their subfamily sub-units in pure NumPy from a pickle-free `.npz`
-(`multi-provider-source-v3.npz`, `allow_pickle=False`, verified by SHA-256 from
-`wiltodelta/raiw-source-classify` or overridden via
-`RAIW_SOURCE_CLASSIFY_WEIGHTS`). It applies positive-part zero-inflation
-sub-unit pooling (`alpha * (s - base_offset)` only when `s > base_offset`), a
-Stage-1.5 zero-inflated hinge meta-router (`router_meta_tau`, `router_meta_w`)
-for cross-provider disambiguation, damped cross-AI margins ($\gamma = 0.60$),
-and a stacked Stage-2 `HistGradientBoosting` tree head for version attribution.
-The `source-classify`
-extra adds `pixels` and Hugging Face Hub but no Torch or Transformers. It
-always sets `watermark_truth="unknown"` and is never imported by `identify`.
-Unit and mutation tests live in `tests/test_source_classify.py`; evaluation and
-attack limits live in [`source-classify-hf/README.md`](source-classify-hf/README.md) and
+command `classify-source`). By default it downloads `multi-provider-source-v4.npz`
+(`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
+or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while retaining backward-compatible
+runtime loading for both pickle-free `.npz` bundle schemas:
+
+- `multi-provider-source-v4` (`512-d`, default): extracts the 512-dimensional
+  physics-grounded descriptor in
+  [`_internal/source_features_v4.py`](../src/remove_ai_watermarks/_internal/source_features_v4.py)
+  (multi-scale SRM residuals, phase-invariant modulo-8/16 sublattice & DCT grid
+  physics, phase-free radial/azimuthal/resampling spectra, CFA/PRNU/kurtosis
+  sensor physics, and a 32-dimensional codec/geometry regime block) and scores a
+  two-tower ensemble in pure NumPy: Regime-FiLM `LayerNorm` + `SiLU` residual
+  MLP trunks (`_ResidualMLPTrunkV4`) paired with packed `HistGradientBoosting`
+  specialists, 2D multiplicative interaction gates, smooth regime-conditioned
+  null standardization `(z_raw - mu(r)) / sigma(r)`, per-provider cross-AI
+  damping $\gamma_c$, and stacked Stage-2 `HistGradientBoosting` version heads.
+- `multi-provider-source-v3` (`956-d`, legacy schema supported via explicit
+  `weights_path` / `RAIW_SOURCE_CLASSIFY_WEIGHTS`): combines the 124-dimensional
+  patch descriptor in
+  [`_internal/forensic_124d.py`](../src/remove_ai_watermarks/_internal/forensic_124d.py)
+  with the 768-dimensional phase-free spectrum in
+  [`_internal/source_spectral.py`](../src/remove_ai_watermarks/_internal/source_spectral.py),
+  expands the 892-d vector to 956-d with 64 cross-channel chroma, radial-slope,
+  Nyquist-grid, and azimuthal-anisotropy features, and scores 10 global provider
+  units and their subfamily sub-units with positive-part zero-inflation sub-unit
+  pooling (`alpha * (s - base_offset)` only when `s > base_offset`), a Stage-1.5
+  hinge meta-router (`router_meta_tau`, `router_meta_w`), damped cross-AI
+  margins ($\gamma = 0.60$), and stacked Stage-2 `HistGradientBoosting` version
+  heads.
+
+The `source-classify` extra adds `pixels` and Hugging Face Hub but no Torch or
+Transformers. It always sets `watermark_truth="unknown"` and is never imported
+by `identify`. Unit and mutation tests live in `tests/test_source_classify.py`
+and `tests/test_source_features_v4.py`; evaluation and attack limits live in
+[`source-classify-hf/README.md`](source-classify-hf/README.md) and
 [`synthid-classifiers.md`](synthid-classifiers.md).
 
 The CLIP loader suppresses discarded random parameter initialization with
