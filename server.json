@@ -3,7 +3,7 @@
   "name": "io.github.wiltodelta/remove-ai-watermarks",
   "title": "Remove AI Watermarks",
   "description": "Identify and clean AI watermarks and provenance in your own images, video, and text.",
-  "version": "0.58.1",
+  "version": "0.59.0",
   "repository": {
     "url": "https://github.com/wiltodelta/remove-ai-watermarks",
     "source": "github"
@@ -14,7 +14,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "remove-ai-watermarks",
-      "version": "0.58.1",
+      "version": "0.59.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
