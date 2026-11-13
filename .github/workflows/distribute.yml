@@ -1,50 +1,96 @@
 name: Distribute on release
 
 # Fans a published GitHub Release out to the channels that need a nudge.
-# PyPI is handled by publish.yml. This workflow event-drives the four channels
-# that would otherwise be manual:
+# PyPI is handled by publish.yml, and this workflow runs via workflow_run only
+# after Publish to PyPI succeeds (so prereleases skip cleanly and runners never
+# burn minutes waiting for publish.yml to build and upload). It event-drives:
 #   - Homebrew tap: synchronize the sdist URL, SHA-256, and published extras.
 #   - HF Space: factory-rebuild the version already pinned in the Space repo.
 #   - ComfyUI: sync, test, and publish the node against the exact library release.
 #   - ClawHub: publish the agent skill when its own version moved.
 # All wait for the freshly published distribution to appear in both PyPI APIs
-# first, since the Release event fires in parallel with publish.yml's upload.
+# first before dispatching downstream installs.
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Publish to PyPI"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
         description: "Version to distribute (no leading v), e.g. 0.10.3. Blank = latest on PyPI."
         required: false
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   resolve:
-    # Model-only prereleases must not reach PyPI, Homebrew, Spaces, or ComfyUI.
-    if: ${{ github.event_name != 'release' || (startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease) }}
+    # Run automatically only when Publish to PyPI succeeded; model-freeze
+    # prereleases skip publish.yml, so they leave conclusion=skipped here too.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     # Thirty attempts may spend up to 20 seconds each in the JSON request,
     # simple-index request, and inter-attempt delay. Leave bounded headroom.
     timeout-minutes: 25
     outputs:
       version: ${{ steps.v.outputs.version }}
+      release_name: ${{ steps.v.outputs.release_name }}
       url: ${{ steps.sdist.outputs.url }}
       sha: ${{ steps.sdist.outputs.sha }}
     steps:
+      - name: Download published release identity
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: published-release-*
+          path: published-identities
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
       - name: Resolve target version
         id: v
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          PUBLISH_RUN_ID: ${{ github.event.workflow_run.id }}
+          PUBLISH_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "release" ]; then
-            v="${GITHUB_REF_NAME#v}"
-          elif [ -n "${{ github.event.inputs.version }}" ]; then
-            v="${{ github.event.inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            resolved=$(python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          identities = []
+          for path in Path("published-identities").rglob("release-identity.json"):
+              item = json.loads(path.read_text(encoding="utf-8"))
+              if path.parent.name.startswith("published-release-"):
+                  assert path.parent.name == "published-release-" + item["run_attempt"], "Artifact attempt mismatch"
+              identities.append(item)
+          assert identities, "No published release identity found"
+          assert all(item["run_id"] == os.environ["PUBLISH_RUN_ID"] for item in identities), "Publish run mismatch"
+          eligible = [item for item in identities if
+                      int(item["run_attempt"]) <= int(os.environ["PUBLISH_RUN_ATTEMPT"])]
+          assert eligible, "No identity exists for this publish attempt"
+          identity = max(eligible, key=lambda item: int(item["run_attempt"]))
+          label = (identity.get("release_name") or f"v{identity['version']}").replace("\t", " ").splitlines()[0]
+          print(f"{identity['version']}\t{label}")
+          PYTHON
+            )
+            v="${resolved%%$'\t'*}"
+            release_name="${resolved#*$'\t'}"
+          elif [ -n "$INPUT_VERSION" ]; then
+            v="$INPUT_VERSION"
+            release_name="v$v"
           else
             v=$(curl -fsSL https://pypi.org/pypi/remove-ai-watermarks/json \
               | python3 -c "import sys,json;print(json.load(sys.stdin)['info']['version'])")
+            release_name="v$v"
           fi
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9.+-]*)$ ]]
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "release_name=$release_name" >> "$GITHUB_OUTPUT"
           echo "Target version: $v"
 
       - name: Record distributed release
@@ -74,14 +120,14 @@ jobs:
           set -euo pipefail
           v="${{ steps.v.outputs.version }}"
           for i in $(seq 1 30); do
-            if rel=$(curl --connect-timeout 10 --max-time 20 -fsSL "https://pypi.org/pypi/remove-ai-watermarks/$v/json" 2>/dev/null); then
+            if rel=$(curl --connect-timeout 10 --max-time 20 -fsSL -H "Cache-Control: no-cache" "https://pypi.org/pypi/remove-ai-watermarks/$v/json" 2>/dev/null); then
               read -r url sha <<< "$(echo "$rel" | python3 -c "import sys,json;u=next((u for u in json.load(sys.stdin)['urls'] if u['packagetype']=='sdist'),{});print(u.get('url',''),u.get('digests',{}).get('sha256',''))")"
               if [ -n "$url" ] && [ -n "$sha" ]; then
                 # PyPI's JSON API can show a freshly uploaded file before the
-                # simple index used by pip has caught up. Downstream release
-                # jobs install by package version, so waiting on JSON alone
-                # creates a release-time race for them.
-                simple=$(curl --connect-timeout 10 --max-time 20 -fsSL https://pypi.org/simple/remove-ai-watermarks/ 2>/dev/null || true)
+                # PEP 691 simple index used by pip and uv has caught up.
+                # Downstream release jobs install by package version, so poll
+                # the compressed vnd.pypi.simple.v1+json Fastly Vary bucket.
+                simple=$(curl --connect-timeout 10 --max-time 20 -fsSL --compressed -H "Accept: application/vnd.pypi.simple.v1+json" "https://pypi.org/simple/remove-ai-watermarks/" 2>/dev/null || true)
                 artifact=${url##*/}
                 if [[ "$simple" == *"$artifact"* ]]; then
                   echo "url=$url" >> "$GITHUB_OUTPUT"
@@ -228,9 +274,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ needs.resolve.outputs.version }}
       - name: Publish the agent skill when its version moved
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+          RELEASE_LABEL: ${{ needs.resolve.outputs.release_name }}
         run: |
           set -euo pipefail
           if [ -z "${CLAWHUB_TOKEN:-}" ]; then
@@ -258,7 +307,7 @@ jobs:
             --slug remove-ai-watermarks \
             --name "Remove AI Watermarks" \
             --version "$skill_version" \
-            --changelog "Agent skill sync for the ${{ github.event.release.name || github.ref_name }} release."
+            --changelog "Agent skill sync for the ${RELEASE_LABEL:-test} release."
           echo "Submitted; ClawHub runs security scans before the listing goes public."
 
   comfyui:

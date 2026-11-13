@@ -267,11 +267,75 @@ def test_mcp_registry_publishes_only_a_server_json_that_matches_the_release(
     assert (result.returncode == 0) == accepted, result.stderr
 
 
-def test_mcp_registry_publishes_on_release_with_an_oidc_token() -> None:
-    workflow = _workflow("publish-mcp-registry.yml")
-    assert workflow["permissions"]["id-token"] == "write"
+@pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")
+def test_published_version_chains_into_distribute_and_mcp_registry(tmp_path: Path) -> None:
+    producer = _step("publish.yml", "publish", "Record published release")
+    env = {
+        **os.environ,
+        "RELEASE_TAG": "v0.59.0",
+        "RELEASE_NAME": "v0.59.0",
+        "GITHUB_RUN_ID": "456",
+        "GITHUB_RUN_ATTEMPT": "2",
+    }
+    subprocess.run(["bash", "-eu", "-c", producer["run"]], cwd=tmp_path, env=env, check=True)
+    artifact = tmp_path / "published-identities" / "published-release-2"
+    artifact.mkdir(parents=True)
+    (artifact / "release-identity.json").write_bytes((tmp_path / "release-identity.json").read_bytes())
+    future = tmp_path / "published-identities" / "published-release-4"
+    future.mkdir()
+    (future / "release-identity.json").write_text(
+        json.dumps(
+            {
+                "version": "0.99.0",
+                "tag": "v0.99.0",
+                "release_name": "v0.99.0",
+                "run_id": "456",
+                "run_attempt": "4",
+            }
+        )
+    )
+
+    for wf_name, job_name in (("distribute.yml", "resolve"), ("publish-mcp-registry.yml", "publish")):
+        consumer = _step(wf_name, job_name, "Resolve target version")
+        out_file = tmp_path / f"{wf_name}.out"
+        consumer_env = {
+            **os.environ,
+            "EVENT_NAME": "workflow_run",
+            "INPUT_VERSION": "",
+            "PUBLISH_RUN_ID": "456",
+            "PUBLISH_RUN_ATTEMPT": "3",
+            "GITHUB_OUTPUT": str(out_file),
+        }
+        result = subprocess.run(
+            ["bash", "-eu", "-c", consumer["run"]],
+            cwd=tmp_path,
+            env=consumer_env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"{wf_name}: {result.stderr}"
+        assert "version=0.59.0" in out_file.read_text()
+        assert (
+            subprocess.run(
+                ["bash", "-eu", "-c", consumer["run"]],
+                cwd=tmp_path,
+                env={**consumer_env, "PUBLISH_RUN_ID": "999"},
+                capture_output=True,
+            ).returncode
+            != 0
+        )
+
+
+def test_mcp_registry_publishes_after_pypi_with_an_oidc_token() -> None:
+    mcp_workflow = _workflow("publish-mcp-registry.yml")
+    distribute_workflow = _workflow("distribute.yml")
+    assert mcp_workflow["permissions"]["id-token"] == "write"
+    assert mcp_workflow["permissions"]["actions"] == "read"
+    assert distribute_workflow["permissions"]["actions"] == "read"
     # PyYAML reads the bare `on:` key as the boolean True.
-    assert set(workflow[True]) == {"release", "workflow_dispatch"}
+    for wf in (mcp_workflow, distribute_workflow):
+        assert set(wf[True]) == {"workflow_run", "workflow_dispatch"}
+        assert wf[True]["workflow_run"]["workflows"] == ["Publish to PyPI"]
 
 
 @pytest.mark.skipif(os.name != "posix" or shutil.which("bash") is None, reason="Executes an Ubuntu Bash workflow")

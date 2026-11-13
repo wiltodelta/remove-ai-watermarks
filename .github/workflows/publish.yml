@@ -41,3 +41,29 @@ jobs:
       # fix that lets the hatchling pin be relaxed (see pyproject [build-system]).
       - name: Publish to PyPI
         run: uv publish
+
+      - name: Record published release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name || github.event.release.tag_name }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          tag = os.environ["RELEASE_TAG"]
+          assert tag.startswith("v"), f"Unexpected release tag: {tag}"
+          Path("release-identity.json").write_text(json.dumps({
+              "version": tag[1:],
+              "tag": tag,
+              "release_name": os.environ["RELEASE_NAME"] or tag,
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+          }), encoding="utf-8")
+          PYTHON
+
+      - name: Upload published release identity
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: published-release-${{ github.run_attempt }}
+          path: release-identity.json
+          if-no-files-found: error

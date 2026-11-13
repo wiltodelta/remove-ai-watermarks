@@ -4,16 +4,17 @@ name: Publish to MCP registry
 # (registry.modelcontextprotocol.io) from server.json at the release tag.
 # GitHub OIDC proves ownership of the io.github.wiltodelta namespace, so no
 # interactive login or stored secret is involved. The registry validates the
-# PyPI release itself (the mcp-name marker in its description), and the Release
-# event fires in parallel with publish.yml's upload, so this waits until PyPI
-# serves the version first. A version the registry already lists is skipped.
-# It is a workflow of its own, not a distribute.yml job, so a manual dispatch
-# re-lists one version without re-running Homebrew, the Space, or ComfyUI, and
-# a registry outage never fails release verification.
+# PyPI release itself (the mcp-name marker in its description), so this runs
+# via workflow_run after Publish to PyPI completes and confirms PyPI serves the
+# version before calling mcp-publisher. A version the registry already lists is
+# skipped. It is a workflow of its own, not a distribute.yml job, so a manual
+# dispatch re-lists one version without re-running Homebrew, the Space, or
+# ComfyUI, and a registry outage never fails release verification.
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Publish to PyPI"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -23,11 +24,13 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: read
 
 jobs:
   publish:
-    # Model-only prereleases are not Python package releases.
-    if: ${{ github.event_name != 'release' || (startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease) }}
+    # Run automatically only when Publish to PyPI succeeded; model-freeze
+    # prereleases skip publish.yml, so they leave conclusion=skipped here too.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -39,16 +42,43 @@ jobs:
       PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
 
     steps:
+      - name: Download published release identity
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: published-release-*
+          path: published-identities
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
       - name: Resolve target version
         id: v
         env:
           EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
+          PUBLISH_RUN_ID: ${{ github.event.workflow_run.id }}
+          PUBLISH_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "release" ]; then
-            v="${RELEASE_TAG#v}"
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            v=$(python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          identities = []
+          for path in Path("published-identities").rglob("release-identity.json"):
+              item = json.loads(path.read_text(encoding="utf-8"))
+              if path.parent.name.startswith("published-release-"):
+                  assert path.parent.name == "published-release-" + item["run_attempt"], "Artifact attempt mismatch"
+              identities.append(item)
+          assert identities, "No published release identity found"
+          assert all(item["run_id"] == os.environ["PUBLISH_RUN_ID"] for item in identities), "Publish run mismatch"
+          eligible = [item for item in identities if
+                      int(item["run_attempt"]) <= int(os.environ["PUBLISH_RUN_ATTEMPT"])]
+          assert eligible, "No identity exists for this publish attempt"
+          identity = max(eligible, key=lambda item: int(item["run_attempt"]))
+          print(identity["version"])
+          PYTHON
+            )
           else
             v="$INPUT_VERSION"
           fi

@@ -59,8 +59,11 @@ PyPI API token from the repository.
 
 ## Post-release distribution
 
-`.github/workflows/distribute.yml` runs on the same published-release event. It
-waits for the matching source distribution to appear on PyPI, then:
+`.github/workflows/distribute.yml` triggers via `workflow_run` once
+`Publish to PyPI` succeeds, reading the `published-release-*` identity artifact
+uploaded by `publish.yml` (so model-freeze prereleases skip cleanly and runners
+never poll while `publish.yml` is still building). It confirms the matching
+source distribution appears in both PyPI indexes, then:
 
 - synchronizes the Homebrew tap formula URL, SHA-256, and all published extras
   through the tap's `scripts/sync_remove_ai_watermarks.py`; a new artifact resets
@@ -226,7 +229,8 @@ release whose description, the README, carries the `mcp-name:` marker, and
 is not a release surface that blocks a release.
 
 [`publish-mcp-registry.yml`](../.github/workflows/publish-mcp-registry.yml)
-publishes it on every published GitHub Release, once PyPI serves that version.
+runs via `workflow_run` once `Publish to PyPI` succeeds and lists that release
+from `server.json` at the release tag.
 GitHub OIDC proves ownership of the `io.github.wiltodelta` namespace, so no login
 or secret is stored. To list a version already on PyPI, dispatch the workflow
 with that version; a version the registry already lists is skipped.
