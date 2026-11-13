@@ -17,7 +17,26 @@ from remove_ai_watermarks import source_classify
 from remove_ai_watermarks.cli import main
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
+
+
+def _add_stage2_hgb_payload(
+    payload: dict[str, Any],
+    cls_name: str,
+    baseline: Sequence[float],
+) -> None:
+    """Populate a minimal constant-leaf Stage-2 HGB head for `cls_name`."""
+    c_tree = len(baseline)
+    payload["stage2_version_classes"] = np.asarray([cls_name], dtype="<U32")
+    payload[f"s2_{cls_name}_subfamilies"] = np.asarray([f"{cls_name}:v1", f"{cls_name}:v2"], dtype="<U48")
+    payload[f"s2_{cls_name}_hgb_baseline"] = np.asarray(baseline, dtype=np.float32)
+    payload[f"s2_{cls_name}_hgb_max_depth"] = np.asarray(1, dtype=np.int16)
+    payload[f"s2_{cls_name}_hgb_feat_idx"] = np.zeros((1, c_tree, 1), dtype=np.int16)
+    payload[f"s2_{cls_name}_hgb_thresholds"] = np.full((1, c_tree, 1), np.inf, dtype=np.float32)
+    payload[f"s2_{cls_name}_hgb_left"] = np.zeros((1, c_tree, 1), dtype=np.uint8)
+    payload[f"s2_{cls_name}_hgb_right"] = np.zeros((1, c_tree, 1), dtype=np.uint8)
+    payload[f"s2_{cls_name}_hgb_values"] = np.zeros((1, c_tree, 1), dtype=np.float32)
 
 
 def _write_synthetic_v3_npz(
@@ -88,17 +107,7 @@ def _write_synthetic_v3_npz(
     payload["unit_descriptor_classes"] = np.asarray(desc_classes, dtype="<U32")
     payload["unit_descriptor_names"] = np.asarray(desc_names, dtype="<U48")
 
-    payload["stage2_version_classes"] = np.asarray([target_class], dtype="<U32")
-    subs = [f"{target_class}:v1", f"{target_class}:v2"]
-    payload[f"s2_{target_class}_subfamilies"] = np.asarray(subs, dtype="<U48")
-    base_s2 = np.asarray([-1.0, 1.0] if stage2_win_idx == 1 else [1.0, -1.0], dtype=np.float64)
-    payload[f"s2_{target_class}_hgb_baseline"] = base_s2
-    payload[f"s2_{target_class}_hgb_max_depth"] = np.asarray(1, dtype=np.int16)
-    payload[f"s2_{target_class}_hgb_feat_idx"] = np.zeros((1, 2, 1), dtype=np.int16)
-    payload[f"s2_{target_class}_hgb_thresholds"] = np.full((1, 2, 1), np.inf, dtype=np.float64)
-    payload[f"s2_{target_class}_hgb_left"] = np.zeros((1, 2, 1), dtype=np.uint8)
-    payload[f"s2_{target_class}_hgb_right"] = np.zeros((1, 2, 1), dtype=np.uint8)
-    payload[f"s2_{target_class}_hgb_values"] = np.zeros((1, 2, 1), dtype=np.float64)
+    _add_stage2_hgb_payload(payload, target_class, [-1.0, 1.0] if stage2_win_idx == 1 else [1.0, -1.0])
 
     np.savez(path, **payload)
     return path
@@ -348,24 +357,24 @@ def test_identify_does_not_import_source_classify(tmp_path: Path) -> None:
     assert "remove_ai_watermarks.source_classify" not in sys.modules
 
 
-def _write_synthetic_v4_npz(
-    path: Path,
+def _base_two_tower_npz_payload(
+    schema: str,
     *,
-    target_class: str = "google",
-    target_bias: float = 3.0,
-    router_threshold: float = 1.5,
-) -> Path:
-    """Create a minimal valid pickle-free multi-provider-source-v4 .npz fixture."""
+    extra_sub_provider: source_classify.ProviderClass,
+    n_prov_out: int,
+    hgb_baseline: float = 0.0,
+    hgb_leaf_val: float = 0.0,
+) -> tuple[dict[str, Any], int]:
+    """Build shared pickle-free Two-Tower (`v4` / `v5`) trunk, HGB, and gate arrays."""
     d = source_classify.FEATURE_DIM_V4
     r_dim = source_classify.REGIME_DIM_V4
-    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
-    sub_names = [f"{c}:v1" for c in source_classify.ALL_PROVIDER_CLASSES] + [f"{target_class}:v2"]
-    sub_provs = [*list(source_classify.ALL_PROVIDER_CLASSES), target_class]
+    sub_names = [f"{c}:v1" for c in source_classify.ALL_PROVIDER_CLASSES] + [f"{extra_sub_provider}:v2"]
+    sub_provs = [*source_classify.ALL_PROVIDER_CLASSES, extra_sub_provider]
     n_subs = len(sub_names)
     h1, h2 = 8, 8
 
     payload: dict[str, Any] = {
-        "schema": np.asarray(source_classify.MODEL_SCHEMA_V4),
+        "schema": np.asarray(schema),
         "feature_dim": np.asarray(d, dtype=np.int64),
         "provider_classes": np.asarray(source_classify.ALL_PROVIDER_CLASSES, dtype="<U32"),
         "mean": np.zeros(d, dtype=np.float64),
@@ -398,38 +407,61 @@ def _write_synthetic_v4_npz(
     payload[f"{p}_ln3_b"] = np.zeros(h2, dtype=np.float16)
     payload[f"{p}_w_r2b"] = np.zeros((h2, h2), dtype=np.float16)
     payload[f"{p}_b_r2b"] = np.zeros(h2, dtype=np.float16)
-    payload[f"{p}_w_prov"] = np.zeros((n_cls + 1, h2), dtype=np.float16)
-    b_prov = np.full(n_cls + 1, -2.0, dtype=np.float16)
-    t_idx = source_classify.ALL_PROVIDER_CLASSES.index(target_class)  # type: ignore[arg-type]
-    b_prov[t_idx] = np.float16(2.0)
-    b_prov[-1] = np.float16(0.0)
-    payload[f"{p}_b_prov"] = b_prov
+    payload[f"{p}_w_prov"] = np.zeros((n_prov_out, h2), dtype=np.float16)
+    payload[f"{p}_b_prov"] = np.zeros(n_prov_out, dtype=np.float16)
     payload[f"{p}_w_sub"] = np.zeros((n_subs, h2), dtype=np.float16)
     b_sub = np.zeros(n_subs, dtype=np.float16)
     b_sub[-1] = np.float16(1.5)
     payload[f"{p}_b_sub"] = b_sub
 
     payload["hgb_names"] = np.asarray(["spec_0"], dtype="<U32")
-    payload["t2_h0_baseline"] = np.asarray(1.25, dtype=np.float32)
+    payload["t2_h0_baseline"] = np.asarray(hgb_baseline, dtype=np.float32)
     payload["t2_h0_max_depth"] = np.asarray(1, dtype=np.int16)
     payload["t2_h0_feat_idx"] = np.zeros((1, 1), dtype=np.int16)
     payload["t2_h0_thresholds"] = np.asarray([[0.5]], dtype=np.float32)
     payload["t2_h0_left"] = np.zeros((1, 1), dtype=np.uint8)
     payload["t2_h0_right"] = np.zeros((1, 1), dtype=np.uint8)
-    payload["t2_h0_values"] = np.asarray([[0.75]], dtype=np.float32)
+    payload["t2_h0_values"] = np.asarray([[hgb_leaf_val]], dtype=np.float32)
 
-    d_u = n_cls + 1 + n_subs + 1 + r_dim
-    rb = np.full(n_cls, -1.0, dtype=np.float64)
-    rb[t_idx] = target_bias
-    payload["router_bias"] = rb
+    d_u = n_prov_out + n_subs + 1 + r_dim
     payload["router_tau_pos"] = np.zeros(d_u, dtype=np.float64)
     payload["router_tau_neg"] = np.zeros(d_u, dtype=np.float64)
-    payload["gate_idx_a"] = np.zeros(0, dtype=np.int16)
-    payload["gate_idx_b"] = np.zeros(0, dtype=np.int16)
+    payload["gate_idx_a"] = np.zeros(0, dtype=np.int64)
+    payload["gate_idx_b"] = np.zeros(0, dtype=np.int64)
     payload["gate_sign_a"] = np.zeros(0, dtype=np.float64)
     payload["gate_sign_b"] = np.zeros(0, dtype=np.float64)
     payload["gate_tau_a"] = np.zeros(0, dtype=np.float64)
     payload["gate_tau_b"] = np.zeros(0, dtype=np.float64)
+    return payload, d_u
+
+
+def _write_synthetic_v4_npz(
+    path: Path,
+    *,
+    target_class: source_classify.ProviderClass = "google",
+    target_bias: float = 3.0,
+    router_threshold: float = 1.5,
+) -> Path:
+    """Create a minimal valid pickle-free multi-provider-source-v4 .npz fixture."""
+    r_dim = source_classify.REGIME_DIM_V4
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    payload, d_u = _base_two_tower_npz_payload(
+        source_classify.MODEL_SCHEMA_V4,
+        extra_sub_provider=target_class,
+        n_prov_out=n_cls + 1,
+        hgb_baseline=1.25,
+        hgb_leaf_val=0.75,
+    )
+
+    t_idx = source_classify.ALL_PROVIDER_CLASSES.index(target_class)
+    b_prov = np.full(n_cls + 1, -2.0, dtype=np.float16)
+    b_prov[t_idx] = np.float16(2.0)
+    b_prov[-1] = np.float16(0.0)
+    payload["t1_s0_b_prov"] = b_prov
+
+    rb = np.full(n_cls, -1.0, dtype=np.float64)
+    rb[t_idx] = target_bias
+    payload["router_bias"] = rb
     payload["router_w"] = np.zeros((3 * d_u, n_cls), dtype=np.float64)
 
     # null_sig_bias = ln(e^0.75 - 1) so softplus + 0.25 == 1.0 exactly
@@ -442,15 +474,7 @@ def _write_synthetic_v4_npz(
     payload["router_thresholds"] = np.full(n_cls, router_threshold, dtype=np.float64)
     payload["conf_scale"] = np.asarray(1.0, dtype=np.float64)
 
-    payload["stage2_version_classes"] = np.asarray([target_class], dtype="<U32")
-    payload[f"s2_{target_class}_subfamilies"] = np.asarray([f"{target_class}:v1", f"{target_class}:v2"], dtype="<U48")
-    payload[f"s2_{target_class}_hgb_baseline"] = np.asarray([-0.5, 1.5], dtype=np.float32)
-    payload[f"s2_{target_class}_hgb_max_depth"] = np.asarray(1, dtype=np.int16)
-    payload[f"s2_{target_class}_hgb_feat_idx"] = np.zeros((1, 2, 1), dtype=np.int16)
-    payload[f"s2_{target_class}_hgb_thresholds"] = np.full((1, 2, 1), np.inf, dtype=np.float32)
-    payload[f"s2_{target_class}_hgb_left"] = np.zeros((1, 2, 1), dtype=np.uint8)
-    payload[f"s2_{target_class}_hgb_right"] = np.zeros((1, 2, 1), dtype=np.uint8)
-    payload[f"s2_{target_class}_hgb_values"] = np.zeros((1, 2, 1), dtype=np.float32)
+    _add_stage2_hgb_payload(payload, target_class, [-0.5, 1.5])
 
     np.savez(path, **payload)
     return path
@@ -541,3 +565,159 @@ def test_v4_end_to_end_image_classification_ignores_metadata(tmp_path: Path) -> 
     assert r1.label == r2.label == "bytedance"
     assert r1.model_revision == source_classify.MODEL_SCHEMA_V4
     assert r1.scores == r2.scores
+
+
+def _write_synthetic_v5_npz(
+    path: Path,
+    *,
+    det_winner: source_classify.ProviderClass = "flux",
+    attr_winner: source_classify.ProviderClass = "ideogram",
+    det_score: float = 4.0,
+    det_threshold: float = 2.0,
+    s2_hgb_weight: float = 1.0,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    """Create a minimal valid pickle-free multi-provider-source-v5 .npz fixture."""
+    d = source_classify.FEATURE_DIM_V4
+    r_dim = source_classify.REGIME_DIM_V4
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    n_det = n_cls + 1
+    payload, d_u = _base_two_tower_npz_payload(
+        source_classify.MODEL_SCHEMA_V5,
+        extra_sub_provider=attr_winner,
+        n_prov_out=n_cls + 2,
+    )
+
+    d_phi = 3 * d_u
+    payload["u_med"] = np.zeros(d_u, dtype=np.float64)
+    payload["u_scale"] = np.ones(d_u, dtype=np.float64)
+
+    det_b = np.full(n_det, -1.0, dtype=np.float64)
+    det_idx = source_classify.ALL_PROVIDER_CLASSES.index(det_winner)
+    det_b[det_idx] = det_score
+    payload["det_bias"] = det_b
+    payload["det_w"] = np.zeros((d_phi, n_det), dtype=np.float64)
+
+    h_null_dim = 4
+    sig_b = float(np.log(np.exp(0.75) - 1.0))  # softplus + 0.25 == 1.0
+    payload["null_h_w"] = np.zeros((r_dim, h_null_dim), dtype=np.float64)
+    payload["null_h_b"] = np.zeros(h_null_dim, dtype=np.float64)
+    payload["null_lin_mu_w"] = np.zeros((r_dim, n_det), dtype=np.float64)
+    payload["null_mu_bias"] = np.zeros(n_det, dtype=np.float64)
+    payload["null_mu_w"] = np.zeros((h_null_dim, n_det), dtype=np.float64)
+    payload["null_lin_sig_w"] = np.zeros((r_dim, n_det), dtype=np.float64)
+    payload["null_sig_bias"] = np.full(n_det, sig_b, dtype=np.float64)
+    payload["null_sig_w"] = np.zeros((h_null_dim, n_det), dtype=np.float64)
+    payload["det_thresholds"] = np.full(n_det, det_threshold, dtype=np.float64)
+
+    h_attr_dim = 8
+    attr_idx = source_classify.ALL_PROVIDER_CLASSES.index(attr_winner)
+    attr_b2 = np.full(n_cls, -1.0, dtype=np.float64)
+    attr_b2[attr_idx] = 3.5
+    payload["attr_w1"] = np.zeros((d_phi, h_attr_dim), dtype=np.float64)
+    payload["attr_b1"] = np.zeros(h_attr_dim, dtype=np.float64)
+    payload["attr_ln_g"] = np.ones(h_attr_dim, dtype=np.float64)
+    payload["attr_ln_b"] = np.zeros(h_attr_dim, dtype=np.float64)
+    payload["attr_w2"] = np.zeros((h_attr_dim, n_cls), dtype=np.float64)
+    payload["attr_b2"] = attr_b2
+    payload["attr_skip_w"] = np.zeros((d_phi, n_cls), dtype=np.float64)
+    payload["attr_temp"] = np.asarray(1.0, dtype=np.float64)
+    payload["conf_scale"] = np.asarray(1.0, dtype=np.float64)
+
+    stacked_dim = d + d_u
+    # HGB prefers index 0 (-2.0 < 0 -> p1 < 0.5 -> v1), Linear prefers index 1 (+3.0 > 0 -> v2)
+    _add_stage2_hgb_payload(payload, attr_winner, [-2.0])
+
+    payload[f"s2_{attr_winner}_lin_mean"] = np.zeros(stacked_dim, dtype=np.float64)
+    payload[f"s2_{attr_winner}_lin_scale"] = np.ones(stacked_dim, dtype=np.float64)
+    payload[f"s2_{attr_winner}_lin_w"] = np.zeros((stacked_dim, 1), dtype=np.float64)
+    payload[f"s2_{attr_winner}_lin_b"] = np.asarray([3.0], dtype=np.float64)
+    payload[f"s2_{attr_winner}_lin_hgb_weight"] = np.asarray(s2_hgb_weight, dtype=np.float64)
+
+    if overrides:
+        for k, v in overrides.items():
+            if v is None:
+                payload.pop(k, None)
+            else:
+                payload[k] = v
+
+    np.savez(path, **payload)
+    return path
+
+
+def test_v5_decoupled_acceptance_and_threshold_invariant_attribution(tmp_path: Path) -> None:
+    # Even when flux has the highest detection z-score (+4.0) and its threshold is lowered to 0.1,
+    # the decoupled attribution head assigns ideogram without threshold-induced misrouting!
+    w_v5 = _write_synthetic_v5_npz(
+        tmp_path / "v5_decoupled.npz",
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=4.0,
+        det_threshold=2.0,
+        s2_hgb_weight=0.0,
+    )
+    x_512 = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+    res = source_classify.classify_source_features(x_512, weights_path=w_v5)
+    assert res.label == "ideogram"
+    assert res.model_revision == source_classify.MODEL_SCHEMA_V5
+    assert res.version_subfamily == "ideogram:v2"
+    assert res.margins["ideogram"] - res.thresholds["ideogram"] == pytest.approx(2.0)
+
+    # Mutate det_thresholds so ideogram threshold is HUGE (99.0) while flux clears (4.0 >= 1.5):
+    # acceptance stays True and attribution MUST remain ideogram (threshold invariance)!
+    thr = np.full(len(source_classify.ALL_PROVIDER_CLASSES) + 1, 99.0, dtype=np.float64)
+    thr[source_classify.ALL_PROVIDER_CLASSES.index("flux")] = 1.5
+    w_inv = _write_synthetic_v5_npz(
+        tmp_path / "v5_invariant.npz",
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=4.0,
+        overrides={"det_thresholds": thr},
+    )
+    res_inv = source_classify.classify_source_features(x_512, weights_path=w_inv)
+    assert res_inv.label == "ideogram"
+    assert res_inv.reason == "classified"
+
+    # Raising all detection thresholds above 4.0 forces clean abstention with confidence < 0.5
+    w_abs = _write_synthetic_v5_npz(
+        tmp_path / "v5_abstain.npz",
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=4.0,
+        det_threshold=5.0,
+    )
+    res_abs = source_classify.classify_source_features(x_512, weights_path=w_abs)
+    assert res_abs.label == "unknown"
+    assert res_abs.reason == "abstained"
+    assert 0.0 < res_abs.confidence < 0.5 <= res_inv.confidence < 1.0
+
+
+def test_v5_stage2_linear_blend_and_schema_validation(tmp_path: Path) -> None:
+    x_512 = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+    w_hgb = _write_synthetic_v5_npz(tmp_path / "v5_s2_hgb.npz", s2_hgb_weight=1.0)
+    w_lin = _write_synthetic_v5_npz(tmp_path / "v5_s2_lin.npz", s2_hgb_weight=0.0)
+    assert source_classify.classify_source_features(x_512, weights_path=w_hgb).version_subfamily == "ideogram:v1"
+    assert source_classify.classify_source_features(x_512, weights_path=w_lin).version_subfamily == "ideogram:v2"
+
+    # End-to-end image path dispatches 512-d extractor for _SourceModelV5
+    rng = np.random.default_rng(20261112)
+    img = Image.fromarray(rng.integers(0, 256, size=(256, 256, 3), dtype=np.uint8), mode="RGB")
+    res_img = source_classify.classify_source(img, weights_path=w_lin)
+    assert res_img.label == "ideogram"
+    assert res_img.model_revision == source_classify.MODEL_SCHEMA_V5
+
+    # Invalid attr_temp <= 0 must raise ValueError
+    w_bad = _write_synthetic_v5_npz(
+        tmp_path / "v5_bad.npz",
+        overrides={"attr_temp": np.asarray(0.0, dtype=np.float64)},
+    )
+    with pytest.raises(ValueError, match="Invalid v5 attribution head arrays"):
+        source_classify._load_model(w_bad)
+
+    # Partial Stage-2 linear blend keys must fail fast rather than silently falling back to HGB-only
+    w_partial = _write_synthetic_v5_npz(
+        tmp_path / "v5_partial_s2.npz",
+        overrides={"s2_ideogram_lin_w": None},
+    )
+    with pytest.raises(ValueError, match="Incomplete Stage-2 linear blend keys for ideogram"):
+        source_classify._load_model(w_partial)

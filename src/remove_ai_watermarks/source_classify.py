@@ -3,7 +3,7 @@
 This classifier identifies the likely AI generation and export pixel pipeline across
 10 provider families (``openai``, ``google``, ``bytedance``, ``flux``,
 ``stable_diffusion``, ``meta``, ``midjourney``, ``ideogram``, ``firefly``, ``xai``),
-returning ``unknown`` when no provider's damped margin clears its calibrated
+returning ``unknown`` when the image does not clear its calibrated acceptance
 threshold. It is not a provenance verifier and does not detect or verify SynthID or
 any invisible watermark.
 """
@@ -76,11 +76,12 @@ CLASSES: tuple[SourceLabel, ...] = (*ALL_PROVIDER_CLASSES, "unknown")
 WEIGHTS_ENV = "RAIW_SOURCE_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
 WEIGHTS_REVISION = "bcfc2f2fdf21eb44e87ef8c492ff20f635639475"
-MODEL_FILE = "multi-provider-source-v4.npz"
-MODEL_SHA256 = "bc62ee22331c0137e76c53f5026e14d08cae12a3483fa69f3000316806c146a3"
-MODEL_SCHEMA = "multi-provider-source-v4"
+MODEL_FILE = "multi-provider-source-v5.npz"
+MODEL_SHA256 = "6f9eaf2e8f2f168db019bcbf270fe5c827297f4812eb03fcf39c30b8192e1724"
 MODEL_SCHEMA_V3 = "multi-provider-source-v3"
 MODEL_SCHEMA_V4 = "multi-provider-source-v4"
+MODEL_SCHEMA_V5 = "multi-provider-source-v5"
+MODEL_SCHEMA = MODEL_SCHEMA_V5
 SOURCE_CLASSIFY_EXTRA = "'remove-ai-watermarks[source-classify]'"
 
 MIN_SIDE = 256
@@ -96,8 +97,8 @@ REGIME_DIM_V4 = 32
 
 CLAIM = (
     "Identifies the likely AI generation/export pixel pipeline across 10 provider "
-    "families with positive-part sub-unit pooling, damped cross-provider margin "
-    "suppression, and stacked Stage-2 version attribution. This is not provenance "
+    "families with decoupled regime-aware acceptance, threshold-invariant attribution, "
+    "and stacked Stage-2 version attribution. This is not provenance "
     "verification and does not detect or verify SynthID or any invisible watermark."
 )
 
@@ -187,6 +188,17 @@ class _ProviderSpecialist:
 
 
 @dataclass(frozen=True)
+class _Stage2LinearBlend:
+    """Optional standardized L2 linear head blended with Stage-2 HGB logits."""
+
+    mean: FloatArray
+    scale: FloatArray
+    w: FloatArray
+    b: FloatArray
+    hgb_weight: float
+
+
+@dataclass(frozen=True)
 class _Stage2VersionHead:
     """Stacked Stage-2 version classifier over input features + Stage-1 unit logits."""
 
@@ -198,6 +210,7 @@ class _Stage2VersionHead:
     left: FloatArray
     right: FloatArray
     values: FloatArray
+    linear: _Stage2LinearBlend | None = None
 
 
 @dataclass(frozen=True)
@@ -217,8 +230,8 @@ class _SourceModel:
 
 
 @dataclass(frozen=True)
-class _ResidualMLPTrunkV4:
-    """Multi-task Regime-FiLM Residual-MLP trunk (11 provider/unknown + M_sub subfamily heads)."""
+class _ResidualMLPTrunk:
+    """Multi-task Regime-FiLM Residual-MLP trunk (provider/unknown[/accept] + M_sub subfamily heads)."""
 
     w_in: FloatArray
     b_in: FloatArray
@@ -249,17 +262,21 @@ class _ResidualMLPTrunkV4:
 
 
 @dataclass(frozen=True)
-class _SourceModelV4:
-    """Validated pickle-free multi-provider v4 Two-Tower + Regime-Conditioned Router model."""
+class _TwoTowerBackbone:
+    """Shared 512-d two-tower trunk + packed binary HGB backbone for v4 and v5 models."""
 
     mean: FloatArray
     scale: FloatArray
-    trunks: tuple[_ResidualMLPTrunkV4, ...]
-    sub_names: tuple[str, ...]
-    sub_providers: tuple[str, ...]
-    hgb_names: tuple[str, ...]
+    trunks: tuple[_ResidualMLPTrunk, ...]
+    n_subs: int
+    sub_by_provider: dict[str, tuple[tuple[int, str], ...]]
     hgb_units: tuple[_PackedBinaryHGB, ...]
-    router_bias: FloatArray
+
+
+@dataclass(frozen=True)
+class _RouterGates2D:
+    """Shared positive/negative hinge thresholds and 2D multiplicative interaction gates."""
+
     router_tau_pos: FloatArray
     router_tau_neg: FloatArray
     gate_idx_a: FloatArray
@@ -268,6 +285,15 @@ class _SourceModelV4:
     gate_sign_b: FloatArray
     gate_tau_a: FloatArray
     gate_tau_b: FloatArray
+
+
+@dataclass(frozen=True)
+class _SourceModelV4:
+    """Validated pickle-free multi-provider v4 Two-Tower + Regime-Conditioned Router model."""
+
+    backbone: _TwoTowerBackbone
+    gates: _RouterGates2D
+    router_bias: FloatArray
     router_w: FloatArray
     null_mu_bias: FloatArray
     null_mu_w: FloatArray
@@ -277,7 +303,40 @@ class _SourceModelV4:
     router_thresholds: dict[str, float]
     conf_scale: float
     version_heads: dict[str, _Stage2VersionHead]
-    schema: str = MODEL_SCHEMA_V4
+
+
+@dataclass(frozen=True)
+class _SourceModelV5:
+    """Validated pickle-free v5 model with decoupled regime-aware acceptance and attribution."""
+
+    backbone: _TwoTowerBackbone
+    gates: _RouterGates2D
+    u_med: FloatArray
+    u_scale: FloatArray
+    det_bias: FloatArray
+    det_w: FloatArray
+    null_h_w: FloatArray
+    null_h_b: FloatArray
+    null_lin_mu_w: FloatArray
+    null_mu_bias: FloatArray
+    null_mu_w: FloatArray
+    null_lin_sig_w: FloatArray
+    null_sig_bias: FloatArray
+    null_sig_w: FloatArray
+    det_thresholds: FloatArray
+    attr_w1: FloatArray
+    attr_b1: FloatArray
+    attr_ln_g: FloatArray
+    attr_ln_b: FloatArray
+    attr_w2: FloatArray
+    attr_b2: FloatArray
+    attr_skip_w: FloatArray
+    attr_temp: float
+    conf_scale: float
+    version_heads: dict[str, _Stage2VersionHead]
+
+
+_LoadedSourceModel: TypeAlias = _SourceModel | _SourceModelV4 | _SourceModelV5
 
 
 def is_available() -> bool:
@@ -466,19 +525,17 @@ def _silu_np(x: FloatArray) -> FloatArray:
     import numpy as np
 
     clipped = np.clip(x, -30.0, 30.0)
-    return (x / (1.0 + np.exp(-clipped))).astype(np.float32)
+    return (x / (1.0 + np.exp(-clipped))).astype(x.dtype, copy=False)
 
 
 def _layernorm_1d(x: FloatArray, gamma: FloatArray, beta: FloatArray) -> FloatArray:
-    import numpy as np
-
     mu = float(x.mean())
     diff = x - mu
     var = float((diff * diff).mean())
-    return (diff * (1.0 / math.sqrt(var + 1e-5)) * gamma + beta).astype(np.float32)
+    return (diff * (1.0 / math.sqrt(var + 1e-5)) * gamma + beta).astype(x.dtype, copy=False)
 
 
-def _eval_trunk_v4(trunk: _ResidualMLPTrunkV4, x_std_1d: FloatArray) -> tuple[FloatArray, FloatArray]:
+def _eval_residual_trunk(trunk: _ResidualMLPTrunk, x_std_1d: FloatArray) -> tuple[FloatArray, FloatArray]:
     import numpy as np
 
     r_std = x_std_1d[REGIME_START_V4 : REGIME_START_V4 + REGIME_DIM_V4]
@@ -570,18 +627,28 @@ def _eval_stage2_version_head(head: _Stage2VersionHead, x_stacked_1d: FloatArray
     import numpy as np
 
     n_iter, c_tree, _ = head.feat_idx.shape
-    i_arange = np.arange(n_iter, dtype=np.int32)[:, None]
-    c_arange = np.arange(c_tree, dtype=np.int32)[None, :]
-    node_idx = np.zeros((n_iter, c_tree), dtype=np.int32)
-    for _ in range(head.max_depth):
-        f = head.feat_idx[i_arange, c_arange, node_idx]
-        thr = head.thresholds[i_arange, c_arange, node_idx]
-        node_idx = np.where(
-            x_stacked_1d[f] <= thr,
-            head.left[i_arange, c_arange, node_idx],
-            head.right[i_arange, c_arange, node_idx],
-        )
-    raw = head.baseline + np.sum(head.values[i_arange, c_arange, node_idx], axis=0)
+    lin = head.linear
+    if lin is not None and lin.hgb_weight <= 0.0:
+        x_lin = np.clip((x_stacked_1d - lin.mean) / lin.scale, -10.0, 10.0)
+        raw = x_lin @ lin.w + lin.b
+    else:
+        i_arange = np.arange(n_iter, dtype=np.int32)[:, None]
+        c_arange = np.arange(c_tree, dtype=np.int32)[None, :]
+        node_idx = np.zeros((n_iter, c_tree), dtype=np.int32)
+        for _ in range(head.max_depth):
+            f = head.feat_idx[i_arange, c_arange, node_idx]
+            thr = head.thresholds[i_arange, c_arange, node_idx]
+            node_idx = np.where(
+                x_stacked_1d[f] <= thr,
+                head.left[i_arange, c_arange, node_idx],
+                head.right[i_arange, c_arange, node_idx],
+            )
+        raw = head.baseline + np.sum(head.values[i_arange, c_arange, node_idx], axis=0)
+        if lin is not None and lin.hgb_weight < 1.0:
+            x_lin = np.clip((x_stacked_1d - lin.mean) / lin.scale, -10.0, 10.0)
+            lin_raw = x_lin @ lin.w + lin.b
+            raw = lin.hgb_weight * raw + (1.0 - lin.hgb_weight) * lin_raw
+
     if c_tree == 1:
         p1 = _sigmoid_scalar(float(raw[0]))
         pred_idx = 1 if p1 >= 0.5 else 0
@@ -684,6 +751,29 @@ def _load_stage1_unit(data: Any, prefix: str, *, is_sub: bool) -> _Stage1Unit:
     )
 
 
+def _load_1d_standardizer(
+    data: Any,
+    center_key: str,
+    scale_key: str,
+    dim: int,
+    *,
+    err_msg: str,
+) -> tuple[FloatArray, FloatArray]:
+    import numpy as np
+
+    center = np.asarray(data[center_key], dtype=np.float64)
+    scale = np.asarray(data[scale_key], dtype=np.float64)
+    if (
+        center.shape != (dim,)
+        or scale.shape != (dim,)
+        or np.any(scale <= 0.0)
+        or not np.all(np.isfinite(center))
+        or not np.all(np.isfinite(scale))
+    ):
+        raise ValueError(err_msg)
+    return center, scale
+
+
 def _load_stage2_heads(data: Any, stacked_dim: int) -> dict[str, _Stage2VersionHead]:
     import numpy as np
 
@@ -713,6 +803,37 @@ def _load_stage2_heads(data: Any, stacked_dim: int) -> dict[str, _Stage2VersionH
             or not np.all(np.isfinite(values))
         ):
             raise ValueError(f"Invalid Stage-2 HGB arrays for {p_cls}")
+        lin_prefix = f"s2_{p_cls}_lin"
+        lin_keys = tuple(f"{lin_prefix}_{s}" for s in ("mean", "scale", "w", "b", "hgb_weight"))
+        present_lin = [k in data for k in lin_keys]
+        linear_blend: _Stage2LinearBlend | None = None
+        if any(present_lin):
+            if not all(present_lin):
+                raise ValueError(f"Incomplete Stage-2 linear blend keys for {p_cls}")
+            c_tree = feat_idx.shape[1]
+            lin_err = f"Invalid Stage-2 linear blend arrays for {p_cls}"
+            lin_mean, lin_scale = _load_1d_standardizer(
+                data, f"{lin_prefix}_mean", f"{lin_prefix}_scale", stacked_dim, err_msg=lin_err
+            )
+            lin_w = np.asarray(data[f"{lin_prefix}_w"], dtype=np.float64)
+            lin_b = np.asarray(data[f"{lin_prefix}_b"], dtype=np.float64).reshape(-1)
+            hgb_weight = float(np.asarray(data[f"{lin_prefix}_hgb_weight"], dtype=np.float64).squeeze())
+            if (
+                lin_w.shape != (stacked_dim, c_tree)
+                or lin_b.shape != (c_tree,)
+                or not math.isfinite(hgb_weight)
+                or not (0.0 <= hgb_weight <= 1.0)
+                or not np.all(np.isfinite(lin_w))
+                or not np.all(np.isfinite(lin_b))
+            ):
+                raise ValueError(lin_err)
+            linear_blend = _Stage2LinearBlend(
+                mean=lin_mean,
+                scale=lin_scale,
+                w=lin_w,
+                b=lin_b,
+                hgb_weight=hgb_weight,
+            )
         version_heads[p_cls] = _Stage2VersionHead(
             subfamilies=subs,
             baseline=baseline,
@@ -722,11 +843,18 @@ def _load_stage2_heads(data: Any, stacked_dim: int) -> dict[str, _Stage2VersionH
             left=left,
             right=right,
             values=values,
+            linear=linear_blend,
         )
     return version_heads
 
 
-def _load_trunk_v4(data: Any, prefix: str, in_dim: int, n_subs: int) -> _ResidualMLPTrunkV4:
+def _load_residual_trunk(
+    data: Any,
+    prefix: str,
+    in_dim: int,
+    n_subs: int,
+    n_prov_out: int,
+) -> _ResidualMLPTrunk:
     import numpy as np
 
     keys = (
@@ -764,7 +892,6 @@ def _load_trunk_v4(data: Any, prefix: str, in_dim: int, n_subs: int) -> _Residua
 
     h1 = arrays["w_in"].shape[0] if arrays["w_in"].ndim == 2 else -1
     h2 = arrays["w_mid"].shape[0] if arrays["w_mid"].ndim == 2 else -1
-    n_prov_out = len(ALL_PROVIDER_CLASSES) + 1
     if (
         h1 < 4
         or h2 < 4
@@ -795,12 +922,12 @@ def _load_trunk_v4(data: Any, prefix: str, in_dim: int, n_subs: int) -> _Residua
         or arrays["w_sub"].shape != (n_subs, h2)
         or arrays["b_sub"].shape != (n_subs,)
     ):
-        raise ValueError(f"Invalid v4 trunk shapes for {prefix}")
+        raise ValueError(f"Invalid v4/v5 trunk shapes for {prefix}")
 
-    return _ResidualMLPTrunkV4(**arrays)
+    return _ResidualMLPTrunk(**arrays)
 
 
-def _load_model_v4(data: Any) -> _SourceModelV4:
+def _load_two_tower_backbone(data: Any, *, n_prov_out: int, tag: str) -> _TwoTowerBackbone:
     import numpy as np
 
     feat_dim = int(np.asarray(data["feature_dim"], dtype=np.int64).squeeze())
@@ -811,36 +938,45 @@ def _load_model_v4(data: Any) -> _SourceModelV4:
     if all_cls != ALL_PROVIDER_CLASSES:
         raise ValueError(f"Unexpected provider_classes: {all_cls}")
 
-    n_cls = len(ALL_PROVIDER_CLASSES)
-    mean = np.asarray(data["mean"], dtype=np.float64)
-    scale = np.asarray(data["scale"], dtype=np.float64)
-    if (
-        mean.shape != (FEATURE_DIM_V4,)
-        or scale.shape != (FEATURE_DIM_V4,)
-        or not np.all(np.isfinite(mean))
-        or not np.all(np.isfinite(scale))
-        or np.any(scale <= 0.0)
-    ):
-        raise ValueError("Invalid v4 standardization arrays mean/scale")
+    mean, scale = _load_1d_standardizer(
+        data, "mean", "scale", FEATURE_DIM_V4, err_msg=f"Invalid {tag} standardization arrays mean/scale"
+    )
 
     sub_names = tuple(str(x) for x in np.asarray(data["sub_names"]).tolist())
     sub_providers = tuple(str(x) for x in np.asarray(data["sub_providers"]).tolist())
-    if len(sub_names) < n_cls or len(sub_providers) != len(sub_names):
-        raise ValueError("Invalid sub_names / sub_providers in v4 bundle")
-    for sp in sub_providers:
-        if sp not in ALL_PROVIDER_CLASSES:
-            raise ValueError(f"Unknown subfamily provider {sp!r} in v4 bundle")
+    n_subs = len(sub_names)
+    if n_subs < len(ALL_PROVIDER_CLASSES) or len(sub_providers) != n_subs:
+        raise ValueError(f"Invalid sub_names / sub_providers in {tag} bundle")
+    by_prov: dict[str, list[tuple[int, str]]] = {c: [] for c in ALL_PROVIDER_CLASSES}
+    for s_idx, (s_name, sp) in enumerate(zip(sub_names, sub_providers, strict=True)):
+        if sp not in by_prov:
+            raise ValueError(f"Unknown subfamily provider {sp!r} in {tag} bundle")
+        by_prov[sp].append((s_idx, s_name))
+    sub_by_provider = {c: tuple(items) for c, items in by_prov.items()}
 
     trunk_count = int(np.asarray(data["trunk_count"], dtype=np.int64).squeeze())
     if trunk_count < 1 or trunk_count > 12:
         raise ValueError(f"Invalid trunk_count: {trunk_count}")
-    trunks = tuple(_load_trunk_v4(data, f"t1_s{i}", FEATURE_DIM_V4, len(sub_names)) for i in range(trunk_count))
+    trunks = tuple(
+        _load_residual_trunk(data, f"t1_s{i}", FEATURE_DIM_V4, n_subs, n_prov_out) for i in range(trunk_count)
+    )
 
-    hgb_names = tuple(str(x) for x in np.asarray(data["hgb_names"]).tolist())
-    hgb_units = tuple(_load_binary_hgb(data, f"t2_h{i}", FEATURE_DIM_V4) for i in range(len(hgb_names)))
+    n_hgb = int(np.asarray(data["hgb_names"]).shape[0])
+    hgb_units = tuple(_load_binary_hgb(data, f"t2_h{i}", FEATURE_DIM_V4) for i in range(n_hgb))
 
-    d_u = n_cls + 1 + len(sub_names) + len(hgb_units) + REGIME_DIM_V4
-    router_bias = np.asarray(data["router_bias"], dtype=np.float64)
+    return _TwoTowerBackbone(
+        mean=mean,
+        scale=scale,
+        trunks=trunks,
+        n_subs=n_subs,
+        sub_by_provider=sub_by_provider,
+        hgb_units=hgb_units,
+    )
+
+
+def _load_router_gates(data: Any, d_u: int, *, tag: str) -> _RouterGates2D:
+    import numpy as np
+
     router_tau_pos = np.asarray(data["router_tau_pos"], dtype=np.float64)
     router_tau_neg = np.asarray(data["router_tau_neg"], dtype=np.float64)
     gate_idx_a = np.asarray(data["gate_idx_a"], dtype=np.int64)
@@ -849,35 +985,52 @@ def _load_model_v4(data: Any) -> _SourceModelV4:
     gate_sign_b = np.asarray(data["gate_sign_b"], dtype=np.float64)
     gate_tau_a = np.asarray(data["gate_tau_a"], dtype=np.float64)
     gate_tau_b = np.asarray(data["gate_tau_b"], dtype=np.float64)
-    n_gates = gate_idx_a.shape[0]
-    router_w = np.asarray(data["router_w"], dtype=np.float64)
-
+    n_gates = gate_idx_a.shape[0] if gate_idx_a.ndim == 1 else -1
     if (
-        router_bias.shape != (n_cls,)
+        n_gates < 0
         or router_tau_pos.shape != (d_u,)
         or router_tau_neg.shape != (d_u,)
-        or gate_idx_a.ndim != 1
         or gate_idx_b.shape != (n_gates,)
         or gate_sign_a.shape != (n_gates,)
         or gate_sign_b.shape != (n_gates,)
         or gate_tau_a.shape != (n_gates,)
         or gate_tau_b.shape != (n_gates,)
-        or router_w.shape != (3 * d_u + n_gates, n_cls)
         or (n_gates > 0 and (np.any(gate_idx_a < 0) or np.any(gate_idx_a >= d_u)))
         or (n_gates > 0 and (np.any(gate_idx_b < 0) or np.any(gate_idx_b >= d_u)))
         or not all(
             np.all(np.isfinite(arr))
-            for arr in (
-                router_bias,
-                router_tau_pos,
-                router_tau_neg,
-                gate_sign_a,
-                gate_sign_b,
-                gate_tau_a,
-                gate_tau_b,
-                router_w,
-            )
+            for arr in (router_tau_pos, router_tau_neg, gate_sign_a, gate_sign_b, gate_tau_a, gate_tau_b)
         )
+    ):
+        raise ValueError(f"Invalid {tag} router or 2D gate arrays")
+    return _RouterGates2D(
+        router_tau_pos=router_tau_pos,
+        router_tau_neg=router_tau_neg,
+        gate_idx_a=gate_idx_a,
+        gate_idx_b=gate_idx_b,
+        gate_sign_a=gate_sign_a,
+        gate_sign_b=gate_sign_b,
+        gate_tau_a=gate_tau_a,
+        gate_tau_b=gate_tau_b,
+    )
+
+
+def _load_model_v4(data: Any) -> _SourceModelV4:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    backbone = _load_two_tower_backbone(data, n_prov_out=n_cls + 1, tag="v4")
+    d_u = n_cls + 1 + backbone.n_subs + len(backbone.hgb_units) + REGIME_DIM_V4
+    gates = _load_router_gates(data, d_u, tag="v4")
+    d_phi = 3 * d_u + gates.gate_idx_a.shape[0]
+
+    router_bias = np.asarray(data["router_bias"], dtype=np.float64)
+    router_w = np.asarray(data["router_w"], dtype=np.float64)
+    if (
+        router_bias.shape != (n_cls,)
+        or router_w.shape != (d_phi, n_cls)
+        or not np.all(np.isfinite(router_bias))
+        or not np.all(np.isfinite(router_w))
     ):
         raise ValueError("Invalid v4 router or 2D gate arrays")
 
@@ -912,26 +1065,11 @@ def _load_model_v4(data: Any) -> _SourceModelV4:
     if not math.isfinite(conf_scale) or conf_scale <= 0.0:
         raise ValueError(f"Invalid v4 conf_scale: {conf_scale}")
 
-    stacked_dim = FEATURE_DIM_V4 + d_u
-    version_heads = _load_stage2_heads(data, stacked_dim)
-
+    version_heads = _load_stage2_heads(data, FEATURE_DIM_V4 + d_u)
     return _SourceModelV4(
-        mean=mean,
-        scale=scale,
-        trunks=trunks,
-        sub_names=sub_names,
-        sub_providers=sub_providers,
-        hgb_names=hgb_names,
-        hgb_units=hgb_units,
+        backbone=backbone,
+        gates=gates,
         router_bias=router_bias,
-        router_tau_pos=router_tau_pos,
-        router_tau_neg=router_tau_neg,
-        gate_idx_a=gate_idx_a,
-        gate_idx_b=gate_idx_b,
-        gate_sign_a=gate_sign_a,
-        gate_sign_b=gate_sign_b,
-        gate_tau_a=gate_tau_a,
-        gate_tau_b=gate_tau_b,
         router_w=router_w,
         null_mu_bias=null_mu_bias,
         null_mu_w=null_mu_w,
@@ -944,14 +1082,133 @@ def _load_model_v4(data: Any) -> _SourceModelV4:
     )
 
 
+def _load_model_v5(data: Any) -> _SourceModelV5:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    n_det = n_cls + 1
+    backbone = _load_two_tower_backbone(data, n_prov_out=n_cls + 2, tag="v5")
+    d_u = n_cls + 2 + backbone.n_subs + len(backbone.hgb_units) + REGIME_DIM_V4
+    gates = _load_router_gates(data, d_u, tag="v5")
+    d_phi = 3 * d_u + gates.gate_idx_a.shape[0]
+
+    u_med, u_scale = _load_1d_standardizer(
+        data, "u_med", "u_scale", d_u, err_msg="Invalid v5 channel normalization arrays"
+    )
+
+    det_bias = np.asarray(data["det_bias"], dtype=np.float64)
+    det_w = np.asarray(data["det_w"], dtype=np.float64)
+    null_h_w = np.asarray(data["null_h_w"], dtype=np.float64)
+    null_h_b = np.asarray(data["null_h_b"], dtype=np.float64)
+    null_lin_mu_w = np.asarray(data["null_lin_mu_w"], dtype=np.float64)
+    null_mu_bias = np.asarray(data["null_mu_bias"], dtype=np.float64)
+    null_mu_w = np.asarray(data["null_mu_w"], dtype=np.float64)
+    null_lin_sig_w = np.asarray(data["null_lin_sig_w"], dtype=np.float64)
+    null_sig_bias = np.asarray(data["null_sig_bias"], dtype=np.float64)
+    null_sig_w = np.asarray(data["null_sig_w"], dtype=np.float64)
+    det_thresholds = np.asarray(data["det_thresholds"], dtype=np.float64)
+
+    h_null_dim = null_h_b.shape[0] if null_h_b.ndim == 1 else -1
+    if (
+        h_null_dim < 2
+        or det_bias.shape != (n_det,)
+        or det_w.shape != (d_phi, n_det)
+        or null_h_w.shape != (REGIME_DIM_V4, h_null_dim)
+        or null_lin_mu_w.shape != (REGIME_DIM_V4, n_det)
+        or null_mu_bias.shape != (n_det,)
+        or null_mu_w.shape != (h_null_dim, n_det)
+        or null_lin_sig_w.shape != (REGIME_DIM_V4, n_det)
+        or null_sig_bias.shape != (n_det,)
+        or null_sig_w.shape != (h_null_dim, n_det)
+        or det_thresholds.shape != (n_det,)
+        or not all(
+            np.all(np.isfinite(arr))
+            for arr in (
+                det_bias,
+                det_w,
+                null_h_w,
+                null_h_b,
+                null_lin_mu_w,
+                null_mu_bias,
+                null_mu_w,
+                null_lin_sig_w,
+                null_sig_bias,
+                null_sig_w,
+                det_thresholds,
+            )
+        )
+    ):
+        raise ValueError("Invalid v5 acceptance or regime-null arrays")
+
+    attr_w1 = np.asarray(data["attr_w1"], dtype=np.float64)
+    attr_b1 = np.asarray(data["attr_b1"], dtype=np.float64)
+    attr_ln_g = np.asarray(data["attr_ln_g"], dtype=np.float64)
+    attr_ln_b = np.asarray(data["attr_ln_b"], dtype=np.float64)
+    attr_w2 = np.asarray(data["attr_w2"], dtype=np.float64)
+    attr_b2 = np.asarray(data["attr_b2"], dtype=np.float64)
+    attr_skip_w = np.asarray(data["attr_skip_w"], dtype=np.float64)
+    attr_temp = float(np.asarray(data["attr_temp"], dtype=np.float64).squeeze())
+    conf_scale = float(np.asarray(data["conf_scale"], dtype=np.float64).squeeze())
+
+    h_attr_dim = attr_b1.shape[0] if attr_b1.ndim == 1 else -1
+    if (
+        h_attr_dim < 4
+        or attr_w1.shape != (d_phi, h_attr_dim)
+        or attr_ln_g.shape != (h_attr_dim,)
+        or attr_ln_b.shape != (h_attr_dim,)
+        or attr_w2.shape != (h_attr_dim, n_cls)
+        or attr_b2.shape != (n_cls,)
+        or attr_skip_w.shape != (d_phi, n_cls)
+        or not math.isfinite(attr_temp)
+        or attr_temp <= 0.0
+        or not math.isfinite(conf_scale)
+        or conf_scale <= 0.0
+        or not all(
+            np.all(np.isfinite(arr)) for arr in (attr_w1, attr_b1, attr_ln_g, attr_ln_b, attr_w2, attr_b2, attr_skip_w)
+        )
+    ):
+        raise ValueError("Invalid v5 attribution head arrays")
+
+    version_heads = _load_stage2_heads(data, FEATURE_DIM_V4 + d_u)
+    return _SourceModelV5(
+        backbone=backbone,
+        gates=gates,
+        u_med=u_med,
+        u_scale=u_scale,
+        det_bias=det_bias,
+        det_w=det_w,
+        null_h_w=null_h_w,
+        null_h_b=null_h_b,
+        null_lin_mu_w=null_lin_mu_w,
+        null_mu_bias=null_mu_bias,
+        null_mu_w=null_mu_w,
+        null_lin_sig_w=null_lin_sig_w,
+        null_sig_bias=null_sig_bias,
+        null_sig_w=null_sig_w,
+        det_thresholds=det_thresholds,
+        attr_w1=attr_w1,
+        attr_b1=attr_b1,
+        attr_ln_g=attr_ln_g,
+        attr_ln_b=attr_ln_b,
+        attr_w2=attr_w2,
+        attr_b2=attr_b2,
+        attr_skip_w=attr_skip_w,
+        attr_temp=attr_temp,
+        conf_scale=conf_scale,
+        version_heads=version_heads,
+    )
+
+
 @functools.lru_cache(maxsize=4)
-def _load_model_from_path(resolved: Path) -> _SourceModel | _SourceModelV4:
+def _load_model_from_path(resolved: Path) -> _LoadedSourceModel:
     import numpy as np
 
     with np.load(resolved, allow_pickle=False) as data:
         if "schema" not in data:
             raise ValueError(f"Missing schema key in {resolved}")
         schema = str(np.asarray(data["schema"]).item())
+        if schema == MODEL_SCHEMA_V5:
+            return _load_model_v5(data)
         if schema == MODEL_SCHEMA_V4:
             return _load_model_v4(data)
         if schema != MODEL_SCHEMA_V3:
@@ -970,16 +1227,9 @@ def _load_model_from_path(resolved: Path) -> _SourceModel | _SourceModelV4:
         if not math.isfinite(damping_gamma) or not (0.0 <= damping_gamma <= 1.0):
             raise ValueError(f"Invalid damping_gamma: {damping_gamma}")
 
-        mean = np.asarray(data["mean"], dtype=np.float64)
-        scale = np.asarray(data["scale"], dtype=np.float64)
-        if (
-            mean.shape != (FEATURE_DIM,)
-            or scale.shape != (FEATURE_DIM,)
-            or not np.all(np.isfinite(mean))
-            or not np.all(np.isfinite(scale))
-            or np.any(scale <= 0.0)
-        ):
-            raise ValueError("Invalid standardization arrays mean/scale")
+        mean, scale = _load_1d_standardizer(
+            data, "mean", "scale", FEATURE_DIM, err_msg="Invalid standardization arrays mean/scale"
+        )
 
         thr_key = "router_thresholds" if "router_thresholds" in data else "router_all11_thresholds"
         thr_arr = np.asarray(data[thr_key], dtype=np.float64)
@@ -1050,7 +1300,7 @@ def _load_model_from_path(resolved: Path) -> _SourceModel | _SourceModelV4:
     )
 
 
-def _load_model(weights_path: Path | None = None) -> _SourceModel | _SourceModelV4:
+def _load_model(weights_path: Path | None = None) -> _LoadedSourceModel:
     return _load_model_from_path(_resolve_weights_path(weights_path))
 
 
@@ -1067,46 +1317,80 @@ def _unavailable_result() -> SourceClassification:
     )
 
 
-def _classify_v4_features(x_1d: FloatArray, model: _SourceModelV4) -> SourceClassification:
+def _eval_two_tower_backbone(
+    x_1d: FloatArray,
+    backbone: _TwoTowerBackbone,
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, float, float]:
     import numpy as np
 
-    x_std_1d = np.clip((x_1d - model.mean) / model.scale, -12.0, 12.0).astype(np.float32)
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    x_std_1d = np.clip((x_1d - backbone.mean) / backbone.scale, -12.0, 12.0).astype(np.float32)
     r_std = x_std_1d[REGIME_START_V4 : REGIME_START_V4 + REGIME_DIM_V4].astype(np.float64)
 
-    n_trunks = len(model.trunks)
-    prov_sum = np.zeros(len(ALL_PROVIDER_CLASSES) + 1, dtype=np.float64)
-    sub_sum = np.zeros(len(model.sub_names), dtype=np.float64)
-    for trunk in model.trunks:
-        p_log, s_log = _eval_trunk_v4(trunk, x_std_1d)
+    n_trunks = len(backbone.trunks)
+    prov_sum = np.zeros(backbone.trunks[0].b_prov.shape[0], dtype=np.float64)
+    sub_sum = np.zeros(backbone.n_subs, dtype=np.float64)
+    for trunk in backbone.trunks:
+        p_log, s_log = _eval_residual_trunk(trunk, x_std_1d)
         prov_sum += p_log
         sub_sum += s_log
     mean_prov = prov_sum / float(n_trunks)
     mean_sub = sub_sum / float(n_trunks)
 
-    unk_logit = float(mean_prov[-1])
-    prov_log_odds = mean_prov[:-1] - unk_logit
-    max_ai = float(np.max(mean_prov[:-1]))
-    lse_ai = max_ai + float(np.log(np.sum(np.exp(mean_prov[:-1] - max_ai))))
+    unk_logit = float(mean_prov[n_cls])
+    max_ai = float(np.max(mean_prov[:n_cls]))
+    lse_ai = max_ai + float(np.log(np.sum(np.exp(mean_prov[:n_cls] - max_ai))))
+    hgb_vec = np.asarray(
+        [_eval_packed_binary_hgb_raw(h, x_1d) for h in backbone.hgb_units],
+        dtype=np.float64,
+    )
+    return mean_prov, mean_sub, hgb_vec, r_std, unk_logit, lse_ai
+
+
+def _eval_2d_gates(ch: FloatArray, gates: _RouterGates2D, *, cap: float) -> FloatArray:
+    import numpy as np
+
+    ga = np.maximum(0.0, gates.gate_sign_a * (ch[gates.gate_idx_a] - gates.gate_tau_a))
+    gb = np.maximum(0.0, gates.gate_sign_b * (ch[gates.gate_idx_b] - gates.gate_tau_b))
+    return np.minimum(ga * gb, cap)
+
+
+def _resolve_two_tower_subfamilies(
+    best_cls: ProviderClass,
+    mean_sub: FloatArray,
+    x_1d: FloatArray,
+    u_vec: FloatArray,
+    backbone: _TwoTowerBackbone,
+    version_heads: dict[str, _Stage2VersionHead],
+) -> tuple[str | None, str | None]:
+    import numpy as np
+
+    best_sub: str | None = None
+    best_sub_val = -1e18
+    for s_idx, s_name in backbone.sub_by_provider[best_cls]:
+        val = float(mean_sub[s_idx])
+        if val > best_sub_val:
+            best_sub_val = val
+            best_sub = s_name
+    version_subfamily = best_sub
+    if best_cls in version_heads:
+        version_subfamily = _eval_stage2_version_head(version_heads[best_cls], np.concatenate([x_1d, u_vec]))
+    return best_sub, version_subfamily
+
+
+def _classify_v4_features(x_1d: FloatArray, model: _SourceModelV4) -> SourceClassification:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    mean_prov, mean_sub, hgb_vec, r_std, unk_logit, lse_ai = _eval_two_tower_backbone(x_1d, model.backbone)
+    prov_log_odds = mean_prov[:n_cls] - unk_logit
     ai_vs_unk = np.asarray([lse_ai - unk_logit], dtype=np.float64)
     sub_log_odds = mean_sub - unk_logit
 
-    if model.hgb_units:
-        hgb_vec = np.asarray(
-            [_eval_packed_binary_hgb_raw(h, x_1d) for h in model.hgb_units],
-            dtype=np.float64,
-        )
-    else:
-        hgb_vec = np.zeros(0, dtype=np.float64)
-
     u_vec = np.concatenate([prov_log_odds, ai_vs_unk, sub_log_odds, hgb_vec, r_std])
-    h_pos = np.maximum(0.0, u_vec - model.router_tau_pos)
-    h_neg = np.maximum(0.0, model.router_tau_neg - u_vec)
-    if model.gate_idx_a.shape[0] > 0:
-        ga = np.maximum(0.0, model.gate_sign_a * (u_vec[model.gate_idx_a] - model.gate_tau_a))
-        gb = np.maximum(0.0, model.gate_sign_b * (u_vec[model.gate_idx_b] - model.gate_tau_b))
-        g_2d = np.minimum(ga * gb, 64.0)
-    else:
-        g_2d = np.zeros(0, dtype=np.float64)
+    h_pos = np.maximum(0.0, u_vec - model.gates.router_tau_pos)
+    h_neg = np.maximum(0.0, model.gates.router_tau_neg - u_vec)
+    g_2d = _eval_2d_gates(u_vec, model.gates, cap=64.0)
 
     phi = np.concatenate([u_vec, h_pos, h_neg, g_2d])
     z_raw = model.router_bias + phi @ model.router_w
@@ -1133,17 +1417,9 @@ def _classify_v4_features(x_1d: FloatArray, model: _SourceModelV4) -> SourceClas
     if excess[best_cls] >= 0.0:
         label: SourceLabel = best_cls
         reason: SourceReason = "classified"
-        best_sub: str | None = None
-        best_sub_val = -1e18
-        for s_idx, (s_name, s_prov) in enumerate(zip(model.sub_names, model.sub_providers, strict=True)):
-            if s_prov == best_cls and float(sub_log_odds[s_idx]) > best_sub_val:
-                best_sub_val = float(sub_log_odds[s_idx])
-                best_sub = s_name
-        fine_subfamily = best_sub
-        version_subfamily = fine_subfamily
-        if best_cls in model.version_heads:
-            x_stacked = np.concatenate([x_1d, u_vec])
-            version_subfamily = _eval_stage2_version_head(model.version_heads[best_cls], x_stacked)
+        fine_subfamily, version_subfamily = _resolve_two_tower_subfamilies(
+            best_cls, mean_sub, x_1d, u_vec, model.backbone, model.version_heads
+        )
     else:
         label = "unknown"
         reason = "abstained"
@@ -1163,22 +1439,87 @@ def _classify_v4_features(x_1d: FloatArray, model: _SourceModelV4) -> SourceClas
     )
 
 
-def classify_source_features(
+def _classify_v5_features(x_1d: FloatArray, model: _SourceModelV5) -> SourceClassification:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    mean_prov, mean_sub, hgb_vec, r_std, unk_logit, lse_ai = _eval_two_tower_backbone(x_1d, model.backbone)
+    prov_log_odds = mean_prov[:n_cls] - unk_logit
+    ai_accept_pair = np.asarray([lse_ai - unk_logit, float(mean_prov[n_cls + 1])], dtype=np.float64)
+
+    u_vec = np.concatenate([prov_log_odds, ai_accept_pair, mean_sub, hgb_vec, r_std])
+    u_z = (u_vec - model.u_med) / model.u_scale
+    u_sat = 8.0 * np.tanh(u_z / 8.0)
+    h_pos = np.clip(u_z - model.gates.router_tau_pos, 0.0, 12.0)
+    h_neg = np.clip(model.gates.router_tau_neg - u_z, 0.0, 12.0)
+    g_2d = _eval_2d_gates(u_z, model.gates, cap=36.0)
+    phi = np.concatenate([u_sat, h_pos, h_neg, g_2d])
+
+    # 1. Decoupled Regime-Aware Supported-AI Acceptance Gate (10 provider channels + 1 global AI channel)
+    z_det_raw = model.det_bias + phi @ model.det_w
+    h_null = _silu_np(r_std @ model.null_h_w + model.null_h_b)
+    mu_r = model.null_mu_bias + r_std @ model.null_lin_mu_w + h_null @ model.null_mu_w
+    sig_lin = np.clip(model.null_sig_bias + r_std @ model.null_lin_sig_w + h_null @ model.null_sig_w, -8.0, 8.0)
+    sigma_r = np.log1p(np.exp(sig_lin)) + 0.25
+    z_det_std = (z_det_raw - mu_r) / sigma_r
+    det_excess = z_det_std - model.det_thresholds
+    accept_excess = float(np.max(det_excess))
+
+    # 2. Decoupled Prior-Calibrated Conditional Multi-Class Attribution Head (threshold-invariant)
+    h_attr = _silu_np(_layernorm_1d(phi @ model.attr_w1 + model.attr_b1, model.attr_ln_g, model.attr_ln_b))
+    attr_logits = (phi @ model.attr_skip_w + h_attr @ model.attr_w2 + model.attr_b2) / model.attr_temp
+
+    win_idx = int(np.argmax(attr_logits))
+    best_cls: ProviderClass = ALL_PROVIDER_CLASSES[win_idx]
+    prov_thr = model.det_thresholds[:n_cls]
+    # Synthesize per-provider margins so argmax(margins - thresholds) == best_cls and
+    # margins[best_cls] >= thresholds[best_cls] <=> accept_excess >= 0 across decoupled heads.
+    prov_margins = prov_thr + accept_excess - (float(attr_logits[win_idx]) - attr_logits)
+    pooled_z: dict[str, float] = dict(zip(ALL_PROVIDER_CLASSES, z_det_std[:n_cls].tolist(), strict=True))
+    thresholds: dict[str, float] = dict(zip(ALL_PROVIDER_CLASSES, prov_thr.tolist(), strict=True))
+    margins: dict[str, float] = dict(zip(ALL_PROVIDER_CLASSES, prov_margins.tolist(), strict=True))
+
+    confidence = _sigmoid_scalar(model.conf_scale * accept_excess)
+    if accept_excess >= 0.0:
+        label: SourceLabel = best_cls
+        reason: SourceReason = "classified"
+        fine_subfamily, version_subfamily = _resolve_two_tower_subfamilies(
+            best_cls, mean_sub, x_1d, u_vec, model.backbone, model.version_heads
+        )
+    else:
+        label = "unknown"
+        reason = "abstained"
+        fine_subfamily = None
+        version_subfamily = None
+
+    return SourceClassification(
+        label=label,
+        version_subfamily=version_subfamily,
+        fine_subfamily=fine_subfamily,
+        reason=reason,
+        confidence=confidence,
+        pooled_scores=pooled_z,
+        margins=margins,
+        thresholds=thresholds,
+        model_revision=MODEL_SCHEMA_V5,
+    )
+
+
+def _classify_loaded_model(
     features: FloatArray,
-    *,
-    weights_path: Path | None = None,
+    model: _LoadedSourceModel,
 ) -> SourceClassification:
-    """Classify a precomputed 956-d (v3) or 512-d (v4) feature vector into 10 providers or unknown."""
     import numpy as np
 
     x_1d = np.asarray(features, dtype=np.float64)
-    if x_1d.ndim != 1 or x_1d.shape[0] not in (FEATURE_DIM, FEATURE_DIM_V4) or not np.all(np.isfinite(x_1d)):
+    if x_1d.ndim != 1 or not np.all(np.isfinite(x_1d)):
         return _unavailable_result()
 
-    model = _load_model(weights_path)
-    if isinstance(model, _SourceModelV4):
+    if isinstance(model, (_SourceModelV4, _SourceModelV5)):
         if x_1d.shape != (FEATURE_DIM_V4,):
             return _unavailable_result()
+        if isinstance(model, _SourceModelV5):
+            return _classify_v5_features(x_1d, model)
         return _classify_v4_features(x_1d, model)
 
     if x_1d.shape != (FEATURE_DIM,):
@@ -1273,6 +1614,21 @@ def classify_source_features(
     )
 
 
+def classify_source_features(
+    features: FloatArray,
+    *,
+    weights_path: Path | None = None,
+) -> SourceClassification:
+    """Classify a precomputed 956-d (v3) or 512-d (v4/v5) feature vector into 10 providers or unknown."""
+    import numpy as np
+
+    x_1d = np.asarray(features, dtype=np.float64)
+    if x_1d.ndim != 1 or x_1d.shape[0] not in (FEATURE_DIM, FEATURE_DIM_V4) or not np.all(np.isfinite(x_1d)):
+        return _unavailable_result()
+
+    return _classify_loaded_model(x_1d, _load_model(weights_path))
+
+
 def classify_source(
     source: str | os.PathLike[str] | Image.Image,
     *,
@@ -1296,22 +1652,26 @@ def classify_source(
 
     image_io._register_heif()  # pyright: ignore[reportPrivateUsage]
 
-    def _extract_from_loaded(img: Image.Image) -> FloatArray | None:
+    def _extract_from_loaded(img: Image.Image) -> tuple[FloatArray, _LoadedSourceModel] | None:
         if min(img.size) < MIN_SIDE:
             return None
-        model = _load_model(weights_path)
-        return extract_512d_v4_features(img) if isinstance(model, _SourceModelV4) else extract_956d_features(img)
+        loaded_model = _load_model(weights_path)
+        extracted = (
+            extract_512d_v4_features(img)
+            if isinstance(loaded_model, (_SourceModelV4, _SourceModelV5))
+            else extract_956d_features(img)
+        )
+        if extracted is None:
+            return None
+        return extracted, loaded_model
 
     if isinstance(source, (str, os.PathLike)):
         with PilImage.open(source) as opened:
-            features = _extract_from_loaded(opened)
+            pair = _extract_from_loaded(opened)
     else:
-        features = _extract_from_loaded(source)
+        pair = _extract_from_loaded(source)
 
-    if features is None:
+    if pair is None:
         return _unavailable_result()
-
-    return classify_source_features(
-        features,
-        weights_path=weights_path,
-    )
+    features, model = pair
+    return _classify_loaded_model(features, model)

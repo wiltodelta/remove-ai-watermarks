@@ -1537,19 +1537,34 @@ both backends explicitly (`tests/test_classify.py` pins the seam). User guide:
 
 [`source_classify.py`](../src/remove_ai_watermarks/source_classify.py) provides
 the opt-in 10-provider source-pipeline classifier (`classify_source` and CLI
-command `classify-source`). By default it downloads `multi-provider-source-v4.npz`
+command `classify-source`). By default it downloads `multi-provider-source-v5.npz`
 (`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
-or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while retaining backward-compatible
-runtime loading for both pickle-free `.npz` bundle schemas:
+or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
+runtime loading across three `.npz` bundle schemas:
 
-- `multi-provider-source-v4` (`512-d`, default): extracts the 512-dimensional
+- `multi-provider-source-v5` (`512-d`, pinned default, `_SourceModelV5`): reuses
+  the 512-dimensional
+  physics-grounded descriptor in
+  [`_internal/source_features_v4.py`](../src/remove_ai_watermarks/_internal/source_features_v4.py)
+  and decouples supported-AI acceptance from 10-way provider attribution in pure
+  NumPy: 12-output Regime-FiLM residual MLP trunks (`10` provider logits +
+  `unknown` + dedicated `b_accept` head) paired with packed binary
+  `HistGradientBoosting` specialists, unknown-centered robust channel scaling
+  `(u - u_med) / u_scale`, 2D concordance/veto/pairwise gates, an 11-channel
+  acceptance detector standardized by a 2-layer heteroscedastic skip regime null
+  (`null_h_w`, `null_lin_mu_w`, `null_lin_sig_w` with aligned `[-8.0, 8.0]`
+  clipping), a threshold-invariant `LayerNorm` + `SiLU` skip attribution head,
+  and Stage-2 version heads blending packed `HistGradientBoosting` trees with
+  regularized linear logits (`hgb_weight`).
+- `multi-provider-source-v4` (`512-d`, legacy schema supported via explicit
+  `weights_path` / `RAIW_SOURCE_CLASSIFY_WEIGHTS`): extracts the 512-dimensional
   physics-grounded descriptor in
   [`_internal/source_features_v4.py`](../src/remove_ai_watermarks/_internal/source_features_v4.py)
   (multi-scale SRM residuals, phase-invariant modulo-8/16 sublattice & DCT grid
   physics, phase-free radial/azimuthal/resampling spectra, CFA/PRNU/kurtosis
   sensor physics, and a 32-dimensional codec/geometry regime block) and scores a
   two-tower ensemble in pure NumPy: Regime-FiLM `LayerNorm` + `SiLU` residual
-  MLP trunks (`_ResidualMLPTrunkV4`) paired with packed `HistGradientBoosting`
+  MLP trunks (`_ResidualMLPTrunk`) paired with packed `HistGradientBoosting`
   specialists, 2D multiplicative interaction gates, smooth regime-conditioned
   null standardization `(z_raw - mu(r)) / sigma(r)`, per-provider cross-AI
   damping $\gamma_c$, and stacked Stage-2 `HistGradientBoosting` version heads.

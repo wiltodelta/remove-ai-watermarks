@@ -1,10 +1,10 @@
 {
   "claim": "abstaining 10-provider source-pipeline classification with version subfamily attribution; not SynthID detection",
-  "schema": "multi-provider-source-v4",
-  "artifact_file": "multi-provider-source-v4.npz",
-  "artifact_sha256": "bc62ee22331c0137e76c53f5026e14d08cae12a3483fa69f3000316806c146a3",
+  "schema": "multi-provider-source-v5",
+  "artifact_file": "multi-provider-source-v5.npz",
+  "artifact_sha256": "6f9eaf2e8f2f168db019bcbf270fe5c827297f4812eb03fcf39c30b8192e1724",
   "feature_dimension": 512,
-  "stacked_stage2_dimension": 644,
+  "stacked_stage2_dimension": 666,
   "classes": [
     "openai",
     "google",
@@ -19,53 +19,70 @@
     "unknown"
   ],
   "corpus_counts": {
-    "total": 127001,
-    "train": 105042,
+    "total": 135117,
+    "train": 110186,
+    "train_clean": 109510,
     "calibration": 8363,
     "calibration_recomp_neg": 3011,
+    "calibration_crop_resize_dev": 2972,
     "test": 10585
   },
   "locked_internal_test": {
     "n": 10585,
-    "binary_roc_auc": 0.9974117831066663,
-    "binary_pr_auc": 0.9981946495110887,
-    "unknown_specificity": 0.997576024680476,
-    "unknown_fpr": 0.0024239753195240193,
-    "photo_fpr": 0.001374255611543747,
-    "structured_fpr": 0.003397027600849257,
-    "aggregate_target_recall": 0.8134612204398876,
-    "any_ai_recall": 0.8523234661815776,
+    "binary_roc_auc": 0.996949159015361,
+    "binary_pr_auc": 0.998022708213432,
+    "unknown_specificity": 0.99889819303658,
+    "unknown_fpr": 0.0011018069634200088,
+    "photo_fpr": 0.0009161704076958314,
+    "structured_fpr": 0.0012738853503184713,
+    "aggregate_target_recall": 0.8123036216305606,
+    "clean_provenance_target_recall": 0.8206585325087749,
+    "any_ai_recall": 0.849512154787498,
+    "any_ai_precision": 0.9990276157137301,
+    "cross_provider_errors": 225,
     "recall": {
-      "openai": 0.9248985115020297,
-      "google": 0.8545586107091172,
-      "bytedance": 0.699228791773779,
-      "flux": 0.8061901252763449,
-      "stable_diffusion": 0.7047120418848167,
-      "meta": 0.8936170212765957,
-      "midjourney": 0.6341463414634146,
-      "ideogram": 0.7542372881355932,
-      "firefly": 0.5825242718446602,
-      "xai": 0.4375
+      "openai": 0.9113667117726658,
+      "google": 0.8625180897250362,
+      "bytedance": 0.7069408740359897,
+      "flux": 0.7693441414885778,
+      "stable_diffusion": 0.7214659685863875,
+      "meta": 0.8617021276595744,
+      "midjourney": 0.8130081300813008,
+      "ideogram": 0.8135593220338984,
+      "firefly": 0.6407766990291263,
+      "xai": 0.4583333333333333
     },
     "precision": {
-      "openai": 0.964033850493653,
-      "google": 0.9632952691680261,
-      "bytedance": 0.9890909090909091,
-      "flux": 0.94229112833764,
-      "stable_diffusion": 0.953257790368272,
-      "meta": 0.9333333333333333,
-      "midjourney": 0.9285714285714286,
-      "ideogram": 0.7295081967213115,
-      "firefly": 0.967741935483871,
+      "openai": 0.9676724137931034,
+      "google": 0.9667477696674777,
+      "bytedance": 0.9821428571428571,
+      "flux": 0.9396939693969397,
+      "stable_diffusion": 0.9773049645390071,
+      "meta": 0.9529411764705882,
+      "midjourney": 0.8547008547008547,
+      "ideogram": 0.768,
+      "firefly": 0.9166666666666666,
       "xai": 1.0
     },
+    "standalone_roc_auc": {
+      "openai": 0.9996888401714943,
+      "google": 0.9994266139159973,
+      "bytedance": 0.9852363531719011,
+      "flux": 0.9993553170751985,
+      "stable_diffusion": 0.9993585291396214,
+      "meta": 0.9993951783051865,
+      "midjourney": 0.9999964168879238,
+      "ideogram": 0.9997609639130207,
+      "firefly": 0.9964956120270253,
+      "xai": 0.9997429117085354
+    },
     "real_variety_specificity": {
-      "photo": 0.9986257443884563,
-      "photo_retouched": 0.9970501474926253,
+      "photo": 0.9990838295923042,
+      "photo_retouched": 0.9941002949852508,
       "classical_inpaint": 1.0,
-      "digital_art": 0.9977272727272727,
-      "game_art": 0.9827586206896551,
-      "vector": 0.9925925925925926,
+      "digital_art": 1.0,
+      "game_art": 0.9942528735632183,
+      "vector": 1.0,
       "interface": 1.0,
       "diagram": 1.0,
       "chart_data_viz": 1.0,
@@ -75,21 +92,21 @@
       "gov_scientific_doc": 1.0,
       "receipt_invoice": 1.0,
       "print_publishing": 1.0,
-      "stress_recompressed": 0.9805825242718447,
+      "stress_recompressed": 1.0,
       "foreign_ai": 1.0
     }
   },
   "external_blind_selective_v8_real_varieties": {
     "total_evaluated": 2267,
-    "total_false_positives": 2,
-    "overall_fpr": 0.000882223202470225,
-    "overall_specificity": 0.9991177767975298,
+    "total_false_positives": 1,
+    "overall_fpr": 0.0004411116012351125,
+    "overall_specificity": 0.9995588883987649,
     "per_variety": {
       "photo": {
         "evaluated": 450,
-        "false_positives": 1,
-        "fpr": 0.0022222222222222222,
-        "specificity": 0.9977777777777778
+        "false_positives": 0,
+        "fpr": 0.0,
+        "specificity": 1.0
       },
       "vector": {
         "evaluated": 332,
@@ -99,9 +116,9 @@
       },
       "game_art": {
         "evaluated": 230,
-        "false_positives": 0,
-        "fpr": 0.0,
-        "specificity": 1.0
+        "false_positives": 1,
+        "fpr": 0.004347826086956522,
+        "specificity": 0.9956521739130435
       },
       "interface": {
         "evaluated": 342,
@@ -123,21 +140,27 @@
       },
       "stress_recompressed": {
         "evaluated": 300,
-        "false_positives": 1,
-        "fpr": 0.0033333333333333335,
-        "specificity": 0.9966666666666667
+        "false_positives": 0,
+        "fpr": 0.0,
+        "specificity": 1.0
       }
     }
   },
+  "external_phone_thermal_receipts": {
+    "evaluated": 60,
+    "false_positives": 0,
+    "fpr": 0.0,
+    "specificity": 1.0
+  },
   "stage2_version_accuracy": {
-    "openai": 0.958302852962692,
-    "google": 0.9729043183742591,
-    "bytedance": 0.9779411764705882,
-    "flux": 0.9616087751371115,
-    "stable_diffusion": 0.9777117384843982,
-    "midjourney": 1.0,
-    "ideogram": 0.7415730337078652,
+    "openai": 0.9569413511507052,
+    "google": 0.9773489932885906,
+    "bytedance": 0.9745454545454545,
+    "flux": 0.9549808429118773,
+    "stable_diffusion": 0.9753265602322206,
+    "midjourney": 0.98,
+    "ideogram": 0.7604166666666666,
     "firefly": 1.0,
-    "xai": 0.7142857142857143
+    "xai": 0.7272727272727273
   }
 }

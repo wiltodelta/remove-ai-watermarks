@@ -17,13 +17,14 @@ uv add "remove-ai-watermarks[source-classify]"
 ```
 
 It evaluates a 512-dimensional physics-grounded forensic, sublattice, spectral,
-sensor, and codec/geometry regime descriptor (`144-d` multi-scale SRM residuals
-+ `128-d` phase-invariant modulo-8/16 sublattice and `8x8` DCT grid features +
-`128-d` phase-free radial/azimuthal log-power spectra + `80-d` CFA/PRNU/kurtosis
-sensor cues + `32-d` codec and resize regime features) through a two-tower pure
+sensor, and codec/geometry regime descriptor (`112-d` adaptive native-tile SRM
+residuals + `128-d` phase-resolved modulo-8/16 sublattice and `8x8` DCT comb
+features + `144-d` Moisan periodic-plus-smooth spectral and period-comb profiles
++ `96-d` CFA/shot-noise/chromatic-aberration sensor cues + `32-d` codec and
+geometry regime features) through a two-tower pure
 NumPy ensemble (Regime-FiLM residual MLP trunks + packed `HistGradientBoosting`
-specialists), 2D multiplicative interaction gates, regime-conditioned null
-standardization, damped cross-provider margin suppression ($\gamma = 0.18$), and
+specialists), 2D multiplicative interaction gates, decoupled regime-aware
+supported-AI acceptance, a threshold-invariant 10-way skip attribution head, and
 stacked Stage-2 version classifiers.
 
 It routes across all 10 canonical AI provider classes (`openai`, `google`,
@@ -50,13 +51,13 @@ print(result.watermark_truth)    # always "unknown"
 ```
 
 `feature_unavailable` is returned for images below the required 256x256
-geometry or for a degenerate feature vector. `abstained` means no active
-provider cleared its calibrated damped margin. Both are honest `unknown`
+geometry or for a degenerate feature vector. `abstained` means the image did not
+clear the calibrated acceptance threshold. Both are honest `unknown`
 results.
 
 The first call downloads the exact pinned revision of
 [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify)
-(`multi-provider-source-v4.npz`, verified by SHA-256). Set
+(`multi-provider-source-v5.npz`, verified by SHA-256). Set
 `RAIW_SOURCE_CLASSIFY_WEIGHTS` to the `.npz` file itself or its parent directory
 for an offline deployment.
 
