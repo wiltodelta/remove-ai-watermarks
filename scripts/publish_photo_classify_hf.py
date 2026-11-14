@@ -2,8 +2,9 @@
 """Publish the photo-classify freeze to Hugging Face wiltodelta/raiw-photo-classify.
 
 Manual. Not a library release step. Weights are not in git: pass --src, a
-directory that holds clip-l-ft.pt, clip-l-ft-vision-fp32.onnx, and the probe,
-with detector.pt and provider.pt either at the root or in run1/.
+directory that holds clip-l-ft.pt, clip-l-ft-vision-fp32.onnx,
+probe-weights-clip-l-ft.npz, multi-provider-source-v6.npz, and detector.pt
+(either at the root or in run1/).
 
     uv run python scripts/publish_photo_classify_hf.py --src DIR
     uv run python scripts/publish_photo_classify_hf.py --card-only
@@ -11,13 +12,16 @@ with detector.pt and provider.pt either at the root or in run1/.
 Needs HF_TOKEN with write role. The GitHub Action
 publish-photo-classify-hf.yml injects secrets.HF_TOKEN.
 
-Card mode uploads the README, operating-point.json, and the receipt-gate
-head (staged from the package assets) without touching the freeze weights.
+Card mode uploads the README, operating-point.json, and the fallback
+receipt-gate head (staged from the package assets) without touching the freeze
+weights.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -33,13 +37,16 @@ CLIP_FILE = "clip-l-ft.pt"
 CLIP_ONNX_FILE = "clip-l-ft-vision-fp32.onnx"
 PROBE_FILE = "probe-weights-clip-l-ft.npz"
 DETECTOR_FILE = "detector.pt"
-PROVIDER_FILE = "provider.pt"
-WEIGHT_FILES = (CLIP_FILE, CLIP_ONNX_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
+RETIRED_FILES = ("provider.pt",)
 GATE_FILE = "receipt-gate-2026-09-02.npz"
 GATE_STABLE_FILE = "receipt-gate.npz"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATE_SOURCE = REPO_ROOT / "src" / "remove_ai_watermarks" / "assets" / GATE_FILE
 CARD_DIR = REPO_ROOT / "docs" / "photo-classify-hf"
+_OPERATING_POINT = json.loads((CARD_DIR / "operating-point.json").read_text(encoding="utf-8"))
+PROVIDER_FILE: str = _OPERATING_POINT["model2"]["artifact"]
+PROVIDER_SHA256: str = _OPERATING_POINT["model2"]["artifact_sha256"]
+WEIGHT_FILES = (CLIP_FILE, CLIP_ONNX_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 
 
 def weight_paths(src: Path) -> dict[str, Path]:
@@ -83,8 +90,17 @@ def _place(src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
 
 
+def _verify_sha256(path: Path, expected: str) -> None:
+    with path.open("rb") as handle:
+        actual = hashlib.file_digest(handle, "sha256").hexdigest()
+    if actual != expected:
+        raise SystemExit(f"SHA-256 mismatch for {path.name}: expected {expected}, got {actual}")
+
+
 def stage_weights(dest: Path, src: Path) -> None:
-    for name, path in weight_paths(src).items():
+    paths = weight_paths(src)
+    _verify_sha256(paths[PROVIDER_FILE], PROVIDER_SHA256)
+    for name, path in paths.items():
         _place(path, dest / name)
         log.info("stage %s (%s bytes)", name, path.stat().st_size)
     stable_gate = src / GATE_STABLE_FILE
@@ -100,6 +116,7 @@ def publish(stage: Path, *, token: str, message: str) -> str:
         token=token,
         message=message,
         allow_patterns=["README.md", "operating-point.json", *WEIGHT_FILES, GATE_FILE, GATE_STABLE_FILE],
+        delete_patterns=RETIRED_FILES,
     )
 
 

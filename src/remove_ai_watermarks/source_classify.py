@@ -352,13 +352,18 @@ def _require_dependencies() -> None:
         )
 
 
-def _verify_sha256(path: Path, expected_sha256: str) -> None:
+def verify_weights_sha256(path: Path, expected_sha256: str) -> None:
+    """Verify ``path`` matches ``expected_sha256``, raising :class:`RuntimeError` on mismatch."""
     with path.open("rb") as handle:
         actual = hashlib.file_digest(handle, "sha256").hexdigest()
     if actual.lower() != expected_sha256.lower():
         raise RuntimeError(
-            f"Source classifier weights hash mismatch for {path}: expected {expected_sha256}, got {actual}"
+            f"SHA-256 hash mismatch for {path.name}: expected {expected_sha256}, got {actual}. "
+            "Clear the cached artifact or point to a verified freeze directory."
         )
+
+
+_verify_sha256 = verify_weights_sha256
 
 
 def _resolve_weights_path(weights_path: Path | None = None) -> Path:
@@ -1479,14 +1484,17 @@ def _classify_v5_features(x_1d: FloatArray, model: _SourceModelV5) -> SourceClas
     thresholds: dict[str, float] = dict(zip(ALL_PROVIDER_CLASSES, prov_thr.tolist(), strict=True))
     margins: dict[str, float] = dict(zip(ALL_PROVIDER_CLASSES, prov_margins.tolist(), strict=True))
 
-    confidence = _sigmoid_scalar(model.conf_scale * accept_excess)
     if accept_excess >= 0.0:
+        part = np.partition(attr_logits, -2)
+        attr_gap = max(0.0, float(part[-1] - part[-2]))
+        confidence = _sigmoid_scalar(min(model.conf_scale * accept_excess, attr_gap))
         label: SourceLabel = best_cls
         reason: SourceReason = "classified"
         fine_subfamily, version_subfamily = _resolve_two_tower_subfamilies(
             best_cls, mean_sub, x_1d, u_vec, model.backbone, model.version_heads
         )
     else:
+        confidence = _sigmoid_scalar(model.conf_scale * accept_excess)
         label = "unknown"
         reason = "abstained"
         fine_subfamily = None

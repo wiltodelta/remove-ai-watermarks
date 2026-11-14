@@ -88,12 +88,13 @@ release fan-out. It holds the photo-classify freeze weights. The library extra
 `classify` downloads that snapshot on first use, or reads
 `RAIW_CLASSIFY_WEIGHTS`. Update the Hub repo only with
 `.github/workflows/publish-photo-classify-hf.yml` (`workflow_dispatch`,
-type `publish`). Full mode downloads the four weight files from the GitHub
-Release tag `photo-classify-freeze-2026-08-31` (or the tag you pass), exports
-the static FP32 vision-only ONNX graph from `clip-l-ft.pt`, and uploads all five
-files with the card in `docs/photo-classify-hf/`. Card mode updates
-the README, `operating-point.json`, and the receipt-gate head staged from
-the package assets; freeze weights are untouched. A library version bump
+type `publish`). Full mode downloads the frozen Model 1 + `receipt-gate.npz`
+files from `photo-classify-freeze-2026-09-07` and `multi-provider-source-v6.npz`
+(verified by SHA-256) from `source-classify-v6-freeze-2026-11-13`, exports the
+static FP32 vision-only ONNX graph from `clip-l-ft.pt`, and uploads the full
+allowlist with the card in `docs/photo-classify-hf/`. Card mode updates
+the README, `operating-point.json`, and the fallback receipt-gate head staged
+from the package assets; freeze weights are untouched. A library version bump
 alone does not upload new heads -- bump the pinned Hub revision when a new
 head must reach installed clients. Pin a Hub revision in production so a
 later freeze cannot silently change installed clients.

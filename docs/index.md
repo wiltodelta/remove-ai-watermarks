@@ -42,7 +42,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [Qwen improvement research](qwen-improvement-research.md)
 - [Doubao reverse-alpha research](research-doubao-distillation.md)
 - [AI-generated image classifiers](ai-generated-image-classifiers.md) (photo AI-versus-camera freeze consumed by `classify_pixels`, not `identify`)
-- [Photo classifier Hugging Face card](photo-classify-hf/README.md) (Hub publication text of the 2026-08-31 freeze)
+- [Photo classifier Hugging Face card](photo-classify-hf/README.md) (Hub publication text of the Model 1 freeze + 10-provider `multi-provider-source-v6` cascade)
 - [SynthID source classifiers](synthid-classifiers.md) (metadata-free OpenAI/Gemini source finding and provider-lineage experiments)
 - [Source-pipeline classifier model card](source-classify-hf/README.md) (published derivative weights, aggregate evaluation, and intended-use boundary)
 - [SynthID local detector research](synthid-detector-research.md)

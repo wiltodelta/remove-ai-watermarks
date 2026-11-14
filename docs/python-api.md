@@ -284,13 +284,15 @@ print(result.label, result.detector, result.provider)
 ```
 
 `label` is `ai` only on a DEFINITELY detector result (ridge AND freeze MLP).
-POSSIBLY is `unknown`. Camera-like photographs are `human`. `provider` is
-`openai`, `google`, `bytedance`, or `muse-image` only when `label` is `ai`
-and the 124-d head beats `no_ai` by the freeze margin. `bytedance` names
-the shared Doubao+Jimeng generator lineage; the rest of China's
-generators (Qwen, Kling, ...) have no honest class yet and their residual
-head abstains to `None`. Otherwise it is `None`, including
-when 124-d extraction refuses the file.
+POSSIBLY is `unknown`. Camera-like photographs are `human`. `provider` is one
+of the 10 canonical providers (`openai`, `google`, `bytedance`, `flux`,
+`stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`) only
+when `label` is `ai`, the receipt gate misses, and the 512-d
+`multi-provider-source-v6.npz` Model 2 ensemble clears its calibrated
+acceptance threshold. `bytedance` names the shared Doubao+Jimeng generator
+lineage; generators outside those 10 families (Qwen, Kling, Yuanbao, ...)
+abstain to `None`. Otherwise `provider` is `None`, including when 512-d
+extraction refuses images smaller than `256x256`.
 
 `device` is a library parameter: `None` / `"auto"` detect, `"cpu"` or `"cuda"`
 pin. It is not a CLI option. `backend="onnx"` selects the optional CPU-only

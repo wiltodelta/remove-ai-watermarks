@@ -50,12 +50,15 @@ remove-ai-watermarks classify image.png --json
 Pixel classifier, needs the `classify` extra. It is NOT provenance: it guesses
 from pixels alone and `identify` never runs it. The CLI has no ONNX flag; the
 optional CPU ONNX runtime is library-only (`backend="onnx"`) and needs
-`classify-onnx` (since CLI 0.40.0). Labels are `ai` (both models
+`classify-onnx` (since CLI 0.40.0). Labels are `ai` (both Model 1 heads
 agree), `human`, and `unknown` -- `unknown` is an abstention, not a negative.
 Photographed receipts abstain to `unknown` through the bundled receipt gate
-(since CLI 0.38.0), so a receipt is not reported as `ai`. Offer `classify`
-only when `identify` found no signal and the user still wants a guess, and
-report it as a guess.
+(since CLI 0.38.0), so a receipt is not reported as `ai`. When `label` is `ai`,
+Model 2 (`multi-provider-source-v6.npz`) attributes `provider` across 10
+families (`openai`, `google`, `bytedance`, `flux`, `stable_diffusion`, `meta`,
+`midjourney`, `ideogram`, `firefly`, `xai`) or abstains to `none` (`null` in
+JSON). Offer `classify` only when `identify` found no signal and the user still
+wants a guess, and report it as a guess.
 
 ```bash
 remove-ai-watermarks classify-source image.png

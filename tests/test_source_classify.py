@@ -721,3 +721,75 @@ def test_v5_stage2_linear_blend_and_schema_validation(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="Incomplete Stage-2 linear blend keys for ideogram"):
         source_classify._load_model(w_partial)
+
+
+def test_v5_joint_posterior_confidence_caps_ambiguous_attribution(tmp_path: Path) -> None:
+    x_512 = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    ideo_idx = source_classify.ALL_PROVIDER_CLASSES.index("ideogram")
+    google_idx = source_classify.ALL_PROVIDER_CLASSES.index("google")
+
+    # 1) High acceptance excess (+4.0 -> sigmoid(4.0) ~= 0.982), near-tie in attribution (gap = 0.05):
+    # joint confidence must be capped by sigmoid(0.05) ~= 0.5125 while keeping confidence >= 0.5.
+    near_tie_b2 = np.full(n_cls, -1.0, dtype=np.float64)
+    near_tie_b2[ideo_idx] = 2.05
+    near_tie_b2[google_idx] = 2.00
+    w_near_tie = _write_synthetic_v5_npz(
+        tmp_path / "v5_near_tie.npz",
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=6.0,
+        det_threshold=2.0,
+        overrides={"attr_b2": near_tie_b2},
+    )
+    res_near_tie = source_classify.classify_source_features(x_512, weights_path=w_near_tie)
+    assert res_near_tie.label == "ideogram"
+    assert res_near_tie.reason == "classified"
+    assert res_near_tie.confidence == pytest.approx(source_classify._sigmoid_scalar(0.05), abs=1e-6)
+    assert 0.5 < res_near_tie.confidence < 0.52
+
+    # 2) Exact attribution tie (gap = 0.0) while accepted (accept_excess = +4.0 > 0):
+    # confidence hits the exact 0.5 boundary while preserving confidence >= 0.5 <=> label != "unknown".
+    exact_tie_b2 = near_tie_b2.copy()
+    exact_tie_b2[ideo_idx] = 2.00
+    w_exact_tie = _write_synthetic_v5_npz(
+        tmp_path / "v5_exact_tie.npz",
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=6.0,
+        det_threshold=2.0,
+        overrides={"attr_b2": exact_tie_b2},
+    )
+    res_exact_tie = source_classify.classify_source_features(x_512, weights_path=w_exact_tie)
+    assert res_exact_tie.label != "unknown"
+    assert res_exact_tie.reason == "classified"
+    assert res_exact_tie.confidence == pytest.approx(0.5, abs=1e-12)
+
+    # 3) Unambiguous attribution (gap = 4.5) with moderate acceptance excess (+0.5):
+    # acceptance excess binds, so confidence equals sigmoid(conf_scale * accept_excess).
+    w_wide = _write_synthetic_v5_npz(
+        tmp_path / "v5_wide_gap.npz",
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=2.5,
+        det_threshold=2.0,
+        overrides={"conf_scale": np.asarray(1.2, dtype=np.float64)},
+    )
+    res_wide = source_classify.classify_source_features(x_512, weights_path=w_wide)
+    assert res_wide.label == "ideogram"
+    assert res_wide.confidence == pytest.approx(source_classify._sigmoid_scalar(0.6), abs=1e-6)
+
+    # 4) Abstained input (accept_excess = -0.5 < 0) stays strictly below 0.5 regardless of large attr_gap.
+    w_abstain = _write_synthetic_v5_npz(
+        tmp_path / "v5_abstain_wide.npz",
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=1.5,
+        det_threshold=2.0,
+        overrides={"conf_scale": np.asarray(1.2, dtype=np.float64)},
+    )
+    res_abstain = source_classify.classify_source_features(x_512, weights_path=w_abstain)
+    assert res_abstain.label == "unknown"
+    assert res_abstain.reason == "abstained"
+    assert res_abstain.confidence == pytest.approx(source_classify._sigmoid_scalar(-0.6), abs=1e-6)
+    assert res_abstain.confidence < 0.5

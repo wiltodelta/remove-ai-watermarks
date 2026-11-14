@@ -784,7 +784,12 @@ The structured walk also treats an exact known AI product in a reachable
 `claim_generator` as an AI assertion. This covers update chains where the active
 manifest names only `c2pa-tool` while a validated ingredient names Dreamina, and
 Firefly chains that identify `Adobe_Firefly` without repeating a digital source
-type. Unreachable manifests remain excluded.
+type. For Adobe partner-model actions (`com.adobe.type: "remoteProvider.3rdParty"`),
+`_structured_manifest_fields` also reads `parameters["com.adobe.digitalSourceType"]`
+alongside top-level `action["digitalSourceType"]` while keeping SynthID vendor
+inference strictly scoped to signer and claim-generator `identity_strings` so a
+parameter-only third-party model name (`gemini-flash`) does not fabricate vendor
+provenance. Unreachable manifests remain excluded.
 
 The fallback soft-binding scan checks literal identifier presence before its
 ASCII token-boundary regex. This avoids running every registry regex on files
@@ -1488,41 +1493,35 @@ derived results influence detection.
 
 ### Photo pixel classifier
 
-[`classify.py`](../src/remove_ai_watermarks/classify.py) is the 2026-08-31
-photo freeze: CLIP-L-ft ridge AND freeze MLP, then 124-d focal heads only on
-DEFINITELY. Since 2026-09-02 a linear receipt-document gate runs first on
-that DEFINITELY path, on the same CLIP vector: a hit publishes `unknown`
-(detector stays `definitely`, provider is not read, 124-d extraction is
-skipped). The head ships with the model: since 2026-09-07 under the
-STABLE name `receipt-gate.npz` in the Hub snapshot or
-`RAIW_CLASSIFY_WEIGHTS` directory, with the legacy dated spelling
-`receipt-gate-2026-09-02.npz` still readable and the package asset
-`src/remove_ai_watermarks/assets/receipt-gate-2026-09-02.npz` as
-the fallback for weights directories frozen before the gate existed (the
-head is fitted on the freeze CLIP-L-ft embedding space, so it versions
-with the model, not with the code). Head and threshold are read from ONE
-artifact: the threshold travels inside the npz and
-`classify_from_scores` resolves it from the loaded gate, so a model-side
-gate update needs no lib release. `RECEIPT_GATE_THRESHOLD` in
-`classify.py` is only the legacy pinned value for the package fallback
-and its pinned tests.
-Training data and certification live in
-`receipt-gate-shipped-2026-09-02/report.json` in the research tree; positives
-are CORD-v2 train (800, CC BY 4.0, disjoint from the CORD test split the
-eval corpus uses) plus regenerable synthetic receipts, negatives are ai_train
-rows. `tests/test_classify.py` pins the asset threshold, the downgrade, and
-that the gate skips forensics. The public label is `ai` / `human` /
-`unknown`. POSSIBLY is `unknown`. The named class is `openai` / `google` /
-`muse-image` / `bytedance` / `None`. `bytedance` is the shared ByteDance
-generator lineage (Doubao and Jimeng render with one model family;
-measured 83.9% on the frozen test cell). `tc260` covers the REST of
-China's generator ecosystem, providers that are peers of
-openai/google/meta; no mixed head can honestly name the group, so its
-argmax win abstains to `None` (measured 2026-09-07: without the veto
-207/379 China test rows would be falsely named openai/google/muse-image). The freeze file keys the Muse
-Image head `meta_muse_image`. Tests in `tests/test_classify.py` pin the
-gate without downloads and pin that `identify` does not import this
-module.
+[`classify.py`](../src/remove_ai_watermarks/classify.py) runs the two-stage
+photo cascade: Model 1 (2026-08-31 CLIP-L-ft ridge AND freeze MLP), then on
+`definitely` only, the receipt-document gate followed by the 10-provider
+`multi-provider-source-v6.npz` Model 2 ensemble (`512-d`, pure NumPy,
+SHA-256 `87868eea08b8b811999f675186b82b067c4de655981cb7f25114aac00b1dd284`).
+Since 2026-09-02 the linear receipt-document gate runs first on that
+`definitely` path on the same CLIP vector: a hit publishes `unknown` (detector
+stays `definitely`, provider is not read, 512-d extraction is skipped). The
+gate ships with the model: since 2026-09-07 under the STABLE name
+`receipt-gate.npz` in the Hub snapshot or `RAIW_CLASSIFY_WEIGHTS` directory,
+with the legacy dated spelling `receipt-gate-2026-09-02.npz` still readable and
+the package asset `src/remove_ai_watermarks/assets/receipt-gate-2026-09-02.npz`
+as the fallback for weights directories frozen before the gate existed (the
+head is fitted on the freeze CLIP-L-ft embedding space, so it versions with the
+model, not with the code). Head and threshold are read from ONE artifact: the
+threshold travels inside the npz and `classify_from_scores` resolves it from
+the loaded gate, so a model-side gate update needs no lib release.
+`RECEIPT_GATE_THRESHOLD` in `classify.py` is only the legacy pinned value for
+the package fallback and its pinned tests.
+`tests/test_classify.py` pins the asset threshold, the downgrade, and that the
+gate skips 512-d extraction. The public label is `ai` / `human` / `unknown`.
+POSSIBLY is `unknown`. On `ai`, `provider` is one of the 10 canonical provider
+classes (`openai`, `google`, `bytedance`, `flux`, `stable_diffusion`, `meta`,
+`midjourney`, `ideogram`, `firefly`, `xai`) or `None` when Model 2 abstains or
+the image is under `256x256`. `bytedance` is the shared ByteDance generator
+lineage (Doubao and Jimeng); unsupported Chinese generators (`tc260` rest:
+Qwen, Yuanbao, Kling, Hailuo, Hunyuan) abstain to `None`. Tests in
+`tests/test_classify.py` pin the gate without downloads and pin that `identify`
+does not import this module.
 
 Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-photo-classify`.
 `RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. The optional
@@ -1554,6 +1553,8 @@ runtime loading across three `.npz` bundle schemas:
   acceptance detector standardized by a 2-layer heteroscedastic skip regime null
   (`null_h_w`, `null_lin_mu_w`, `null_lin_sig_w` with aligned `[-8.0, 8.0]`
   clipping), a threshold-invariant `LayerNorm` + `SiLU` skip attribution head,
+  joint posterior confidence calibration (`sigmoid(min(conf_scale * accept_excess, max(0.0, top1 - top2)))`
+  when `accept_excess >= 0`, preserving `confidence >= 0.5 <=> label != "unknown"`),
   and Stage-2 version heads blending packed `HistGradientBoosting` trees with
   regularized linear logits (`hgb_weight`).
 - `multi-provider-source-v4` (`512-d`, legacy schema supported via explicit

@@ -6,9 +6,10 @@ name: Publish photo classifier to Hugging Face
 # Hub model: wiltodelta/raiw-photo-classify
 # Secret: HF_TOKEN, write-role Hugging Face token (same secret Space sync uses).
 #
-# Weights are not in git. Full mode downloads the frozen PyTorch files from a
-# GitHub Release, exports the vision-only ONNX graph, then uploads everything
-# with the card from docs/photo-classify-hf/.
+# Weights are not in git. Full mode downloads the frozen Model 1 + receipt-gate
+# files and the frozen multi-provider-source-v6.npz Model 2 bundle from GitHub
+# Releases, exports the vision-only ONNX graph, then uploads everything with the
+# card from docs/photo-classify-hf/.
 
 on:
   workflow_dispatch:
@@ -17,16 +18,20 @@ on:
         description: "Type publish"
         required: true
       mode:
-        description: "full = card plus weights from the release tag; card = README, operating-point, and receipt gate only"
+        description: "full = card plus weights from the release tags; card = README, operating-point, and fallback receipt gate only"
         type: choice
         options:
           - full
           - card
         default: full
       weights_tag:
-        description: "GitHub Release tag that holds clip-l-ft.pt, probe, detector.pt, provider.pt"
+        description: "GitHub Release tag holding clip-l-ft.pt, probe-weights-clip-l-ft.npz, detector.pt, and receipt-gate.npz"
         required: false
-        default: photo-classify-freeze-2026-08-31
+        default: photo-classify-freeze-2026-09-07
+      source_weights_tag:
+        description: "GitHub Release tag holding multi-provider-source-v6.npz"
+        required: false
+        default: source-classify-v6-freeze-2026-11-13
 
 jobs:
   publish:
@@ -42,15 +47,35 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download freeze weights from the GitHub Release
+      - name: Download freeze weights from GitHub Releases
         if: ${{ github.event.inputs.mode == 'full' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.weights_tag }}
+          TAG: ${{ github.event.inputs.weights_tag || 'photo-classify-freeze-2026-09-07' }}
+          SOURCE_TAG: ${{ github.event.inputs.source_weights_tag || 'source-classify-v6-freeze-2026-11-13' }}
         run: |
           set -euo pipefail
+          IFS=$'\t' read -r artifact expected < <(
+            jq -r '[.model2.artifact, .model2.artifact_sha256] | @tsv' docs/photo-classify-hf/operating-point.json
+          )
+          test -n "$artifact" && test "$artifact" != "null"
+          test "${#expected}" -eq 64
           mkdir -p weights
-          gh release download "$TAG" --repo "${{ github.repository }}" --dir weights
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern clip-l-ft.pt \
+            --pattern detector.pt \
+            --pattern probe-weights-clip-l-ft.npz \
+            --pattern receipt-gate.npz \
+            --dir weights &
+          pid_model1=$!
+          gh release download "$SOURCE_TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern "$artifact" \
+            --dir weights &
+          pid_model2=$!
+          wait "$pid_model1" "$pid_model2"
+          echo "$expected  weights/$artifact" | sha256sum --check
           ls -l weights
 
       - name: Export the vision-only ONNX graph

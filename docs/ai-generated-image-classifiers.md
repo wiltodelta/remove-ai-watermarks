@@ -3,7 +3,7 @@
 > Research archive for metadata-free `ai_generated` versus
 > `not_ai_generated` classifiers. These are not SynthID detectors and are not
  `identify` verdicts. The 2026-08-31 freeze is consumed only by explicit
-> `classify` / `classify_pixels`. Current behavior:
+> `classify` / `classify_pixels` (Model 1 + `receipt-gate.npz` from this archive, paired since 2026-11 with the 10-provider `multi-provider-source-v6.npz` Model 2). Current behavior:
 > [photo pixel classification](photo-classify.md),
 > [supported signals](supported-signals.md),
 > and [known limitations](known-limitations.md).

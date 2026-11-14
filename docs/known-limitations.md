@@ -24,13 +24,14 @@ the pixels look rather than read a mark, and none of these paths targets them.
 
 `classify` / `classify_pixels` is AI versus camera, not a universal AI detector.
 UI screenshots and digital art are out of contract. Receipt photographs are
-abstained by the 2026-09-02 receipt gate on DEFINITELY: they report `unknown`
-with `detector=definitely` instead of a false `ai` (field measurements:
-19/59 false verdicts before, 2/59 after; CORD 89/99 before, 0/99 after; the
-gate abstains on 7/1,847 ai_test images). A photorealistic AI receipt can
-still score as `human`. POSSIBLY is reported as `unknown`. Provider
-attribution runs only after DEFINITELY and can abstain when 124-d extraction
-refuses the file. Microsoft is not a pixel class.
+abstained by `receipt-gate.npz` on DEFINITELY: they report `unknown` with
+`detector=definitely` instead of a false `ai` (`59/59` field phone receipts
+gated on `receipt-gate.npz`, `0/99` false `ai` on CORD, at a `5/1,847`
+`ai_test` cost). A photorealistic AI receipt can still score as `human`.
+POSSIBLY is reported as `unknown`. Provider attribution (`multi-provider-source-v6.npz`
+across 10 provider families) runs only after DEFINITELY and abstains to `None`
+for unsupported generators, degraded post-processing, or images smaller than
+`256x256`. Microsoft is not a pixel class.
 
 The command is never started by `identify`. A no-signal provenance result stays
 unknown. This is not a clean verdict and it does not run cleanup. Full guide:

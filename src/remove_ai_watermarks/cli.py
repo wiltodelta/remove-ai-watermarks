@@ -1779,9 +1779,11 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
 def cmd_classify(source: Path, as_json: bool) -> None:
     """Classify a photograph as AI or camera-like from pixels.
 
-    Runs the frozen photo detector and, only on a DEFINITELY-AI result, the
-    provider head. This is not provenance. identify never starts this command.
-    Install: pip install 'remove-ai-watermarks[classify]'
+    Runs the frozen photo detector and, only on a DEFINITELY-AI result that
+    clears the receipt gate, the abstaining 10-provider Model 2 head
+    (openai, google, bytedance, flux, stable_diffusion, meta, midjourney,
+    ideogram, firefly, xai). This is not provenance. identify never starts
+    this command. Install: pip install 'remove-ai-watermarks[classify]'
     """
     from remove_ai_watermarks import classify as classify_mod
 

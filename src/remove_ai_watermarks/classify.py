@@ -1,5 +1,5 @@
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
-"""Metadata-free photo classifier: Model 1 then gated Model 2.
+"""Metadata-free photo classifier: Model 1 then gated 10-provider Model 2.
 
 This is not provenance and is not a cleanup command. ``identify``,
 ``has_invisible_target``, and ``all`` must not import this module.
@@ -14,7 +14,26 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
+
+from remove_ai_watermarks.source_classify import (
+    ALL_PROVIDER_CLASSES as PROVIDER_CLASSES,
+)
+from remove_ai_watermarks.source_classify import (
+    MIN_SIDE,
+    SourceClassification,
+    classify_source,
+    verify_weights_sha256,
+)
+from remove_ai_watermarks.source_classify import (
+    MODEL_FILE as PROVIDER_FILE,
+)
+from remove_ai_watermarks.source_classify import (
+    MODEL_SHA256 as PROVIDER_SHA256,
+)
+from remove_ai_watermarks.source_classify import (
+    ProviderClass as _ProviderClass,
+)
 
 log = logging.getLogger(__name__)
 
@@ -27,18 +46,13 @@ CLIP_FILE = "clip-l-ft.pt"
 CLIP_ONNX_FILE = "clip-l-ft-vision-fp32.onnx"
 PROBE_FILE = "probe-weights-clip-l-ft.npz"
 DETECTOR_FILE = "detector.pt"
-PROVIDER_FILE = "provider.pt"
 OPERATING_POINT_FILE = "operating-point.json"
 _COMMON_WEIGHT_FILES = (PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 _WEIGHT_FILES = (CLIP_FILE, *_COMMON_WEIGHT_FILES)
 
 # 2026-09-02 receipt-document gate: linear head on the same CLIP-L-ft
 # vector, trained on CORD-v2 train (800, CC BY 4.0) plus 200 synthetic
-# capture-style receipts against 2,400 ai_train negatives. Threshold is the
-# min of the 1st-percentile scores on CORD validation and a synthetic
-# holdout; no field-receipt pixels were used for training or the threshold.
-# The head versions with the model (Hub snapshot or RAIW_CLASSIFY_WEIGHTS
-# directory); the package asset is the fallback for pre-gate freezes.
+# capture-style receipts against 2,400 ai_train negatives.
 # 2026-09-07: the gate is MODEL-SIDE. The weights directory carries the
 # artifact under the STABLE name ``receipt-gate.npz`` with the threshold
 # inside; the dated name below stays readable as the legacy spelling, and
@@ -64,41 +78,18 @@ WEIGHTS_ALLOW_PATTERNS: tuple[str, ...] = (
     RECEIPT_GATE_FILE,
 )
 
-# 2026-08-31 freeze operating point. Ridge threshold is also in the probe file;
-# the runtime prefers the file when weights load.
+# 2026-08-31 Model 1 freeze operating point. Ridge threshold is also in the probe
+# file; the runtime prefers the file when weights load. Model 2 thresholds travel
+# inside multi-provider-source-v6.npz.
 MLP_THRESHOLD = 5.9586493237495395
 RIDGE_THRESHOLD = 0.3056212276800537
-PROVIDER_MARGIN = 0.30
 CLIP_WIDTH = 768
-# Checkpoint keys in provider.pt, the SUPERSET across snapshot generations.
-# openai/google are provider classes; meta_muse_image is Muse Image;
-# bytedance is the shared ByteDance generator lineage (Doubao and Jimeng
-# render with the same model family -- measured 2026-09-07: separate heads
-# cross-fire 32/22 ways even at 3.5x train mass, the union holds 83.9%
-# on the frozen test cell). tc260 is NOT one class of anything: it covers
-# the REST of China's generator ecosystem (Qwen, Yuanbao, Kling, ...,
-# producers that are peers of openai/google/meta), whose heads do not
-# exist yet at honest mass, so its argmax win abstains (provider=None).
-# The loader tolerates older snapshots that predate bytedance: a head
-# absent from provider.pt is skipped, and those rows fall to the veto.
-# Measured on the shipped weights: deleting the veto from the argmax
-# would falsely name 207/379 China test rows openai/google/muse-image
-# (153 of them muse-image); the veto leaves every other cell
-# byte-identical (openai 345/380, google 339/373, meta v3 177/198).
-PROVIDER_LABELS = ("openai", "google", "bytedance", "tc260", "meta_muse_image", "no_ai")
 
 DetectorLevel = Literal["definitely", "possibly", "likely_human"]
 PixelLabel = Literal["ai", "human", "unknown"]
 PixelDomain = Literal["photo"]
-PixelProvider = Literal["openai", "google", "muse-image", "bytedance"]
+PixelProvider: TypeAlias = _ProviderClass
 ClassifierBackend = Literal["torch", "onnx"]
-PUBLIC_PROVIDER: dict[str, PixelProvider | None] = {
-    "openai": "openai",
-    "google": "google",
-    "bytedance": "bytedance",
-    "tc260": None,
-    "meta_muse_image": "muse-image",
-}
 
 _runtime: _Runtime | None = None
 _runtime_lock = threading.Lock()
@@ -204,34 +195,27 @@ def label_for(level: DetectorLevel) -> PixelLabel:
     return "unknown"
 
 
-def provider_from_scores(scores: dict[str, float], *, margin: float = PROVIDER_MARGIN) -> PixelProvider | None:
-    """Argmax among the named classes that beat ``no_ai`` by ``margin``.
-
-    Candidates are the heads the LOADED snapshot actually carries, so
-    older provider.pt files without a generation's newest class keep
-    working (their rows fall to the tc260 veto and abstain). The tc260
-    head joins the argmax only as a group veto: it covers the rest of
-    China's generator ecosystem, producers that are peers of
-    openai/google/meta, so until per-producer classes exist its win
-    abstains and ``None`` is published instead of a false company claim.
-    """
-    no_ai = scores["no_ai"]
-    ai_names = [name for name in scores if name != "no_ai"]
-    passed = [name for name in ai_names if scores[name] > no_ai + margin]
-    if not passed:
+def provider_from_source(
+    result: SourceClassification | PixelProvider | Literal["unknown"] | None,
+) -> PixelProvider | None:
+    """Resolve a Model 2 source-pipeline result onto a public provider or ``None``."""
+    if result is None:
         return None
-    best = max(passed, key=lambda name: scores[name])
-    return PUBLIC_PROVIDER[best]
+    label: str = result if isinstance(result, str) else result.label
+    if label == "unknown":
+        return None
+    if label not in PROVIDER_CLASSES:
+        raise ValueError(f"unsupported pixel provider {label!r}")
+    return label  # type: ignore[return-value]
 
 
 def classify_from_scores(
     ridge_score: float,
     mlp_score: float,
-    provider_scores: dict[str, float] | None,
+    provider: SourceClassification | PixelProvider | Literal["unknown"] | None = None,
     *,
     ridge_threshold: float = RIDGE_THRESHOLD,
     mlp_threshold: float = MLP_THRESHOLD,
-    provider_margin: float = PROVIDER_MARGIN,
     receipt_score: float | None = None,
     receipt_threshold: float | None = None,
 ) -> PixelClassification:
@@ -254,10 +238,10 @@ def classify_from_scores(
     label = label_for(level)
     if level == "definitely" and receipt_score is not None and receipt_score >= receipt_threshold:
         return PixelClassification(label="unknown", domain="photo", detector=level, provider=None)
-    provider: PixelProvider | None = None
-    if label == "ai" and provider_scores is not None:
-        provider = provider_from_scores(provider_scores, margin=provider_margin)
-    return PixelClassification(label=label, domain="photo", detector=level, provider=provider)
+    resolved_provider: PixelProvider | None = None
+    if label == "ai":
+        resolved_provider = provider_from_source(provider)
+    return PixelClassification(label=label, domain="photo", detector=level, provider=resolved_provider)
 
 
 def classify_pixels(
@@ -266,10 +250,10 @@ def classify_pixels(
     device: str | None = None,
     backend: ClassifierBackend = "torch",
 ) -> PixelClassification:
-    """Run Model 1 then, on DEFINITELY, the receipt gate and Model 2.
+    """Run Model 1 then, on DEFINITELY, the receipt gate and 10-provider Model 2.
 
     Never called by ``identify``. A DEFINITELY verdict that the receipt gate
-    accepts is published as ``unknown`` before the 124-d provider pass.
+    accepts is published as ``unknown`` before the 512-d Model 2 pass.
     """
     if not is_available():
         raise RuntimeError(f"pixel classification requires the classify extra. Install: pip install {CLASSIFY_EXTRA}")
@@ -283,6 +267,9 @@ def classify_pixels(
     runtime = _get_runtime(device, backend)
     from PIL import Image
 
+    from remove_ai_watermarks import image_io
+
+    image_io._register_heif()  # pyright: ignore[reportPrivateUsage]
     with Image.open(path) as image:
         rgb = image.convert("RGB")
         clip_vector = _embed(runtime, rgb)
@@ -296,20 +283,15 @@ def classify_pixels(
         )
         gate = _load_receipt_gate(runtime.weights_dir)
         r_score = receipt_gate_score(clip_vector, gate) if level == "definitely" else None
-        provider_scores = None
+        source_result: SourceClassification | None = None
         if r_score is not None and r_score < gate["threshold"]:
-            forensic = _forensic(rgb)
-            if forensic is not None:
-                provider_scores = _provider_scores(runtime, forensic)
-            else:
-                log.info("124-d features unavailable for %s, provider abstains", path)
+            source_result = _run_model2(runtime, rgb, path=path)
     result = classify_from_scores(
         ridge,
         mlp,
-        provider_scores,
+        source_result,
         ridge_threshold=runtime.ridge_threshold,
         mlp_threshold=runtime.mlp_threshold,
-        provider_margin=runtime.provider_margin,
         receipt_score=r_score,
         receipt_threshold=gate["threshold"],
     )
@@ -322,17 +304,18 @@ def classify_pixels(
 class _Runtime:
     device: Any
     backend: ClassifierBackend
+    weights_override: str | None
     clip_model: Any
     processor: Any
     detector: Any
-    provider_heads: dict[str, Any]
+    provider_path: Path
     ridge_mean: Any
     ridge_scale: Any
     ridge_weights: Any
     ridge_threshold: float
     mlp_threshold: float
-    provider_margin: float
     weights_dir: Path | None
+    provider_verified: bool = False
 
 
 def _resolve_device(device: str | None) -> Any:
@@ -418,17 +401,17 @@ def _require_files(folder: Path, *, backend: ClassifierBackend = "torch") -> Non
         raise RuntimeError(
             "pixel classification weights are missing "
             f"({', '.join(missing)}). Set {WEIGHTS_ENV} to a directory with the "
-            f"2026-08-31 freeze files, or install {CLASSIFY_EXTRA} and allow the "
+            f"freeze files, or install {CLASSIFY_EXTRA} and allow the "
             f"Hugging Face download from {WEIGHTS_REPO}."
         )
 
 
-def _operating_point(folder: Path) -> tuple[float, float]:
+def _operating_point(folder: Path) -> float:
     path = folder / OPERATING_POINT_FILE
     if not path.is_file():
-        return MLP_THRESHOLD, PROVIDER_MARGIN
+        return MLP_THRESHOLD
     payload = json.loads(path.read_text())
-    return float(payload["model1"]["mlp_threshold"]), float(payload["model2"]["margin"])
+    return float(payload["model1"]["mlp_threshold"])
 
 
 def _build_detector() -> Any:
@@ -445,40 +428,22 @@ def _build_detector() -> Any:
     )
 
 
-def _build_provider_head() -> Any:
-    from torch import nn
-
-    return nn.Sequential(
-        nn.Linear(124, 64),
-        nn.ReLU(),
-        nn.Dropout(0.2),
-        nn.Linear(64, 1),
-    )
-
-
 def _load_runtime(device: Any, backend: ClassifierBackend = "torch") -> _Runtime:
     import numpy as np
     import torch
 
     from remove_ai_watermarks._internal.clip_l_ft import load_headed_clip, load_onnx_vision, load_processor
 
+    override = os.environ.get(WEIGHTS_ENV)
     folder = _weights_dir(backend)
     _require_files(folder, backend=backend)
     probe = np.load(_weight_path(folder, PROBE_FILE))
     detector = _build_detector()
     detector.load_state_dict(torch.load(_weight_path(folder, DETECTOR_FILE), map_location="cpu", weights_only=True))
     detector.to(device).train(False)
-    packed = torch.load(_weight_path(folder, PROVIDER_FILE), map_location="cpu", weights_only=True)
-    heads = {}
-    for name in PROVIDER_LABELS:
-        if name not in packed:
-            log.info("provider head %s absent from this snapshot; rows it would name abstain", name)
-            continue
-        head = _build_provider_head()
-        head.load_state_dict(packed[name])
-        heads[name] = head.to(device).train(False)
+    provider_path = _weight_path(folder, PROVIDER_FILE).resolve()
     ridge_threshold = float(probe["thr_oi_1pct"])
-    mlp_threshold, provider_margin = _operating_point(folder)
+    mlp_threshold = _operating_point(folder)
     log.info("loaded photo-classify freeze from %s", folder)
     clip_model = (
         load_onnx_vision(_weight_path(folder, CLIP_ONNX_FILE))
@@ -488,16 +453,16 @@ def _load_runtime(device: Any, backend: ClassifierBackend = "torch") -> _Runtime
     return _Runtime(
         device=device,
         backend=backend,
+        weights_override=override,
         clip_model=clip_model,
         processor=load_processor(),
         detector=detector,
-        provider_heads=heads,
+        provider_path=provider_path,
         ridge_mean=np.asarray(probe["mean"], dtype=np.float64),
         ridge_scale=np.asarray(probe["scale"], dtype=np.float64),
         ridge_weights=np.asarray(probe["weights"], dtype=np.float64),
         ridge_threshold=ridge_threshold,
         mlp_threshold=mlp_threshold,
-        provider_margin=provider_margin,
         weights_dir=folder,
     )
 
@@ -506,8 +471,14 @@ def _get_runtime(device: str | None, backend: ClassifierBackend = "torch") -> _R
     global _runtime
     resolved = _resolve_device(device)
     resolved_backend = _resolve_backend(backend, resolved)
+    override = os.environ.get(WEIGHTS_ENV)
     with _runtime_lock:
-        if _runtime is None or _runtime.device != resolved or _runtime.backend != resolved_backend:
+        if (
+            _runtime is None
+            or _runtime.device != resolved
+            or _runtime.backend != resolved_backend
+            or _runtime.weights_override != override
+        ):
             _runtime = _load_runtime(resolved, resolved_backend)
         return _runtime
 
@@ -520,15 +491,6 @@ def _embed(runtime: _Runtime, image: Any) -> Any:
     return embed_image(runtime.clip_model, runtime.processor, image, runtime.device)
 
 
-def _forensic(image: Any) -> Any:
-    import numpy as np
-
-    from remove_ai_watermarks._internal.forensic_124d import image_features
-
-    pixels = np.asarray(image, dtype=np.uint8)
-    return image_features(pixels)
-
-
 def _mlp_score(runtime: _Runtime, clip_vector: Any) -> float:
     import torch
 
@@ -537,9 +499,18 @@ def _mlp_score(runtime: _Runtime, clip_vector: Any) -> float:
         return float(runtime.detector(tensor).squeeze().cpu())
 
 
-def _provider_scores(runtime: _Runtime, forensic: Any) -> dict[str, float]:
-    import torch
-
-    tensor = torch.from_numpy(forensic.astype("float32")).unsqueeze(0).to(runtime.device)
-    with torch.inference_mode():
-        return {name: float(head(tensor).squeeze().cpu()) for name, head in runtime.provider_heads.items()}
+def _run_model2(runtime: _Runtime, image: Any, *, path: Path | None = None) -> SourceClassification | None:
+    if min(image.size) < MIN_SIDE:
+        log.info("source features unavailable for %s (<%d px), provider abstains", path, MIN_SIDE)
+        return None
+    if not getattr(runtime, "provider_verified", False):
+        with _runtime_lock:
+            if not getattr(runtime, "provider_verified", False):
+                if not getattr(runtime, "weights_override", None):
+                    verify_weights_sha256(runtime.provider_path, PROVIDER_SHA256)
+                runtime.provider_verified = True
+    result = classify_source(image, weights_path=runtime.provider_path)
+    if result.reason == "feature_unavailable":
+        log.info("source features unavailable for %s, provider abstains", path)
+        return None
+    return result

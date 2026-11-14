@@ -1,11 +1,13 @@
 {
-  "freeze": "2026-08-31",
+  "freeze": "2026-11-14",
+  "model1_freeze": "2026-08-31",
+  "receipt_gate_freeze": "2026-09-07",
+  "model2_freeze": "2026-11-13",
   "task": "photo_ai_versus_camera",
   "not": ["synthid_decoder", "provenance", "universal_ai_detector"],
   "seeds": {
     "sample": 20260821,
-    "detector": 20260940,
-    "provider": 20260956
+    "detector": 20260940
   },
   "model1": {
     "backbone": "openai/clip-vit-large-patch14",
@@ -19,42 +21,60 @@
     "public_ai_label": "definitely_only"
   },
   "model2": {
-    "feature_width": 124,
-    "margin": 0.3,
-    "classes": ["openai", "google", "bytedance", "tc260", "muse-image", "no_ai"],
-    "class_kind": {
-      "openai": "provider",
-      "google": "provider",
-      "bytedance": "provider",
-      "tc260": "abstain-veto",
-      "muse-image": "model",
-      "no_ai": "negative"
-    },
-    "public_values": ["openai", "google", "bytedance", "muse-image", null],
-    "bytedance_note": "Doubao and Jimeng render with one ByteDance model family; the class names that shared generator lineage. Measured 2026-09-07 on the frozen test cell: 83.9% (271/323), extended with the historical harvest 83.6% (529/633).",
-    "tc260_note": "the head covers the REST of China's generator ecosystem -- producers (Qwen, Yuanbao, Kling, ...) that are peers of openai/google/meta, not one vendor. No mixed head can honestly name the group, so its argmax win abstains (provider=None). Measured 2026-09-07: without the veto 207/379 China test rows would be falsely named openai/google/muse-image. Per-producer classes return when their train mass holds their own cells (qwen measured at 64 train rows: 27% -- stays in the fallback).",
-    "checkpoint_keys": {
-      "muse-image": "meta_muse_image"
-    },
-    "snapshot_tolerance": "provider.pt snapshots predating bytedance load with five heads; absent heads are skipped and their rows fall to the tc260 veto",
+    "artifact": "multi-provider-source-v6.npz",
+    "artifact_sha256": "87868eea08b8b811999f675186b82b067c4de655981cb7f25114aac00b1dd284",
+    "schema": "multi-provider-source-v5",
+    "feature_width": 512,
+    "min_side_px": 256,
+    "classes": [
+      "openai",
+      "google",
+      "bytedance",
+      "flux",
+      "stable_diffusion",
+      "meta",
+      "midjourney",
+      "ideogram",
+      "firefly",
+      "xai"
+    ],
+    "public_values": [
+      "openai",
+      "google",
+      "bytedance",
+      "flux",
+      "stable_diffusion",
+      "meta",
+      "midjourney",
+      "ideogram",
+      "firefly",
+      "xai",
+      null
+    ],
+    "bytedance_note": "Doubao and Jimeng render with one shared ByteDance generator lineage.",
+    "abstain_note": "Decoupled 11-channel regime-standardized acceptance detector plus 10-way skip attribution head in pure NumPy. Unsupported generators (such as Qwen, Kling, Yuanbao, Hailuo, Hunyuan) and images below the calibrated acceptance threshold or under 256x256 abstain to provider=null.",
     "runs_only_after": "definitely"
   },
   "receipt_gate": {
     "added": "2026-09-02",
+    "stable_asset": "receipt-gate.npz",
+    "stable_threshold": 2.0109003260214737,
     "asset": "receipt-gate-2026-09-02.npz",
     "threshold": 2.0432573877459697,
     "runs_only_after": "definitely",
     "on_hit": "unknown",
     "head": "linear on the CLIP-L-ft 768-d vector Model 1 already computes",
-    "train": "CORD-v2 train 800 (CC BY 4.0) + 200 synthetic receipts + 2400 ai_train negatives",
-    "certified": "min of 1st-percentile scores on CORD validation and a synthetic holdout; no field-receipt pixels in training or threshold selection",
-    "measured": "field receipts false-AI 19/59 -> 2/59; CORD 89/99 -> 0/99; ai_test DEFINITELY cost 7/1847"
+    "train": "CORD-v2 train 800 (CC BY 4.0) + 200 synthetic receipts + phone positives (dup3 in 2026-09-07 stable gate) + 2400 ai_train negatives",
+    "certified": "min of 1st-percentile scores on CORD validation and a synthetic holdout; no field-receipt pixels in threshold selection",
+    "measured": "field receipts 59/59 gated on stable receipt-gate.npz (57/59 on 2026-09-02 fallback); CORD 99/99 gated; ai_test DEFINITELY cost 5/1847 (0.27%)"
   },
   "files": [
     "clip-l-ft.pt",
     "clip-l-ft-vision-fp32.onnx",
     "probe-weights-clip-l-ft.npz",
     "detector.pt",
-    "provider.pt"
+    "multi-provider-source-v6.npz",
+    "receipt-gate.npz",
+    "receipt-gate-2026-09-02.npz"
   ]
 }

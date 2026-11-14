@@ -1,4 +1,4 @@
-"""124-d patch residual features for the frozen provider heads.
+"""124-d patch residual features for the source-pipeline feature banks.
 
 Lifted from the 2026-08-31 freeze extractor. The vector is ratios on
 lattice-aligned 256 px patches: FFT band energy, comb contrast, and residual

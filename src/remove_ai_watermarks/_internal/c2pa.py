@@ -642,6 +642,11 @@ def _structured_manifest_fields(store: dict[str, Any]) -> dict[str, Any]:
                 source_type = action.get("digitalSourceType")
                 if isinstance(source_type, str):
                     source_types.append(source_type)
+                parameters = action.get("parameters")
+                if isinstance(parameters, dict):
+                    adobe_source_type = cast("dict[object, object]", parameters).get("com.adobe.digitalSourceType")
+                    if isinstance(adobe_source_type, str):
+                        source_types.append(adobe_source_type)
                 software_agent = action.get("softwareAgent")
                 if isinstance(software_agent, dict):
                     name = cast("dict[object, object]", software_agent).get("name")

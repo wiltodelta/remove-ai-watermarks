@@ -92,8 +92,10 @@ remove-ai-watermarks classify image.png --json
 The command runs the frozen photo detector (CLIP-L-ft ridge AND freeze MLP).
 Only a DEFINITELY result is reported as `ai`. On that result only, the
 receipt-document gate abstains receipt photographs to `unknown` before the
-124-d provider head, which may return `openai`, `google`, `bytedance`, or
-`muse-image`.
+512-d `multi-provider-source-v6.npz` Model 2 ensemble, which attributes
+`provider` across 10 families (`openai`, `google`, `bytedance`, `flux`,
+`stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`) or
+abstains to `none` (`null` in JSON).
 POSSIBLY is `unknown`. Camera-like photographs are `human`. The call
 does not run cleanup and does not set `is_ai_generated`.
 
@@ -101,9 +103,8 @@ The contract is AI versus camera. Receipts abstain through the gate but are
 not a supported verdict; UI and digital art are out of scope. Microsoft is
 not a pixel class: a DALL-E Bing image scores as `openai`,
 an Imagen Designer image as `google`. `bytedance` names the shared
-Doubao+Jimeng generator lineage. The rest of China's generators (Qwen,
-Kling, ...) are peers of the named ones but have no honest class yet;
-their residual head abstains, so that content publishes no provider. Weights download on first use from
+Doubao+Jimeng generator lineage. Generators outside the 10 named families
+(Qwen, Kling, Yuanbao, ...) abstain and publish no provider. Weights download on first use from
 [`wiltodelta/raiw-photo-classify`](https://huggingface.co/wiltodelta/raiw-photo-classify),
 or from `RAIW_CLASSIFY_WEIGHTS` if that directory already holds the freeze
 files.

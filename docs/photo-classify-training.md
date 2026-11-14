@@ -1,8 +1,11 @@
 # Photo classifier training and data
 
-How the 2026-08-31 freeze was fit, what a retrain needs, and where those
-files come from. Inference is [photo-classify.md](photo-classify.md). The
-campaign log is [ai-generated-image-classifiers.md](ai-generated-image-classifiers.md).
+How the 2026-08-31 Model 1 freeze (and legacy 124-d heads) was fit, what a
+retrain needs, and where those files come from. Current inference pairs Model 1
+and `receipt-gate.npz` with the 512-d 10-provider `multi-provider-source-v6.npz`
+Model 2 ([photo-classify.md](photo-classify.md),
+[source-classify.md](source-classify.md)). The campaign log is
+[ai-generated-image-classifiers.md](ai-generated-image-classifiers.md).
 
 The shipped package does not include the catalog or the embeddings. Fitting
 the heads again uses the cache pack. The original pixels still have to be
