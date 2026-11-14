@@ -46,7 +46,7 @@ removal.
 | Goal | Command | GPU |
 | --- | --- | --- |
 | Find provenance signals and watermarks | `identify` | No |
-| Classify a photograph from pixels (opt-in, not provenance) | `classify` | No |
+| Classify likely AI provider and model version from pixels (opt-in, not provenance) | `classify-source` | No |
 | Remove known visible AI marks | `visible` | No |
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
@@ -75,7 +75,6 @@ specialized Python API can inspect and disrupt the validated local
 | Need | Install |
 | --- | --- |
 | Metadata inspection and stripping | `remove-ai-watermarks` |
-| Photograph AI-versus-camera classification | `remove-ai-watermarks[classify]` |
 | 10-provider source-export & model-version classification | `remove-ai-watermarks[source-classify]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
@@ -87,7 +86,7 @@ specialized Python API can inspect and disrupt the validated local
 | Optional OCR proposals for operator verification | `remove-ai-watermarks[text-draft]` |
 
 Lower-level and specialized extras include `pixels`, `heif`, `trustmark`,
-`migan`, `lama`, `diffusion`, `classify-onnx`, and `source-classify`. The
+`migan`, `lama`, `diffusion`, and `source-classify`. The
 [installation guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/installation.md#feature-extras) documents their exact
 dependency composition, Python compatibility, and model requirements.
 
@@ -105,21 +104,13 @@ Inspect an image:
 remove-ai-watermarks identify image.png
 ```
 
-To classify a photograph from pixels (AI versus camera, optional provider),
-install the extra and call `classify`. `identify` never starts it:
+For an abstaining, CPU-only 10-provider source-export and model-version
+classifier from pixels after metadata removal (`classify_source` and CLI
+`classify-source`), install `source-classify`. `identify` never runs it, and it
+is not a SynthID detector:
 
 ```bash
-uv tool install --force "remove-ai-watermarks[classify]"
-remove-ai-watermarks classify image.png
-```
-
-Guide: [photo pixel classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/photo-classify.md).
-
-For a lightweight, abstaining 10-provider source-export and model-version
-signal after metadata removal (`classify_source` and CLI `classify-source`),
-use the separate API or CLI command. It is not a SynthID detector:
-
-```bash
+uv tool install --force "remove-ai-watermarks[source-classify]"
 remove-ai-watermarks classify-source image.png
 ```
 
@@ -127,11 +118,10 @@ remove-ai-watermarks classify-source image.png
 import remove_ai_watermarks as raiw
 
 result = raiw.classify_source("image.png")
-print(result.label, result.version_subfamily, result.reason)
+print(result.label, result.version_subfamily, result.confidence)
 ```
 
-Install `remove-ai-watermarks[source-classify]`. Guide:
-[source-pipeline classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify.md).
+Guide: [source-pipeline classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify.md). Model card: [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify).
 
 Signed provenance is the supported route for SynthID and `identify` reads it.
 There is no local SynthID pixel detector in the package. Research on a
@@ -521,7 +511,7 @@ The skill refuses stock-agency and other third-party paid-asset marks. See
 Context Protocol tools over stdio, each a thin wrapper around one CLI command:
 
 ```json
-{"mcpServers": {"remove-ai-watermarks": {"command": "uvx", "args": ["--python", "3.12", "--with", "remove-ai-watermarks[all,classify-onnx,text-draft]", "remove-ai-watermarks", "mcp"]}}}
+{"mcpServers": {"remove-ai-watermarks": {"command": "uvx", "args": ["--python", "3.12", "--with", "remove-ai-watermarks[all,text-draft]", "remove-ai-watermarks", "mcp"]}}}
 ```
 
 See [the MCP server guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/mcp-server.md).

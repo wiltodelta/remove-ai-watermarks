@@ -47,7 +47,7 @@ The same skill tree is the Codex plugin (`.codex-plugin/plugin.json`). `remove-a
 
 [`docs/module-internals.md`](docs/module-internals.md) is the canonical per-module map, including design decisions, thresholds, calibration history, incident records, and regression guards. Read the relevant section before changing a subsystem.
 
-Research, classifiers, the benchmark kernel, and current constraints are routed through [`docs/index.md`](docs/index.md); start with [`docs/known-limitations.md`](docs/known-limitations.md) and [`docs/supported-signals.md`](docs/supported-signals.md). Photo classification ([`docs/photo-classify.md`](docs/photo-classify.md)) and the export-pipeline signal ([`docs/source-classify.md`](docs/source-classify.md)) never run inside `identify` and are not SynthID detection.
+Research, classifiers, the benchmark kernel, and current constraints are routed through [`docs/index.md`](docs/index.md); start with [`docs/known-limitations.md`](docs/known-limitations.md) and [`docs/supported-signals.md`](docs/supported-signals.md). Source-pipeline classification ([`docs/source-classify.md`](docs/source-classify.md)) never runs inside `identify` and is not SynthID detection.
 
 ## Data safety
 

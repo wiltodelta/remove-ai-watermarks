@@ -73,7 +73,7 @@ source distribution appears in both PyPI indexes, then:
 
 Upgrading the Hugging Face Space is dispatched from `distribute.yml`: it runs
 `pin-library.yml` in `wiltodelta/raiw-hf-space`, which bumps
-`remove-ai-watermarks[all,classify-onnx,text-draft]` in `pyproject.toml`, refreshes `uv.lock`,
+`remove-ai-watermarks[all,text-draft]` in `pyproject.toml`, refreshes `uv.lock`,
 and pushes. That repository's `sync-to-hf.yml` then mirrors the files onto the
 Space. `distribute.yml` waits for the Hub `requirements.txt` pin to match,
 then factory-rebuilds. The `RAIW_HF_SPACE_TOKEN` repository secret is a
@@ -83,28 +83,17 @@ factory rebuild runs, which reinstalls whatever version is already pinned.
 The Space repo's callback smoke tests still run on every push; they are the
 scenario check for the demo surface.
 
-The Hugging Face **model** `wiltodelta/raiw-photo-classify` is not part of that
-release fan-out. It holds the photo-classify freeze weights. The library extra
-`classify` downloads that snapshot on first use, or reads
-`RAIW_CLASSIFY_WEIGHTS`. Update the Hub repo only with
-`.github/workflows/publish-photo-classify-hf.yml` (`workflow_dispatch`,
-type `publish`). Full mode downloads the frozen Model 1 + `receipt-gate.npz`
-files from `photo-classify-freeze-2026-09-07` and `multi-provider-source-v6.npz`
-(verified by SHA-256) from `source-classify-v6-freeze-2026-11-13`, exports the
-static FP32 vision-only ONNX graph from `clip-l-ft.pt`, and uploads the full
-allowlist with the card in `docs/photo-classify-hf/`. Card mode updates
-the README, `operating-point.json`, and the fallback receipt-gate head staged
-from the package assets; freeze weights are untouched. A library version bump
-alone does not upload new heads -- bump the pinned Hub revision when a new
-head must reach installed clients. Pin a Hub revision in production so a
-later freeze cannot silently change installed clients.
-
-The separate `wiltodelta/raiw-source-classify` model is published with
+The Hugging Face **model** `wiltodelta/raiw-source-classify` is not part of that
+release fan-out. It is published separately with
 `.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
 derivative `multi-provider-source-v6.npz` artifact from the declared GitHub
 model freeze, verifies its SHA-256, and uploads only that file plus the tracked
-card and aggregate metrics under `docs/source-classify-hf/`. The private corpus,
-catalog, paths, hashes, embeddings, and feature caches are outside this flow.
+`README.md` and `metrics.json` under `docs/source-classify-hf/` and a
+synthesized `config.json` (while deleting retired Hub model repositories). A library version bump alone
+does not upload new weights - bump `WEIGHTS_REVISION` in
+`src/remove_ai_watermarks/source_classify.py` when a new Hub commit must reach
+installed clients. The private corpus, catalog, paths, hashes, embeddings, and
+feature caches are outside this flow.
 
 The workflow is manual and requires the model-freeze release tag plus an
 explicit `publish` confirmation. Keep model-freeze GitHub releases marked as

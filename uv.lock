@@ -3548,23 +3548,6 @@ all = [
     { name = "transformers" },
     { name = "trustmark" },
 ]
-classify = [
-    { name = "huggingface-hub" },
-    { name = "numpy" },
-    { name = "opencv-python-headless" },
-    { name = "tokenizers" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-classify-onnx = [
-    { name = "huggingface-hub" },
-    { name = "numpy" },
-    { name = "onnxruntime" },
-    { name = "opencv-python-headless" },
-    { name = "tokenizers" },
-    { name = "torch" },
-    { name = "transformers" },
-]
 detect = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
@@ -3689,7 +3672,6 @@ requires-dist = [
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
     { name = "filelock", marker = "extra == 'video'", specifier = ">=3.20" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
-    { name = "huggingface-hub", marker = "extra == 'classify'", specifier = ">=0.20.0,<2" },
     { name = "huggingface-hub", marker = "extra == 'dev'", specifier = ">=0.20.0,<2" },
     { name = "huggingface-hub", marker = "extra == 'lama'", specifier = ">=0.20.0,<2" },
     { name = "huggingface-hub", marker = "extra == 'migan'", specifier = ">=0.20.0,<2" },
@@ -3700,7 +3682,6 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'dev'", specifier = ">=2.3,<3" },
     { name = "numpy", marker = "python_full_version >= '3.13' and extra == 'pixels'", specifier = ">=2" },
     { name = "numpy", marker = "python_full_version < '3.13' and extra == 'pixels'", specifier = ">=1.24.0" },
-    { name = "onnxruntime", marker = "extra == 'classify-onnx'", specifier = ">=1.24.0" },
     { name = "onnxruntime", marker = "extra == 'lama'", specifier = ">=1.24.0" },
     { name = "onnxruntime", marker = "extra == 'migan'", specifier = ">=1.24.0" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=2.52.0" },
@@ -3720,33 +3701,28 @@ requires-dist = [
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pywavelets", marker = "extra == 'detect'", specifier = ">=1.1.1" },
-    { name = "remove-ai-watermarks", extras = ["classify"], marker = "extra == 'classify-onnx'" },
     { name = "remove-ai-watermarks", extras = ["detect"], marker = "extra == 'dev'" },
     { name = "remove-ai-watermarks", extras = ["diffusion"], marker = "extra == 'qwen-zimage'" },
-    { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'classify'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'detect'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'diffusion'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'source-classify'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'visible'" },
     { name = "remove-ai-watermarks", extras = ["qwen-zimage", "lama"], marker = "extra == 'text-restoration'" },
     { name = "remove-ai-watermarks", extras = ["video"], marker = "extra == 'dev'" },
-    { name = "remove-ai-watermarks", extras = ["video", "heif", "detect", "trustmark", "text-restoration", "migan", "classify", "source-classify"], marker = "extra == 'all'" },
+    { name = "remove-ai-watermarks", extras = ["video", "heif", "detect", "trustmark", "text-restoration", "migan", "source-classify"], marker = "extra == 'all'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'lama'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'migan'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'video'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "safetensors", marker = "extra == 'diffusion'" },
     { name = "sentencepiece", marker = "extra == 'qwen-zimage'", specifier = ">=0.2.2,<0.3" },
-    { name = "tokenizers", marker = "extra == 'classify'", specifier = ">=0.22,<0.23" },
     { name = "tokenizers", marker = "extra == 'diffusion'", specifier = ">=0.22,<0.23" },
-    { name = "torch", marker = "extra == 'classify'", specifier = ">=2.0.0" },
     { name = "torch", marker = "extra == 'diffusion'", specifier = ">=2.0.0" },
     { name = "torchvision", marker = "extra == 'qwen-zimage'", specifier = ">=0.20.0" },
-    { name = "transformers", marker = "extra == 'classify'", specifier = ">=5,<5.16" },
     { name = "transformers", marker = "extra == 'diffusion'", specifier = ">=5,<5.16" },
     { name = "trustmark", marker = "extra == 'trustmark'", specifier = ">=0.9.2" },
 ]
-provides-extras = ["pixels", "heif", "visible", "video", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "classify", "classify-onnx", "source-classify", "lama", "migan", "dev", "all"]
+provides-extras = ["pixels", "heif", "visible", "video", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "source-classify", "lama", "migan", "dev", "all"]
 
 [[package]]
 name = "requests"

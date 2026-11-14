@@ -6,13 +6,50 @@ tags:
   - image-forensics
   - source-attribution
   - open-set-classification
+  - ai-image-detection
+  - ai-generated-content
+  - provider-attribution
+  - openai
+  - gpt-image
+  - dall-e
+  - google
+  - imagen
+  - flux
+  - midjourney
+  - stable-diffusion
+  - ideogram
+  - firefly
+  - seedream
+  - grok
 ---
 
 # RAIW multi-provider source-pipeline classifier (`multi-provider-source-v6`)
 
-This repository contains the compact (`15.52 MB`), pickle-free (`allow_pickle=False`) derivative weights for the abstaining `remove-ai-watermarks` pixel source-pipeline classifier across **10 AI provider families** (`openai`, `google`, `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`) plus `unknown` (`classify_source` / `remove-ai-watermarks classify-source`).
+This repository contains the compact (`15.52 MB`), CPU-only, pickle-free (`allow_pickle=False`) NumPy weights for the abstaining [`remove-ai-watermarks`](https://github.com/wiltodelta/remove-ai-watermarks) pixel source-pipeline classifier across **10 AI provider families** (`openai`, `google`, `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`) plus `unknown`, with Stage-2 model/export version attribution (`version_subfamily`).
 
 This model is **not a SynthID detector** and does not decode or verify any cryptographic or invisible watermark payload (`watermark_truth="unknown"`). Its labels describe complete generation and export pixel pipelines, so renderer, geometry, encoding, post-processing, and watermark state may be confounded. `unknown` does not mean that SynthID is absent, and a provider label does not prove that SynthID is present.
+
+## Quickstart (pure NumPy, CPU-only, no PyTorch required)
+
+```bash
+pip install "remove-ai-watermarks[source-classify]"
+```
+
+```python
+import remove_ai_watermarks as raiw
+
+res = raiw.classify_source("image.jpg")
+print(res.label, res.version_subfamily, round(res.confidence, 4))
+# e.g. 'openai' 'openai:gpt_image_1_5' 0.9942  (or 'unknown' None 0.9815 on real photos)
+```
+
+Command line:
+
+```bash
+remove-ai-watermarks classify-source image.jpg --json
+```
+
+Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v6.npz` or its parent directory for air-gapped deployments.
 
 ## Model architecture
 

@@ -45,8 +45,8 @@ options with `brew options wiltodelta/tap/remove-ai-watermarks`. Add features us
 `brew reinstall` with the flags; Homebrew preserves previous flags on reinstall
 and upgrade. Removing old extras requires uninstalling and installing again with
 the complete desired selection. Backend hardware requirements remain unchanged.
-For every public optional backend, select `all,text-draft,classify-onnx` with
-pip/uv/pipx, or combine `--with-all --with-text-draft --with-classify-onnx` in
+For every public optional backend, select `all,text-draft` with
+pip/uv/pipx, or combine `--with-all --with-text-draft` in
 Homebrew. Prefer Python 3.12 for this complete selection; optional backends can
 have narrower Python and platform support than the base package.
 
@@ -63,7 +63,7 @@ library-only options, create an application virtual environment and install the
 needed extras there, or run a script without changing the current project:
 
 ```bash
-uv run --no-project --python 3.12 --with "remove-ai-watermarks[all,text-draft,classify-onnx]" python script.py
+uv run --no-project --python 3.12 --with "remove-ai-watermarks[all,text-draft]" python script.py
 ```
 
 Read the [Python API guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md)
@@ -90,8 +90,7 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Learned image/video fill | add `migan` or `lama` |
 | Verified text restoration (`--text-manifest`) | add `text-restoration` |
 | Open DWT-DCT detect | add `detect` |
-| Pixel classifier (`classify`) | add `classify` |
-| CPU ONNX photo classifier, library `backend="onnx"` only (since CLI 0.40.0) | add `classify-onnx` |
+| 10-provider source-pipeline classifier (`classify-source`) | add `source-classify` |
 | Adobe TrustMark | add `trustmark` |
 | Every production extra on this Python | `all` |
 

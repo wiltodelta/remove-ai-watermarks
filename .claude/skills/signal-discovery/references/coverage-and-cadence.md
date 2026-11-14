@@ -16,7 +16,7 @@ historical data is sufficient.
 | Invisible video and audio marks | Matched provider or open-model cohorts with codec and degradation controls | Benchmark-kernel audio/video rows and temporal aggregation checks | Preserve the non-target stream; use the matching oracle and a control-positive run |
 | Explicit vendor regeneration with no detectable local signal | This is a user assertion or research cohort, not a discovered signal | Verify routing and profile selection separately from detection | Quality and provider-oracle evidence may certify a cohort, but must not create a local detection claim |
 
-`classify` is a pixel-origin guess, not provenance, and must not be counted as a
+`classify-source` is a pixel-pipeline guess, not provenance, and must not be counted as a
 new signal. `erase --region` is user-directed editing, not automatic watermark
 detection, and is outside this audit.
 

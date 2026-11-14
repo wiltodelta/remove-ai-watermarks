@@ -44,14 +44,14 @@ An existing installation can be started directly as `remove-ai-watermarks mcp`.
 Paths in tool calls are read and written on the machine that runs the server.
 
 The registry launcher selects Python 3.12 and the complete public backend set
-`all,classify-onnx,text-draft`. For a custom client configuration, use:
+`all,text-draft`. For a custom client configuration, use:
 
 ```json
 {
   "mcpServers": {
     "remove-ai-watermarks": {
       "command": "uvx",
-      "args": ["--python", "3.12", "--with", "remove-ai-watermarks[all,classify-onnx,text-draft]", "remove-ai-watermarks", "mcp"]
+      "args": ["--python", "3.12", "--with", "remove-ai-watermarks[all,text-draft]", "remove-ai-watermarks", "mcp"]
     }
   }
 }
@@ -90,11 +90,11 @@ with `isError: true` and the command's stderr.
 Alongside the convenience tools above, the server advertises every non-server
 CLI leaf as `cli_<command>`, replacing spaces and hyphens with underscores.
 Examples: `cli_video_invisible`, `cli_video_all`, `cli_text_identify`,
-`cli_text_invisible`, `cli_erase`, `cli_classify`, and `cli_classify_source`.
+`cli_text_invisible`, `cli_erase`, and `cli_classify_source`.
 Their typed parameters come directly from the installed Click command tree,
 including Seedance profiles, video quality, repeated regions, and fidelity options.
-`api_classify_onnx` selects the CPU ONNX classifier; `api_draft_text` proposes OCR
-manifest lines for operator verification. Proposals are never verified truth.
+`api_draft_text` proposes OCR manifest lines for operator verification. Proposals
+are never verified truth.
 
 The catalog is shared with ComfyUI and the Space. CLI additions automatically
 reach those interfaces instead of relying on copied command lists. Each operation

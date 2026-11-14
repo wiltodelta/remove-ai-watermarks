@@ -77,18 +77,14 @@ def test_trustmark_covers_every_supported_python():
 def test_extras_use_capability_names_without_legacy_aliases():
     extras = set(metadata("remove-ai-watermarks").get_all("Provides-Extra") or [])
 
-    assert {"pixels", "heif", "visible", "video", "detect", "diffusion", "classify", "classify-onnx"} <= extras
-    assert {"gpu", "remove", "detect-pywavelets", "verify"}.isdisjoint(extras)
+    assert {"pixels", "heif", "visible", "video", "detect", "diffusion", "source-classify"} <= extras
+    assert {"gpu", "remove", "detect-pywavelets", "verify", "classify", "classify-onnx"}.isdisjoint(extras)
 
 
-def test_classify_extra_owns_the_photo_heads() -> None:
-    names = _requirement_names("classify")
-    assert {"torch", "transformers", "huggingface-hub", "tokenizers"} <= names
-
-
-def test_classify_onnx_extra_extends_the_default_classifier() -> None:
-    names = _requirement_names("classify-onnx")
-    assert {"torch", "transformers", "huggingface-hub", "tokenizers", "onnxruntime"} <= names
+def test_source_classify_extra_stays_lightweight() -> None:
+    names = _requirement_names("source-classify")
+    assert "huggingface-hub" in names
+    assert {"torch", "transformers", "onnxruntime"}.isdisjoint(names)
 
 
 def test_qwen_zimage_extra_owns_every_profile_tokenizer_backend() -> None:

@@ -16,13 +16,23 @@ import publish_source_classify_hf as publish  # noqa: E402
 
 def test_hub_ids_match_the_runtime_loader() -> None:
     # The workflow runs this script with --no-project, so it cannot import the package constants.
-    from remove_ai_watermarks.source_classify import MODEL_FILE, WEIGHTS_REPO
+    from remove_ai_watermarks.source_classify import CONFIG_FILE, MODEL_FILE, WEIGHTS_REPO
 
     assert publish.HUB_REPO == WEIGHTS_REPO
+    assert publish.CONFIG_FILE == CONFIG_FILE
     assert publish.MODEL_FILE == MODEL_FILE
+    assert "wiltodelta/raiw-photo-classify" in publish.RETIRED_HUB_REPOS
 
 
-def test_stage_release_copies_only_public_artifacts(tmp_path: Path) -> None:
+def test_stage_release_copies_public_artifacts_and_synthesizes_config(tmp_path: Path) -> None:
+    from remove_ai_watermarks.source_classify import (
+        ALL_PROVIDER_CLASSES,
+        FEATURE_DIM_V4,
+        MODEL_FILE,
+        MODEL_SCHEMA,
+        MODEL_SHA256,
+    )
+
     source = tmp_path / "source"
     source.mkdir()
     (source / publish.MODEL_FILE).write_bytes(b"weights")
@@ -30,19 +40,63 @@ def test_stage_release_copies_only_public_artifacts(tmp_path: Path) -> None:
     publish.stage_release(destination, source)
     assert sorted(path.name for path in destination.iterdir()) == sorted(publish.PUBLIC_FILES)
 
+    config = json.loads((destination / publish.CONFIG_FILE).read_text(encoding="utf-8"))
+    assert config["model_type"] == "raiw-source-classify"
+    assert config["schema"] == MODEL_SCHEMA
+    assert config["artifact_file"] == MODEL_FILE
+    assert config["artifact_sha256"] == MODEL_SHA256
+    assert config["feature_dimension"] == FEATURE_DIM_V4
+    assert config["providers"] == list(ALL_PROVIDER_CLASSES)
+    assert config["abstain_label"] == "unknown"
+
 
 def test_stage_release_requires_the_model(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match=re.escape(publish.MODEL_FILE)):
         publish.stage_release(tmp_path / "stage", tmp_path)
 
 
-def test_card_sha_matches_the_metrics_manifest() -> None:
+def test_card_matches_the_metrics_manifest() -> None:
     from remove_ai_watermarks.source_classify import MODEL_FILE, MODEL_SCHEMA, MODEL_SHA256
 
-    metrics = json.loads((publish.CARD_DIR / "metrics.json").read_text())
-    card = (publish.CARD_DIR / "README.md").read_text()
+    metrics = json.loads((publish.CARD_DIR / "metrics.json").read_text(encoding="utf-8"))
+    card = (publish.CARD_DIR / "README.md").read_text(encoding="utf-8")
     assert metrics["schema"] == MODEL_SCHEMA
     assert metrics["artifact_file"] == MODEL_FILE
     assert metrics["artifact_sha256"] == MODEL_SHA256
     assert MODEL_FILE in card
     assert metrics["artifact_sha256"] in card
+
+
+def test_publish_uploads_allowlist_and_deletes_retired_hub_repos(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import types
+
+    import huggingface_hub
+
+    created: list[tuple[str, str, bool, bool]] = []
+    uploads: list[dict[str, object]] = []
+    deleted: list[tuple[str, str, bool]] = []
+
+    class FakeApi:
+        def __init__(self, *, token: str) -> None:
+            assert token == "tok"
+
+        def create_repo(self, repo_id: str, *, repo_type: str, exist_ok: bool, private: bool) -> None:
+            created.append((repo_id, repo_type, exist_ok, private))
+
+        def upload_folder(self, **kwargs: object) -> object:
+            uploads.append(kwargs)
+            return types.SimpleNamespace(oid="abc123")
+
+        def delete_repo(self, repo_id: str, *, repo_type: str, missing_ok: bool) -> None:
+            deleted.append((repo_id, repo_type, missing_ok))
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
+
+    rev = publish.publish(tmp_path, token="tok", message="msg")
+    assert rev == "abc123"
+    assert created == [(publish.HUB_REPO, "model", True, False)]
+    assert len(uploads) == 1
+    assert uploads[0]["allow_patterns"] == list(publish.PUBLIC_FILES)
+    assert ("wiltodelta/raiw-photo-classify", "model", True) in deleted

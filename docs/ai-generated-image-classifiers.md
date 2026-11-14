@@ -1,10 +1,10 @@
 # AI-generated image classifiers (research)
 
-> Research archive for metadata-free `ai_generated` versus
-> `not_ai_generated` classifiers. These are not SynthID detectors and are not
- `identify` verdicts. The 2026-08-31 freeze is consumed only by explicit
-> `classify` / `classify_pixels` (Model 1 + `receipt-gate.npz` from this archive, paired since 2026-11 with the 10-provider `multi-provider-source-v6.npz` Model 2). Current behavior:
-> [photo pixel classification](photo-classify.md),
+> Historical research archive for the retired metadata-free `ai_generated` versus
+> `not_ai_generated` photo classifier (`classify` / `classify_pixels`, retired
+> in 2026-11 in favor of the standalone 10-provider `classify-source` /
+> `classify_source` pipeline). Current behavior:
+> [source-pipeline classification](source-classify.md),
 > [supported signals](supported-signals.md),
 > and [known limitations](known-limitations.md).
 >
@@ -18,14 +18,14 @@ are the first negative, Firefly and PixelBin are in the test, and a watermark
 claim uses an independent oracle. CLIP content embeddings and the 124-d
 origin-locked residual bank are different features for different jobs.
 
-## Frozen result, 2026-08-31
+## Frozen result, 2026-08-31 (retired)
 
-The freeze is **AI versus camera**, not a universal detector, and it is not
-ired into `identify`. The library consumes it only through explicit
-`classify_pixels` / CLI `classify`. Detector: CLIP-L-ft ridge AND freeze MLP.
-Provider: 124-d focal heads, only after DEFINITELY. Library guide:
-[photo-classify.md](photo-classify.md). Hub card:
-[photo-classify-hf/README.md](photo-classify-hf/README.md).
+The historical 2026-08-31 freeze was **AI versus camera**, not a universal
+detector, and was never wired into `identify`. Its former `classify_pixels` /
+CLI `classify` runtime and `wiltodelta/raiw-photo-classify` Hub snapshot were
+retired in 2026-11; active pixel source attribution lives in
+[source-classify.md](source-classify.md) and
+[source-classify-hf/README.md](source-classify-hf/README.md).
 
 | Cell | Value |
 | --- | ---: |

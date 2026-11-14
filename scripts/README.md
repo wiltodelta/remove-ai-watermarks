@@ -51,8 +51,7 @@ explicitly names a tracked canonical result.
 | `visible_sheets.py` | Build blinded contact sheets for relaxation candidates. |
 | `watermark_benchmark_cohort.py` | Build the deterministic synthetic DWT-DCT and TrustMark cohort consumed by `watermark_benchmark.py`. |
 | `watermark_benchmark_real_cohort.py` | Build a publication-cleared, provider-paired and content-stratified real-image cohort. |
-| `publish_photo_classify_hf.py` | Upload the photo-classify card and freeze weights to Hugging Face `wiltodelta/raiw-photo-classify`. Manual; the Action `publish-photo-classify-hf.yml` is the write-token path. |
-| `publish_source_classify_hf.py` | Upload the derivative 10-provider source-pipeline model (`multi-provider-source-v6.npz`) and its public card to Hugging Face `wiltodelta/raiw-source-classify`. Manual; the Action `publish-source-classify-hf.yml` is the write-token path. |
+| `publish_source_classify_hf.py` | Upload the derivative 10-provider source-pipeline model (`multi-provider-source-v6.npz`), `config.json`, and public card to Hugging Face `wiltodelta/raiw-source-classify`. Manual; the Action `publish-source-classify-hf.yml` is the write-token path. |
 | `verify_engine_selection_fixtures.py` | Verify hashes, dimensions, and prompt pairing in the tracked auto-engine content matrix. |
 
 ## Research and diagnostic prototypes
@@ -90,7 +89,5 @@ running the sync command without `--check` is the explicit snapshot update.
 
 `_plain_console.py` provides plain-text fallbacks for Rich output, and
 `_text_eval.py` contains normalization helpers shared by text-evaluation scripts.
-`hf_publish.py` owns the common authenticated, allowlisted Hugging Face model
-repository upload used by the two model publishers.
 `engine_selection_manifest.py` owns the content-matrix schema and validation
 shared by its integrity check and the real-image benchmark builder.

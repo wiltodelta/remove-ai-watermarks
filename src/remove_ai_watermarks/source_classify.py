@@ -10,6 +10,7 @@ any invisible watermark.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import logging
@@ -76,6 +77,7 @@ CLASSES: tuple[SourceLabel, ...] = (*ALL_PROVIDER_CLASSES, "unknown")
 WEIGHTS_ENV = "RAIW_SOURCE_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
 WEIGHTS_REVISION = "8260c14098d768e2d9f7304a4f5905bf00c7d66f"
+CONFIG_FILE = "config.json"
 MODEL_FILE = "multi-provider-source-v6.npz"
 MODEL_SHA256 = "87868eea08b8b811999f675186b82b067c4de655981cb7f25114aac00b1dd284"
 MODEL_SCHEMA_V3 = "multi-provider-source-v3"
@@ -352,7 +354,7 @@ def _require_dependencies() -> None:
         )
 
 
-def verify_weights_sha256(path: Path, expected_sha256: str) -> None:
+def _verify_sha256(path: Path, expected_sha256: str) -> None:
     """Verify ``path`` matches ``expected_sha256``, raising :class:`RuntimeError` on mismatch."""
     with path.open("rb") as handle:
         actual = hashlib.file_digest(handle, "sha256").hexdigest()
@@ -363,7 +365,38 @@ def verify_weights_sha256(path: Path, expected_sha256: str) -> None:
         )
 
 
-_verify_sha256 = verify_weights_sha256
+@functools.lru_cache(maxsize=4)
+def _resolve_hub_weights(
+    repo_id: str,
+    revision: str,
+    model_file: str,
+    config_file: str,
+    expected_sha256: str,
+) -> Path:
+    _require_dependencies()
+    hub: Any = import_module("huggingface_hub")
+    try_cache = getattr(hub, "try_to_load_from_cache", None)
+    cached = try_cache(repo_id=repo_id, filename=model_file, revision=revision) if callable(try_cache) else None
+    if isinstance(cached, str):
+        downloaded = Path(cached)
+    else:
+        with contextlib.suppress(Exception):
+            hub.hf_hub_download(
+                repo_id=repo_id,
+                filename=config_file,
+                revision=revision,
+            )
+        downloaded = Path(
+            str(
+                hub.hf_hub_download(
+                    repo_id=repo_id,
+                    filename=model_file,
+                    revision=revision,
+                )
+            )
+        )
+    _verify_sha256(downloaded, expected_sha256)
+    return downloaded
 
 
 def _resolve_weights_path(weights_path: Path | None = None) -> Path:
@@ -377,19 +410,11 @@ def _resolve_weights_path(weights_path: Path | None = None) -> Path:
         if not candidate.is_file():
             raise RuntimeError(f"{WEIGHTS_ENV} does not contain {MODEL_FILE}: {path}")
         return candidate
-    _require_dependencies()
-    hub: Any = import_module("huggingface_hub")
-    downloaded = Path(
-        str(
-            hub.hf_hub_download(
-                repo_id=WEIGHTS_REPO,
-                filename=MODEL_FILE,
-                revision=WEIGHTS_REVISION,
-            )
-        )
-    )
-    _verify_sha256(downloaded, MODEL_SHA256)
-    return downloaded
+    resolved = _resolve_hub_weights(WEIGHTS_REPO, WEIGHTS_REVISION, MODEL_FILE, CONFIG_FILE, MODEL_SHA256)
+    if not resolved.is_file():
+        _resolve_hub_weights.cache_clear()
+        resolved = _resolve_hub_weights(WEIGHTS_REPO, WEIGHTS_REVISION, MODEL_FILE, CONFIG_FILE, MODEL_SHA256)
+    return resolved
 
 
 @functools.lru_cache(maxsize=1)

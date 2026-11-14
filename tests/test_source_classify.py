@@ -347,14 +347,76 @@ def test_cli_classify_source_json_and_text_and_missing_extra(tmp_path: Path, mon
     assert "source-classify" in res_missing.output
 
 
-def test_identify_does_not_import_source_classify(tmp_path: Path) -> None:
-    from remove_ai_watermarks.identify import identify
+def test_provenance_paths_do_not_import_source_classify(monkeypatch: pytest.MonkeyPatch, clean_photo: Path) -> None:
+    from remove_ai_watermarks.identify import has_invisible_target, identify
 
-    img_path = tmp_path / "plain.png"
-    Image.fromarray(np.full((64, 64, 3), 120, dtype=np.uint8), mode="RGB").save(img_path)
-    sys.modules.pop("remove_ai_watermarks.source_classify", None)
-    identify(img_path, check_visible=False, check_invisible=False)
+    monkeypatch.delitem(sys.modules, "remove_ai_watermarks.source_classify", raising=False)
+    report = identify(clean_photo, check_visible=False, check_invisible=False)
+    assert report.is_ai_generated is None
+    assert has_invisible_target(clean_photo) is False
     assert "remove_ai_watermarks.source_classify" not in sys.modules
+
+
+def test_resolve_weights_fetches_config_on_cold_miss_and_caches_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import hashlib
+    import types
+
+    source_classify._resolve_hub_weights.cache_clear()
+    monkeypatch.delenv(source_classify.WEIGHTS_ENV, raising=False)
+    config_file = tmp_path / source_classify.CONFIG_FILE
+    config_file.write_text("{}", encoding="utf-8")
+    model_file = tmp_path / source_classify.MODEL_FILE
+    model_file.write_bytes(b"synthetic-v6-weights")
+    expected_sha = hashlib.sha256(model_file.read_bytes()).hexdigest()
+    monkeypatch.setattr(source_classify, "MODEL_SHA256", expected_sha)
+
+    downloads: list[tuple[str, str, str]] = []
+    cached_lookup: str | None = None
+
+    def fake_try_cache(*, repo_id: str, filename: str, revision: str) -> str | None:
+        assert (repo_id, filename, revision) == (
+            source_classify.WEIGHTS_REPO,
+            source_classify.MODEL_FILE,
+            source_classify.WEIGHTS_REVISION,
+        )
+        return cached_lookup
+
+    def fake_download(*, repo_id: str, filename: str, revision: str) -> str:
+        downloads.append((repo_id, filename, revision))
+        return str(config_file if filename == source_classify.CONFIG_FILE else model_file)
+
+    fake_hub = types.SimpleNamespace(
+        try_to_load_from_cache=fake_try_cache,
+        hf_hub_download=fake_download,
+    )
+    monkeypatch.setattr(
+        source_classify,
+        "import_module",
+        lambda name: fake_hub if name == "huggingface_hub" else __import__(name),
+    )
+
+    try:
+        resolved = source_classify._resolve_weights_path()
+        assert resolved == model_file
+        assert downloads == [
+            (source_classify.WEIGHTS_REPO, source_classify.CONFIG_FILE, source_classify.WEIGHTS_REVISION),
+            (source_classify.WEIGHTS_REPO, source_classify.MODEL_FILE, source_classify.WEIGHTS_REVISION),
+        ]
+
+        # Warm in-process repeat must hit lru_cache without re-running Hub downloads.
+        assert source_classify._resolve_weights_path() == model_file
+        assert len(downloads) == 2
+
+        # Warm disk-cache hit in a fresh process must skip network downloads (including config.json).
+        source_classify._resolve_hub_weights.cache_clear()
+        downloads.clear()
+        cached_lookup = str(model_file)
+        assert source_classify._resolve_weights_path() == model_file
+        assert downloads == []
+    finally:
+        source_classify._resolve_hub_weights.cache_clear()
 
 
 def _base_two_tower_npz_payload(

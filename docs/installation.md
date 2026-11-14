@@ -179,8 +179,6 @@ application actually uses:
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV, FFmpeg/ffprobe bundle | No |
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |
 | `trustmark` | Adobe TrustMark detection | trustmark | Yes |
-| `classify` | Metadata-free photo AI-versus-camera classifier plus gated provider | `pixels`, Torch, Transformers | Yes |
-| `classify-onnx` | Optional CPU-only ONNX vision runtime for `classify` | `classify`, ONNX Runtime | Yes |
 | `source-classify` | Abstaining 10-provider source-export and model-version classifier, not SynthID detection | `pixels`, Hugging Face Hub | Model download, no Torch |
 | `diffusion` | Torch and Diffusers runtime; video regeneration | `pixels`, Torch, Diffusers | Image profiles only |
 | `migan` | MI-GAN ONNX fill backend | `visible`, ONNX Runtime | Model download, no Torch |
@@ -207,15 +205,13 @@ flowchart LR
     draft["text-draft"]
     heif
     trustmark
-    classify --> pixels
-    onnx["classify-onnx"] --> classify
     source["source-classify"] --> pixels
 ```
 
 `heif`, `trustmark`, and `text-draft` are independent branches. Combine them
 explicitly with another feature when required. `text-draft` is excluded from
 `all` because it proposes unverified OCR annotations and is not a production
-removal path. `classify-onnx` is excluded from `all`; install it only for `backend="onnx"`.
+removal path.
 The TrustMark branch requires `trustmark>=0.9.2`, the first release without a
 NumPy 1.x pin, so it installs on every supported Python; its detector tests pass
 on Python 3.13 with NumPy 2 (checked 2026-09-23). The `all` bundle selects the production removal and default classifier branches;
@@ -260,19 +256,18 @@ operations and reports missing dependencies for pixel operations.
 
 | Route | Selecting optional features | Interface coverage |
 | --- | --- | --- |
-| pip in a virtual environment | `python -m pip install "remove-ai-watermarks[all,text-draft,classify-onnx]"` | CLI and public Python API |
-| uv tool | `uv tool install --force --python 3.12 "remove-ai-watermarks[all,text-draft,classify-onnx]"` | CLI; use a project environment to import the Python API |
-| pipx | `pipx install --force --python python3.12 "remove-ai-watermarks[all,text-draft,classify-onnx]"` | CLI; its environment is isolated from application Python |
-| Homebrew | `brew install wiltodelta/tap/remove-ai-watermarks --with-all --with-text-draft --with-classify-onnx` | CLI; its environment is isolated from application Python |
-| Source checkout | `uv sync --extra all --extra text-draft --extra classify-onnx` | CLI and public Python API in the project environment |
+| pip in a virtual environment | `python -m pip install "remove-ai-watermarks[all,text-draft]"` | CLI and public Python API |
+| uv tool | `uv tool install --force --python 3.12 "remove-ai-watermarks[all,text-draft]"` | CLI; use a project environment to import the Python API |
+| pipx | `pipx install --force --python python3.12 "remove-ai-watermarks[all,text-draft]"` | CLI; its environment is isolated from application Python |
+| Homebrew | `brew install wiltodelta/tap/remove-ai-watermarks --with-all --with-text-draft` | CLI; its environment is isolated from application Python |
+| Source checkout | `uv sync --extra all --extra text-draft` | CLI and public Python API in the project environment |
 | Agent Skill and plugins | Choose the CLI extras through the installation reference | Guides the installed CLI; does not bundle backends |
 | MCP | Start an existing CLI installation, or select extras with `uvx --from` | Every CLI operation and the public API-only backends via the [MCP catalog](mcp-server.md#complete-operation-tools) |
 | ComfyUI nodes | The node package installs the complete public backend set | Existing image tensor nodes plus typed nodes for video, text, classifiers, and every catalog operation |
 | Hugging Face Space | The Space installs the complete public backend set | Image, video, text, and classifier controls; image regeneration needs a CUDA Space |
 
-These full-selection examples include the proposal-only OCR backend that `all`
-intentionally omits. `classify-onnx` is explicit for clarity; `all` already brings
-ONNX Runtime through the image fill backends. `dev` adds development tools and
+These full-selection examples include the proposal-only OCR backend (`text-draft`)
+that `all` intentionally omits. `dev` adds development tools and
 oracles, not additional public runtime features.
 
 Python 3.12 is the recommended starting point when every optional backend is

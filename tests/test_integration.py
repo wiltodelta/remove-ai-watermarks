@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 from pathlib import Path
@@ -33,7 +32,7 @@ def test_catalog_covers_every_leaf_and_every_parameter() -> None:
     catalog = integration.operation_catalog()
     actual = {item["id"]: {p["name"] for p in item["parameters"]} for item in catalog if "command" in item}
     assert actual == expected
-    assert {item["id"] for item in catalog if "command" not in item} == {"api_classify_onnx", "api_draft_text"}
+    assert {item["id"] for item in catalog if "command" not in item} == {"api_draft_text"}
     json.dumps(catalog)
     advertised = {tool["name"]: tool["inputSchema"] for tool in mcp_server.tools()}
     for item in catalog:
@@ -126,24 +125,20 @@ def test_secret_never_reaches_logs_or_responses(monkeypatch, caplog) -> None:
     assert "[redacted]" in result["stderr"]
 
 
-def test_api_onnx_passes_the_selected_backend(monkeypatch, capsys) -> None:
-    from remove_ai_watermarks import classify, optional_deps
-
-    @dataclasses.dataclass
-    class Result:
-        label: str = "unknown"
+def test_api_draft_text_passes_validated_arguments(monkeypatch, capsys) -> None:
+    from remove_ai_watermarks import optional_deps, text_draft
 
     calls = []
 
     def fake(path, **kwargs):
         calls.append((path, kwargs))
-        return Result()
+        return text_draft.TextDraft()
 
-    monkeypatch.setattr(classify, "classify_pixels", fake)
+    monkeypatch.setattr(text_draft, "draft_text_lines", fake)
     monkeypatch.setattr(optional_deps, "module_available", lambda *modules: True)
-    integration._execute(operation("api_classify_onnx"), {"source": "photo.png"})
-    assert calls == [(Path("photo.png"), {"backend": "onnx"})]
-    assert json.loads(capsys.readouterr().out) == {"label": "unknown"}
+    integration._execute(operation("api_draft_text"), {"source": "photo.png", "min_score": 0.9, "stable": False})
+    assert calls == [(Path("photo.png"), {"min_score": 0.9, "stable": False})]
+    assert json.loads(capsys.readouterr().out) == {"accepted": [], "rejected": []}
 
 
 def test_widget_defaults_do_not_override_the_selected_video_recipe():
@@ -162,8 +157,8 @@ def test_missing_api_backend_names_the_extra(monkeypatch):
     from remove_ai_watermarks import optional_deps
 
     monkeypatch.setattr(optional_deps, "module_available", lambda *names: False)
-    with pytest.raises(RuntimeError, match="classify-onnx"):
-        integration._execute(operation("api_classify_onnx"), {"source": "photo.png"})
+    with pytest.raises(RuntimeError, match="text-draft"):
+        integration._execute(operation("api_draft_text"), {"source": "photo.png"})
 
 
 def test_visible_detection_does_not_advertise_an_output():

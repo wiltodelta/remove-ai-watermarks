@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. The video extra includes FFmpeg and ffprobe on supported platforms. Installer may be uv, pipx, pip, or Homebrew.
 metadata:
   author: wiltodelta
-  version: "1.0.19"
+  version: "1.0.20"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -137,10 +137,10 @@ Default: inspect first.
 | Text token watermark / full text clean | `text invisible` or `text all` | `text invisible` and `text all --invisible` need `diffusion` (`torch` + `transformers`) |
 | Everything on an image | `all` | `image_all=do_not_run_writes_nothing` |
 | A directory | `batch` or `video batch` | same as the mode |
-| No signal found, user still wants a guess | `classify` or `classify-source` | it is a guess, not provenance |
+| No signal found, user still wants a provider guess | `classify-source` | it is a guess, not provenance |
 
-For a public Python API feature without a CLI option, such as draft OCR or the
-ONNX classifier backend, use the library in an isolated Python environment.
+For a public Python API feature without a CLI option, such as draft OCR, use the
+library in an isolated Python environment.
 Read the canonical [Python API guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md)
 and install the required extras using [references/install.md](references/install.md).
 Do not invent a CLI flag or assume a tool installation is importable from the
@@ -252,9 +252,10 @@ Output:
   the file untouched.
 - A question ("is this AI-generated?") is answered by `identify` alone. Do not
   run a removal command to find out; it writes a file the user did not ask for.
-- `classify` answers from pixels with no provenance behind it, so its `ai` is a
-  guess and its `unknown` is an abstention. Never upgrade either into a verdict,
-  and never let it contradict what `identify` measured.
+- `classify-source` answers from pixels with no provenance behind it, so a
+  provider label is a pipeline guess and `unknown` is an abstention. Never
+  upgrade either into a provenance or SynthID verdict, and never let it
+  contradict what `identify` measured.
 - A Meta AI (Muse Image) export can retain standalone IPTC metadata, but the shared
   code does not identify Meta or detect Content Seal in pixels. Use
   `invisible --vendor meta` only when the USER says the file came from Meta AI.

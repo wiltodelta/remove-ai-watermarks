@@ -12,9 +12,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Python API](python-api.md) | You want to call the package from Python. |
 | [Supported signals](supported-signals.md) | You need to know which visible marks, metadata formats, text wrappers, and invisible signals are covered. |
 | [Known limitations](known-limitations.md) | You need the quality, device, format, or verification boundaries. |
-| [Photo pixel classification](photo-classify.md) | You want `classify` / `classify_pixels`: AI versus camera, optional provider. |
-| [Source-pipeline classification](source-classify.md) | You want an abstaining 10-provider export-pipeline and model-version signal after metadata removal. |
-| [Photo classifier training](photo-classify-training.md) | You need the retrain pack, public sources, and what is not published. |
+| [Source-pipeline classification](source-classify.md) | You want an abstaining 10-provider export-pipeline and model-version signal after metadata removal (`classify-source` / `classify_source`). |
 | [Scope, safety, and legal notes](legal-and-safety.md) | You need the intended use and legal context. |
 
 ## Maintainer references
@@ -26,7 +24,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Watermark benchmark kernel](benchmark-kernel.md) | Reproducible local detection, removal-observation, and fidelity measurements. |
 | [Code provenance](code-provenance.md) | Required notices for licensed derivative work. |
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
-| [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, photo-classify Hub model, ComfyUI Registry, and the release workflow. |
+| [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, `wiltodelta/raiw-source-classify` Hub model, ComfyUI Registry, and the release workflow. |
 | [Agent skill](agent-skill.md) | Install and maintain the published Agent Skill, the Claude plugin and the Codex plugin. |
 | [MCP server](mcp-server.md) | Connect an MCP client to `remove-ai-watermarks mcp`, or publish it to the MCP registry. |
 | [Watermarking landscape](watermarking-landscape.md) | Vendor signals and detection approaches. |
@@ -41,8 +39,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [ControlNet removal research](controlnet-removal-pipeline-research.md)
 - [Qwen improvement research](qwen-improvement-research.md)
 - [Doubao reverse-alpha research](research-doubao-distillation.md)
-- [AI-generated image classifiers](ai-generated-image-classifiers.md) (photo AI-versus-camera freeze consumed by `classify_pixels`, not `identify`)
-- [Photo classifier Hugging Face card](photo-classify-hf/README.md) (Hub publication text of the Model 1 freeze + 10-provider `multi-provider-source-v6` cascade)
+- [AI-generated image classifiers](ai-generated-image-classifiers.md) (retired photo AI-versus-camera freeze study; superseded by `source-classify`)
 - [SynthID source classifiers](synthid-classifiers.md) (metadata-free OpenAI/Gemini source finding and provider-lineage experiments)
 - [Source-pipeline classifier model card](source-classify-hf/README.md) (published derivative weights, aggregate evaluation, and intended-use boundary)
 - [SynthID local detector research](synthid-detector-research.md)

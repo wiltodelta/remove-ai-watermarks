@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 
 def operation_catalog() -> list[dict[str, Any]]:
-    """Describe every non-server CLI leaf and the public API-only backends."""
+    """Describe every non-server CLI leaf and the public API-only backend."""
     import click
 
     from remove_ai_watermarks.cli import main
@@ -80,30 +80,17 @@ def operation_catalog() -> list[dict[str, Any]]:
         )
 
     walk(main, [])
-    source = {"name": "source", "schema": {"type": "string", "description": "Source image path"}, "required": True}
-    operations.extend(
-        [
-            {
-                "id": "api_classify_onnx",
-                "extra": "classify-onnx",
-                "modules": ["numpy", "cv2", "torch", "transformers", "onnxruntime"],
-                "title": "classify with ONNX",
-                "description": "Classify a photograph with the CPU ONNX backend. This is a guess, not provenance.",
-                "parameters": [source],
-            },
-            {
-                "id": "api_draft_text",
-                "extra": "text-draft",
-                "modules": ["numpy", "cv2", "paddle", "paddleocr"],
-                "title": "draft text for verification",
-                "description": "Propose OCR manifest lines. Every accepted proposal still requires human verification.",
-                "parameters": [
-                    source,
-                    {"name": "min_score", "schema": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.85}},
-                    {"name": "stable", "schema": {"type": "boolean", "default": True}},
-                ],
-            },
-        ]
+    operations.append(
+        {
+            "id": "api_draft_text",
+            "title": "draft text for verification",
+            "description": "Propose OCR manifest lines. Every accepted proposal still requires human verification.",
+            "parameters": [
+                {"name": "source", "schema": {"type": "string", "description": "Source image path"}, "required": True},
+                {"name": "min_score", "schema": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.85}},
+                {"name": "stable", "schema": {"type": "boolean", "default": True}},
+            ],
+        }
     )
     return operations
 
@@ -278,22 +265,17 @@ def _execute(operation: dict[str, Any], arguments: dict[str, Any]) -> None:
         command, _output = plan_operation(operation, arguments)
         main.main(command, prog_name="remove-ai-watermarks")
         return
+    if operation["id"] != "api_draft_text":
+        raise ValueError(f"Unsupported API operation: {operation['id']}")
     values = validate_arguments(operation, arguments)
     from remove_ai_watermarks.optional_deps import module_available
 
-    if not module_available(*operation["modules"]):
-        extra = operation["extra"]
-        raise RuntimeError(f"Missing backend. Install: pip install 'remove-ai-watermarks[{extra}]'")
-    if operation["id"] == "api_classify_onnx":
-        from remove_ai_watermarks.classify import classify_pixels
+    if not module_available("numpy", "cv2", "paddle", "paddleocr"):
+        raise RuntimeError("Missing backend. Install: pip install 'remove-ai-watermarks[text-draft]'")
+    from remove_ai_watermarks.text_draft import draft_text_lines
 
-        result = classify_pixels(Path(values["source"]), backend="onnx")
-    else:
-        from remove_ai_watermarks.text_draft import draft_text_lines
-
-        result = draft_text_lines(
-            Path(values["source"]), min_score=values.get("min_score", 0.85), stable=values.get("stable", True)
-        )
+    kwargs = {key: values[key] for key in ("min_score", "stable") if key in values}
+    result = draft_text_lines(Path(values["source"]), **kwargs)
     sys.stdout.write(json.dumps(dataclasses.asdict(result), default=str))
 
 

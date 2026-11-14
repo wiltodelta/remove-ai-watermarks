@@ -156,24 +156,9 @@ trustmark = [
     # CPython 3.13+; its 13 detector tests pass on 3.13 with NumPy 2.5.3.
     "trustmark>=0.9.2",
 ]
-# Metadata-free photo classifier (Model 1 then gated Model 2). CPU torch is
-# enough. identify never imports this extra. Weights download on first use.
-classify = [
-    "remove-ai-watermarks[pixels]",
-    "torch>=2.0.0",
-    "transformers>=5,<5.16",
-    "tokenizers>=0.22,<0.23",
-    "huggingface-hub>=0.20.0,<2",
-]
-# Optional vision-only CPU runtime for the photo classifier. Keep it separate
-# because PyTorch remains the default and ONNX Runtime is needed only on opt-in.
-classify-onnx = [
-    "remove-ai-watermarks[classify]",
-    "onnxruntime>=1.24.0",
-]
-# Compact OpenAI/Google/unknown source-export classifier. This is intentionally
-# separate from the heavier photo AI-versus-camera classifier and is not a
-# SynthID detector. Weights download on first use.
+# Compact 10-provider source-pipeline and model-version classifier (pure NumPy,
+# CPU-only). identify never imports this extra, and it is not a SynthID
+# detector. Weights download on first use.
 source-classify = [
     "remove-ai-watermarks[pixels]",
     "huggingface-hub>=0.20.0,<2",
@@ -226,7 +211,7 @@ dev = [
 ]
 # ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
 # independently sufficient for a removal, which it is not.
-all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,classify,source-classify]"]
+all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,source-classify]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"

@@ -6,7 +6,7 @@ and pipeline modules are intended for maintainers and specialized workflows.
 Dependency groups are identical for the CLI and Python API. The default install
 covers metadata extraction, normalization, verdict logic, and stripping.
 Array/pixel APIs use `pixels`; visible removal uses `visible`; DWT-DCT detection
-uses `detect`; pixel photo classification uses `classify`; lightweight source-pipeline classification uses `source-classify`; invisible image removal uses `qwen-zimage` and an NVIDIA GPU; and
+uses `detect`; lightweight source-pipeline classification uses `source-classify`; invisible image removal uses `qwen-zimage` and an NVIDIA GPU; and
 visible video processing uses `video`. The video-pixel SynthID-removal profile is
 a separate VAE path that still runs on CPU and combines `video` and `diffusion`. Add `heif`
 independently when path-based pixel APIs must decode HEIC, HEIF, or AVIF. See
@@ -268,40 +268,6 @@ per-mark records; image arrays are not retained in the batch summary. Other
 modes leave those two fields unset and empty. The original `BatchSummary`
 aggregate fields and `RemoveAllResult.visible_label` remain available for
 existing callers.
-
-## Classify a photograph from pixels
-
-This is not provenance. `identify` does not call it. Install
-`remove-ai-watermarks[classify]` first.
-
-```python
-from pathlib import Path
-
-from remove_ai_watermarks.classify import classify_pixels
-
-result = classify_pixels(Path("input.png"))
-print(result.label, result.detector, result.provider)
-```
-
-`label` is `ai` only on a DEFINITELY detector result (ridge AND freeze MLP).
-POSSIBLY is `unknown`. Camera-like photographs are `human`. `provider` is one
-of the 10 canonical providers (`openai`, `google`, `bytedance`, `flux`,
-`stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`) only
-when `label` is `ai`, the receipt gate misses, and the 512-d
-`multi-provider-source-v6.npz` Model 2 ensemble clears its calibrated
-acceptance threshold. `bytedance` names the shared Doubao+Jimeng generator
-lineage; generators outside those 10 families (Qwen, Kling, Yuanbao, ...)
-abstain to `None`. Otherwise `provider` is `None`, including when 512-d
-extraction refuses images smaller than `256x256`.
-
-`device` is a library parameter: `None` / `"auto"` detect, `"cpu"` or `"cuda"`
-pin. It is not a CLI option. `backend="onnx"` selects the optional CPU-only
-FP32 vision runtime and requires `remove-ai-watermarks[classify-onnx]`;
-`backend="torch"` remains the default.
-
-Missing extra raises `RuntimeError` with the quoted install command
-`'remove-ai-watermarks[classify]'`. Guide:
-[photo pixel classification](photo-classify.md).
 
 ## Inspect provenance
 
@@ -1020,8 +986,8 @@ keyed statistical scorers (`score_synthid_text`, `score_gumbel_text`,
 ## Integration operation catalog
 
 `remove_ai_watermarks.integration.operation_catalog()` derives typed operations
-from every non-server CLI leaf, plus `api_classify_onnx` and `api_draft_text` for
-public API-only features. MCP, ComfyUI, and the Space consume the same catalog.
+from every non-server CLI leaf, plus `api_draft_text` for the public API-only
+OCR proposal feature. MCP, ComfyUI, and the Space consume the same catalog.
 `input_schema(operation)` provides its JSON Schema; `widget_arguments` translates
 optional visual controls without overriding profile defaults.
 `run_operation(operation, arguments)` validates the payload, preserves the source,

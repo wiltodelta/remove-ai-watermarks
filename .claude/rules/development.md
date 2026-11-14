@@ -61,7 +61,7 @@ From a worktree without its own `.venv`, `uv run` imports the package from the m
 
 Keep any research script that needs a cloud GPU account outside this repository; `scripts/` carries no `modal` import, and `test_scripts_carry_no_cloud_gpu_harness` is the canary. Leave only the offline analysis step here, as `scripts/analyze_engine_selection_study.py` is. Do not mechanize the identifier half of the boundary audit in a tracked file: a tracked denylist publishes the strings it exists to keep out.
 
-Classifier training scripts and local training caches/datasets live exclusively in the private `wiltodelta/raiw-classifier-training` repository (with `images/`, `data/`, `.npz`, `.joblib`, and `.pt` gitignored); this repository keeps only runtime inference (`classify.py`, `source_classify.py`) and Hugging Face Hub publishers (`scripts/publish_photo_classify_hf.py`, `scripts/publish_source_classify_hf.py`).
+Classifier training scripts and local training caches/datasets live exclusively in the private `wiltodelta/raiw-classifier-training` repository (with `images/`, `data/`, `.npz`, `.joblib`, and `.pt` gitignored); this repository keeps only runtime inference (`source_classify.py`) and its Hugging Face Hub publisher (`scripts/publish_source_classify_hf.py`).
 
 ## Visible-mark example gallery
 
@@ -78,8 +78,7 @@ Do not classify an entire module as untestable because its main path downloads a
 - tiling geometry and blending in `test_tiling.py`;
 - prompt-embedding cache keying, storage round-trip, and the cross-pipeline reuse that lets a stack load without its text encoder, in `test_qwen_zimage_pipeline.py`;
 - the face stack's dtype in `test_qwen_zimage_pipeline.py`: a subclass that changes the pipeline dtype must not change an inherited stage's. When one profile inherits another's stage, guard the invariants that stage relies on;
-- the photo-classify gate in `test_classify.py`: DEFINITELY is ridge AND MLP, POSSIBLY and receipt-gated inputs do not run the 10-provider `multi-provider-source-v6.npz` Model 2, Model 2 SHA-256 mismatches fail closed, and `identify` imports neither `remove_ai_watermarks.classify` nor `remove_ai_watermarks.source_classify`;
-- the source-export classifier in `test_source_classify.py` and `test_source_features_v4.py`: the Hub revision and artifact hash are immutable, the pickle-free `v3`/`v4`/`v5` schemas, Regime-FiLM `SiLU` residual trunks, decoupled acceptance/attribution invariance, and exact `GELU` are validated, threshold mutation changes the real decision, and `identify` never consumes the result as watermark evidence;
+- the source-export classifier in `test_source_classify.py` and `test_source_features_v4.py`: the Hub revision and artifact hash are immutable, `_resolve_weights_path` fetches `config.json` before the `.npz` artifact and verifies SHA-256, the pickle-free `v3`/`v4`/`v5` schemas, Regime-FiLM `SiLU` residual trunks, decoupled acceptance/attribution invariance, joint posterior confidence calibration, and exact `GELU` are validated, threshold mutation changes the real decision, and `identify` and `has_invisible_target` never import `remove_ai_watermarks.source_classify`;
 - the `InvisibleOptions` defaults in `test_api.py`, compared field by field with the signature they mirror and without an exception table: a field that needs one belongs elsewhere.
 
 Keep `test_every_field_arrives_at_the_engine_with_the_caller_s_value`, which sets every `InvisibleOptions` field off its default and asserts each value arrives; a defaults comparison does not replace it.

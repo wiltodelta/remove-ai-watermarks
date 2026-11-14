@@ -34,7 +34,7 @@
         {
           "type": "named",
           "name": "--with",
-          "value": "remove-ai-watermarks[all,classify-onnx,text-draft]"
+          "value": "remove-ai-watermarks[all,text-draft]"
         }
       ]
     }

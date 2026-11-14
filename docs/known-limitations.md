@@ -22,27 +22,18 @@ the pixels look rather than read a mark, and none of these paths targets them.
 
 ## Pixel classification
 
-`classify` / `classify_pixels` is AI versus camera, not a universal AI detector.
-UI screenshots and digital art are out of contract. Receipt photographs are
-abstained by `receipt-gate.npz` on DEFINITELY: they report `unknown` with
-`detector=definitely` instead of a false `ai` (`59/59` field phone receipts
-gated on `receipt-gate.npz`, `0/99` false `ai` on CORD, at a `5/1,847`
-`ai_test` cost). A photorealistic AI receipt can still score as `human`.
-POSSIBLY is reported as `unknown`. Provider attribution (`multi-provider-source-v6.npz`
-across 10 provider families) runs only after DEFINITELY and abstains to `None`
-for unsupported generators, degraded post-processing, or images smaller than
-`256x256`. Microsoft is not a pixel class.
-
-The command is never started by `identify`. A no-signal provenance result stays
-unknown. This is not a clean verdict and it does not run cleanup. Full guide:
-[photo pixel classification](photo-classify.md).
-
-`classify_source` is a different, lightweight 10-provider source-export and
-model-version classifier. It is useful only while the pixels still resemble an
-original export. Its provider label is not evidence that SynthID is present,
-and `unknown` is not evidence that SynthID is absent (`watermark_truth="unknown"`).
-It is also never started by `identify`. Full guide:
-[source-pipeline classification](source-classify.md).
+`classify_source` / `classify-source` is an abstaining 10-provider source-export
+and model-version classifier (`openai`, `google`, `bytedance`, `flux`,
+`stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`), not a
+provenance verifier or SynthID detector. It is useful only while the pixels
+still resemble a supported export or social-recompressed derivative; generators
+outside those 10 families and images smaller than `256x256` abstain to
+`unknown`. Microsoft is not a pixel class (Bing DALL-E exports score as `openai`
+and Designer Imagen exports score as `google`). Its provider label is not
+evidence that SynthID is present, and `unknown` is not evidence that SynthID is
+absent (`watermark_truth="unknown"`). The command is never started by
+`identify`, does not alter provenance verdicts, and does not run cleanup. Full
+guide: [source-pipeline classification](source-classify.md).
 
 ## Visible removal
 
