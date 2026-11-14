@@ -57,7 +57,7 @@ results.
 
 The first call downloads the exact pinned revision of
 [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify)
-(`multi-provider-source-v5.npz`, verified by SHA-256). Set
+(`multi-provider-source-v6.npz`, verified by SHA-256). Set
 `RAIW_SOURCE_CLASSIFY_WEIGHTS` to the `.npz` file itself or its parent directory
 for an offline deployment.
 

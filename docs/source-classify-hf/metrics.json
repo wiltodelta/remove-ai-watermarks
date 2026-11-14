@@ -1,8 +1,8 @@
 {
   "claim": "abstaining 10-provider source-pipeline classification with version subfamily attribution; not SynthID detection",
   "schema": "multi-provider-source-v5",
-  "artifact_file": "multi-provider-source-v5.npz",
-  "artifact_sha256": "6f9eaf2e8f2f168db019bcbf270fe5c827297f4812eb03fcf39c30b8192e1724",
+  "artifact_file": "multi-provider-source-v6.npz",
+  "artifact_sha256": "87868eea08b8b811999f675186b82b067c4de655981cb7f25114aac00b1dd284",
   "feature_dimension": 512,
   "stacked_stage2_dimension": 666,
   "classes": [
@@ -19,9 +19,9 @@
     "unknown"
   ],
   "corpus_counts": {
-    "total": 135117,
-    "train": 110186,
-    "train_clean": 109510,
+    "total": 145110,
+    "train": 120179,
+    "train_clean": 119503,
     "calibration": 8363,
     "calibration_recomp_neg": 3011,
     "calibration_crop_resize_dev": 2972,
@@ -29,59 +29,59 @@
   },
   "locked_internal_test": {
     "n": 10585,
-    "binary_roc_auc": 0.996949159015361,
-    "binary_pr_auc": 0.998022708213432,
-    "unknown_specificity": 0.99889819303658,
-    "unknown_fpr": 0.0011018069634200088,
-    "photo_fpr": 0.0009161704076958314,
+    "binary_roc_auc": 0.9977294795878008,
+    "binary_pr_auc": 0.9984718883260219,
+    "unknown_specificity": 0.999338915821948,
+    "unknown_fpr": 0.0006610841780520053,
+    "photo_fpr": 0.0,
     "structured_fpr": 0.0012738853503184713,
-    "aggregate_target_recall": 0.8123036216305606,
-    "clean_provenance_target_recall": 0.8206585325087749,
-    "any_ai_recall": 0.849512154787498,
-    "any_ai_precision": 0.9990276157137301,
-    "cross_provider_errors": 225,
+    "aggregate_target_recall": 0.832809657681495,
+    "clean_provenance_target_recall": 0.8413839211098111,
+    "any_ai_recall": 0.8667107656689267,
+    "any_ai_precision": 0.9994279176201373,
+    "cross_provider_errors": 205,
     "recall": {
-      "openai": 0.9113667117726658,
-      "google": 0.8625180897250362,
-      "bytedance": 0.7069408740359897,
-      "flux": 0.7693441414885778,
-      "stable_diffusion": 0.7214659685863875,
+      "openai": 0.9208389715832206,
+      "google": 0.8639652677279306,
+      "bytedance": 0.7197943444730077,
+      "flux": 0.8084008843036109,
+      "stable_diffusion": 0.7717277486910995,
       "meta": 0.8617021276595744,
-      "midjourney": 0.8130081300813008,
-      "ideogram": 0.8135593220338984,
-      "firefly": 0.6407766990291263,
+      "midjourney": 0.8211382113821138,
+      "ideogram": 0.847457627118644,
+      "firefly": 0.6116504854368932,
       "xai": 0.4583333333333333
     },
     "precision": {
-      "openai": 0.9676724137931034,
-      "google": 0.9667477696674777,
-      "bytedance": 0.9821428571428571,
-      "flux": 0.9396939693969397,
-      "stable_diffusion": 0.9773049645390071,
-      "meta": 0.9529411764705882,
-      "midjourney": 0.8547008547008547,
-      "ideogram": 0.768,
-      "firefly": 0.9166666666666666,
-      "xai": 1.0
+      "openai": 0.9611581920903954,
+      "google": 0.9746938775510204,
+      "bytedance": 0.9893992932862191,
+      "flux": 0.9522569444444444,
+      "stable_diffusion": 0.9813581890812251,
+      "meta": 0.9878048780487805,
+      "midjourney": 0.8782608695652174,
+      "ideogram": 0.7874015748031497,
+      "firefly": 0.9130434782608695,
+      "xai": 0.9166666666666666
     },
     "standalone_roc_auc": {
-      "openai": 0.9996888401714943,
-      "google": 0.9994266139159973,
-      "bytedance": 0.9852363531719011,
-      "flux": 0.9993553170751985,
-      "stable_diffusion": 0.9993585291396214,
-      "meta": 0.9993951783051865,
-      "midjourney": 0.9999964168879238,
-      "ideogram": 0.9997609639130207,
-      "firefly": 0.9964956120270253,
-      "xai": 0.9997429117085354
+      "openai": 0.9996558903286098,
+      "google": 0.9995648580024351,
+      "bytedance": 0.9863160673478798,
+      "flux": 0.9992638922674749,
+      "stable_diffusion": 0.998662371734671,
+      "meta": 0.9994983261911237,
+      "midjourney": 0.9999838759956573,
+      "ideogram": 0.9998562048539266,
+      "firefly": 0.994773370074495,
+      "xai": 0.9989670559717937
     },
     "real_variety_specificity": {
-      "photo": 0.9990838295923042,
+      "photo": 1.0,
       "photo_retouched": 0.9941002949852508,
       "classical_inpaint": 1.0,
-      "digital_art": 1.0,
-      "game_art": 0.9942528735632183,
+      "digital_art": 0.9977272727272727,
+      "game_art": 1.0,
       "vector": 1.0,
       "interface": 1.0,
       "diagram": 1.0,
@@ -116,9 +116,9 @@
       },
       "game_art": {
         "evaluated": 230,
-        "false_positives": 1,
-        "fpr": 0.004347826086956522,
-        "specificity": 0.9956521739130435
+        "false_positives": 0,
+        "fpr": 0.0,
+        "specificity": 1.0
       },
       "interface": {
         "evaluated": 342,
@@ -140,9 +140,9 @@
       },
       "stress_recompressed": {
         "evaluated": 300,
-        "false_positives": 0,
-        "fpr": 0.0,
-        "specificity": 1.0
+        "false_positives": 1,
+        "fpr": 0.0033333333333333335,
+        "specificity": 0.9966666666666667
       }
     }
   },
@@ -153,14 +153,14 @@
     "specificity": 1.0
   },
   "stage2_version_accuracy": {
-    "openai": 0.9569413511507052,
-    "google": 0.9773489932885906,
-    "bytedance": 0.9745454545454545,
-    "flux": 0.9549808429118773,
-    "stable_diffusion": 0.9753265602322206,
-    "midjourney": 0.98,
-    "ideogram": 0.7604166666666666,
+    "openai": 0.9559147685525349,
+    "google": 0.9698492462311558,
+    "bytedance": 0.9678571428571429,
+    "flux": 0.9498632634457612,
+    "stable_diffusion": 0.9796472184531886,
+    "midjourney": 0.9801980198019802,
+    "ideogram": 0.77,
     "firefly": 1.0,
-    "xai": 0.7272727272727273
+    "xai": 0.7727272727272727
   }
 }

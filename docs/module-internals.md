@@ -1537,12 +1537,12 @@ both backends explicitly (`tests/test_classify.py` pins the seam). User guide:
 
 [`source_classify.py`](../src/remove_ai_watermarks/source_classify.py) provides
 the opt-in 10-provider source-pipeline classifier (`classify_source` and CLI
-command `classify-source`). By default it downloads `multi-provider-source-v5.npz`
+command `classify-source`). By default it downloads `multi-provider-source-v6.npz`
 (`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
 or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
 runtime loading across three `.npz` bundle schemas:
 
-- `multi-provider-source-v5` (`512-d`, pinned default, `_SourceModelV5`): reuses
+- `multi-provider-source-v5` (`512-d`, pinned default schema used by `multi-provider-source-v6.npz` and `multi-provider-source-v5.npz`, `_SourceModelV5`): reuses
   the 512-dimensional
   physics-grounded descriptor in
   [`_internal/source_features_v4.py`](../src/remove_ai_watermarks/_internal/source_features_v4.py)

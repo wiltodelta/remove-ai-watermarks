@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -24,14 +25,14 @@ def test_hub_ids_match_the_runtime_loader() -> None:
 def test_stage_release_copies_only_public_artifacts(tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
-    (source / "multi-provider-source-v5.npz").write_bytes(b"weights")
+    (source / publish.MODEL_FILE).write_bytes(b"weights")
     destination = tmp_path / "stage"
     publish.stage_release(destination, source)
     assert sorted(path.name for path in destination.iterdir()) == sorted(publish.PUBLIC_FILES)
 
 
 def test_stage_release_requires_the_model(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match=r"multi-provider-source-v5\.npz"):
+    with pytest.raises(SystemExit, match=re.escape(publish.MODEL_FILE)):
         publish.stage_release(tmp_path / "stage", tmp_path)
 
 

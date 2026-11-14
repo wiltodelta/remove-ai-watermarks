@@ -21,12 +21,13 @@ log = logging.getLogger(__name__)
 
 HUB_REPO = "wiltodelta/raiw-source-classify"
 RETIRED_HUB_REPOS = ("wiltodelta/openai-google-image-source-classifier",)
-MODEL_FILE = "multi-provider-source-v5.npz"
+MODEL_FILE = "multi-provider-source-v6.npz"
 RETIRED_FILES = (
     "source-pipeline-mlp.npz",
     "openai-google-source-v1.npz",
     "multi-provider-source-v3.npz",
     "multi-provider-source-v4.npz",
+    "multi-provider-source-v5.npz",
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CARD_DIR = REPO_ROOT / "docs" / "source-classify-hf"
