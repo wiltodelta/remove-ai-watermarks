@@ -55,7 +55,7 @@ def _source_result(label: str = "unknown") -> SourceClassification:
 
 def test_hub_snapshot_and_provider_artifact_match_source_classify() -> None:
     assert WEIGHTS_REPO == "wiltodelta/raiw-photo-classify"
-    assert len(WEIGHTS_REVISION) == 40
+    assert WEIGHTS_REVISION == "83b0a7faae0b0ce61d53a78d7efe55e5d86ee143"
     assert PROVIDER_FILE == source_classify.MODEL_FILE == "multi-provider-source-v6.npz"
     assert PROVIDER_SHA256 == source_classify.MODEL_SHA256
     assert PROVIDER_CLASSES == ALL_PROVIDER_CLASSES
