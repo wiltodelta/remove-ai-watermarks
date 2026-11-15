@@ -440,7 +440,7 @@ def evaluate_hf_binary_detector(spec: OpenDetectorSpec, samples: list[SampleItem
 
     processor = AutoImageProcessor.from_pretrained(spec.repo_id, revision=spec.revision)
     model = AutoModelForImageClassification.from_pretrained(spec.repo_id, revision=spec.revision)
-    model.eval()
+    model.train(False)
     model.to("cpu")
 
     id2label = {int(k): str(v).lower() for k, v in model.config.id2label.items()}
