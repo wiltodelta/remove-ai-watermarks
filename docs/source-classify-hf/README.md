@@ -45,12 +45,13 @@ print(res.label, res.version_subfamily, round(res.confidence, 4))
 # e.g. 'openai' 'openai:gpt_image_1_5' 0.9942  (or 'unknown' None 0.9815 on real photos)
 ```
 
-Command line (installed CLI or zero-setup `uv run` with the bundled `infer.py`):
+Command line (installed CLI or zero-setup `uv run` with the bundled `infer.py` and open-detector `benchmark.py`):
 
 ```bash
 remove-ai-watermarks classify-source image.jpg --json
 uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py image.jpg --json
 uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py --inspect-weights
+uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/benchmark.py
 ```
 
 Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v6.npz` or its parent directory for air-gapped deployments.

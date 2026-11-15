@@ -102,11 +102,9 @@ def test_publish_uploads_allowlist_and_deletes_retired_hub_repos(
     assert ("wiltodelta/raiw-photo-classify", "model", True) in deleted
 
 
-def test_stage_release_includes_standalone_infer_script_and_colab_notebook() -> None:
-    assert "infer.py" in publish.TRACKED_CARD_FILES
-    assert "demo.ipynb" in publish.TRACKED_CARD_FILES
-    assert (publish.CARD_DIR / "infer.py").is_file()
-    assert (publish.CARD_DIR / "demo.ipynb").is_file()
+def test_stage_release_includes_standalone_scripts_and_colab_notebook() -> None:
+    assert {"infer.py", "benchmark.py", "demo.ipynb"} <= set(publish.TRACKED_CARD_FILES)
+    assert all((publish.CARD_DIR / name).is_file() for name in publish.TRACKED_CARD_FILES)
 
 
 def _load_module(name: str, path: Path) -> object:
@@ -116,6 +114,7 @@ def _load_module(name: str, path: Path) -> object:
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -179,3 +178,50 @@ def test_demo_notebook_is_valid_nbformat_and_compiles_cleanly() -> None:
         assert cell.get("outputs") == []
         source_lines = [line for line in cell["source"] if not line.lstrip().startswith(("%", "!"))]
         compile("".join(source_lines), f"demo.ipynb#cell-{idx}", "exec")
+
+
+def test_standalone_benchmark_script_summarizes_and_formats_metrics() -> None:
+    from typing import Any
+
+    bench_mod: Any = _load_module("raiw_hf_benchmark", publish.CARD_DIR / "benchmark.py")
+    samples = [
+        bench_mod.SampleItem(
+            sha256="a" * 64,
+            category="ui_screenshot",
+            expected_provider=None,
+            container_format="PNG",
+            width=1024,
+            height=768,
+            raw_bytes=b"",
+        ),
+        bench_mod.SampleItem(
+            sha256="b" * 64,
+            category="ai_flux",
+            expected_provider="flux",
+            container_format="JPEG",
+            width=1024,
+            height=1024,
+            raw_bytes=b"",
+        ),
+    ]
+    preds = [
+        {"pred_ai": False, "pred_provider": None},
+        {"pred_ai": True, "pred_provider": "flux"},
+    ]
+    summary = bench_mod._summarize_predictions(
+        model_id="wiltodelta/raiw-source-classify",
+        revision="deadbeef",
+        runtime="NumPy + OpenCV (CPU)",
+        weights_mb=15.52,
+        license_id="apache-2.0",
+        median_cpu_ms=500.0,
+        samples=samples,
+        preds=preds,
+    )
+    assert summary["non_ai_fpr_pct"] == 0.0
+    assert summary["ai_recall_pct"] == 100.0
+    assert summary["precision_pct"] == 100.0
+    assert summary["provider_attribution_pct"] == 100.0
+    md = bench_mod.format_markdown_table([summary])
+    assert "`wiltodelta/raiw-source-classify`" in md
+    assert "0.0% (0/1)" in md

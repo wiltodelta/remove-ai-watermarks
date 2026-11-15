@@ -35,7 +35,7 @@ RETIRED_FILES = (
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CARD_DIR = REPO_ROOT / "docs" / "source-classify-hf"
-TRACKED_CARD_FILES = ("README.md", "metrics.json", "infer.py", "demo.ipynb")
+TRACKED_CARD_FILES = ("README.md", "metrics.json", "infer.py", "benchmark.py", "demo.ipynb")
 PUBLIC_FILES = (*TRACKED_CARD_FILES, CONFIG_FILE, MODEL_FILE)
 
 

@@ -88,7 +88,8 @@ release fan-out. It is published separately with
 `.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
 derivative `multi-provider-source-v6.npz` artifact from the declared GitHub
 model freeze, verifies its SHA-256, and uploads only that file plus the tracked
-`README.md` and `metrics.json` under `docs/source-classify-hf/` and a
+`README.md`, `metrics.json`, `infer.py`, `benchmark.py`, and `demo.ipynb` under
+`docs/source-classify-hf/` and a
 synthesized `config.json` (while deleting retired Hub model repositories). A library version bump alone
 does not upload new weights - bump `WEIGHTS_REVISION` in
 `src/remove_ai_watermarks/source_classify.py` when a new Hub commit must reach
