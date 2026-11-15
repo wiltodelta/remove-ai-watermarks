@@ -15,7 +15,7 @@ The `visible` command registers these mark keys:
 | `jimeng` | `★ 即梦AI` | Bottom right | Vendor specific text detector. |
 | `qwen` | `千问AI生成` or the three-lobe Qwen symbol | Bottom right | Separate strict templates cover the text and Qwen Create symbol variants. |
 | `wan` | Wan logo and `Wan` wordmark | Bottom right, hugging the corner | Provisional: one real Wan 2.7 Pro export. Requires NCC >= 0.55 and a match that ends within 0.015 of the short side from both edges. |
-| `kling` | `可灵AI 3.0` or `KlingAI 3.0` | Bottom right | Separate calibrated silhouettes cover the older CJK and current IMAGE 3.0 Latin variants; a glyph-detail gate rejects plain UI boundaries. |
+| `kling` | `可灵AI 3.0`/`4.0` or `KlingAI 3.0`/`4.0` | Bottom right | Separate calibrated silhouettes cover the CJK and Latin 3.0/4.0 variants; a glyph-detail gate rejects plain UI boundaries. |
 | `yuanbao` | `元宝` over `AI生成` | Bottom right | Separate strict and provenance-corroborated templates cover the measured two-line rasterizations. |
 | `dola` | `Dola AI` | Bottom right | Text detector and detector-aligned wordmark footprint. |
 | `workbuddy` | `AI生成` and `WORKBUDDY>_` | Bottom right | Separate templates cover the single-line and stacked two-line layouts; corroborated by the registered Tencent WorkBuddy TC260 producer code. |
@@ -63,7 +63,7 @@ pill detector; the generic pill shape does not attribute LiblibAI on its own.
 `video identify`, `video visible`, and `video all` share this registry and the
 same temporal arbiter. It is separate from the image registry because selection
 is made over a sequence rather than one raster. The default `auto` mode scans
-all seven entries in one decode pass and selects the first temporally stable
+all eight entries in one decode pass and selects the first temporally stable
 match in table order, subject to the Veo/Sora overlap exception above; an
 explicit mark restricts the scan to that row.
 Accepted fills are motion-aligned across adjacent frames by default. The prior
@@ -369,7 +369,9 @@ not a universal clean verdict.
 | Honor YOYO AI editing | No registered AI mark; forum account overlay is separate | No registered pixel decoder | EXIF UserComment TC260 AIGC with nested RSA/content signature, reported unsupported |
 | Samsung Galaxy AI | One locale specific mark | No registered pixel decoder | C2PA and Samsung markers |
 | Google Photos AI edits | None | SynthID provenance inference: 4/4 earlier edits positive (2026-09-25); large eraser and restyle positive, two small edits indeterminate (2026-10-01 UTC). No SynthID action in the manifest | C2PA signed "Google Photos" with a `compositeWithTrainedAlgorithmicMedia` action, plus XMP `photoshop:Credit` `Edited with Google AI` |
-| Apple Image Playground and Photos Clean Up | None | No registered pixel decoder; SynthID announced by Apple for a later update | XMP `photoshop:Credit` (`Apple Image Playground`, `Apple Photos Generative Edit: Clean Up`) plus IPTC digitalSourceType; no C2PA on measured 2026-09 output |
+| Apple Image Playground and Photos Clean Up | None | No registered pixel decoder; SynthID announced by Apple for a later update | XMP `photoshop:Credit` (`Apple Image Playground`, `Apple Photos Generative Edit: Clean Up`) with or without IPTC `digitalSourceType`; no C2PA on measured 2026-09 output |
+| xAI Grok / Aurora / Grok Imagine | None | No registered pixel decoder | C2PA signed `xAI Grok Imagine`, legacy EXIF/XMP/PNG/IPTC `Signature: <base64>` + UUID pair, and ISOBMFF `\xa9cmt` / `comment` `Signature: <base64>` video tag |
+| Topaz Labs and CyberLink PhotoDirector | None | No registered pixel decoder | C2PA attribution when an AI `DigitalSourceType` is present (`asserts_ai=False`), plus ISOBMFF `topazcloud*` / `videoai*` video metadata |
 
 For detector thresholds, measured limits, and incident history, see
 [module internals](module-internals.md) and

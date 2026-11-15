@@ -2759,3 +2759,102 @@ class TestSignalDiscovery20261027Gaps:
         assert report.platform == "Xiaomi"
         assert not any("Google Gemini visible watermark" in watermark for watermark in report.watermarks)
         assert any("not reported as a Gemini mark" in caveat for caveat in report.caveats)
+
+    def test_gpt_image_2_xmp_creatortool_maps_to_openai_vendor(self, tmp_path: Path):
+        from PIL import Image
+        from PIL.PngImagePlugin import PngInfo
+
+        path = tmp_path / "gpt_image_2.png"
+        png_info = PngInfo()
+        png_info.add_itxt(
+            "XML:com.adobe.xmp",
+            "<x:xmpmeta><xmp:CreatorTool>OpenAI GPT Image 2</xmp:CreatorTool></x:xmpmeta>",
+            zip=True,
+        )
+        Image.new("RGB", (48, 48)).save(path, pnginfo=png_info)
+
+        report = identify(path, check_visible=False, check_invisible=False)
+
+        assert report.is_ai_generated is True
+        assert report.platform == "OpenAI GPT Image 2 (embedded generator tag)"
+        assert _vendor_of("GPT Image 2") == "OpenAI"
+
+    @pytest.mark.parametrize(
+        ("credit", "expected_platform"),
+        [
+            ("Apple Photos Generative Edit: Clean Up", "Apple Photos (Clean Up AI edit)"),
+            ("Apple Image Playground", "Apple Image Playground"),
+        ],
+    )
+    def test_standalone_apple_credit_without_digital_source_type_attributes_platform(
+        self,
+        tmp_path: Path,
+        credit: str,
+        expected_platform: str,
+    ):
+        from PIL import Image
+
+        from remove_ai_watermarks.identify import identify_metadata_record
+        from remove_ai_watermarks.metadata_record import collect_metadata_record
+
+        base_jpg = tmp_path / "base.jpg"
+        Image.new("RGB", (48, 48), (90, 100, 110)).save(base_jpg, format="JPEG")
+        raw_jpg = base_jpg.read_bytes()
+        xmp_payload = (
+            b"http://ns.adobe.com/xap/1.0/\x00" + f'<x:xmpmeta photoshop:Credit="{credit}"></x:xmpmeta>'.encode()
+        )
+        app1_seg = _jpeg_segment(0xE1, xmp_payload)
+        path = tmp_path / "apple_credit.jpg"
+        path.write_bytes(raw_jpg[:2] + app1_seg + raw_jpg[2:])
+
+        report = identify(path, check_visible=False, check_invisible=False)
+        record_report = identify_metadata_record(collect_metadata_record(path), path=path)
+
+        assert report.is_ai_generated is True
+        assert report.platform == expected_platform
+        assert record_report.is_ai_generated is True
+        assert record_report.platform == expected_platform
+
+    @pytest.mark.parametrize(
+        ("claim_generator", "issuer", "expected_platform"),
+        [
+            ("Topaz Labs", "Topaz Labs", "Topaz Labs"),
+            ("PhotoDirector 365", "CyberLink Corp.", "CyberLink PhotoDirector"),
+        ],
+    )
+    def test_topaz_and_photodirector_c2pa_attribute_only_when_ai_source_present(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        claim_generator: str,
+        issuer: str,
+        expected_platform: str,
+    ):
+        from PIL import Image
+
+        path = tmp_path / "edited.png"
+        Image.new("RGB", (48, 48)).save(path)
+
+        ai_info = {
+            "c2pa_manifest": "present",
+            "claim_generator": claim_generator,
+            "issuer": issuer,
+            "ai_source": "compositeWithTrainedAlgorithmicMedia",
+            "ai_source_kind": "enhanced",
+            "c2pa_validation_source": "c2pa-python",
+            "c2pa_validation_state": "Valid",
+            "c2pa_integrity": "valid",
+            "c2pa_signature": "valid",
+            "c2pa_signer_trust": "trusted",
+            "c2pa_signer_validity": "valid",
+        }
+        monkeypatch.setattr("remove_ai_watermarks.identify.extract_c2pa_info", lambda _p: dict(ai_info))
+        ai_report = identify(path, check_visible=False, check_invisible=False)
+        assert ai_report.is_ai_generated is True
+        assert ai_report.platform == expected_platform
+        assert ai_report.ai_source_kind == "enhanced"
+
+        non_ai_info = {k: v for k, v in ai_info.items() if k not in {"ai_source", "ai_source_kind"}}
+        monkeypatch.setattr("remove_ai_watermarks.identify.extract_c2pa_info", lambda _p: dict(non_ai_info))
+        non_ai_report = identify(path, check_visible=False, check_invisible=False)
+        assert non_ai_report.is_ai_generated is None

@@ -1494,9 +1494,10 @@ derived results influence detection.
 ### Source-pipeline classifier
 
 [`source_classify.py`](../src/remove_ai_watermarks/source_classify.py) provides
-the opt-in 10-provider source-pipeline classifier (`classify_source` and CLI
-command `classify-source`). By default it downloads `config.json` (for Hub
-download telemetry) and `multi-provider-source-v6.npz`
+the opt-in 10-provider source-pipeline classifier (`classify_source`,
+`resolve_weights_path`, and CLI command `classify-source`). By default it
+downloads `config.json` (for Hub download telemetry) and
+`multi-provider-source-v6.npz`
 (`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
 or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
 runtime loading across three `.npz` bundle schemas:
@@ -1901,10 +1902,12 @@ check remains mandatory. The pill is a separate action rather than a distant
 component unioned into the bottom mask, keeping LaMa and MI-GAN crops local to
 each mark.
 
-Kling keeps two independently gated silhouettes under one registry key. The
-older measured cohort uses `可灵AI 3.0`; a direct authenticated IMAGE 3.0 export
-on 2026-09-04 uses `KlingAI 3.0`. The Latin template scored 0.429 on that 1024 x
-1024 provider original. Its narrow 0.9/1.0/1.1 scale ladder scored at most 0.349
+Kling keeps independently gated silhouettes under one registry key. The older
+measured cohort uses `可灵AI 3.0` (`kling_alpha.png`, plus `kling_4_alpha.png`
+for `可灵AI 4.0`); a direct authenticated IMAGE 3.0 export on 2026-09-04 uses
+`KlingAI 3.0` (`kling_latin_alpha.png`), and Kling 4.0 consumer exports use
+`KlingAI 4.0` (`kling_latin_4_alpha.png`). The Latin template scored 0.429 on
+that 1024 x 1024 provider original (and 0.434 on 720 x 1280 Kling 4.0 frames). Its narrow 0.9/1.0/1.1 scale ladder scored at most 0.349
 across the 94 available neighboring real and synthetic image controls, while an
 adversarial solid corner blob reached 0.379, so its strict gate is 0.40. This is
 one-positive provisional calibration, intentionally separate from the older

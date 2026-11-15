@@ -28,16 +28,28 @@ _MARK_FRAC = 0.12  # measured mark width, fraction of the short side (unimodal)
 _MARGIN = 0.03  # measured right/bottom margin of the real mark
 
 
-def _compose(w: int, h: int, mode: float = _MARK_FRAC, bg: float = 100.0):
-    """Composite the Kling silhouette at the measured size onto a flat bg."""
+def _compose(
+    w: int,
+    h: int,
+    mode: float = _MARK_FRAC,
+    bg: float = 100.0,
+    *,
+    asset_name: str | None = None,
+    margin_x: float = _MARGIN,
+    margin_y: float = _MARGIN,
+):
+    """Composite a Kling silhouette at the measured size onto a flat bg."""
+    from remove_ai_watermarks import _text_mark_engine
+
     img = np.full((h, w, 3), bg, np.float32)
-    at = _alpha_template()
+    at = _alpha_template() if asset_name is None else _text_mark_engine.load_alpha_template(asset_name)
+    assert at is not None
     short = min(w, h)
     gw = int(mode * short)
-    gh = max(4, int(mode * (_ALPHA_HEIGHT_FRAC / _ALPHA_WIDTH_FRAC) * short))
-    margin = int(_MARGIN * short)
-    ax = w - margin - gw
-    ay = h - margin - gh
+    aspect = (_ALPHA_HEIGHT_FRAC / _ALPHA_WIDTH_FRAC) if asset_name is None else (at.shape[0] / at.shape[1])
+    gh = max(4, int(gw * aspect))
+    ax = w - int(margin_x * short) - gw
+    ay = h - int(margin_y * short) - gh
     amap = np.zeros((h, w), np.float32)
     amap[ay : ay + gh, ax : ax + gw] = cv2.resize(at, (gw, gh))
     a3 = amap[:, :, None]
@@ -168,3 +180,30 @@ class TestFootprintMaskAndRemoval:
     def test_clean_frame_produces_no_mask(self):
         clean = cv2.GaussianBlur(np.full((640, 853, 3), 120, np.uint8), (5, 5), 0)
         assert KlingEngine().footprint_mask(clean, force=False) is None
+
+    @pytest.mark.parametrize(
+        ("asset_name", "mode", "margin_x", "margin_y"),
+        [
+            ("kling_4_alpha.png", _MARK_FRAC, _MARGIN, _MARGIN),
+            ("kling_latin_4_alpha.png", 0.14, 0.015, 0.015),
+        ],
+    )
+    def test_kling_4_cjk_and_latin_marks_detect_and_remove(
+        self,
+        asset_name: str,
+        mode: float,
+        margin_x: float,
+        margin_y: float,
+    ):
+        wm, _ = _compose(1280, 720, mode=mode, bg=96.0, asset_name=asset_name, margin_x=margin_x, margin_y=margin_y)
+
+        det = KlingEngine().detect(wm)
+        assert det.detected
+        assert det.template_asset == asset_name
+
+        mark = registry.get_mark("kling")
+        before = mark.detect(wm)
+        assert before.detected
+        out, region = mark.remove(wm, backend="cv2", detection=before)
+        assert region is not None
+        assert not KlingEngine().detect(out).detected

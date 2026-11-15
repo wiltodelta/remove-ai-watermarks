@@ -186,6 +186,11 @@ C2PA_AI_VENDORS: tuple[C2paAiVendor, ...] = (
     # conformance list spells the organization "Runway AI, Inc".
     _vendor(b"RUNWAY AI, INC.", "Runway", "Runway", "Runway"),
     _vendor(b"Runway AI, Inc", "Runway", "Runway", "Runway"),
+    # Topaz Labs and CyberLink PhotoDirector sign both AI-enhanced exports (which
+    # record compositeWithTrainedAlgorithmicMedia) and non-AI edits, so identity
+    # alone never asserts AI origin (asserts_ai=False, matching Adobe and Canva).
+    _vendor(b"Topaz Labs", "Topaz Labs", "Topaz Labs", "Topaz"),
+    _vendor(b"PhotoDirector", "CyberLink PhotoDirector", "CyberLink PhotoDirector", "CyberLink"),
     _vendor(b"Truepic", "Truepic", None, None),
 )
 
@@ -320,6 +325,7 @@ AI_GENERATOR_TOKENS = frozenset(
         "invokeai",
         "imagen",
         "gpt-image",
+        "gpt image",
         "nano banana",
         "nightcafe",
         "ideogram",

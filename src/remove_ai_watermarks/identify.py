@@ -836,6 +836,7 @@ def _attribute_platform(issuers: list[str], *, is_ai: bool = True) -> str | None
 # so order specific tokens before brand umbrellas where they overlap.
 _AI_VENDOR_TOKENS: tuple[tuple[str, str], ...] = (
     ("gpt-image", "OpenAI"),
+    ("gpt image", "OpenAI"),
     ("dall", "OpenAI"),
     ("sora", "OpenAI"),
     ("openai", "OpenAI"),
@@ -897,6 +898,9 @@ _AI_VENDOR_TOKENS: tuple[tuple[str, str], ...] = (
     ("apple image playground", "Apple"),
     ("luma ai", "Luma AI"),
     ("lumalabs", "Luma AI"),
+    ("topaz", "Topaz Labs"),
+    ("photodirector", "CyberLink"),
+    ("cyberlink", "CyberLink"),
 )
 
 
@@ -912,6 +916,11 @@ _APPLE_CREDIT_PLATFORMS = (
     (b"Apple Photos Generative Edit", "Apple Photos (Generative Edit)"),
     (b"Apple Image Playground", "Apple Image Playground"),
 )
+
+
+def _apple_credit_platform(source: bytes | str) -> str | None:
+    haystack = source if isinstance(source, bytes) else source.encode("utf-8", "ignore")
+    return next((name for credit, name in _APPLE_CREDIT_PLATFORMS if credit in haystack), None)
 
 
 def _vendor_of(text: str | None) -> str | None:
@@ -1525,7 +1534,7 @@ def _identify_from_evidence(
         # shared IPTC value. Without such product-specific evidence the standard
         # names no platform and must not imply a vendor watermark.
         if platform is None:
-            platform = next((name for credit, name in _APPLE_CREDIT_PLATFORMS if credit in head), None)
+            platform = _apple_credit_platform(head)
 
     # ── IPTC 2025.1 AI-disclosure fields (Iptc4xmpExt:AISystemUsed etc.) ─
     iptc_ai = any(m in head for m in IPTC_AI_FIELD_MARKERS)
@@ -1583,7 +1592,7 @@ def _identify_from_evidence(
         signals.append(Signal("exif_generator", f"Embedded generator tag: {generator_tag}", "high"))
         watermarks.append(f"Embedded generator tag: {generator_tag}")
         if platform is None:
-            platform = f"{generator_tag} (embedded generator tag)"
+            platform = _apple_credit_platform(generator_tag) or f"{generator_tag} (embedded generator tag)"
         if v := _vendor_of(generator_tag):
             ai_vendor_claims["exif_generator"] = v
 

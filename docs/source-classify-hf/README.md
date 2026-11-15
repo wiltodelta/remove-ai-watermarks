@@ -31,6 +31,8 @@ This model is **not a SynthID detector** and does not decode or verify any crypt
 
 ## Quickstart (pure NumPy, CPU-only, no PyTorch required)
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify-hf/demo.ipynb)
+
 ```bash
 pip install "remove-ai-watermarks[source-classify]"
 ```
@@ -43,10 +45,12 @@ print(res.label, res.version_subfamily, round(res.confidence, 4))
 # e.g. 'openai' 'openai:gpt_image_1_5' 0.9942  (or 'unknown' None 0.9815 on real photos)
 ```
 
-Command line:
+Command line (installed CLI or zero-setup `uv run` with the bundled `infer.py`):
 
 ```bash
 remove-ai-watermarks classify-source image.jpg --json
+uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py image.jpg --json
+uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py --inspect-weights
 ```
 
 Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v6.npz` or its parent directory for air-gapped deployments.

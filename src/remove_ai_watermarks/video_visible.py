@@ -731,23 +731,28 @@ def _white_fraction(roi: NDArray[Any]) -> float:
     """Share of bright, low-saturation pixels, the color of the white video labels.
 
     A light UI card or navigation bar with dark text has a high share of white
-    background pixels, and its narrow inter-letter gaps can correlate with a
-    morphological top-hat template. In that inverted polarity the dark excursion
-    below the patch median exceeds the bright excursion above it, whereas a white
-    label on a darker background has positive bright excursion above the median.
+    background pixels (``median >= 180``), and its narrow inter-letter gaps can
+    correlate with a morphological top-hat template. In that bright-background
+    inverted polarity the dark excursion below the patch median exceeds the
+    bright excursion above it, whereas a white label over a non-white scene
+    (including two-tone midtone-plus-shadow backgrounds where ``median < 180``)
+    keeps its white-stroke share.
     """
     if roi.size == 0:
         return 0.0
     if roi.ndim == 2:
-        value = roi.astype(np.float32)
-        white = roi >= 180
+        value = roi
+        bright = value >= 180
+        white = bright
     else:
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        value = hsv[:, :, 2].astype(np.float32)
-        white = (hsv[:, :, 1] <= 55) & (hsv[:, :, 2] >= 180)
-    median = float(np.median(value))
-    if float(np.mean(np.maximum(0.0, value - median))) < float(np.mean(np.maximum(0.0, median - value))):
-        return 0.0
+        value = hsv[:, :, 2]
+        bright = value >= 180
+        white = (hsv[:, :, 1] <= 55) & bright
+    if int(np.count_nonzero(bright)) * 2 >= value.size:
+        median = float(np.median(value))
+        if median >= 180.0 and float(value.mean()) < median:
+            return 0.0
     return float(np.mean(white))
 
 

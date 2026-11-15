@@ -1,9 +1,9 @@
 """High-level video processing API.
 
 The product path covers provenance identification, container-level AI metadata
-removal, temporally stabilized visible Sora, Veo, Seedance, Dola, Hailuo AI, and
-Kling AI removal, and explicit VAE profiles for video SynthID and experimental
-Seedance processing.
+removal, temporally stabilized visible Sora, Veo, Seedance, Doubao, Dola,
+Hailuo AI, Vidu, and Kling AI removal, and explicit VAE profiles for video
+SynthID and experimental Seedance processing.
 The visible pixel path reuses the image package's shared fill backends.
 """
 
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".flv"})
 VIDEO_VISIBLE_MARKS = ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
+_EXPECTED_VIDEO_MARKS = f"{', '.join(('auto', *VIDEO_VISIBLE_MARKS[:-1]))}, or {VIDEO_VISIBLE_MARKS[-1]}"
 _ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v"})
 _EBML_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".webm", ".mkv"})
 _RIFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".avi"})
@@ -381,7 +382,11 @@ def _platform_from_video_metadata(markers: dict[str, str]) -> str | None:
     """Map supported C2PA-derived marker text to its generating platform."""
     from remove_ai_watermarks._internal.c2pa import c2pa_vendor_platform, claim_generator_platform
     from remove_ai_watermarks._internal.constants import C2PA_SIGNER_PLATFORM_BY_ORG
-    from remove_ai_watermarks.metadata import LOCAL_GENERATION_METADATA_KEYS
+    from remove_ai_watermarks.metadata import (
+        LOCAL_GENERATION_METADATA_KEYS,
+        TOPAZ_AI_DESCRIPTION,
+        TOPAZ_VIDEO_METADATA_KEYS,
+    )
 
     generator = markers.get("claim_generator", "")
     ai_tool = markers.get("ai_tool", "")
@@ -412,6 +417,12 @@ def _platform_from_video_metadata(markers: dict[str, str]) -> str | None:
         return app_provenance.removeprefix("App export provenance (").removesuffix(")")
     if "kling_sei" in markers:
         return _tc260_video_platform("kling")
+    if "xai_signature" in markers:
+        return "xAI Grok Imagine"
+    if any(key.lower() in TOPAZ_VIDEO_METADATA_KEYS for key in markers) or (
+        markers.get("description", "").strip() == TOPAZ_AI_DESCRIPTION.decode("ascii")
+    ):
+        return "Topaz Labs"
     if any(key.lower() in LOCAL_GENERATION_METADATA_KEYS for key in markers):
         return "Stable Diffusion / local pipeline (Automatic1111, ComfyUI, InvokeAI)"
     return None
@@ -546,7 +557,7 @@ def remove_video_visible(
     the first stable match in specificity order, except a Veo diamond nested in
     a Sora cross-match or spanning the full clip against a partial Sora run,
     with valid Google AI-video provenance. Explicit marks are
-    ``sora``, ``veo``, ``seedance``, ``doubao``, ``dola``, ``hailuo``, and ``kling``. The full
+    ``sora``, ``veo``, ``seedance``, ``doubao``, ``dola``, ``hailuo``, ``vidu``, and ``kling``. The full
     sequence is scanned before pixels change, and only recurring candidates are
     accepted. Complete audio is copied without re-encoding; video is transcoded
     because the pixels change. ``temporal_consistency=True`` motion-aligns a
@@ -562,7 +573,7 @@ def remove_video_visible(
     from remove_ai_watermarks.watermark_registry import resolve_backend
 
     if mark not in {"auto", *VIDEO_VISIBLE_MARKS}:
-        raise ValueError("Unsupported visible video mark; expected auto, sora, veo, seedance, dola, hailuo, or kling")
+        raise ValueError(f"Unsupported visible video mark; expected {_EXPECTED_VIDEO_MARKS}")
     if backend not in {"auto", "cv2", "migan", "lama"}:
         raise ValueError("Unsupported fill backend; expected auto, cv2, migan, or lama")
 
@@ -798,7 +809,7 @@ def remove_video_batch(
     if mode not in {"all", "visible", "metadata"}:
         raise ValueError("Unsupported video batch mode; expected all, visible, or metadata")
     if mark not in {"auto", *VIDEO_VISIBLE_MARKS}:
-        raise ValueError("Unsupported visible video mark; expected auto, sora, veo, seedance, dola, hailuo, or kling")
+        raise ValueError(f"Unsupported visible video mark; expected {_EXPECTED_VIDEO_MARKS}")
     if backend not in {"auto", "cv2", "migan", "lama"}:
         raise ValueError("Unsupported fill backend; expected auto, cv2, migan, or lama")
     if include_invisible and mode != "all":

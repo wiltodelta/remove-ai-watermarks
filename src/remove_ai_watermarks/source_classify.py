@@ -399,7 +399,8 @@ def _resolve_hub_weights(
     return downloaded
 
 
-def _resolve_weights_path(weights_path: Path | None = None) -> Path:
+def resolve_weights_path(weights_path: Path | None = None) -> Path:
+    """Resolve the verified local or Hugging Face Hub `.npz` weights artifact path."""
     if weights_path is not None:
         path = Path(weights_path).expanduser()
         return path / MODEL_FILE if path.is_dir() else path
@@ -415,6 +416,9 @@ def _resolve_weights_path(weights_path: Path | None = None) -> Path:
         _resolve_hub_weights.cache_clear()
         resolved = _resolve_hub_weights(WEIGHTS_REPO, WEIGHTS_REVISION, MODEL_FILE, CONFIG_FILE, MODEL_SHA256)
     return resolved
+
+
+_resolve_weights_path = resolve_weights_path
 
 
 @functools.lru_cache(maxsize=1)

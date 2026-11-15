@@ -2690,3 +2690,62 @@ class TestIsobmffStripKeepsOffsets:
         assert len(cleaned) == len(data)
         assert cleaned.index(b"mdat") == data.index(b"mdat")
         assert cleaned == ftyp + _blanked(c2pa_box) + mdat
+
+
+class TestXmpGeneratorAndAppleCreditParity:
+    """Detection and lossless removal stay in parity for XMP CreatorTool and Apple AI Credit."""
+
+    def test_gpt_image_2_xmp_creatortool_png_and_jpeg_parity(self, tmp_path: Path):
+        xmp = (
+            b'<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+            b"<x:xmpmeta><rdf:RDF><rdf:Description>"
+            b"<xmp:CreatorTool>OpenAI GPT Image 2</xmp:CreatorTool>"
+            b"</rdf:Description></rdf:RDF></x:xmpmeta>"
+            b'<?xpacket end="w"?>'
+        )
+        png_info = PngInfo()
+        png_info.add_itxt("XML:com.adobe.xmp", xmp.decode("utf-8"), zip=True)
+        png_src = tmp_path / "gpt_image_2.png"
+        Image.new("RGB", (48, 48), (60, 70, 80)).save(png_src, pnginfo=png_info)
+        assert exif_generator(png_src) == "OpenAI GPT Image 2"
+        assert has_ai_metadata(png_src) is True
+        assert get_ai_metadata(png_src).get("exif_generator") == "OpenAI GPT Image 2"
+        png_out = remove_ai_metadata(png_src, tmp_path / "gpt_clean.png")
+        assert exif_generator(png_out) is None
+        assert has_ai_metadata(png_out) is False
+
+        jpg_src = TestXaiSignature._jpeg_app_pair(
+            tmp_path,
+            b"\xff\xe1",
+            b"http://ns.adobe.com/xap/1.0/\x00" + xmp,
+            "gpt_image_2.jpg",
+        )
+        assert exif_generator(jpg_src) == "OpenAI GPT Image 2"
+        assert has_ai_metadata(jpg_src) is True
+        jpg_out = remove_ai_metadata(jpg_src, tmp_path / "gpt_clean.jpg")
+        assert exif_generator(jpg_out) is None
+        assert has_ai_metadata(jpg_out) is False
+
+    def test_standalone_apple_credit_without_digital_source_type_parity(self, tmp_path: Path):
+        ai_xmp = (
+            b"http://ns.adobe.com/xap/1.0/\x00"
+            b'<x:xmpmeta><rdf:RDF><rdf:Description photoshop:Credit="Apple Photos Generative Edit: Clean Up"/>'
+            b"</rdf:RDF></x:xmpmeta>"
+        )
+        ai_src = TestXaiSignature._jpeg_app_pair(tmp_path, b"\xff\xe1", ai_xmp, "apple_credit_only.jpg")
+        assert exif_generator(ai_src) == "Apple Photos Generative Edit: Clean Up"
+        assert has_ai_metadata(ai_src) is True
+        ai_out = remove_ai_metadata(ai_src, tmp_path / "apple_clean.jpg")
+        assert exif_generator(ai_out) is None
+        assert has_ai_metadata(ai_out) is False
+
+        human_xmp = (
+            b"http://ns.adobe.com/xap/1.0/\x00"
+            b'<x:xmpmeta><rdf:RDF><rdf:Description photoshop:Credit="Jane Doe"/>'
+            b"</rdf:RDF></x:xmpmeta>"
+        )
+        human_src = TestXaiSignature._jpeg_app_pair(tmp_path, b"\xff\xe1", human_xmp, "human_credit.jpg")
+        assert exif_generator(human_src) is None
+        assert has_ai_metadata(human_src) is False
+        human_out = remove_ai_metadata(human_src, tmp_path / "human_clean.jpg")
+        assert b'photoshop:Credit="Jane Doe"' in human_out.read_bytes()

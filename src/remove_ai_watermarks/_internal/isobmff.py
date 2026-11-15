@@ -28,6 +28,7 @@ Reference: ISO/IEC 14496-12 (ISOBMFF) and C2PA 2.1 spec §11.
 
 from __future__ import annotations
 
+import base64
 import io
 import logging
 import os
@@ -37,8 +38,10 @@ import struct
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
+
+    _RawMetadataItem = tuple[bytes, tuple[int, int], bytes | None, tuple[int, int] | None, int, int, bytes]
 
 from remove_ai_watermarks.metadata import (
     AIGC_MARKERS,
@@ -48,8 +51,11 @@ from remove_ai_watermarks.metadata import (
     KLING_SEI_TAG,
     LOCAL_GENERATION_METADATA_KEYS,
     MAX_TC260_VALUE_BYTES,
+    TOPAZ_AI_DESCRIPTION,
+    TOPAZ_VIDEO_METADATA_KEYS,
     app_generator_from_metadata,
     app_provenance_from_metadata,
+    generator_from_metadata,
     parse_tc260_aigc_json,
 )
 
@@ -72,6 +78,9 @@ _AI_LABEL_MARKERS: tuple[bytes, ...] = AIGC_MARKERS + IPTC_AI_MARKERS + IPTC_AI_
 # out of reach of the top-level box stripper, so an AI-label packet there is
 # blanked in place (see ``blank_ai_xmp_packets``).
 _XMP_PACKET_RE = re.compile(rb"<\?xpacket begin=.*?<\?xpacket end=[^>]*?\?>", re.DOTALL)
+_ISOBMFF_XAI_SIG_RE = re.compile(rb"Signature:\s*([A-Za-z0-9+/=]{64,})\s*")
+_XAI_REGION_SENTINEL_START = b"\xa9cmt\x00"
+_XAI_REGION_SENTINEL_END = b"\x00"
 _STREAM_COPY_BYTES = 1024 * 1024
 STREAM_SCAN_BYTES = 4 * 1024 * 1024
 
@@ -247,6 +256,8 @@ def _iter_tc260_meta_boxes(
 def _tc260_aigc_regions(
     stream: BinaryIO,
     file_size: int,
+    *,
+    raw_items: Iterable[_RawMetadataItem] | None = None,
 ) -> list[tuple[tuple[int, int] | None, int, int, bytes]]:
     """Locate validated native TC260 entries without reading media payloads.
 
@@ -256,19 +267,27 @@ def _tc260_aigc_regions(
     iOS export writes, where the JSON sits in a bare ``ilst`` data item with no
     key name to blank.
     """
+    items = (
+        (
+            (key_name, key_span, value_start, value_end, value)
+            for _item_type, _item_span, key_name, key_span, value_start, value_end, value in raw_items
+        )
+        if raw_items is not None
+        else _metadata_items(stream, file_size)
+    )
     return [
         (key_span, value_start, value_end, value)
-        for key_name, key_span, value_start, value_end, value in _metadata_items(stream, file_size)
+        for key_name, key_span, value_start, value_end, value in items
         if (key_name is None or key_name == b"AIGC") and parse_tc260_aigc_json(value) is not None
     ]
 
 
-def _moov_metadata_items(
+def _moov_raw_metadata_items(
     stream: BinaryIO,
     moov_payload: int,
     moov_end: int,
-) -> Iterator[tuple[bytes | None, tuple[int, int] | None, int, int, bytes]]:
-    """Yield bounded keyed or keyless metadata-list values from one ``moov`` box."""
+) -> Iterator[tuple[bytes, tuple[int, int], bytes | None, tuple[int, int] | None, int, int, bytes]]:
+    """Yield bounded keyed or keyless metadata-list entries with item-box spans."""
     for meta_payload, meta_end in _iter_tc260_meta_boxes(stream, moov_payload, moov_end):
         keys: dict[int, tuple[bytes, tuple[int, int]]] = {}
         ilst_boxes: list[tuple[int, int]] = []
@@ -286,7 +305,7 @@ def _moov_metadata_items(
         if not ilst_boxes:
             continue
         for ilst_payload, ilst_end in ilst_boxes:
-            for _item_start, item_end, item_type, item_payload in iter_file_boxes(
+            for item_start, item_end, item_type, item_payload in iter_file_boxes(
                 stream,
                 ilst_payload,
                 ilst_end,
@@ -302,6 +321,7 @@ def _moov_metadata_items(
                     # validation below.
                     continue
                 key_name, key_span = key if key is not None else (None, None)
+                item_type_span = (item_start + 4, item_start + 8)
                 for _data_start, data_end, data_type, data_payload in iter_file_boxes(
                     stream,
                     item_payload,
@@ -314,7 +334,98 @@ def _moov_metadata_items(
                     stream.seek(value_start)
                     value = stream.read(value_size)
                     if len(value) == value_size:
-                        yield key_name, key_span, value_start, data_end, value
+                        yield item_type, item_type_span, key_name, key_span, value_start, data_end, value
+
+
+def _raw_metadata_items(
+    stream: BinaryIO,
+    file_size: int,
+) -> Iterator[tuple[bytes, tuple[int, int], bytes | None, tuple[int, int] | None, int, int, bytes]]:
+    """Yield bounded keyed or keyless metadata-list entries across all ``moov`` boxes."""
+    for _moov_start, moov_end, moov_type, moov_payload in iter_file_boxes(stream, 0, file_size):
+        if moov_type == b"moov":
+            yield from _moov_raw_metadata_items(stream, moov_payload, moov_end)
+
+
+def _is_isobmff_xai_signature(item_type: bytes, key_name: bytes | None, value: bytes) -> bool:
+    """Whether one ISOBMFF comment item holds an xAI Grok Imagine ``Signature: <base64>`` blob."""
+    is_comment = (key_name is None and item_type == b"\xa9cmt") or (
+        key_name is not None and key_name.lower() in {b"comment", b"com.apple.quicktime.comment"}
+    )
+    if not is_comment:
+        return False
+    match = _ISOBMFF_XAI_SIG_RE.fullmatch(value)
+    if match is None:
+        return False
+    blob = match.group(1)
+    if len(blob) % 4 != 0:
+        return False
+    try:
+        base64.b64decode(blob, validate=True)
+    except ValueError:
+        return False
+    return True
+
+
+def _xai_signature_regions(
+    stream: BinaryIO,
+    file_size: int,
+    *,
+    raw_items: Iterable[_RawMetadataItem] | None = None,
+) -> list[tuple[tuple[int, int], int, int, bytes]]:
+    """Locate xAI Grok Imagine ``Signature:`` comment items in ``moov`` metadata lists."""
+    items = raw_items if raw_items is not None else _raw_metadata_items(stream, file_size)
+    return [
+        (key_span if key_span is not None else item_span, value_start, value_end, value)
+        for item_type, item_span, key_name, key_span, value_start, value_end, value in items
+        if _is_isobmff_xai_signature(item_type, key_name, value)
+    ]
+
+
+def _read_isobmff_payloads(
+    path: str | Path,
+    region_fn: Callable[[BinaryIO, int], Iterable[tuple[Any, int, int, bytes]]],
+    *,
+    strict: bool = False,
+) -> tuple[bytes, ...]:
+    """Read validated payload bytes from an ISOBMFF region finder without loading ``mdat``."""
+    try:
+        with open(path, "rb") as stream:
+            if not is_isobmff(stream.read(8)):
+                return ()
+            stream.seek(0, 2)
+            file_size = stream.tell()
+            return tuple(region[3] for region in region_fn(stream, file_size))
+    except OSError:
+        if strict:
+            raise
+        return ()
+
+
+def isobmff_xai_signature_payloads(path: str | Path, *, strict: bool = False) -> tuple[bytes, ...]:
+    """Read validated xAI Grok Imagine comment signatures without reading media payloads."""
+    return _read_isobmff_payloads(path, _xai_signature_regions, strict=strict)
+
+
+def has_isobmff_xai_signature(path: str | Path, *, strict: bool = False) -> bool:
+    """Whether an ISOBMFF container carries an xAI Grok Imagine comment signature."""
+    return bool(isobmff_xai_signature_payloads(path, strict=strict))
+
+
+def isobmff_xai_signature_in_region(data: bytes) -> bool:
+    """Whether an ISOBMFF metadata region carries an xAI Grok Imagine comment signature."""
+    if not is_isobmff(data):
+        return False
+    if _xai_signature_regions(io.BytesIO(data), len(data)):
+        return True
+    start = data.find(_XAI_REGION_SENTINEL_START)
+    while start != -1:
+        val_start = start + len(_XAI_REGION_SENTINEL_START)
+        val_end = data.find(_XAI_REGION_SENTINEL_END, val_start)
+        if val_end != -1 and _is_isobmff_xai_signature(b"\xa9cmt", None, data[val_start:val_end]):
+            return True
+        start = data.find(_XAI_REGION_SENTINEL_START, start + 1)
+    return False
 
 
 def _metadata_items(
@@ -322,40 +433,40 @@ def _metadata_items(
     file_size: int,
 ) -> Iterator[tuple[bytes | None, tuple[int, int] | None, int, int, bytes]]:
     """Yield bounded keyed or keyless metadata-list values from a media file."""
-    for _moov_start, moov_end, moov_type, moov_payload in iter_file_boxes(stream, 0, file_size):
-        if moov_type == b"moov":
-            yield from _moov_metadata_items(stream, moov_payload, moov_end)
+    for _item_type, _item_span, key_name, key_span, value_start, data_end, value in _raw_metadata_items(
+        stream,
+        file_size,
+    ):
+        yield key_name, key_span, value_start, data_end, value
 
 
 def tc260_aigc_payloads(path: str | Path, *, strict: bool = False) -> tuple[bytes, ...]:
     """Read native TC260 ``AIGC`` values, optionally propagating I/O failures."""
-    try:
-        with open(path, "rb") as stream:
-            if not is_isobmff(stream.read(8)):
-                return ()
-            stream.seek(0, 2)
-            file_size = stream.tell()
-            return tuple(region[3] for region in _tc260_aigc_regions(stream, file_size))
-    except OSError:
-        if strict:
-            raise
-        return ()
+    return _read_isobmff_payloads(path, _tc260_aigc_regions, strict=strict)
 
 
 def _ai_metadata_regions(
     stream: BinaryIO,
     file_size: int,
+    *,
+    raw_items: Iterable[_RawMetadataItem] | None = None,
 ) -> list[tuple[tuple[int, int], int, int, str, bytes]]:
     """Locate keyed generation metadata without reading media payloads."""
+    items = raw_items if raw_items is not None else _raw_metadata_items(stream, file_size)
     regions: list[tuple[tuple[int, int], int, int, str, bytes]] = []
-    for name_bytes, key_span, value_start, value_end, value in _metadata_items(stream, file_size):
+    for _item_type, _item_span, name_bytes, key_span, value_start, value_end, value in items:
         if name_bytes is None or key_span is None:
             continue
         try:
             name = name_bytes.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        if name.lower() in LOCAL_GENERATION_METADATA_KEYS:
+        lowered = name.lower()
+        if (
+            lowered in LOCAL_GENERATION_METADATA_KEYS
+            or lowered in TOPAZ_VIDEO_METADATA_KEYS
+            or (lowered in {"description", "com.apple.quicktime.description"} and value.strip() == TOPAZ_AI_DESCRIPTION)
+        ):
             regions.append((key_span, value_start, value_end, name, value))
     return regions
 
@@ -363,6 +474,8 @@ def _ai_metadata_regions(
 def _app_metadata_regions(
     stream: BinaryIO,
     file_size: int,
+    *,
+    raw_items: Iterable[_RawMetadataItem] | None = None,
 ) -> list[tuple[tuple[int, int] | None, int, int]]:
     """Locate keyed or keyless values carrying an app-export provenance object.
 
@@ -370,9 +483,10 @@ def _app_metadata_regions(
     second copy under ``com.apple.quicktime.artwork``). The file-level scan reads
     it from the raw head bytes, so removal must blank every item it would match.
     """
+    items = raw_items if raw_items is not None else _raw_metadata_items(stream, file_size)
     return [
         (key_span, value_start, value_end)
-        for _name, key_span, value_start, value_end, value in _metadata_items(stream, file_size)
+        for _item_type, _item_span, _name, key_span, value_start, value_end, value in items
         if app_provenance_from_metadata(value) or app_generator_from_metadata(value)
     ]
 
@@ -568,20 +682,38 @@ def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024, stri
                     if to_read > 0:
                         collected += f.read(to_read)
                 elif box_type == b"moov":
-                    for _key_name, _key_span, _val_start, _val_end, value in _moov_metadata_items(
+                    for (
+                        item_type,
+                        _item_span,
+                        key_name,
+                        _key_span,
+                        _val_start,
+                        _val_end,
+                        value,
+                    ) in _moov_raw_metadata_items(
                         f,
                         payload_off,
                         pos + size,
                     ):
-                        to_read = min(len(value), max_total - len(collected))
+                        entry = (
+                            _XAI_REGION_SENTINEL_START + value + _XAI_REGION_SENTINEL_END
+                            if _is_isobmff_xai_signature(item_type, key_name, value)
+                            else value
+                        )
+                        to_read = min(len(entry), max_total - len(collected))
                         if to_read > 0:
-                            collected += value[:to_read]
+                            collected += entry[:to_read]
                 pos += size
     except OSError:
         if strict:
             raise
         return b""
     return bytes(collected)
+
+
+def _has_ai_label_or_generator(payload: bytes) -> bool:
+    """Whether a metadata payload carries an AI-label marker or known AI generator."""
+    return any(marker in payload for marker in _AI_LABEL_MARKERS) or generator_from_metadata((), payload) is not None
 
 
 def _payload_has_ai_label(
@@ -601,7 +733,7 @@ def _payload_has_ai_label(
         if not chunk:
             return False
         searchable = overlap + chunk
-        if any(marker in searchable for marker in _AI_LABEL_MARKERS):
+        if _has_ai_label_or_generator(searchable):
             return True
         overlap = searchable[-(longest_marker - 1) :]
         remaining -= len(chunk)
@@ -698,9 +830,28 @@ def strip_isobmff_media_file(
             file_size,
             max_scan=max_box_scan,
         )
-        tc260_regions = _tc260_aigc_regions(stream, file_size) if targets is not None else []
-        ai_metadata_regions = _ai_metadata_regions(stream, file_size) if targets is not None else []
-        app_regions = _app_metadata_regions(stream, file_size) if targets is not None else []
+        raw_items = list(_raw_metadata_items(stream, file_size)) if targets is not None else []
+        blank_regions: list[tuple[tuple[int, int] | None, int, int]] = []
+        if targets is not None:
+            blank_regions.extend(
+                (key_span, value_start, value_end)
+                for key_span, value_start, value_end, _value in _tc260_aigc_regions(
+                    stream, file_size, raw_items=raw_items
+                )
+            )
+            blank_regions.extend(
+                (key_span, value_start, value_end)
+                for key_span, value_start, value_end, _name, _value in _ai_metadata_regions(
+                    stream, file_size, raw_items=raw_items
+                )
+            )
+            blank_regions.extend(_app_metadata_regions(stream, file_size, raw_items=raw_items))
+            blank_regions.extend(
+                (key_span, value_start, value_end)
+                for key_span, value_start, value_end, _value in _xai_signature_regions(
+                    stream, file_size, raw_items=raw_items
+                )
+            )
         mdat_ranges = (
             [
                 (payload, end)
@@ -710,9 +861,7 @@ def strip_isobmff_media_file(
             if targets is not None
             else []
         )
-        tc260_key_spans = {region[0] for region in tc260_regions if region[0] is not None}
-        ai_metadata_key_spans = {region[0] for region in ai_metadata_regions}
-        app_key_spans = {region[0] for region in app_regions if region[0] is not None}
+        blanked_key_spans = {key_span for key_span, _v0, _v1 in blank_regions if key_span is not None}
 
     with atomic_video_output(output_path) as temporary_path:
         with source_path.open("rb") as source_stream, temporary_path.open("r+b") as temporary:
@@ -722,19 +871,11 @@ def strip_isobmff_media_file(
                     temporary.seek(box_start + 4)
                     temporary.write(b"free")
                     _overwrite_range(temporary, payload_start, box_end, byte=b"\x00")
-                for key_span, value_start, value_end, _value in tc260_regions:
+                for key_span, value_start, value_end in blank_regions:
                     if key_span is not None:
+                        span_len = key_span[1] - key_span[0]
                         temporary.seek(key_span[0])
-                        temporary.write(b"free")
-                    _overwrite_range(temporary, value_start, value_end, byte=b" ")
-                for key_span, value_start, value_end, _name, _value in ai_metadata_regions:
-                    temporary.seek(key_span[0])
-                    temporary.write(b"free" + b" " * (key_span[1] - key_span[0] - 4))
-                    _overwrite_range(temporary, value_start, value_end, byte=b" ")
-                for key_span, value_start, value_end in app_regions:
-                    if key_span is not None:
-                        temporary.seek(key_span[0])
-                        temporary.write(b"free" + b" " * (key_span[1] - key_span[0] - 4))
+                        temporary.write((b"free" + b" " * max(0, span_len - 4))[:span_len])
                     _overwrite_range(temporary, value_start, value_end, byte=b" ")
                 # Spaces keep the SEI message well-formed: its length fields stand,
                 # and a 0x20 run cannot form an emulation-prevention sequence.
@@ -751,7 +892,10 @@ def strip_isobmff_media_file(
         )
         return 0, 0
     # Every copy of the Kling tag is one tag, however many samples repeat it.
-    return len(targets), len(tc260_key_spans | ai_metadata_key_spans | app_key_spans) + bool(kling_sei_offsets)
+    return (
+        len(targets),
+        len(blanked_key_spans) + bool(kling_sei_offsets),
+    )
 
 
 def _blank_box(data: bytes, start: int, end: int, payload_off: int) -> bytes:
@@ -797,8 +941,9 @@ def strip_c2pa_boxes(data: bytes) -> tuple[bytes, int]:
         provenance = box_type == b"jumb"
         if box_type == b"uuid":
             # uuid boxes carry the 16-byte UUID immediately after the type.
-            is_c2pa = payload_off + 16 <= end and data[payload_off : payload_off + 16] == C2PA_UUID
-            provenance = is_c2pa or any(marker in data[payload_off:end] for marker in _AI_LABEL_MARKERS)
+            payload = data[payload_off:end]
+            is_c2pa = len(payload) >= 16 and payload[:16] == C2PA_UUID
+            provenance = is_c2pa or _has_ai_label_or_generator(payload)
         if provenance:
             stripped += 1
             out.extend(_blank_box(data, start, end, payload_off))
@@ -840,7 +985,7 @@ def blank_ai_xmp_packets(data: bytes) -> tuple[bytes, int]:
     def _scrub(match: re.Match[bytes]) -> bytes:
         nonlocal blanked
         packet = match.group()
-        if any(marker in packet for marker in _AI_LABEL_MARKERS):
+        if _has_ai_label_or_generator(packet):
             blanked += 1
             return b" " * len(packet)
         return packet

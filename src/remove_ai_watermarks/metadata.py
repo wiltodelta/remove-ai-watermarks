@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 from remove_ai_watermarks._internal.tc260_producers import uscc_of as uscc_of
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
     from pathlib import Path
 
 from remove_ai_watermarks._internal.constants import (
@@ -65,6 +65,19 @@ AI_METADATA_KEYS: frozenset[str] = frozenset(
 LOCAL_GENERATION_METADATA_KEYS: frozenset[str] = frozenset(
     AI_METADATA_KEYS & {"parameters", "prompt", "negative_prompt", "workflow", "comfyui", "invokeai_metadata", "dream"}
 )
+TOPAZ_VIDEO_METADATA_KEYS: frozenset[str] = frozenset(
+    {
+        "topazcloud",
+        "topazcloud_provider",
+        "topazcloud_application",
+        "topazcloud_timestamp",
+        "videoai",
+        "videoai_provider",
+        "videoai_application",
+        "videoai_timestamp",
+    }
+)
+TOPAZ_AI_DESCRIPTION = b"AI-enhanced using Topaz Labs"
 
 AI_KEYWORDS: tuple[str, ...] = (
     "stable_diffusion",
@@ -146,6 +159,7 @@ _STREAMING_ISOBMFF_EXTS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".m
 _FFMPEG_STRIP_EXTS: frozenset[str] = frozenset(
     {".webm", ".mkv", ".mka", ".avi", ".flv", ".mp3", ".wav", ".flac", ".ogg", ".oga", ".opus", ".aac"}
 )
+_NON_IMAGE_MEDIA_EXTS: frozenset[str] = _STREAMING_ISOBMFF_EXTS | _FFMPEG_STRIP_EXTS
 
 # China's mandatory AI-content labeling (TC260, the national cybersecurity
 # standards committee). AI generators serving China embed an XMP block in the
@@ -493,12 +507,14 @@ def has_ai_metadata(image_path: Path) -> bool:
     # PIL may not handle AVIF/HEIF/JPEG-XL without the optional plugins, and a
     # third-party plugin autoload can raise a non-OSError (e.g. ModuleNotFoundError),
     # so any open failure falls through to the binary scan.
+    exif_candidates: list[str] = []
     try:
         with Image.open(image_path) as img:
             for key in img.info:
                 if isinstance(key, str) and _is_ai_key(key):
                     return True
-            exif_bytes = img.info.get("exif")
+            exif_bytes = exif_bytes_from_image(img)
+            exif_candidates = _exif_generator_candidates(img.info, exif_bytes)
         if exif_bytes and any(_app_metadata_evidence(exif_bytes)):
             return True
     except Exception as exc:
@@ -533,6 +549,14 @@ def has_ai_metadata(image_path: Path) -> bool:
     # Higgsfield job marker (hf-job-id PNG text chunk).
     if huggingface_job(image_path):
         return True
+    from remove_ai_watermarks._internal.isobmff import ai_metadata_tags, is_isobmff
+
+    if is_isobmff(data) and ai_metadata_tags(image_path):
+        return True
+    if image_path.suffix.lower() not in _NON_IMAGE_MEDIA_EXTS:
+        head_full = scan_head(image_path)
+        if generator_from_metadata(exif_candidates, head_full) is not None:
+            return True
     # xAI / Grok signature + UUID pair, including container-native transcodes.
     return xai_signature(image_path)
 
@@ -898,18 +922,18 @@ def synthid_source(image_path: Path, *, c2pa_info: dict[str, Any] | None = None)
     return ", ".join(matched) if matched else None
 
 
+_XMP_GENERATOR_RE = re.compile(rb"(?:CreatorTool|photoshop:Credit)[>\"'=\s]{1,4}([^<\"']{1,80})")
+
+
 def generator_from_metadata(candidates: Iterable[str], scan: bytes = b"") -> str | None:
     """Return a known AI generator from collected EXIF, PNG, or XMP values."""
     from remove_ai_watermarks._internal.constants import AI_GENERATOR_TOKENS
 
-    if app_generator := app_generator_from_metadata(scan):
+    if scan and (app_generator := app_generator_from_metadata(scan)):
         return app_generator
 
-    creator_tools = (
-        match.group(1).decode("latin1", "replace")
-        for match in re.finditer(rb"CreatorTool[>\"'=\s]{1,4}([^<\"']{1,80})", scan)
-    )
-    for value in itertools.chain(candidates, creator_tools):
+    xmp_generators = (match.group(1).decode("latin1", "replace") for match in _XMP_GENERATOR_RE.finditer(scan))
+    for value in itertools.chain(candidates, xmp_generators):
         if app_generator := app_generator_from_metadata(value):
             return app_generator
         if structured_generator := _structured_generator_from_metadata(value):
@@ -973,10 +997,17 @@ _CAPCUT_AI_FLAG_RE = re.compile(
 )
 
 
+_APP_METADATA_BYTES_HINT_RE = re.compile(rb"product|aigc_info", re.IGNORECASE)
+
+
 def _normalized_app_metadata(value: object) -> str:
     if isinstance(value, bytes):
+        if not value or _APP_METADATA_BYTES_HINT_RE.search(value) is None:
+            return ""
         text = value.decode("latin-1", "ignore")
     elif isinstance(value, str):
+        if not value:
+            return ""
         text = value
     else:
         return ""
@@ -1026,36 +1057,19 @@ def app_generator_from_metadata(value: str | bytes) -> str | None:
     return _app_metadata_evidence(value)[1]
 
 
-def exif_generator(image_path: Path) -> str | None:
-    """Return an AI-generator name from the EXIF ``Software`` / XMP ``CreatorTool``
-    field (or a PNG text chunk), if it matches a known generator (see
-    ``AI_GENERATOR_TOKENS``), else None.
-
-    Cross-format: EXIF is read via PIL + piexif for any container PIL can open
-    (JPEG/WebP/AVIF/PNG); an XMP ``CreatorTool`` raw-byte scan additionally covers
-    HEIF/JPEG-XL that PIL can't open without plugins. PNG ``tEXt`` chunks are read
-    too -- NovelAI stamps its generator in ``Software``/``Source``/``Title`` text
-    chunks rather than EXIF. Only AI tokens match, so ordinary editors (plain
-    "Adobe Photoshop", "GIMP") are not flagged.
-    """
+def _exif_generator_candidates(info: Mapping[Any, Any], exif_bytes: bytes | None) -> list[str]:
+    """Collect candidate generator strings from decoded image info and raw EXIF bytes."""
     candidates: list[str] = []
-
-    # EXIF Software / Artist / ImageDescription (0th IFD) via PIL exif bytes,
-    # plus PNG text chunks (NovelAI writes Software/Source/Title there, not EXIF).
-    try:
+    # PNG tEXt/iTXt chunks land in img.info too (same idiom as the other
+    # PNG-text readers in this module); NovelAI stamps Software/Source/Title.
+    for key in ("Software", "Source", "Title", "Description"):
+        value = info.get(key)
+        if isinstance(value, str) and value:
+            candidates.append(value)
+    if exif_bytes:
         import piexif
-        from PIL import Image
 
-        with Image.open(image_path) as img:
-            info = img.info
-            exif_bytes = exif_bytes_from_image(img)
-            # PNG tEXt/iTXt chunks land in img.info too (same idiom as the other
-            # PNG-text readers in this module); NovelAI stamps Software/Source/Title.
-            for key in ("Software", "Source", "Title", "Description"):
-                value = info.get(key)
-                if isinstance(value, str) and value:
-                    candidates.append(value)
-        if exif_bytes:
+        with contextlib.suppress(Exception):
             loaded = piexif.load(exif_bytes)
             tags = loaded.get("0th", {})
             exif_tags: dict[int, Any] = loaded.get("Exif") or {}
@@ -1074,6 +1088,30 @@ def exif_generator(image_path: Path) -> str | None:
             user_comment = exif_tags.get(piexif.ExifIFD.UserComment)
             if isinstance(user_comment, bytes):
                 candidates.append(user_comment.decode("latin1", "replace"))
+    return candidates
+
+
+def exif_generator(image_path: Path) -> str | None:
+    """Return an AI-generator name from the EXIF ``Software`` / XMP ``CreatorTool``
+    field (or a PNG text chunk), if it matches a known generator (see
+    ``AI_GENERATOR_TOKENS``), else None.
+
+    Cross-format: EXIF is read via PIL + piexif for any container PIL can open
+    (JPEG/WebP/AVIF/PNG); an XMP ``CreatorTool`` raw-byte scan additionally covers
+    HEIF/JPEG-XL that PIL can't open without plugins. PNG ``tEXt`` chunks are read
+    too -- NovelAI stamps its generator in ``Software``/``Source``/``Title`` text
+    chunks rather than EXIF. Only AI tokens match, so ordinary editors (plain
+    "Adobe Photoshop", "GIMP") are not flagged.
+    """
+    candidates: list[str] = []
+
+    # EXIF Software / Artist / ImageDescription (0th IFD) via PIL exif bytes,
+    # plus PNG text chunks (NovelAI writes Software/Source/Title there, not EXIF).
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as img:
+            candidates = _exif_generator_candidates(img.info, exif_bytes_from_image(img))
     except Exception as exc:  # unopenable format / malformed EXIF
         logger.debug("EXIF generator read failed for %s: %s", image_path, exc)
 
@@ -1197,6 +1235,10 @@ def xai_signature_in_metadata(data: bytes) -> bool:
     names inside one APP segment or RDF description; an unrelated XMP UUID must not
     complete the pair.
     """
+    from remove_ai_watermarks._internal.isobmff import isobmff_xai_signature_in_region
+
+    if isobmff_xai_signature_in_region(data):
+        return True
     payloads = _jpeg_app_payloads(data)
     if payloads:
         return any(
@@ -1464,6 +1506,8 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     # Samsung Galaxy AI editing marker (genAIType in PhotoEditor_Re_Edit_Data).
     if (genai := samsung_genai(image_path)) is not None:
         result.setdefault("samsung_genai", f"Samsung Galaxy AI editing marker (genAIType={genai})")
+    if image_path.suffix.lower() not in _NON_IMAGE_MEDIA_EXTS and (generator := exif_generator(image_path)):
+        result.setdefault("exif_generator", generator[:200] + ("…" if len(generator) > 200 else ""))
     return result
 
 
@@ -1530,6 +1574,7 @@ def _jpeg_app_carries_ai(marker: int, payload: bytes) -> bool:
             or any(m in payload for m in IPTC_AI_MARKERS)
             or any(m in payload for m in IPTC_AI_FIELD_MARKERS)
             or xai_signature_in_metadata(payload)
+            or generator_from_metadata((), payload) is not None
         )
     ):
         return True

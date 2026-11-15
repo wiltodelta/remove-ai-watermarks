@@ -100,3 +100,82 @@ def test_publish_uploads_allowlist_and_deletes_retired_hub_repos(
     assert len(uploads) == 1
     assert uploads[0]["allow_patterns"] == list(publish.PUBLIC_FILES)
     assert ("wiltodelta/raiw-photo-classify", "model", True) in deleted
+
+
+def test_stage_release_includes_standalone_infer_script_and_colab_notebook() -> None:
+    assert "infer.py" in publish.TRACKED_CARD_FILES
+    assert "demo.ipynb" in publish.TRACKED_CARD_FILES
+    assert (publish.CARD_DIR / "infer.py").is_file()
+    assert (publish.CARD_DIR / "demo.ipynb").is_file()
+
+
+def _load_module(name: str, path: Path) -> object:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_standalone_infer_script_inspects_weights_and_classifies_images(tmp_path: Path) -> None:
+    from typing import Any
+
+    import numpy as np
+    from PIL import Image
+
+    sc_mod: Any = _load_module("raiw_test_source_classify", Path(__file__).with_name("test_source_classify.py"))
+    infer_mod: Any = _load_module("raiw_hf_infer", publish.CARD_DIR / "infer.py")
+
+    weights = sc_mod._write_synthetic_v5_npz(
+        tmp_path / "synthetic_v5.npz",
+        det_winner="openai",
+        attr_winner="openai",
+        det_score=-2.0,
+        det_threshold=2.0,
+    )
+    summary = infer_mod.inspect_weights(weights)
+    assert summary["schema"] == "multi-provider-source-v5"
+    assert summary["feature_dim"] == 512
+    assert len(summary["providers"]) == 10
+    assert summary["abstain_label"] == "unknown"
+    assert summary["watermark_truth"] == "unknown"
+    assert "openai" in summary["version_subfamilies"]
+
+    sample_img = tmp_path / "gradient.png"
+    y, x = np.ogrid[:320, :320]
+    arr = np.stack(
+        (
+            (x * 3 + y * 5) % 256,
+            np.broadcast_to((x * 7) % 256, (320, 320)),
+            np.broadcast_to((y * 11) % 256, (320, 320)),
+        ),
+        axis=-1,
+    ).astype(np.uint8)
+    Image.fromarray(arr, mode="RGB").save(sample_img)
+
+    exit_inspect = infer_mod.main(["--inspect-weights", "--weights", str(weights), "--json"])
+    assert exit_inspect == 0
+
+    rows = infer_mod.classify_targets([sample_img], weights_path=weights)
+    assert len(rows) == 1
+    assert rows[0]["label"] == "unknown"
+    assert rows[0]["reason"] == "abstained"
+    assert rows[0]["watermark_truth"] == "unknown"
+
+
+def test_demo_notebook_is_valid_nbformat_and_compiles_cleanly() -> None:
+    nb_path = publish.CARD_DIR / "demo.ipynb"
+    nb = json.loads(nb_path.read_text(encoding="utf-8"))
+    assert nb["nbformat"] == 4
+    assert isinstance(nb["cells"], list)
+    assert len(nb["cells"]) >= 4
+
+    code_cells = [c for c in nb["cells"] if c.get("cell_type") == "code"]
+    assert len(code_cells) >= 3
+    for idx, cell in enumerate(code_cells):
+        assert cell.get("outputs") == []
+        source_lines = [line for line in cell["source"] if not line.lstrip().startswith(("%", "!"))]
+        compile("".join(source_lines), f"demo.ipynb#cell-{idx}", "exec")

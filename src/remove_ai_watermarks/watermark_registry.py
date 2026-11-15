@@ -22,7 +22,8 @@ Entries:
   - ``doubao`` -- ByteDance Doubao "豆包AI生成" text strip, bottom-right.
   - ``jimeng`` -- ByteDance Jimeng / Dreamina "★ 即梦AI" wordmark, bottom-right.
   - ``qwen`` -- Alibaba Cloud Qwen "千问AI生成" text or three-lobe symbol, bottom-right.
-  - ``kling`` -- Kuaishou Kling AI "可灵AI 3.0" / "KlingAI 3.0" strip, bottom-right.
+  - ``wan`` -- Alibaba Wan logo and "Wan" wordmark, bottom-right.
+  - ``kling`` -- Kuaishou Kling AI "可灵AI 3.0/4.0" / "KlingAI 3.0/4.0" strip, bottom-right.
   - ``yuanbao`` -- Tencent Yuanbao "元宝 / AI生成" two-line mark, bottom-right.
   - ``dola`` -- ByteDance Dola "Dola AI" image disclosure, bottom-right.
   - ``workbuddy`` -- Tencent WorkBuddy "AI生成 / WORKBUDDY" disclosure, bottom-right.
@@ -739,9 +740,9 @@ _REGISTRY: tuple[KnownMark, ...] = (
     ),
     _text_mark(
         "kling",
-        "Kling AI 可灵AI / KlingAI 3.0 text",
+        "Kling AI 可灵AI / KlingAI 3.0/4.0 text",
         "bottom-right",
-        platform="Kuaishou Kling AI (visible 可灵AI / KlingAI 3.0 mark detected)",
+        platform="Kuaishou Kling AI (visible 可灵AI / KlingAI mark detected)",
         manufacturer="kuaishou",
     ),
     _text_mark(

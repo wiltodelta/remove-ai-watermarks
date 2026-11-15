@@ -3720,3 +3720,133 @@ class TestSignalDiscovery20261027VideoGaps:
         assert _white_fraction(frame[1840:1867, 785:931]) == 0.0
         assert detect_hailuo_frame(frame, frame_index=0).region is None
         assert detect_kling_frame(frame, frame_index=0).region is None
+
+    def test_unsupported_video_mark_error_lists_every_registered_mark(self, tmp_path):
+        from remove_ai_watermarks.video import VIDEO_VISIBLE_MARKS, remove_video_batch, remove_video_visible
+
+        clip = tmp_path / "clip.mp4"
+        clip.write_bytes(b"")
+        batch_dir = tmp_path / "videos"
+        batch_dir.mkdir()
+
+        with pytest.raises(ValueError, match="Unsupported visible video mark") as single_exc:
+            remove_video_visible(clip, mark="unsupported-mark")
+        with pytest.raises(ValueError, match="Unsupported visible video mark") as batch_exc:
+            remove_video_batch(batch_dir, mark="unsupported-mark")
+
+        for expected in ("auto", *VIDEO_VISIBLE_MARKS):
+            assert expected in str(single_exc.value)
+            assert expected in str(batch_exc.value)
+
+    def test_white_kling_4_mark_over_two_tone_non_white_background_is_detected(self):
+        from remove_ai_watermarks.video_visible import _kling_logo_template, _white_fraction, detect_kling_frame
+
+        # Real KlingAI 4.0 exports place semi-transparent white text over split
+        # backgrounds (e.g. skin/midtone V~165 beside dark hair/shadow V~20),
+        # where patch median < 180 and dark excursion below median exceeds the
+        # thin white strokes' excursion above median.
+        frame = np.full((720, 1280, 3), 165, dtype=np.uint8)
+        frame[665:715, 1110:1185] = 20
+        ring = cv2.resize(_kling_logo_template(), (24, 24), interpolation=cv2.INTER_AREA)
+        ring_alpha = (ring[:, :, None].astype(np.float32) / 255.0) * 0.72
+        roi_logo = frame[678:702, 1126:1150].astype(np.float32)
+        frame[678:702, 1126:1150] = np.clip(roi_logo * (1.0 - ring_alpha) + 255.0 * ring_alpha, 0, 255).astype(np.uint8)
+        overlay = np.zeros_like(frame)
+        cv2.putText(
+            overlay, "KlingAI 4.0", (1154, 697), cv2.FONT_HERSHEY_SIMPLEX, 0.56, (255, 255, 255), 2, cv2.LINE_AA
+        )
+        alpha = (overlay.astype(np.float32) / 255.0) * 0.72
+        frame = np.clip(frame.astype(np.float32) * (1.0 - alpha) + 255.0 * alpha, 0, 255).astype(np.uint8)
+
+        assert _white_fraction(frame[672:706, 1120:1268]) > 0.035
+        detection = detect_kling_frame(frame, frame_index=0)
+        assert detection.region is not None
+        assert detection.confidence >= 0.24
+
+    def test_inspects_and_removes_xai_grok_imagine_isobmff_comment_signature(self, tmp_path: Path):
+        from remove_ai_watermarks.metadata import has_ai_metadata
+        from remove_ai_watermarks.video import identify_video, inspect_video_metadata, remove_video_metadata
+
+        sig_value = b"Signature: " + (b"QUJD" * 30)  # 120 valid base64 chars
+        cmt_item = _box(b"\xa9cmt", _box(b"data", b"\x00\x00\x00\x01\x00\x00\x00\x00" + sig_value))
+        title_item = _box(b"\xa9nam", _box(b"data", b"\x00\x00\x00\x01\x00\x00\x00\x00standard title"))
+        meta = _box(b"meta", b"\x00\x00\x00\x00" + _hdlr(b"mdir") + _box(b"ilst", cmt_item + title_item))
+        big_mdat = _box(b"mdat", b"x" * (4 * 1024 * 1024 + 128))
+        source = tmp_path / "grok_imagine.mp4"
+        source.write_bytes(_MP4_FTYP + big_mdat + _box(b"moov", _box(b"udta", meta)))
+
+        assert has_ai_metadata(source) is True
+        inspected = inspect_video_metadata(source)
+        assert inspected.has_ai_metadata is True
+        assert "xai_signature" in inspected.markers
+
+        identified = identify_video(source, check_visible=False)
+        assert identified.is_ai_generated is True
+        assert identified.platform == "xAI Grok Imagine"
+
+        result = remove_video_metadata(source, tmp_path / "clean.mp4")
+        cleaned = result.output.read_bytes()
+        assert result.remaining == {}
+        assert has_ai_metadata(result.output) is False
+        assert len(cleaned) == source.stat().st_size
+        assert sig_value not in cleaned
+        assert b"standard title" in cleaned
+
+        # Ordinary human comment in \xa9cmt is untouched and not flagged.
+        plain_cmt = _box(b"\xa9cmt", _box(b"data", b"\x00\x00\x00\x01\x00\x00\x00\x00Shot in Kyoto"))
+        plain_meta = _box(b"meta", b"\x00\x00\x00\x00" + _hdlr(b"mdir") + _box(b"ilst", plain_cmt))
+        plain = tmp_path / "plain.mp4"
+        plain.write_bytes(_MP4_FTYP + _box(b"mdat", _VIDEO_PAYLOAD) + _box(b"moov", _box(b"udta", plain_meta)))
+        assert has_ai_metadata(plain) is False
+        assert inspect_video_metadata(plain).has_ai_metadata is False
+
+    @pytest.mark.parametrize(
+        ("extra_keys", "extra_vals"),
+        [
+            (
+                (b"topazcloud_provider", b"description", b"topazcloud", b"topazcloud_application"),
+                (b"Topaz Labs", b"AI-enhanced using Topaz Labs", b"slp-2.6", b"Topaz Cloud"),
+            ),
+            (
+                (b"videoai_provider", b"description", b"videoai", b"videoai_application"),
+                (b"Topaz Labs", b"Vacation clip", b"Enhanced using ganim-1", b"Topaz Video 1.7.1"),
+            ),
+        ],
+    )
+    def test_inspects_and_removes_topaz_isobmff_video_metadata(
+        self,
+        tmp_path: Path,
+        extra_keys: tuple[bytes, ...],
+        extra_vals: tuple[bytes, ...],
+    ):
+        from remove_ai_watermarks.metadata import has_ai_metadata
+        from remove_ai_watermarks.video import identify_video, inspect_video_metadata, remove_video_metadata
+
+        keys = _box(
+            b"keys",
+            b"\x00\x00\x00\x00" + len(extra_keys).to_bytes(4, "big") + b"".join(_metadata_key(k) for k in extra_keys),
+        )
+        ilst = _box(
+            b"ilst",
+            b"".join(_metadata_value(idx, val) for idx, val in enumerate(extra_vals, start=1)),
+        )
+        meta = _box(b"meta", b"\x00\x00\x00\x00" + _hdlr(b"mdta") + keys + ilst)
+        source = tmp_path / "topaz.mp4"
+        source.write_bytes(_MP4_FTYP + _box(b"mdat", _VIDEO_PAYLOAD) + _box(b"moov", _box(b"udta", meta)))
+
+        assert has_ai_metadata(source) is True
+        inspected = inspect_video_metadata(source)
+        assert inspected.has_ai_metadata is True
+
+        identified = identify_video(source, check_visible=False)
+        assert identified.is_ai_generated is True
+        assert identified.platform == "Topaz Labs"
+
+        result = remove_video_metadata(source, tmp_path / "clean.mp4")
+        cleaned = result.output.read_bytes()
+        assert result.remaining == {}
+        assert has_ai_metadata(result.output) is False
+        assert len(cleaned) == source.stat().st_size
+        assert b"Topaz Labs" not in cleaned
+        if b"Vacation clip" in extra_vals:
+            assert b"Vacation clip" in cleaned

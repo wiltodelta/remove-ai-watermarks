@@ -787,8 +787,9 @@ provenance, and either substantial overlap or a full-clip Veo run against a
 partial Sora run. The Veo detector recognizes
 the current four-point diamond and the
 legacy `Veo` text. Seedance recognizes the boxed `AI` label, Doubao recognizes
-the fixed `豆包AI生成` label, and Dola recognizes
+the fixed `豆包AI生成` label, Dola recognizes
 its compact text label, Hailuo AI recognizes the composite MINIMAX/Hailuo AI label,
+Vidu recognizes the two-loop logo and `Vidu AI` wordmark,
 and Kling AI recognizes its bottom-right logo, wordmark, and version suffix. Each
 variant has an independent synthetic silhouette and calibrated temporal policy.
 After each accepted frame is filled, `temporal_consistency=True` motion-aligns

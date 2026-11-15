@@ -3,16 +3,17 @@
 Kling AI stamps its generations with a thin, light-gray text strip in the
 bottom-right corner, preceded by the vendor's spiral logo (not part of the
 detection silhouette -- logos vary between releases, the text run is what
-discriminates). Separate silhouettes cover the older "可灵AI 3.0" release and
-the current IMAGE 3.0 "KlingAI 3.0" release. An "Omni" suffix and a version-less
-"可灵AI" remain outside the calibrated pair.
+discriminates). Separate silhouettes cover the CJK "可灵AI 3.0" / "可灵AI 4.0"
+releases and the Latin "KlingAI 3.0" / "KlingAI 4.0" releases. An "Omni" suffix
+and a version-less "可灵AI" remain outside the calibrated set.
 
 Detection matches the bundled glyph silhouette against the corner. Removal unions
 the pixel-derived footprint with the known silhouettes aligned to the winning match box,
 then sends the hybrid mask through the shared **localize -> fill** path in
-``region_eraser``; it is not reverse-alpha. This module supplies two tuned
-:class:`TextMarkConfig` instances (``assets/kling_alpha.png`` and
-``assets/kling_latin_alpha.png`` -- font-rendered synthetic silhouettes from
+``region_eraser``; it is not reverse-alpha. This module supplies tuned
+:class:`TextMarkConfig` instances (``assets/kling_alpha.png``,
+``assets/kling_4_alpha.png``, ``assets/kling_latin_alpha.png``, and
+``assets/kling_latin_4_alpha.png`` -- font-rendered synthetic silhouettes from
 ``scripts/render_vendor_silhouettes.py``, never cut from an upload). The detector
 also feeds ``identify`` as the medium-confidence ``visible_kling`` signal via the
 registry.
@@ -60,6 +61,7 @@ import numpy as np
 
 from remove_ai_watermarks import _text_mark_engine
 from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkDetection, TextMarkEngine
+from remove_ai_watermarks._text_mark_variants import TextMarkVariantsMixin
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -134,6 +136,11 @@ _CONFIG = TextMarkConfig(
 # reaches 0.379, so the 0.40 gate stays above both measured negative arms. Keep
 # this a separate silhouette and gate:
 # replacing the CJK template would discard the older measured release.
+_CJK_4_CONFIG = replace(
+    _CONFIG,
+    asset_name="kling_4_alpha.png",
+)
+
 _LATIN_CONFIG = replace(
     _CONFIG,
     asset_name="kling_latin_alpha.png",
@@ -145,6 +152,11 @@ _LATIN_CONFIG = replace(
     alpha_height_frac=0.032,
     ladder=(0.9, 1.0, 1.1),
     detect_ncc_threshold=0.40,
+)
+
+_LATIN_4_CONFIG = replace(
+    _LATIN_CONFIG,
+    asset_name="kling_latin_4_alpha.png",
 )
 
 
@@ -183,26 +195,15 @@ class _KlingTextEngine(TextMarkEngine):
         return max(0.0, min(score, detail_score)), box
 
 
-class KlingEngine(_KlingTextEngine):
-    """Detect/localize Kling AI's CJK and Latin 3.0 marks (locate -> mask -> fill)."""
+class KlingEngine(TextMarkVariantsMixin, _KlingTextEngine):
+    """Detect/localize Kling AI's CJK and Latin 3.0/4.0 marks (locate -> mask -> fill)."""
 
     def __init__(self) -> None:
         super().__init__(_CONFIG)
-        self._latin = _KlingTextEngine(_LATIN_CONFIG)
-
-    def detect(self, image: NDArray[Any], *, provenance: bool = False) -> TextMarkDetection:
-        """Return the strongest CJK or Latin Kling wordmark verdict."""
-        return _text_mark_engine.best_detection(
-            super().detect(image, provenance=provenance),
-            self._latin.detect(image, provenance=provenance),
-        )
-
-    def detect_both(self, image: NDArray[Any] | None) -> tuple[TextMarkDetection, TextMarkDetection]:
-        """Scan each immutable variant once and combine strict/relaxed verdicts."""
-        cjk_strict, cjk_relaxed = super().detect_both(image)
-        latin_strict, latin_relaxed = self._latin.detect_both(image)
-        return _text_mark_engine.best_detection(cjk_strict, latin_strict), _text_mark_engine.best_detection(
-            cjk_relaxed, latin_relaxed
+        self._variants = (
+            _KlingTextEngine(_CJK_4_CONFIG),
+            _KlingTextEngine(_LATIN_CONFIG),
+            _KlingTextEngine(_LATIN_4_CONFIG),
         )
 
     def footprint_mask(
@@ -222,12 +223,12 @@ class KlingEngine(_KlingTextEngine):
         shared geometry-box behavior.
         """
         if force or image is None or image.size == 0:
-            return super().footprint_mask(image, force=force, dilate=dilate, detection=detection)
+            return TextMarkEngine.footprint_mask(self, image, force=force, dilate=dilate, detection=detection)
 
         det = detection if detection is not None else self.detect(image)
         if not det.detected:
             return None
-        engine = self._latin if det.template_asset == _LATIN_CONFIG.asset_name else self
+        engine = self.variant_engine(det)
         legacy = TextMarkEngine.footprint_mask(engine, image, force=False, dilate=dilate, detection=det)
         radius = _FOOTPRINT_DILATE if dilate is None else max(0, dilate)
         result = legacy

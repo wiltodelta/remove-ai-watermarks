@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
     from datetime import date
 
 import click
@@ -60,7 +61,9 @@ from remove_ai_watermarks.identify import extract_provenance_evidence, identify_
 from remove_ai_watermarks.metadata import (
     IPTC_AI_FIELD_MARKERS,
     IPTC_AI_MARKERS,
+    KLING_SEI_TAG,
     aigc_label_from_metadata,
+    app_generator_from_metadata,
     c2pa_marker_in,
     samsung_genai_in,
     scan_head,
@@ -79,22 +82,46 @@ MARKERS: tuple[bytes, ...] = (
     # AI source-type / labeling schemes that are meaningful by presence.
     b"trainedAlgorithmicMedia",
     b"AISystemUsed",
+    b"c2pa.ai-disclosure",
     b"hf-job-id",
-    # Distinctive multi-word generator strings only. Bare single words (Luma,
-    # Gemini, Sora, ...) are omitted: they collide with unrelated metadata prose
-    # (e.g. "Luma" in Lightroom's EnhanceDenoiseLumaAmount), defeating precision.
+    # Distinctive multi-word or domain-scoped generator strings only. Bare single
+    # words (Luma, Gemini, Sora, ...) are omitted: they collide with unrelated
+    # metadata prose (e.g. "Luma" in Lightroom's EnhanceDenoiseLumaAmount),
+    # defeating precision.
     b"Midjourney",
     b"Stable Diffusion",
     b"StableDiffusion",
     b"ComfyUI",
     b"Automatic1111",
+    b"InvokeAI",
     b"DALL-E",
+    b"gpt-image",
+    b"GPT Image",
     b"Ideogram AI",
     b"Adobe Firefly",
     b"Black Forest",
     b"volcengine",
+    b"Byteplus",
     b"Nano Banana",
     b"Stability AI",
+    b"DreamStudio",
+    b"NightCafe",
+    b"NovelAI",
+    b"reve.com",
+    b"Luma AI",
+    b"lumalabs",
+    b"Aphrodite AI",
+    b"Apple Image Playground",
+    b"Apple Photos Generative Edit",
+    b"Apple Photos Clean Up",
+    b"Grok Imagine",
+    b"Amazon Bedrock",
+    b"Higgsfield AI",
+    b"recraft.ai",
+    b"fal-ai",
+    b"Producer.ai",
+    b"Synchronicity Labs",
+    b"Runway AI",
 )
 REPORT_FIELDS: tuple[str, ...] = (
     "report_schema_version",
@@ -139,20 +166,51 @@ def _row(rep, *, path: str, suffix: str, lib_version: str) -> dict[str, str]:  #
     }
 
 
+_LOWERED_MARKERS: tuple[tuple[str, bytes], ...] = tuple(
+    (marker.decode("latin-1", "replace"), marker.lower()) for marker in MARKERS
+)
+_STRUCTURAL_VIDEO_METADATA_KEYS: frozenset[str] = frozenset(
+    {
+        "actions",
+        "c2pa_manifest",
+        "c2pa_signer_validity",
+        "c2pa_validation_source",
+        "c2pa_validation_state",
+        "claim_generator",
+        "issuer",
+        "source_type",
+    }
+)
+
+
+def _c2pa_fields(mapping: Mapping[str, object]) -> dict[str, str]:
+    return {
+        "c2pa_issuer": str(mapping.get("issuer", "")),
+        "c2pa_claim_generator": str(mapping.get("claim_generator", "")),
+        "c2pa_actions": str(mapping.get("actions", "")),
+        "c2pa_source_type": str(mapping.get("source_type", "")),
+        "c2pa_validation": str(mapping.get("c2pa_validation_state", "")),
+    }
+
+
 def _marker_hits(region: bytes) -> list[str]:
     """Return high-precision marker labels found in one metadata region."""
     folded = region.lower()
-    hits = {marker.decode("latin-1", "replace") for marker in MARKERS if marker.lower() in folded}
+    hits = {label for label, lowered in _LOWERED_MARKERS if lowered in folded}
     if c2pa_marker_in(region):
         hits.add("C2PA/JUMBF")
     if aigc_label_from_metadata(region) is not None:
         hits.add("TC260 AIGC")
+    if app_generator_from_metadata(region) is not None:
+        hits.add("App AIGC disclosure")
     if any(marker in region for marker in IPTC_AI_MARKERS + IPTC_AI_FIELD_MARKERS):
         hits.add("IPTC AI disclosure")
     if samsung_genai_in(region) is not None:
         hits.add("Samsung genAIType")
     if xai_signature_in_metadata(region):
         hits.add("xAI signature pair")
+    if KLING_SEI_TAG in region:
+        hits.add("Kling SEI tag")
     return sorted(hits)
 
 
@@ -164,7 +222,7 @@ def _marker_hits_for_path(path: Path) -> list[str]:
         return []
 
 
-def _candidate_classes(rep: Any, hits: list[str]) -> list[str]:
+def _candidate_classes(rep: Any, hits: Sequence[str]) -> list[str]:
     """Classify review-worthy outcomes without treating them as proven bugs."""
     classes: list[str] = []
     if hits and not rep.is_ai_generated and not rep.signals:
@@ -190,10 +248,38 @@ def _files(corpus: Path, since: date | None) -> list[Path]:
 
 def _scan_one(args: tuple[str, str, str]) -> dict[str, str]:
     """Scan one path in a worker process and always return a report row."""
+    from types import SimpleNamespace
+
+    from remove_ai_watermarks.video import VIDEO_EXTENSIONS, identify_video
+
     path_str, relative_path, lib_version = args
     path = Path(path_str)
     suffix = path.suffix.lower()
     try:
+        if suffix in VIDEO_EXTENSIONS:
+            vrep = identify_video(path, check_visible=False)
+            markers_str = "|".join(vrep.metadata_markers.keys())
+            row = {
+                **_base_row(relative_path, suffix, lib_version),
+                "is_ai": str(vrep.is_ai_generated),
+                "platform": vrep.platform or "",
+                "confidence": vrep.confidence,
+                "watermarks": markers_str,
+                "signals": markers_str,
+                **_c2pa_fields(vrep.metadata_markers),
+            }
+            hits = _marker_hits_for_path(path)
+            ai_signals = sorted(set(vrep.metadata_markers.keys()) - _STRUCTURAL_VIDEO_METADATA_KEYS)
+            video_summary = SimpleNamespace(
+                is_ai_generated=vrep.is_ai_generated,
+                platform=vrep.platform,
+                signals=ai_signals,
+                integrity_clashes=(),
+            )
+            row["markers"] = "|".join(hits)
+            row["candidate_classes"] = "|".join(_candidate_classes(video_summary, hits))
+            return row
+
         evidence = extract_provenance_evidence(path)
         rep = identify_from_evidence(evidence)
     except Exception as exc:
@@ -201,21 +287,14 @@ def _scan_one(args: tuple[str, str, str]) -> dict[str, str]:
         row = _base_row(relative_path, suffix, lib_version)
         row["candidate_classes"] = "identify_error"
         row["error"] = f"{type(exc).__name__}: {exc}"[:300].replace("\n", " ")
-    else:
-        row = _row(rep, path=relative_path, suffix=suffix, lib_version=lib_version)
-        c2pa = evidence.c2pa_info
-        row.update(
-            c2pa_issuer=str(c2pa.get("issuer", "")),
-            c2pa_claim_generator=str(c2pa.get("claim_generator", "")),
-            c2pa_actions=str(c2pa.get("actions", "")),
-            c2pa_source_type=str(c2pa.get("source_type", "")),
-            c2pa_validation=str(c2pa.get("c2pa_validation_state", "")),
-        )
-        hits = _marker_hits(identify_metadata_region(evidence.scan))
-        row["markers"] = "|".join(hits)
-        row["candidate_classes"] = "|".join(_candidate_classes(rep, hits))
+        row["markers"] = "|".join(_marker_hits_for_path(path))
         return row
-    row["markers"] = "|".join(_marker_hits_for_path(path))
+
+    row = _row(rep, path=relative_path, suffix=suffix, lib_version=lib_version)
+    row.update(_c2pa_fields(evidence.c2pa_info))
+    hits = _marker_hits(identify_metadata_region(evidence.scan))
+    row["markers"] = "|".join(hits)
+    row["candidate_classes"] = "|".join(_candidate_classes(rep, hits))
     return row
 
 
