@@ -52,6 +52,7 @@ remove-ai-watermarks classify-source image.jpg --json
 uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py image.jpg --json
 uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py --inspect-weights
 uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/benchmark.py
+uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/benchmark.py --tier frontier
 ```
 
 Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v6.npz` or its parent directory for air-gapped deployments.

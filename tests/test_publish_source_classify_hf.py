@@ -6,6 +6,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -107,7 +108,7 @@ def test_stage_release_includes_standalone_scripts_and_colab_notebook() -> None:
     assert all((publish.CARD_DIR / name).is_file() for name in publish.TRACKED_CARD_FILES)
 
 
-def _load_module(name: str, path: Path) -> object:
+def _load_module(name: str, path: Path) -> Any:
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(name, path)
@@ -120,13 +121,11 @@ def _load_module(name: str, path: Path) -> object:
 
 
 def test_standalone_infer_script_inspects_weights_and_classifies_images(tmp_path: Path) -> None:
-    from typing import Any
-
     import numpy as np
     from PIL import Image
 
-    sc_mod: Any = _load_module("raiw_test_source_classify", Path(__file__).with_name("test_source_classify.py"))
-    infer_mod: Any = _load_module("raiw_hf_infer", publish.CARD_DIR / "infer.py")
+    sc_mod = _load_module("raiw_test_source_classify", Path(__file__).with_name("test_source_classify.py"))
+    infer_mod = _load_module("raiw_hf_infer", publish.CARD_DIR / "infer.py")
 
     weights = sc_mod._write_synthetic_v5_npz(
         tmp_path / "synthetic_v5.npz",
@@ -181,9 +180,7 @@ def test_demo_notebook_is_valid_nbformat_and_compiles_cleanly() -> None:
 
 
 def test_standalone_benchmark_script_summarizes_and_formats_metrics() -> None:
-    from typing import Any
-
-    bench_mod: Any = _load_module("raiw_hf_benchmark", publish.CARD_DIR / "benchmark.py")
+    bench_mod = _load_module("raiw_hf_benchmark", publish.CARD_DIR / "benchmark.py")
     samples = [
         bench_mod.SampleItem(
             sha256="a" * 64,
@@ -193,20 +190,33 @@ def test_standalone_benchmark_script_summarizes_and_formats_metrics() -> None:
             width=1024,
             height=768,
             raw_bytes=b"",
+            regime="non_ai",
         ),
         bench_mod.SampleItem(
             sha256="b" * 64,
-            category="ai_flux",
+            category="native_flux",
             expected_provider="flux",
+            container_format="PNG",
+            width=1024,
+            height=1024,
+            raw_bytes=b"",
+            regime="native",
+        ),
+        bench_mod.SampleItem(
+            sha256="c" * 64,
+            category="ai_openai",
+            expected_provider="openai",
             container_format="JPEG",
             width=1024,
             height=1024,
             raw_bytes=b"",
+            regime="arena",
         ),
     ]
     preds = [
         {"pred_ai": False, "pred_provider": None},
         {"pred_ai": True, "pred_provider": "flux"},
+        {"pred_ai": False, "pred_provider": None},
     ]
     summary = bench_mod._summarize_predictions(
         model_id="wiltodelta/raiw-source-classify",
@@ -219,9 +229,14 @@ def test_standalone_benchmark_script_summarizes_and_formats_metrics() -> None:
         preds=preds,
     )
     assert summary["non_ai_fpr_pct"] == 0.0
-    assert summary["ai_recall_pct"] == 100.0
+    assert summary["native_ai"]["recall_pct"] == 100.0
+    assert summary["native_ai"]["provider_attribution_pct"] == 100.0
+    assert summary["arena_ai"]["recall_pct"] == 0.0
+    assert summary["ai_recall_pct"] == 50.0
     assert summary["precision_pct"] == 100.0
-    assert summary["provider_attribution_pct"] == 100.0
+    assert summary["provider_attribution_pct"] == 50.0
     md = bench_mod.format_markdown_table([summary])
     assert "`wiltodelta/raiw-source-classify`" in md
     assert "0.0% (0/1)" in md
+    assert "Native AI Recall (`1`)" in md
+    assert "Arena AI Recall (`1`)" in md
