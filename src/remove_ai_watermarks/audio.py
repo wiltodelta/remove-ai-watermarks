@@ -92,6 +92,7 @@ class AudioWindowReading:
     end_frame: int
     reading: AudioModelReading | None
     error: str | None = None
+    inapplicable: bool = False
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,7 @@ class AudioDetection:
     whole_clip_error: str | None = None
     decoder_sample_rate: int | None = None
     whole_segments: tuple[AudioWindowReading, ...] = ()
+    inapplicable: bool = False
 
 
 @dataclass(frozen=True)
@@ -274,11 +276,11 @@ def _model_samples(samples: NDArray[Any], sample_rate: int) -> NDArray[Any]:
 
 def _read_model(
     model: Any, samples: NDArray[Any], rate: int, scheme: str, *, native_audioseal: bool = False
-) -> tuple[AudioModelReading | None, str | None]:
+) -> tuple[AudioModelReading | None, str | None, bool]:
     if scheme in {"silentcipher", "silentcipher16"}:
         backend = silentcipher16 if scheme == "silentcipher16" else silentcipher
         try:
-            return backend.read(model, samples, sample_rate=rate), None
+            return backend.read(model, samples, sample_rate=rate), None, False
         except (RuntimeError, ValueError) as exc:
             log.warning(
                 "SilentCipher check failed: scheme=%s sample_rate=%s sample_count=%s error=%s",
@@ -287,15 +289,15 @@ def _read_model(
                 len(samples),
                 exc,
             )
-            return None, str(exc)
+            return None, str(exc), False
     # AudioSeal 0.2 does not resample internally. Some encoders, including the
     # published LTX marker, stamp at the native sample clock instead of 16 kHz.
     prepared = samples if native_audioseal else _model_samples(samples, rate)
     if scheme in {"wavmark", "perth"} and len(prepared) < 16000:
-        return None, "Audio is shorter than one complete model window"
+        return None, "Audio is shorter than one complete model window", True
     try:
         decoder = {"audioseal": audioseal.read, "wavmark": wavmark.read, "perth": perth.read}[scheme]
-        return decoder(model, prepared), None
+        return decoder(model, prepared), None, False
     except RuntimeError as exc:
         log.warning(
             "Audio decoder check failed: scheme=%s sample_rate=%s sample_count=%s error=%s",
@@ -304,7 +306,7 @@ def _read_model(
             len(samples),
             exc,
         )
-        return None, str(exc)
+        return None, str(exc), False
 
 
 def _scan_audio(
@@ -337,6 +339,20 @@ def _scan_openvoice_default(
     checks: list[AudioDetection] = []
     for channel in channels:
         mono = frames.mean(axis=1) if channel == "mix" else frames[:, channel]
+        if len(mono) < wavmark.MIN_READ_SAMPLES:
+            checks.append(
+                AudioDetection(
+                    "wavmark",
+                    channel,
+                    "unverified",
+                    None,
+                    (),
+                    "Audio is shorter than one complete OpenVoice signature window",
+                    info.sample_rate,
+                    inapplicable=True,
+                )
+            )
+            continue
         try:
             whole, fragments = wavmark.read_openvoice_default(model, mono)
         except (RuntimeError, ValueError) as exc:
@@ -400,10 +416,12 @@ def _scan_audio_at_clock(
     def flush_segment(block: NDArray[Any], start_frame: int, end_frame: int) -> None:
         for channel in channels:
             mono = block.mean(axis=1) if channel == "mix" else block[:, channel]
-            seg_reading, seg_error = _read_model(
+            seg_reading, seg_error, seg_inapplicable = _read_model(
                 model, mono, info.sample_rate, scheme, native_audioseal=native_audioseal
             )
-            segments[channel].append(AudioWindowReading(start_frame, end_frame, seg_reading, seg_error))
+            segments[channel].append(
+                AudioWindowReading(start_frame, end_frame, seg_reading, seg_error, inapplicable=seg_inapplicable)
+            )
 
     for frames in audio_io.read_audio(source, info, chunk_frames=window_frames):
         if not np.isfinite(frames).all():
@@ -414,8 +432,12 @@ def _scan_audio_at_clock(
             start = count + len(frames) - len(window)
         for channel in channels:
             mono = window.mean(axis=1) if channel == "mix" else window[:, channel]
-            reading, error = _read_model(model, mono, info.sample_rate, scheme, native_audioseal=native_audioseal)
-            windows[channel].append(AudioWindowReading(start, count + len(frames), reading, error))
+            reading, error, win_inapplicable = _read_model(
+                model, mono, info.sample_rate, scheme, native_audioseal=native_audioseal
+            )
+            windows[channel].append(
+                AudioWindowReading(start, count + len(frames), reading, error, inapplicable=win_inapplicable)
+            )
         previous = frames
         count += len(frames)
 
@@ -467,6 +489,9 @@ def _scan_audio_at_clock(
                 error,
                 decoder_rate,
                 seg_tuple,
+                inapplicable=bool(seg_tuple or intervals)
+                and all(s.inapplicable for s in seg_tuple)
+                and all(w.inapplicable for w in intervals),
             )
         )
     caveats = [
@@ -494,7 +519,10 @@ def _scan_audio_at_clock(
         )
     if multi_segment:
         caveats.append("Long-clip decoding used bounded overlapping segments alongside all sample windows.")
-    if any(d.whole_clip_error or any(w.error for w in d.windows) for d in detections):
+    if any(
+        (not d.inapplicable) and (d.whole_clip_error or any(w.error and not w.inapplicable for w in d.windows))
+        for d in detections
+    ):
         caveats.append("Some decoder checks failed; those checks are unverified, not negative.")
     return tuple(detections), tuple(caveats)
 
@@ -566,8 +594,13 @@ def identify_audio(
                 caveats.append(
                     f"Auto audio inspection skipped uninstalled optional decoders: {', '.join(skipped_auto)}."
                 )
-            if any(d.status in {"detected", "not_detected"} for d in found):
-                found = [d for d in found if d.status != "unverified"]
+            if any(not d.inapplicable for d in found):
+                if any(d.inapplicable for d in found):
+                    caveats.append(
+                        "Auto audio inspection skipped checks whose minimum window (16000 samples / one second) "
+                        "exceeds the clip duration."
+                    )
+                found = [d for d in found if not d.inapplicable]
         detections = tuple(found)
     if sha256_file(path) != digest:
         raise RuntimeError("Audio source changed during inspection")
@@ -577,6 +610,86 @@ def identify_audio(
 def _missing_decoder_reason(report: AudioProvenanceReport) -> str | None:
     missing = [caveat for caveat in report.caveats if "decoding is unavailable; install " in caveat]
     return "; ".join(missing) if missing else None
+
+
+def verification_failure_reason(report: AudioProvenanceReport) -> str | None:
+    """Return a concise diagnostic when post-processing audio verification is incomplete."""
+    if missing := _missing_decoder_reason(report):
+        return missing
+    if any(
+        (not d.inapplicable)
+        and (
+            d.whole_clip_error
+            or any(s.error and not s.inapplicable for s in d.whole_segments)
+            or any(w.error and not w.inapplicable for w in d.windows)
+        )
+        for d in report.detections
+    ):
+        return "One or more audio decoder checks failed during output verification."
+    return None
+
+
+def verification_outcome(before: AudioProvenanceReport, after: AudioProvenanceReport) -> bool | None:
+    """Return True only when every source-positive check has complete negative output coverage."""
+    if after.watermark_status == "detected" or any(d.status == "detected" for d in after.detections):
+        return False
+    if before.watermark_status != "detected" or after.watermark_status != "not_detected":
+        return None
+    applicable_after = [d for d in after.detections if not d.inapplicable]
+    if not applicable_after or any(d.status != "not_detected" for d in applicable_after):
+        return None
+    after_by_key: dict[tuple[str, int | Literal["mix"], int | None], list[AudioDetection]] = {}
+    for det in applicable_after:
+        after_by_key.setdefault((det.scheme, det.channel, det.decoder_sample_rate), []).append(det)
+    source_positives = [d for d in before.detections if d.status == "detected"]
+    if not source_positives:
+        return None
+    for pos in source_positives:
+        matched = after_by_key.get((pos.scheme, pos.channel, pos.decoder_sample_rate))
+        if not matched or any(item.status != "not_detected" for item in matched):
+            return None
+    return True
+
+
+def _require_base_audio_runtime(method: str) -> None:
+    if not audio_io.is_available() or not audio_spectral.is_available():
+        extra = (
+            "audio-vocoder"
+            if method == "bigvgan"
+            else "audio-codec"
+            if method in {"mimi", "focalcodec", "dac"}
+            else "audio"
+        )
+        raise ImportError(f"Audio processing requires 'remove-ai-watermarks[{extra}]' and ffmpeg")
+
+
+def require_audio_profile_runtime(method: AudioProfile) -> None:
+    """Ensure runtime dependencies for a concrete audio processing profile are installed."""
+    if method in {"encodec", "combined"} and not audio_codec.is_available():
+        raise ImportError("Neural audio processing requires remove-ai-watermarks[audio-codec]")
+    if method == "mimi" and not audio_mimi.is_available():
+        raise ImportError("Mimi processing requires remove-ai-watermarks[audio-codec]")
+    if method == "focalcodec" and not audio_focalcodec.is_available():
+        raise ImportError("FocalCodec processing requires remove-ai-watermarks[audio-codec]")
+    if method == "dac" and not audio_dac.is_available():
+        raise ImportError("DAC processing requires remove-ai-watermarks[audio-codec]")
+    if method == "bigvgan" and not audio_vocoder.is_available():
+        raise ImportError("BigVGAN processing requires remove-ai-watermarks[audio-vocoder]")
+    _require_base_audio_runtime(method)
+
+
+def validate_audio_stream_for_profile(info: audio_io.AudioStreamInfo, method: AudioProfile) -> None:
+    """Validate channel layout and bounded full-track limits for a selected audio profile."""
+    if method in {"bigvgan", "mimi", "focalcodec", "dac"} and (
+        info.channel_layout not in {"mono", "stereo"} or info.channels not in (1, 2)
+    ):
+        label = {"bigvgan": "BigVGAN", "mimi": "Mimi", "focalcodec": "FocalCodec", "dac": "DAC"}[method]
+        raise ValueError(f"{label} requires a mono or stereo channel layout")
+    if method in {"bigvgan", "mimi"} and info.duration is not None:
+        label = "BigVGAN" if method == "bigvgan" else "Mimi"
+        est_frames = int(info.duration * info.sample_rate)
+        if est_frames > _MAX_WHOLE_SECONDS * info.sample_rate or est_frames * info.channels > _MAX_WHOLE_VALUES:
+            raise ValueError(f"{label} full-track processing is limited to 30 seconds and 16000000 sample values")
 
 
 def adaptive_auto_profiles(scheme: AudioScheme, before: AudioProvenanceReport) -> tuple[AudioProfile, ...]:
@@ -613,15 +726,7 @@ def resolve_audio_profiles(
         raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
     if method in {"auto", "encodec", "combined"} and bandwidth_kbps not in audio_codec.BANDWIDTHS_KBPS:
         raise ValueError("EnCodec bandwidth must be 6, 12, or 24 kbps")
-    if not audio_io.is_available() or not audio_spectral.is_available():
-        extra = (
-            "audio-vocoder"
-            if method == "bigvgan"
-            else "audio-codec"
-            if method in {"mimi", "focalcodec", "dac"}
-            else "audio"
-        )
-        raise ImportError(f"Audio processing requires 'remove-ai-watermarks[{extra}]' and ffmpeg")
+    _require_base_audio_runtime(method)
     return _AUTO_PROFILES[scheme] if method == "auto" else (method,)
 
 
@@ -740,25 +845,7 @@ def _remove_audio_profile(
     neural = method in {"encodec", "combined"}
     if neural and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
         raise ValueError("EnCodec bandwidth must be 6, 12, or 24 kbps")
-    if neural and not audio_codec.is_available():
-        raise ImportError("Neural audio processing requires remove-ai-watermarks[audio-codec]")
-    if method == "mimi" and not audio_mimi.is_available():
-        raise ImportError("Mimi processing requires remove-ai-watermarks[audio-codec]")
-    if method == "focalcodec" and not audio_focalcodec.is_available():
-        raise ImportError("FocalCodec processing requires remove-ai-watermarks[audio-codec]")
-    if method == "dac" and not audio_dac.is_available():
-        raise ImportError("DAC processing requires remove-ai-watermarks[audio-codec]")
-    if method == "bigvgan" and not audio_vocoder.is_available():
-        raise ImportError("BigVGAN processing requires remove-ai-watermarks[audio-vocoder]")
-    if not audio_io.is_available() or not audio_spectral.is_available():
-        extra = (
-            "audio-vocoder"
-            if method == "bigvgan"
-            else "audio-codec"
-            if method in {"mimi", "focalcodec", "dac"}
-            else "audio"
-        )
-        raise ImportError(f"Audio processing requires 'remove-ai-watermarks[{extra}]' and ffmpeg")
+    require_audio_profile_runtime(method)
     target = Path(output).expanduser()
     original = Path(source).expanduser().resolve()
     if target.resolve() == original or (target.exists() and target.samefile(original)):
@@ -766,9 +853,7 @@ def _remove_audio_profile(
     before = (
         _before if _before is not None else identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
     )
-    if method in {"bigvgan", "mimi", "focalcodec", "dac"} and before.stream.channel_layout not in {"mono", "stereo"}:
-        label = {"bigvgan": "BigVGAN", "mimi": "Mimi", "focalcodec": "FocalCodec", "dac": "DAC"}[method]
-        raise ValueError(f"{label} requires a mono or stereo channel layout")
+    validate_audio_stream_for_profile(before.stream, method)
     if not force and before.watermark_status != "detected":
         return AudioRemovalResult(
             before.source,
@@ -847,13 +932,9 @@ def _remove_audio_profile(
         after = identify_audio(staged, check_invisible=verify, scheme=scheme)
         if after.metadata_markers:
             raise RuntimeError(f"AI metadata remains in the processed audio: {sorted(after.metadata_markers)}")
-        verified: bool | None = None
-        if after.watermark_status == "detected":
-            verified = False
-        elif before.watermark_status == "detected" and after.watermark_status == "not_detected":
-            verified = True
+        verified = verification_outcome(before, after)
         if not force and verified is not True:
-            raise AudioVerificationIncomplete(before, after, _missing_decoder_reason(after))
+            raise AudioVerificationIncomplete(before, after, verification_failure_reason(after))
         if not force and not quality_ok:
             raise AudioVerificationIncomplete(before, after, "Delivered audio failed the minimum quality gate")
         if sha256_file(before.source) != before.sha256:

@@ -66,8 +66,8 @@ when an optional backend is absent.
 
 | Tool | Runs | Writes |
 | --- | --- | --- |
-| `identify` | `identify --json` for an image, `video identify --json` for a video suffix, or `audio identify --json` for an audio suffix; `check_visible: false` adds `--no-visible` (or `--no-invisible` for audio) | Nothing |
-| `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all` for audio | One output file, `<name>_clean` beside the source unless `output` is given |
+| `identify` | `identify --json` for an image, `video identify --json` for a video suffix, `audio identify --json` for an audio suffix, or `text identify --json` for a text suffix; `check_visible: false` adds `--no-visible` (or `--no-invisible` for audio) | Nothing |
+| `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all --invisible` for audio; `text metadata --remove` or `text all` for text | One output file, `<name>_clean` beside the source unless `output` is given |
 | `batch` | `batch --mode` for images, `video batch --mode` for video (`media: "video"`), or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
 | `audio_identify` | `audio identify --json`; `check_invisible: false` skips models | Nothing |
 | `audio_invisible` | `audio invisible --json`, with explicit `stream`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
@@ -113,7 +113,10 @@ profile remain unqualified. `all` requests both SilentCipher receivers.
 
 `mode` is `metadata` (the default), `visible` or `all`. For an image, `all`
 adds the invisible-watermark scrub where the installed extras and a CUDA GPU
-allow it; `video all` removes visible marks and metadata only. The server never
+allow it; for audio, `all` runs `audio all --invisible` across compatible public
+decoders; for text, `all` runs `text all`; for video, `video all` removes visible
+marks and metadata only (use `cli_video_all` when opt-in video or audio invisible
+regeneration is needed). The server never
 writes over an input: an `output` equal to the source, or an `output_dir` equal
 to the input directory, is refused before anything runs.
 

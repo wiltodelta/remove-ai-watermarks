@@ -47,6 +47,8 @@ WAN21_SEEDANCE_STRENGTH = 0.12
 WAN21_SPATIAL_MULTIPLE = 16
 WAN21_DEFAULT_CHUNK_FRAMES = 193
 WAN21_DEFAULT_OVERLAP_FRAMES = 17
+WAN21_MAX_FRAME_PIXELS = 1920 * 1080
+WAN21_MAX_TOTAL_PIXEL_FRAMES = 600 * 1280 * 720
 WAN21_DEFAULT_PROMPT = "High fidelity natural video, sharp details, accurate motion, clean cinematic lighting."
 WAN21_DEFAULT_NEGATIVE_PROMPT = (
     "blurry, low quality, compression artifacts, flicker, warped edges, text, logo, watermark"
@@ -87,13 +89,15 @@ def is_available() -> bool:
 
 
 def resolve_wan_device(requested: str) -> str:
-    """Resolve CUDA execution for 3D Wan 2.1 BF16 video diffusion."""
+    """Resolve BF16-capable CUDA execution for 3D Wan 2.1 video diffusion."""
     if requested not in {"auto", "cuda"}:
         raise ValueError("Wan 2.1 3D video diffusion requires device='auto' or device='cuda'")
     import torch
 
     if not torch.cuda.is_available():
         raise RuntimeError("Wan 2.1 3D video diffusion requires an NVIDIA CUDA GPU")
+    if not torch.cuda.is_bf16_supported():
+        raise RuntimeError("Wan 2.1 3D video diffusion requires a BF16-capable NVIDIA CUDA GPU (Ampere or newer)")
     return "cuda"
 
 
@@ -145,6 +149,21 @@ def _validate_wan_window_args(chunk_frames: int, overlap_frames: int) -> None:
         raise ValueError("overlap_frames must satisfy 0 <= overlap_frames < chunk_frames")
 
 
+def _validate_wan_source_budget(width: int, height: int, frame_count: int) -> None:
+    """Enforce conservative spatial and host-memory decoded-frame limits before decoding."""
+    frame_pixels = width * height
+    if frame_pixels > WAN21_MAX_FRAME_PIXELS:
+        raise ValueError(
+            f"Experimental Wan 2.1 processing requires frame area <= {WAN21_MAX_FRAME_PIXELS} pixels "
+            f"(got {width}x{height})"
+        )
+    if frame_pixels * frame_count > WAN21_MAX_TOTAL_PIXEL_FRAMES:
+        raise ValueError(
+            f"Experimental Wan 2.1 host-memory budget exceeded: {frame_count} frames at {width}x{height} "
+            f"exceeds {WAN21_MAX_TOTAL_PIXEL_FRAMES} pixel-frames"
+        )
+
+
 def can_run_wan_on_source(
     source: Path,
     *,
@@ -167,12 +186,17 @@ def can_run_wan_on_source(
         except Exception:
             return False
     try:
-        validate_experimental_mp4_source(
+        width, height, _fps, timestamps = validate_experimental_mp4_source(
             source,
             label="Experimental Wan 2.1 processing",
             encode_profile=probe_video_encode_profile(source),
         )
     except Exception:
+        return False
+    try:
+        _validate_wan_source_budget(width, height, len(timestamps))
+    except ValueError as exc:
+        log.warning("Wan 2.1 eligibility skipped for %s (%s); auto profile will use 2D fallback", source.name, exc)
         return False
     return True
 
@@ -318,13 +342,16 @@ def regenerate_wan_experimental(
     if runtime is not None and (runtime.model != WAN21_MODEL_ID or runtime.revision != WAN21_MODEL_REVISION):
         raise ValueError("The supplied Wan 2.1 runtime does not match the pinned model and revision")
 
-    _width, _height, fps, timestamps = validate_experimental_mp4_source(
+    width, height, fps, timestamps = validate_experimental_mp4_source(
         source,
         label="Experimental Wan 2.1 processing",
         encode_profile=probe_video_encode_profile(source),
     )
+    _validate_wan_source_budget(width, height, len(timestamps))
     if runtime is None and not is_available():
         raise RuntimeError("Wan 2.1 video processing requires 'remove-ai-watermarks[video,diffusion]'")
+    if runtime is None:
+        resolve_wan_device(device)
 
     strength = profile_strength(profile)
     log.warning(

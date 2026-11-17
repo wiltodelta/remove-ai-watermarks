@@ -71,7 +71,7 @@ class VideoMetadataReport:
 class VideoAudioStatus:
     """Audio disposition and watermark status for a video output."""
 
-    stream_action: Literal["copied_if_present", "not_written", "processed"] = "copied_if_present"
+    stream_action: Literal["copied_if_present", "not_written", "processed", "absent"] = "copied_if_present"
     watermark_status: Literal["unverified", "not_detected", "detected"] = "unverified"
 
 
@@ -182,11 +182,20 @@ class VideoSeedanceExperimentalResult(VideoInvisibleResult):
 
 @dataclass(frozen=True)
 class VideoWanExperimentalResult(VideoInvisibleResult):
-    """Experimental CUDA 3D Wan 2.1 reconstruction, without a per-file detector verdict."""
+    """Experimental CUDA 3D Wan 2.1 reconstruction, without a per-file detector verdict.
+
+    ``strength`` carries the calibrated flow-matching denoising strength;
+    ``noise_std`` mirrors it for ``VideoInvisibleResult`` compatibility.
+    """
 
     quality: Literal["delivery", "master"] = "delivery"
     profile: WanExperimentalProfile = "wan21-synthid-experimental"
     experimental: bool = True
+    strength: float = -1.0
+
+    def __post_init__(self) -> None:
+        if self.strength < 0.0:
+            object.__setattr__(self, "strength", self.noise_std)
 
 
 @dataclass(frozen=True)
@@ -205,6 +214,8 @@ class VideoAllResult(_VideoAudioBoundary):
     invisible_profile: VideoInvisibleProfile | None = None
     audio_status: VideoAudioStatus | None = None
     audio_processed_streams: tuple[int, ...] = ()
+    audio_verification_scope: tuple[str, ...] = ()
+    audio_quality_passed: bool | None = None
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -911,20 +922,23 @@ def remove_video_all(
     if include_audio_invisible:
         if source_path.suffix.lower() not in {".mp4", ".mov", ".mkv"}:
             raise ValueError("Video audio watermark processing requires MP4, MOV, or MKV input")
-        from remove_ai_watermarks import audio as _audio_mod
+        from remove_ai_watermarks import video_audio as _video_audio_mod
 
-        _audio_mod.resolve_audio_profiles(
-            method=audio_method,
-            scheme=audio_scheme,
-            verify=audio_verify,
+        _video_audio_mod.preflight_video_audio_workload(
+            source_path,
             force=audio_force,
+            verify=audio_verify,
+            method=audio_method,
             bandwidth_kbps=audio_bandwidth_kbps,
+            scheme=audio_scheme,
             vocoder_device=audio_vocoder_device,
         )
     _require_video_runtime()
     detected_metadata = _detected_metadata if _detected_metadata is not None else get_ai_metadata(source_path)
     audio_status: VideoAudioStatus | None = None
     audio_processed_streams: tuple[int, ...] = ()
+    audio_verification_scope: tuple[str, ...] = ()
+    audio_quality_passed: bool | None = None
 
     with TemporaryDirectory(prefix=f".{source_path.stem}-video-all-", dir=source_path.parent) as temp_dir:
         stage_target = Path(temp_dir) / f"visual-final{source_path.suffix}" if include_audio_invisible else output_path
@@ -995,7 +1009,7 @@ def remove_video_all(
             streams = video_audio.stream_inventory(stage_target)
             has_audio = any(s.get("codec_type") == "audio" for s in streams)
             published_by_audio = False
-            wm_state: Literal["unverified", "not_detected", "detected"] = "not_detected"
+            wm_state: Literal["unverified", "not_detected", "detected"] = "unverified"
             if has_audio:
                 audio_res = video_audio.remove_video_audio_all_streams(
                     stage_target,
@@ -1007,19 +1021,36 @@ def remove_video_all(
                     scheme=audio_scheme,
                     vocoder_device=audio_vocoder_device,
                 )
+                seen_schemes: set[str] = set()
+                for s in audio_res.streams:
+                    for det in getattr(s.before, "detections", ()):
+                        seen_schemes.add(det.scheme)
+                    after_obj = getattr(s, "after", None)
+                    if after_obj is not None:
+                        for det in getattr(after_obj, "detections", ()):
+                            seen_schemes.add(det.scheme)
+                audio_verification_scope = tuple(sorted(seen_schemes))
+                audio_quality_passed = getattr(audio_res, "quality_passed", None)
                 if audio_res.skipped or audio_res.output is None:
-                    wm_state = (
-                        "not_detected"
-                        if all(s.before.watermark_status == "not_detected" for s in audio_res.streams)
-                        else "unverified"
+                    all_neg = bool(audio_res.streams) and all(
+                        s.before.watermark_status == "not_detected" for s in audio_res.streams
                     )
+                    wm_state = "not_detected" if all_neg else "unverified"
                 else:
                     published_by_audio = True
                     remaining_metadata = get_ai_metadata(output_path)
-                    if audio_res.verified_removed is True:
-                        wm_state = "not_detected"
-                    elif audio_res.verified_removed is False:
+                    unprocessed_detected = any(
+                        getattr(s, "skipped", False) and s.before.watermark_status == "detected"
+                        for s in audio_res.streams
+                    )
+                    unprocessed_unverified = any(
+                        getattr(s, "skipped", False) and s.before.watermark_status != "not_detected"
+                        for s in audio_res.streams
+                    )
+                    if audio_res.verified_removed is False or unprocessed_detected:
                         wm_state = "detected"
+                    elif audio_res.verified_removed is True and not unprocessed_unverified:
+                        wm_state = "not_detected"
                     else:
                         wm_state = "unverified"
                     audio_status = VideoAudioStatus(stream_action="processed", watermark_status=wm_state)
@@ -1027,7 +1058,10 @@ def remove_video_all(
             if not published_by_audio:
                 with atomic_video_output(output_path) as temporary_output:
                     shutil.copyfile(stage_target, temporary_output)
-                audio_status = VideoAudioStatus(stream_action="copied_if_present", watermark_status=wm_state)
+                audio_status = VideoAudioStatus(
+                    stream_action="copied_if_present" if has_audio else "absent",
+                    watermark_status=wm_state,
+                )
 
     return VideoAllResult(
         source=source_path,
@@ -1042,6 +1076,8 @@ def remove_video_all(
         invisible_profile=resolved_invisible_profile,
         audio_status=audio_status,
         audio_processed_streams=audio_processed_streams,
+        audio_verification_scope=audio_verification_scope,
+        audio_quality_passed=audio_quality_passed,
     )
 
 
@@ -1490,4 +1526,5 @@ def remove_video_wan_experimental(
         remaining_metadata=get_ai_metadata(output_path),
         quality=quality,
         profile=profile,
+        strength=strength,
     )

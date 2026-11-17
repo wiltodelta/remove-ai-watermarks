@@ -634,7 +634,7 @@ Gemini reasoning, not a second oracle check.
 
 The default output is `<source>_clean` in the same container. The
 source is never overwritten. Use `--noise-std`, `--long-side`, `--fps`,
-`--keep-fps` (preserve native source frame rate rather than resampling to 16 fps),
+`--keep-fps` (preserve native source frame rate rather than resampling to 12 fps),
 `--temporal-stabilize` / `--no-temporal-stabilize` (default enabled: optical-flow motion-compensated temporal blending to suppress VAE inter-frame flicker),
 `--batch-size`, `--seed`, and `--device` to control the regeneration. The
 default noise level is `0.15`. It cleared both carriers in the 2026-07-29
@@ -646,7 +646,26 @@ optional runtime audit, not a separate result state.
 On completion the command reports that video pixels were regenerated with the
 calibrated profile, not that this file received a fresh negative verdict. It
 separately prints `Audio watermark: UNVERIFIED` because source audio is copied
-unchanged when present. `video all` and `video batch` use the same wording unless `--audio-invisible` is enabled, in which case compatible audio tracks are verified and reported as `NOT DETECTED` (or `DETECTED` when forced).
+unchanged when present. `video all` uses the same wording unless
+`--audio-invisible` is enabled, in which case it prints `ABSENT` when the source
+has no audio stream, `NOT DETECTED` naming the public decoders run (while noting
+that proprietary audio marks such as SynthID are not checked locally), or
+`UNVERIFIED` when forced on a public-decoder-negative track (or when any track
+remains unverified).
+
+For owned audiovisual clips carrying proprietary audio marks without a local
+public decoder (such as short Google Veo/Gemini clips with SynthID audio), opt in
+explicitly to both visual regeneration and the experimental 3-codebook DAC pass:
+
+```bash
+remove-ai-watermarks video all veo.mp4 -o veo_clean.mp4 --invisible --profile auto --audio-invisible --audio-method dac --audio-force
+```
+
+Always pass an explicit `--audio-method` when forcing a public-decoder-negative
+track: `--audio-force` with the default `--audio-method auto` truncates to
+`spectral` only, and `--audio-force` also bypasses the minimum audio integrity
+gate. Current `dac` provider-oracle evidence covers short single-pass clips
+(`<= 10 s`); `focalcodec` failed on a held-out 10 s native Gemini audio output.
 
 ## Apply the experimental Seedance profile
 
@@ -670,13 +689,16 @@ to have been handled already; `video all` runs its existing visible stage first.
 
 ## Apply the experimental CUDA 3D Wan 2.1 video diffusion profiles and `--profile auto`
 
-On hosts with an NVIDIA CUDA GPU, two explicit 3D causal video diffusion
-profiles preserve native resolution and frame rate on SDR 8-bit MP4 clips of
-any length (processing clips longer than 193 frames through overlapping 3D
-causal windows with 17-frame raised-cosine temporal crossfades), and
-`--profile auto` automatically routes ByteDance/Seedance MP4s to
-`wan21-seedance-experimental` on CUDA (`seedance-experimental` on CPU/MPS) and
-other SDR 8-bit MP4s to `wan21-synthid-experimental` on CUDA (`synthid` on CPU/MPS):
+On hosts with a BF16-capable NVIDIA CUDA GPU (Ampere or newer), two explicit 3D
+causal video diffusion profiles preserve native resolution and frame rate on SDR
+8-bit MP4 clips within the conservative decoded-frame budget (`<= 1920x1080`
+frame area and `<= 552,960,000` total decoded pixel-frames, processing clips
+longer than 193 frames through overlapping 3D causal windows with 17-frame
+raised-cosine temporal crossfades), and `--profile auto` automatically routes
+eligible ByteDance/Seedance MP4s to `wan21-seedance-experimental` on BF16 CUDA
+(`seedance-experimental` on CPU/MPS or when the Wan budget is exceeded) and
+other SDR 8-bit MP4s to `wan21-synthid-experimental` on BF16 CUDA (`synthid`
+fallback otherwise):
 
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile auto

@@ -1997,14 +1997,32 @@ def _print_video_audio_unverified() -> None:
     console.print("  Audio watermark: UNVERIFIED; source audio copied unchanged if present")
 
 
-def _print_video_audio_status(audio_status: Any, processed_streams: tuple[int, ...] = ()) -> None:
-    """Report the audio disposition on video all / video batch outputs."""
-    if audio_status.stream_action == "processed":
+def _print_video_audio_status(
+    audio_status: Any,
+    processed_streams: tuple[int, ...] = (),
+    verification_scope: tuple[str, ...] = (),
+    quality_passed: bool | None = None,
+) -> None:
+    """Report the audio disposition and public-decoder scope on video all outputs."""
+    scope_suffix = (
+        f" (public decoders: {', '.join(verification_scope)}; "
+        "proprietary audio schemes such as SynthID are not checked locally)"
+        if verification_scope
+        else " (proprietary audio schemes such as SynthID are not checked locally)"
+    )
+    quality_suffix = "; WARNING: delivered audio failed minimum quality gate" if quality_passed is False else ""
+    if audio_status.stream_action == "absent":
+        console.print("  Audio watermark: ABSENT; source has no audio streams")
+    elif audio_status.stream_action == "processed":
         tracks = ", ".join(map(str, processed_streams))
-        console.print(f"  Audio watermark: {audio_status.watermark_status.upper()}; processed audio stream(s) {tracks}")
+        console.print(
+            f"  Audio watermark: {audio_status.watermark_status.upper()}; "
+            f"processed audio stream(s) {tracks}{scope_suffix}{quality_suffix}"
+        )
     elif audio_status.watermark_status == "not_detected":
         console.print(
-            "  Audio watermark: NOT DETECTED under compatible checks; source audio copied unchanged if present"
+            f"  Audio watermark: NOT DETECTED under compatible checks{scope_suffix}; "
+            "source audio copied unchanged if present"
         )
     else:
         _print_video_audio_unverified()
@@ -2191,7 +2209,12 @@ def cmd_video_all(
         console.print(
             f"  Video pixels: regenerated with {_video_profile_label(resolved_profile)} (not a per-file verification)"
         )
-    _print_video_audio_status(result.audio, result.audio_processed_streams)
+    _print_video_audio_status(
+        result.audio,
+        result.audio_processed_streams,
+        result.audio_verification_scope,
+        result.audio_quality_passed,
+    )
 
 
 @cmd_video.command("batch")

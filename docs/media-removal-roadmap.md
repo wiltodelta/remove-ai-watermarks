@@ -610,7 +610,7 @@ PSNR and SSIM across `flow-001` (`768x432 @ 24 fps`), `lite-003`
 `not_matched`. Subsequent `gemini-web` video checks showed that matched H.264
 controls stayed `detected` and 2D `sd-vae-ft-mse` at `768x432 @ 24 fps` cleared
 `flow-001` (`not_detected`) but remained `detected` on textured `lite-003`
-(keeping the 2D default at `512 @ 16 fps`), whereas NVIDIA H100 CUDA 3D
+(keeping the 2D default at `512 @ 12 fps`), whereas NVIDIA H100 CUDA 3D
 `Wan 2.1` video diffusion (`--profile wan21-synthid-experimental`, `strength=0.38`)
 returned `4/4` `not_detected` verdicts across `flow-001` and `lite-003` at full
 native `1280x720 @ 24 fps`, and `--profile wan21-seedance-experimental`

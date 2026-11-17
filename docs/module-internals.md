@@ -384,7 +384,7 @@ dispositions, exact decoded audio frame count and start offset, then repeats the
 compatible decoder on the actual mux. AAC priming and tail trimming must preserve
 the native decoded count and offset; there is no padding, truncation, or timing
 repair. Final fidelity also uses decoded mux audio.
-Its CLI route is `video audio` (`--stream N` for single-track `remove_video_audio`, or `--all-streams` for multi-track `remove_video_audio_all_streams`), separate from visual processing unless `include_audio_invisible=True` (`--audio-invisible`) is passed to `remove_video_all` or `remove_video_batch`. Other stream
+Its CLI route is `video audio` (`--stream N` for single-track `remove_video_audio`, or `--all-streams` for multi-track `remove_video_audio_all_streams`), separate from visual processing unless `include_audio_invisible=True` (`--audio-invisible`) is passed to `remove_video_all` or `remove_video_batch` (which preflights selected audio dependencies, layouts, and bounded full-track limits via `preflight_video_audio_workload` before visual processing, and wraps multi-track muxes plus final aggregate checks inside one outer `staged_sibling` transaction). Post-processing verification across `audio.py` and `video_audio.py` delegates to `audio.verification_outcome`, requiring every source-positive `(scheme, channel, decoder_sample_rate)` check to return `not_detected` on the saved output while distinguishing short-clip window inapplicability from execution failures under `scheme="auto"`. Other stream
 marks and metadata remain outside standalone `video audio`'s verification scope. The packet format is
 FFmpeg's [per-packet hash muxer](https://ffmpeg.org/ffmpeg-formats.html#framemd5).
 
@@ -688,10 +688,13 @@ The profile accepts SDR 8-bit MP4 with even dimensions and handles visible
 labels as a separate input-preparation concern.
 
 [`video_wan.py`](../src/remove_ai_watermarks/video_wan.py) packages the optional
-CUDA-only 3D causal video diffusion profiles (`wan21-synthid-experimental` at
+BF16 CUDA-only 3D causal video diffusion profiles (`wan21-synthid-experimental` at
 `strength=0.38` and `wan21-seedance-experimental` at `strength=0.12`), exposed
 through `remove_video_wan_experimental` and the shared `profile` /
-`invisible_profile` selectors (`VideoWanExperimentalResult`). It loads pinned
+`invisible_profile` selectors (`VideoWanExperimentalResult`, which carries
+explicit `strength` alongside the compatible `noise_std` mirror). It verifies
+BF16 CUDA capability and enforces `WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and
+`WAN21_MAX_TOTAL_PIXEL_FRAMES` (`600 * 1280 * 720`) before frame decoding, loads pinned
 Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers@0fad780a534b6463e45facd96134c9f345acfa5b`
 (`licenses/wan/NOTICE.txt`) with an FP32 tiled/sliced `AutoencoderKLWan`, BF16
 `WanVideoToVideoPipeline`, and `UniPCMultistepScheduler(flow_shift=3.0, 20 steps,
@@ -700,9 +703,10 @@ and `chunk_frames=193` / `overlap_frames=17` raised-cosine temporal crossfade
 windows on longer clips before cropping back to exact source dimensions and
 validating source PTS and duration through the shared `_encode_frames` /
 `_encode_delivery` pipeline. `video.py` also exposes `profile="auto"`, routing
-ByteDance/Seedance MP4s to `wan21-seedance-experimental` on CUDA
-(`seedance-experimental` on CPU/MPS) and other SDR 8-bit MP4s to
-`wan21-synthid-experimental` on CUDA (`synthid` on CPU/MPS). Coverage in
+eligible ByteDance/Seedance MP4s to `wan21-seedance-experimental` on BF16 CUDA
+(`seedance-experimental` fallback on CPU/MPS or when the Wan frame budget is
+exceeded) and other SDR 8-bit MP4s to `wan21-synthid-experimental` on BF16 CUDA
+(`synthid` fallback otherwise). Coverage in
 `tests/test_video_seedance.py` includes source-detail separation, quantization,
 VFR/nonzero-start/audio-tail preservation, and failure-before-publication.
 

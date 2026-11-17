@@ -966,3 +966,66 @@ def test_auto_scheme_skips_experimental_silentcipher_and_short_clip_wavmark_unve
     assert res.after is not None
     assert res.after.watermark_status == "not_detected"
     assert any("WavMark" in c or "one second" in c or "16000" in c for c in res.after.caveats)
+
+
+def test_auto_scheme_retains_decoder_execution_failure_and_blocks_false_verification(tmp_path, monkeypatch):
+    from remove_ai_watermarks import audio
+    from remove_ai_watermarks._internal import perth
+
+    monkeypatch.setattr(audio.audioseal, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audioseal, "load_pinned_detector", object)
+    monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
+    monkeypatch.setattr(audio.perth, "is_available", lambda: True)
+    monkeypatch.setattr(audio.perth, "load_model", object)
+    monkeypatch.setattr(audio.perth, "read", lambda _m, _s: perth.PerthReading(0.0))
+
+    src_wav = _source(tmp_path, frames=16000)
+
+    def read_audioseal(_model, samples):
+        t = np.arange(len(samples)) / 16000
+        amplitude = abs(2 * np.mean(samples * np.exp(-2j * np.pi * 1250 * t)))
+        if amplitude > 0.01:
+            return audio.audioseal.AudioSealReading(1.0, 1.0, (0, 1) * 8)
+        raise RuntimeError("AudioSeal post-verify crashed")
+
+    monkeypatch.setattr(audio.audioseal, "read", read_audioseal)
+
+    out_wav = tmp_path / "should_not_publish.wav"
+    with pytest.raises(audio.AudioVerificationIncomplete):
+        audio.remove_audio_invisible(src_wav, out_wav, scheme="auto", method="spectral")
+    assert not out_wav.exists()
+
+    # Direct auto inspection when one installed decoder crashes must also report unverified, not negative
+    monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: (_ for _ in ()).throw(RuntimeError("boom")))
+    rep = audio.identify_audio(src_wav, scheme="auto")
+    assert rep.watermark_status == "unverified"
+    assert any(d.scheme == "audioseal" and d.status == "unverified" for d in rep.detections)
+
+
+def test_native_clock_or_channel_failure_on_output_blocks_verification(tmp_path, monkeypatch):
+    from remove_ai_watermarks import audio
+
+    monkeypatch.setattr(audio.audioseal, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audioseal, "load_pinned_detector", object)
+    monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
+    monkeypatch.setattr(audio.perth, "is_available", lambda: False)
+
+    src_48k = _source(tmp_path, frames=48000, rate=48000)
+
+    def read_audioseal(_model, samples):
+        # Source has 1250 Hz carrier; spectral filter removes it on output.
+        # At 48 kHz native clock, len(samples) == 48000; at 16 kHz resampled, len(samples) == 16000.
+        rate = 48000 if len(samples) == 48000 else 16000
+        t = np.arange(len(samples)) / rate
+        amplitude = abs(2 * np.mean(samples * np.exp(-2j * np.pi * 1250 * t)))
+        if amplitude > 0.01:
+            return audio.audioseal.AudioSealReading(1.0, 1.0, (0, 1) * 8)
+        if rate == 48000:
+            raise RuntimeError("Native 48 kHz check crashed on output")
+        return audio.audioseal.AudioSealReading(0.0, 0.0, (0,) * 16)
+
+    monkeypatch.setattr(audio.audioseal, "read", read_audioseal)
+    out_wav = tmp_path / "no_publish_48k.wav"
+    with pytest.raises(audio.AudioVerificationIncomplete):
+        audio.remove_audio_invisible(src_48k, out_wav, scheme="auto", method="spectral")
+    assert not out_wav.exists()

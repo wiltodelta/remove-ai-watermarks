@@ -597,3 +597,107 @@ def test_remove_video_audio_all_streams_cleans_multiple_tracks_and_cli_all_strea
     assert payload["processed_ordinals"] == [0, 1]
     assert payload["verified_removed"] is True
     assert pos_out.is_file()
+
+
+def test_remove_video_audio_all_streams_preserves_existing_destination_on_late_failure(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from remove_ai_watermarks import audio, video_audio
+
+    _spectral_detector(monkeypatch)
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+        monkeypatch.setattr(backend, "is_available", lambda: False)
+
+    source = _video(tmp_path, first_offset=0, selected_offset=0)
+    existing = tmp_path / "existing.mkv"
+    sentinel = b"EXISTING-DESTINATION-BYTES-DO-NOT-CLOBBER"
+    existing.write_bytes(sentinel)
+    fresh = tmp_path / "fresh.mkv"
+
+    # 1. Multi-track late quality-gate failure after all inner remux steps succeed
+    orig_quality = video_audio.audio_quality_passed
+    calls = 0
+
+    def fail_outer_quality(fidelity, *, lossy):
+        nonlocal calls
+        calls += 1
+        # Inner remove_video_audio runs 2 times (once per track); fail on the outer aggregate check
+        if calls >= 3:
+            return False
+        return orig_quality(fidelity, lossy=lossy)
+
+    monkeypatch.setattr(video_audio, "audio_quality_passed", fail_outer_quality)
+    with pytest.raises(audio.AudioVerificationIncomplete):
+        video_audio.remove_video_audio_all_streams(source, existing, scheme="auto")
+    assert existing.read_bytes() == sentinel
+
+    calls = 0
+    with pytest.raises(audio.AudioVerificationIncomplete):
+        video_audio.remove_video_audio_all_streams(source, fresh, scheme="auto")
+    assert not fresh.exists()
+
+    # 2. Single-track late source-hash mutation check must not leave a published replacement behind
+    monkeypatch.setattr(video_audio, "audio_quality_passed", orig_quality)
+    orig_identify = audio.identify_audio
+
+    def identify_only_track0(src, *, check_invisible=True, stream=0, scheme="audioseal"):
+        rep = orig_identify(src, check_invisible=check_invisible, stream=stream, scheme=scheme)
+        if Path(src).resolve() == source.resolve() and stream == 1:
+            return replace(
+                rep,
+                watermark_status="not_detected",
+                detections=tuple(replace(d, status="not_detected") for d in rep.detections),
+            )
+        return rep
+
+    monkeypatch.setattr(audio, "identify_audio", identify_only_track0)
+    orig_sha = video_audio.sha256_file
+    sha_calls = 0
+
+    def mutated_on_second_check(p):
+        nonlocal sha_calls
+        if Path(p).resolve() == source.resolve():
+            sha_calls += 1
+            if sha_calls >= 2:
+                return "0" * 64
+        return orig_sha(p)
+
+    monkeypatch.setattr(video_audio, "sha256_file", mutated_on_second_check)
+    with pytest.raises(RuntimeError, match="changed during"):
+        video_audio.remove_video_audio_all_streams(source, existing, scheme="auto")
+    assert existing.read_bytes() == sentinel
+
+
+def test_remove_video_audio_all_streams_unverified_unprocessed_track_blocks_aggregate_verified(tmp_path, monkeypatch):
+    from remove_ai_watermarks import audio, video_audio
+
+    _spectral_detector(monkeypatch)
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+        monkeypatch.setattr(backend, "is_available", lambda: False)
+
+    source = _video(tmp_path, first_offset=0, selected_offset=0)
+    output = tmp_path / "partial_unverified.mkv"
+    orig_identify = audio.identify_audio
+
+    def identify_with_unverified_track1(src, *, check_invisible=True, stream=0, scheme="audioseal"):
+        rep = orig_identify(src, check_invisible=check_invisible, stream=stream, scheme=scheme)
+        if stream == 1:
+            return replace(
+                rep,
+                watermark_status="unverified",
+                detections=tuple(replace(d, status="unverified", whole_clip_error="boom") for d in rep.detections),
+            )
+        return rep
+
+    monkeypatch.setattr(audio, "identify_audio", identify_with_unverified_track1)
+    res = video_audio.remove_video_audio_all_streams(source, output, scheme="auto")
+    assert res.processed_ordinals == (0,)
+    assert res.verified_removed is None
+    assert res.streams[0].verified_removed is True
+    assert res.streams[1].skipped is True
+    for item in res.streams:
+        assert item.source == source.resolve()
+        assert item.output == output
+        assert item.before.source == source.resolve()
+        if item.after is not None:
+            assert item.after.source == output

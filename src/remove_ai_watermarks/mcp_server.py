@@ -63,18 +63,20 @@ TOOLS: list[dict[str, Any]] = [
         "name": "identify",
         "title": "Identify AI provenance",
         "description": (
-            "Report which AI provenance signals an image or video carries: metadata "
-            "(C2PA, IPTC, EXIF, TC260), visible AI-generator labels, and supported local "
-            "invisible-watermark decoders. Read-only. Video is detected by file suffix."
+            "Report which AI provenance signals an image, video, audio, or text file carries: metadata "
+            "(C2PA, IPTC, EXIF, TC260), visible AI-generator labels, deterministic text marks, and supported "
+            "local invisible-watermark decoders. Read-only. Media type is detected by file suffix."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Image or video file to inspect."},
+                "path": {"type": "string", "description": "Image, video, audio, or text file to inspect."},
                 "check_visible": {
                     "type": "boolean",
                     "default": True,
-                    "description": "Run the pixel and visible-mark detectors. False reads metadata only.",
+                    "description": (
+                        "Run pixel, visible-mark, or public audio-model detectors. False checks metadata only."
+                    ),
                 },
             },
             "required": ["path"],
@@ -86,16 +88,18 @@ TOOLS: list[dict[str, Any]] = [
         "name": "remove",
         "title": "Remove AI watermarks from one file",
         "description": (
-            "Write a cleaned copy of an image or video the user generated or edited. "
-            "mode=metadata strips AI metadata without touching pixels or re-encoding video; "
-            "mode=visible also removes a known visible AI label; for an image, mode=all adds "
-            "the invisible-watermark scrub where the installed extras and hardware allow it. "
+            "Write a cleaned copy of an image, video, audio, or text file the user generated or edited. "
+            "mode=metadata strips AI metadata without touching pixels or re-encoding audio/video; "
+            "mode=visible also removes a known visible AI label on images or videos; "
+            "mode=all adds the invisible-watermark scrub for images (when extras and CUDA allow), "
+            "compatible public-decoder audio (audio all --invisible), and text (text all), while for video "
+            "it runs visible+metadata cleaning only (use cli_video_all for opt-in video/audio invisible regeneration). "
             "The source is never overwritten; the default output is <name>_clean beside it."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Image or video file to clean."},
+                "path": {"type": "string", "description": "Image, video, audio, or text file to clean."},
                 "mode": {"type": "string", "enum": list(_MODES), "default": "metadata"},
                 "output": {"type": "string", "description": "Output file. Must differ from the source."},
             },
@@ -108,9 +112,9 @@ TOOLS: list[dict[str, Any]] = [
         "name": "batch",
         "title": "Remove AI watermarks from a directory",
         "description": (
-            "Clean every supported image (media=image) or video (media=video) in a directory "
-            "the user owns, writing results to a separate directory (default <dir>_clean). "
-            "Modes as for the remove tool."
+            "Clean every supported image (media=image), video (media=video), or audio file (media=audio) in a "
+            "directory the user owns, writing results to a separate directory (default <dir>_clean). "
+            "Modes match the remove tool (for video, use cli_video_batch when opt-in invisible regeneration is needed)."
         ),
         "inputSchema": {
             "type": "object",

@@ -909,21 +909,26 @@ stage before the selected pixel stage. The CLI exposes the same choice through
 `--profile seedance-experimental`; all/batch mode also requires `--invisible`.
 SynthID remains the default.
 
-On hosts with an NVIDIA CUDA GPU, `remove_video_wan_experimental` (and
-`profile="auto"`, `"wan21-synthid-experimental"`, or `"wan21-seedance-experimental"` in
-`remove_video_invisible`, `remove_video_all`, and `remove_video_batch`) runs
-pinned Apache-2.0 3D `Wan 2.1` (`Wan-AI/Wan2.1-T2V-1.3B-Diffusers` at
-`0fad780a534b6463e45facd96134c9f345acfa5b`) at native resolution and exact frame
-timestamps on SDR 8-bit MP4 clips of any length (blending clips exceeding
-`chunk_frames=193` across `overlap_frames=17` raised-cosine 3D causal windows),
-returning `VideoWanExperimentalResult`. `profile="auto"` selects
-`wan21-seedance-experimental` on CUDA (`seedance-experimental` on CPU/MPS) when
-ByteDance/Seedance metadata or visible marks are present, and
-`wan21-synthid-experimental` on CUDA (`synthid` on CPU/MPS) otherwise.
-`wan21-synthid-experimental` uses `strength=0.38`
+On hosts with a BF16-capable NVIDIA CUDA GPU, `remove_video_wan_experimental`
+(and `profile="auto"`, `"wan21-synthid-experimental"`, or
+`"wan21-seedance-experimental"` in `remove_video_invisible`, `remove_video_all`,
+and `remove_video_batch`) runs pinned Apache-2.0 3D `Wan 2.1`
+(`Wan-AI/Wan2.1-T2V-1.3B-Diffusers` at `0fad780a534b6463e45facd96134c9f345acfa5b`)
+at native resolution and exact frame timestamps on SDR 8-bit MP4 clips within
+`WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
+(`600 * 1280 * 720`, blending clips exceeding `chunk_frames=193` across
+`overlap_frames=17` raised-cosine 3D causal windows), returning
+`VideoWanExperimentalResult` (which exposes `strength` alongside the compatible
+`noise_std` mirror). `profile="auto"` selects `wan21-seedance-experimental` on
+eligible BF16 CUDA sources (`seedance-experimental` fallback on CPU/MPS or when
+the Wan frame budget is exceeded) when ByteDance/Seedance metadata or visible
+marks are present, and `wan21-synthid-experimental` (`synthid` fallback)
+otherwise. `wan21-synthid-experimental` uses `strength=0.38`
 and `wan21-seedance-experimental` uses `strength=0.12`. Both accept
 `quality="delivery"` or `"master"` and `seed`, reuse one loaded pipeline across
-batch items, and perform no runtime oracle verification.
+batch items, and perform no runtime oracle verification. `VideoAllResult` also
+records `audio_verification_scope` and `audio_quality_passed` when
+`include_audio_invisible=True`.
 
 ## Remove a supported visible video mark
 

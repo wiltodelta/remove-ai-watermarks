@@ -368,6 +368,7 @@ def test_auto_video_profile_routes_bytedance_and_google_across_cuda_and_cpu(tmp_
 
     # 2. On CUDA: ByteDance -> wan21-seedance-experimental; Google -> wan21-synthid-experimental
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True)
     assert (
         video._resolve_video_invisible_profile(
             "auto",
@@ -386,3 +387,55 @@ def test_auto_video_profile_routes_bytedance_and_google_across_cuda_and_cpu(tmp_
         )
         == "wan21-synthid-experimental"
     )
+
+
+def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatch):
+    import torch
+
+    source = _source_mp4(tmp_path, width=64, height=48, frames=6)
+    output = tmp_path / "out.mp4"
+
+    # 1. BF16 capability check
+    monkeypatch.setattr(wan, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: False)
+    with pytest.raises(RuntimeError, match="BF16"):
+        wan.resolve_wan_device("auto")
+    assert wan.can_run_wan_on_source(source, device="auto") is False
+
+    # 2. Frame-pixel / host-RAM budget rejects oversized input BEFORE decoding frames
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True)
+    frames_decoded = []
+    monkeypatch.setattr(wan, "_frames", lambda p: (frames_decoded.append(p), iter(()))[1])
+    monkeypatch.setattr(
+        wan,
+        "validate_experimental_mp4_source",
+        lambda *_a, **_k: (3840, 2160, 24.0, tuple(range(10))),
+    )
+    with pytest.raises(ValueError, match="frame area"):
+        wan.regenerate_wan_experimental(source, output)
+    assert frames_decoded == []
+    assert wan.can_run_wan_on_source(source, device="auto") is False
+
+    monkeypatch.setattr(
+        wan,
+        "validate_experimental_mp4_source",
+        lambda *_a, **_k: (1280, 720, 24.0, tuple(range(1000))),
+    )
+    with pytest.raises(ValueError, match="host-memory budget"):
+        wan.regenerate_wan_experimental(source, output)
+    assert frames_decoded == []
+    assert wan.can_run_wan_on_source(source, device="auto") is False
+
+    # 3. VideoWanExperimentalResult exposes explicit strength alongside compatibility noise_std
+    res = raiw.VideoWanExperimentalResult(
+        source=source,
+        output=output,
+        noise_std=0.12,
+        metrics=_metrics(),
+        remaining_metadata={},
+        quality="delivery",
+        profile="wan21-seedance-experimental",
+    )
+    assert res.strength == pytest.approx(0.12)
+    assert res.noise_std == pytest.approx(0.12)

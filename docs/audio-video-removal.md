@@ -622,7 +622,7 @@ multi-window and full-audiovisual evaluation on `google-gemini-omni-flash-api`
   to `768x432 @ 24 fps` cleared `flow-001` (`not_detected`) but failed on textured
   `lite-003` (`detected` with temporal stabilization; unstabilized row `refused`
   at the video quota limit), leaving the shipped 2D VAE default pinned at
-  `512 @ 16 fps`. On an NVIDIA H100 CUDA GPU, 3D causal diffusion via
+  `512 @ 12 fps`. On an NVIDIA H100 CUDA GPU, 3D causal diffusion via
   `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` (`--profile wan21-synthid-experimental`,
   `strength=0.38`, using `chunk_frames=193` and `overlap_frames=17` raised-cosine
   blending for clips exceeding 193 frames) returned explicit `not_detected`

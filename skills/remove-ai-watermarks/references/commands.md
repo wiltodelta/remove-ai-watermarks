@@ -150,7 +150,7 @@ order.
 
 `video invisible` and `video all --invisible` accept MP4, MOV, and M4V only.
 That is the default SynthID profile. It is lossy; its shipped noise profile
-is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 16 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-force`) inspects and cleans all compatible watermarked audio tracks in the same pipeline.
+is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-force`) inspects and cleans all compatible watermarked audio tracks in the same pipeline. For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID audio), pass an explicit method with `--audio-force` (`--audio-invisible --audio-method dac --audio-force`); `--audio-force` with default `--audio-method auto` runs `spectral` only and also overrides the minimum audio quality gate (`focalcodec` failed on a held-out 10 s Gemini audio track).
 
 For an owned Seedance MP4, explicitly opt into the experimental fixed recipe
 (since CLI 0.56.0):
@@ -171,12 +171,15 @@ matched-control CapCut evidence but performs no per-file detector request.
 These profile options require a build containing the experimental Seedance
 integration; verify `video all --help` before using them.
 
-On machines with an NVIDIA CUDA GPU, two additional experimental 3D video
-diffusion profiles preserve native resolution and frame rate on SDR 8-bit MP4
-clips of any length via overlapping 3D causal windows (since CLI 0.63.0), and
-`--profile auto` automatically routes ByteDance/Seedance MP4s to
-`wan21-seedance-experimental` on CUDA (`seedance-experimental` on CPU/MPS) and
-other SDR 8-bit MP4s to `wan21-synthid-experimental` on CUDA (`synthid` on CPU/MPS):
+On machines with a BF16-capable NVIDIA CUDA GPU (Ampere or newer), two additional
+experimental 3D video diffusion profiles preserve native resolution and frame
+rate on SDR 8-bit MP4 clips within the conservative decoded-frame budget
+(`<= 1920x1080` frame area and `<= 552,960,000` decoded pixel-frames, blending
+clips over 193 frames via overlapping 3D causal windows, since CLI 0.63.0), and
+`--profile auto` automatically routes eligible ByteDance/Seedance MP4s to
+`wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` fallback on
+CPU/MPS or over budget) and other SDR 8-bit MP4s to `wan21-synthid-experimental`
+on BF16 CUDA (`synthid` fallback otherwise):
 
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile auto

@@ -4063,3 +4063,73 @@ class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
         )
         assert cli_run.exit_code == 0, cli_run.output
         assert "processed audio stream(s) 0" in cli_run.output
+
+    def test_video_all_audio_status_handles_absent_audio_unverified_sibling_and_preflight(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from types import SimpleNamespace
+
+        from remove_ai_watermarks import audio, video, video_audio
+        from remove_ai_watermarks.video import VideoAudioStatus, remove_video_all
+
+        source = _video_with_c2pa(tmp_path / "silent.mp4")
+        monkeypatch.setattr(audio, "resolve_audio_profiles", lambda **_kw: ("spectral",))
+        visible_calls: list[Path] = []
+        monkeypatch.setattr(
+            video,
+            "remove_video_visible",
+            lambda src, _out, **_kw: (
+                visible_calls.append(src),
+                SimpleNamespace(
+                    source=src,
+                    output=None,
+                    mark="auto",
+                    total_frames=6,
+                    detected_frames=0,
+                    removed_frames=0,
+                    remaining_metadata={},
+                ),
+            )[1],
+        )
+
+        # 1. Video with no audio stream must report stream_action="absent" and watermark_status="unverified"
+        monkeypatch.setattr(video_audio, "stream_inventory", lambda _p: [{"index": 0, "codec_type": "video"}])
+        out_silent = tmp_path / "silent_clean.mp4"
+        res_silent = remove_video_all(source, out_silent, include_audio_invisible=True)
+        assert res_silent.audio == VideoAudioStatus(stream_action="absent", watermark_status="unverified")
+
+        # 2. Preflight must reject unsupported 5.1 layout or >30s BigVGAN BEFORE remove_video_visible runs
+        visible_calls.clear()
+        monkeypatch.undo()
+        monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: True)
+        monkeypatch.setattr(
+            video,
+            "remove_video_visible",
+            lambda src, _out, **_kw: (visible_calls.append(src), None)[1],
+        )
+        monkeypatch.setattr(
+            video_audio,
+            "stream_inventory",
+            lambda _p: [
+                {"index": 0, "codec_type": "video"},
+                {
+                    "index": 1,
+                    "codec_type": "audio",
+                    "sample_rate": "48000",
+                    "channels": 6,
+                    "channel_layout": "5.1(side)",
+                    "duration": "5.0",
+                },
+            ],
+        )
+        with pytest.raises(ValueError, match="mono or stereo"):
+            remove_video_all(
+                source,
+                tmp_path / "surround_fail.mp4",
+                include_audio_invisible=True,
+                audio_method="bigvgan",
+                audio_force=True,
+            )
+        assert visible_calls == []
