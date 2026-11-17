@@ -1756,15 +1756,41 @@ derived results influence detection.
 ### Source-pipeline classifier
 
 [`source_classify.py`](../src/remove_ai_watermarks/source_classify.py) provides
-the opt-in 10-provider source-pipeline classifier (`classify_source`,
-`resolve_weights_path`, and CLI command `classify-source`). By default it
-downloads `config.json` (for Hub download telemetry) and
-`multi-provider-source-v6.npz`
+the opt-in 10-provider source-pipeline and synthetic-image classifier
+(`classify_source`, `resolve_weights_path`, and CLI command `classify-source`).
+By default it downloads `config.json` (for Hub download telemetry) and
+`multi-provider-source-v7.npz`
 (`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
 or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
-runtime loading across three `.npz` bundle schemas:
+runtime loading across four `.npz` bundle schemas:
 
-- `multi-provider-source-v5` (`512-d`, pinned default schema used by `multi-provider-source-v6.npz` and `multi-provider-source-v5.npz`, `_SourceModelV5`): reuses
+- `multi-provider-source-v7` (`512-d` + embedded `ViT-S/16 @ 384` weight-fp16
+  ONNX, pinned default schema used by `multi-provider-source-v7.npz`,
+  `_SourceModelV7`): embeds the frozen MIT `ViT-S/16 @ 384` visual stem plus
+  trained multi-task readout heads as a lazy header-loaded weight-fp16 ONNX graph
+  (`vit_onnx_bytes` stored inside the pickle-free `.npz`, outputting `28-d`
+  `[orig_syn(0), prov_10(1:11), foreign_ai(11), real_non_ai(12), gfx_veto(13), dom_syn(14), emb(15:28)]`
+  on CPU via `onnxruntime` with `OMP_NUM_THREADS`-aware session threading)
+  alongside the `512-d` `_SourceModelV5` backbone. Inside `classify_source()`, a
+  `67-d` open-world `LayerNorm` + `SiLU` skip fusion head (`_classify_v7_with_vit`)
+  combines the ViT logits and `13-d` bottleneck, bounded `512-d` Stage-1.5
+  channels, positive/negative global physics features, the `26-d` codec-invariant
+  born-digital graphics score, and the `32-d` regime block to predict calibrated
+  `synthetic_detected` and `synthetic_probability` (`>= 0.5` monotonically
+  whenever `label != "unknown"`). A conditional two-scale `672px` 2-crop pass
+  (`_MultiScaleGrayConfigV7`, `preprocess_vit_384_detail_2chw`) runs only on
+  non-graphics gray-zone images (`>= 512x640`, `eff_phys_excess < 0`,
+  `ms_gray_lo <= syn_margin < 0`) to recover widescreen native exports without
+  penalizing median CPU latency. For provider attribution, an `82-d -> 64-d -> 12`
+  open-set multimodal head (`_MMProvHeadV7`) scores our 10 providers against
+  `logsumexp(foreign_ai, real_non_ai)`: transcoded images from our 10 providers
+  that clear per-provider `prov_thresholds` and `min_gap` recover exact `label`,
+  while unseen external generators (`foreign_ai`) and heavily laundered images
+  honestly abstain with `label="unknown"` (including suppressing moderate `512-d`
+  `eff_phys_excess < 2.2` triggers when `max(mm_log_odds) < -0.80`).
+  Feature-only calls (`classify_source_features` without `vit_features`) evaluate
+  the `512-d` branch directly.
+- `multi-provider-source-v5` (`512-d`, legacy schema used by `multi-provider-source-v6.npz` and `multi-provider-source-v5.npz`, `_SourceModelV5`): reuses
   the 512-dimensional
   physics-grounded descriptor in
   [`_internal/source_features_v4.py`](../src/remove_ai_watermarks/_internal/source_features_v4.py)
@@ -1806,10 +1832,13 @@ runtime loading across three `.npz` bundle schemas:
   margins ($\gamma = 0.60$), and stacked Stage-2 `HistGradientBoosting` version
   heads.
 
-The `source-classify` extra adds `pixels` and Hugging Face Hub but no Torch or
-Transformers. It always sets `watermark_truth="unknown"` and is never imported
-by `identify`. Unit and mutation tests live in `tests/test_source_classify.py`
-and `tests/test_source_features_v4.py`; evaluation and attack limits live in
+The `source-classify` extra adds `pixels`, Hugging Face Hub, and ONNX Runtime
+(CPU, no Torch or Transformers). `SourceClassification` exposes both 10-provider
+attribution (`label`, `version_subfamily`, `confidence`) and calibrated binary
+synthetic detection (`synthetic_detected`, `synthetic_probability`), always sets
+`watermark_truth="unknown"`, and is never imported by `identify`. Unit and
+mutation tests live in `tests/test_source_classify.py` and
+`tests/test_source_features_v4.py`; evaluation and attack limits live in
 [`source-classify-hf/README.md`](source-classify-hf/README.md) and
 [`synthid-classifiers.md`](synthid-classifiers.md).
 

@@ -53,4 +53,4 @@ Research, classifiers, the benchmark kernel, and current constraints are routed 
 
 For previously checked sources and baselines, reuse provider-oracle verdicts by exact sanitized upload SHA-256 and verification surface. Repeat a baseline only after the uploaded bytes change or concrete evidence invalidates the record; explain the reason to Victor before spending quota. Prioritize frozen new candidates.
 
-Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Use only publication-cleared inputs in tracked data paths. Store each tracked binary once and keep generated evaluation outputs outside the repository.
+Follow [`data/README.md`](data/README.md) for public fixture, calibration, oracle, and evaluation layout. Use only publication-cleared inputs in tracked data paths, and never mention receipts or receipt/invoice evaluation cohorts in outward-facing documentation, model cards, or published metadata. Store each tracked binary once and keep generated evaluation outputs outside the repository.

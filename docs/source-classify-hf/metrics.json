@@ -1,9 +1,13 @@
 {
-  "claim": "abstaining 10-provider source-pipeline classification with version subfamily attribution; not SynthID detection",
-  "schema": "multi-provider-source-v5",
-  "artifact_file": "multi-provider-source-v6.npz",
-  "artifact_sha256": "87868eea08b8b811999f675186b82b067c4de655981cb7f25114aac00b1dd284",
+  "claim": "abstaining 10-provider source-pipeline classification with version subfamily attribution and calibrated binary synthetic-image detection; not SynthID detection",
+  "schema": "multi-provider-source-v7",
+  "artifact_file": "multi-provider-source-v7.npz",
+  "artifact_sha256": "4faef51eea48f8194ee804fab1782c48d626384e115e2ef70884f8e8393d7eb1",
+  "artifact_size_mb": 55.53,
   "feature_dimension": 512,
+  "vit_output_dimension": 28,
+  "synthetic_fusion_dimension": 67,
+  "multimodal_provider_dimension": 82,
   "stacked_stage2_dimension": 666,
   "classes": [
     "openai",
@@ -25,7 +29,104 @@
     "calibration": 8363,
     "calibration_recomp_neg": 3011,
     "calibration_crop_resize_dev": 2972,
-    "test": 10585
+    "test": 10585,
+    "multimodal_v7_train_views": 14428,
+    "multimodal_v7_cal_views": 6694,
+    "sealed_foreign_eval_views": 84
+  },
+  "open_benchmark_v2_578": {
+    "non_ai_total": 200,
+    "non_ai_fp": 0,
+    "non_ai_fpr": 0.0,
+    "slice_fpr_pct": {
+      "camera_photo": 0.0,
+      "ui_screenshot": 0.0,
+      "science_diagram": 0.0,
+      "scanned_document": 0.0
+    },
+    "native_ai_total": 125,
+    "native_ai_synthetic_recall": 0.992,
+    "native_ai_provider_attribution": 0.712,
+    "arena_ai_total": 253,
+    "arena_ai_synthetic_recall": 0.8695652173913043,
+    "arena_ai_provider_attribution": 0.1857707509881423,
+    "overall_ai_recall": 0.91005291005291,
+    "overall_precision": 1.0,
+    "median_cpu_ms": 328.9
+  },
+  "sealed_foreign_openworld_eval": {
+    "evaluated_views": 84,
+    "synthetic_recall": 0.6905,
+    "honest_unknown_abstention_rate": 0.9762
+  },
+  "locked_internal_test_e2e_rgb": {
+    "evaluated_parents": 4415,
+    "supported_ai_parents": 2074,
+    "real_non_ai_parents": 2341,
+    "native": {
+      "synthetic_recall_supported_ai": 0.9754098360655737,
+      "exact_provider_recall_supported_ai": 0.9281581485053038,
+      "real_synthetic_fp": 2,
+      "real_synthetic_fpr": 0.0008543357539513029,
+      "real_provider_fp": 1,
+      "real_provider_fpr": 0.00042716787697565144,
+      "roc_auc": 0.9994764413002544,
+      "pr_auc": 0.9994285151447234
+    },
+    "arena_transcoded": {
+      "synthetic_recall_supported_ai": 0.654291224686596,
+      "exact_provider_recall_supported_ai": 0.2540983606557377,
+      "real_synthetic_fp": 20,
+      "real_synthetic_fpr": 0.00854335753951303,
+      "real_provider_fp": 4,
+      "roc_auc": 0.9739757136319278,
+      "pr_auc": 0.9720579688268834
+    }
+  },
+  "external_blind_selective_v8_e2e_rgb": {
+    "evaluated_parents": 1512,
+    "synthetic_fp": 4,
+    "synthetic_fpr": 0.0026455026455026454,
+    "provider_fp": 0,
+    "provider_fpr": 0.0,
+    "by_domain": {
+      "diagram": {
+        "evaluated": 305,
+        "synthetic_fp": 0,
+        "synthetic_fpr": 0.0,
+        "provider_fp": 0
+      },
+      "document": {
+        "evaluated": 308,
+        "synthetic_fp": 0,
+        "synthetic_fpr": 0.0,
+        "provider_fp": 0
+      },
+      "game_art": {
+        "evaluated": 215,
+        "synthetic_fp": 4,
+        "synthetic_fpr": 0.018604651162790697,
+        "provider_fp": 0
+      },
+      "interface": {
+        "evaluated": 327,
+        "synthetic_fp": 0,
+        "synthetic_fpr": 0.0,
+        "provider_fp": 0
+      },
+      "photo": {
+        "evaluated": 25,
+        "synthetic_fp": 0,
+        "synthetic_fpr": 0.0,
+        "provider_fp": 0
+      },
+      "vector": {
+        "evaluated": 332,
+        "synthetic_fp": 0,
+        "synthetic_fpr": 0.0,
+        "provider_fp": 0
+      }
+    }
   },
   "locked_internal_test": {
     "n": 10585,
@@ -90,7 +191,6 @@
       "procedural_graphic": 1.0,
       "document": 1.0,
       "gov_scientific_doc": 1.0,
-      "receipt_invoice": 1.0,
       "print_publishing": 1.0,
       "stress_recompressed": 1.0,
       "foreign_ai": 1.0
@@ -145,12 +245,6 @@
         "specificity": 0.9966666666666667
       }
     }
-  },
-  "external_phone_thermal_receipts": {
-    "evaluated": 60,
-    "false_positives": 0,
-    "fpr": 0.0,
-    "specificity": 1.0
   },
   "stage2_version_accuracy": {
     "openai": 0.9559147685525349,

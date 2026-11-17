@@ -25,7 +25,7 @@ RETIRED_HUB_REPOS = (
     "wiltodelta/raiw-photo-classify",
 )
 CONFIG_FILE = "config.json"
-MODEL_FILE = "multi-provider-source-v6.npz"
+MODEL_FILE = "multi-provider-source-v7.npz"
 RETIRED_FILES = (
     "source-pipeline-mlp.npz",
     "openai-google-source-v1.npz",
@@ -51,7 +51,7 @@ def _build_hub_config(metrics: dict[str, Any]) -> dict[str, Any]:
         "stacked_stage2_dimension": metrics["stacked_stage2_dimension"],
         "providers": [cls for cls in classes if cls != "unknown"],
         "abstain_label": "unknown",
-        "library_name": "numpy",
+        "library_name": "onnx",
         "package": "remove-ai-watermarks[source-classify]",
         "license": "apache-2.0",
     }

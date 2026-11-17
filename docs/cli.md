@@ -256,7 +256,10 @@ remove-ai-watermarks classify-source image.png --json
 `classify-source` evaluates all 10 provider classes (`openai`, `google`,
 `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`,
 `firefly`, `xai`) and abstains as `unknown` when no provider clears its
-calibrated margin threshold. When a provider is accepted, the stacked Stage-2
+calibrated pixel-pipeline threshold, while also reporting `Synthetic` (`yes` or
+`no`, backed by `synthetic_detected` and `synthetic_probability`) so heavily
+resized or recompressed AI images remain detectable even when generator-family
+attribution honestly abstains. When a provider is accepted, the stacked Stage-2
 head also reports `version_subfamily` (for example
 `google:gemini_3_pro_image`, `openai:gpt_image_1_5`, `flux:flux_2_pro`,
 `stable_diffusion:sdxl`, `midjourney:v6_1`). `watermark_truth` is always

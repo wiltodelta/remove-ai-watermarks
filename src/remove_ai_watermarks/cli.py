@@ -2615,6 +2615,8 @@ def cmd_classify_source(source: Path, as_json: bool) -> None:
     console.print("\n  Source-pipeline classification (not provenance and not SynthID detection)")
     console.print(f"  Label: {result.label}")
     console.print(f"  Version subfamily: {result.version_subfamily or 'none'}")
+    syn_word = "yes" if result.synthetic_detected else "no"
+    console.print(f"  Synthetic: {syn_word} ({result.synthetic_probability:.4f})")
     console.print(f"  Reason: {result.reason}")
     console.print(f"  Confidence: {result.confidence:.4f}")
     console.print(f"  Watermark truth: {result.watermark_truth}")

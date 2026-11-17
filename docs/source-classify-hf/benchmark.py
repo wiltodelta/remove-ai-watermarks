@@ -4,7 +4,7 @@
 # dependencies = [
 #     "remove-ai-watermarks[source-classify]>=0.62.1",
 #     "huggingface-hub>=0.26.0",
-#     "onnxruntime>=1.19.0",
+#     "onnxruntime>=1.24.0",
 #     "peft>=0.14.0",
 #     "pyarrow>=17.0.0",
 #     "safetensors>=0.4.5",
@@ -19,7 +19,7 @@
 Streams pinned, un-gated datasets directly from Hugging Face Hub at immutable commit SHAs
 (no private files, no manual dataset setup) across three evaluation regimes:
 1. Non-AI false-positive traps (camera photos, UI screenshots, science diagrams,
-   scanned receipts and invoices).
+   scanned documents).
 2. Untouched native AI generator exports across FLUX.1-dev, OpenAI GPT-Image-1,
    Google Gemini Nano Banana Pro, Stable Diffusion XL, and Midjourney v6.1.
 3. Transcoded crowd-arena AI outputs across multi-provider preference shards re-encoded
@@ -209,10 +209,10 @@ NON_AI_SLICES: tuple[ParquetSliceSpec, ...] = (
         limit=50,
     ),
     ParquetSliceSpec(
-        category="receipt_invoice",
-        dataset_id="mychen76/invoices-and-receipts_ocr_v1",
-        revision="83835c87346de32ac9223bdce5264e69ef3366ad",
-        parquet_path="data/test-00000-of-00001-af2d92d1cee28514.parquet",
+        category="scanned_document",
+        dataset_id="lmms-lab/DocVQA",
+        revision="539088ef8a8ada01ac8e2e6d4e372586748a265e",
+        parquet_path="DocVQA/test-00000-of-00006.parquet",
         limit=50,
     ),
 )
@@ -723,7 +723,7 @@ def _evaluate_rgb_detector(
 
 
 def evaluate_raiw(samples: list[SampleItem]) -> dict[str, Any]:
-    """Evaluate `wiltodelta/raiw-source-classify` in pure NumPy on CPU."""
+    """Evaluate `wiltodelta/raiw-source-classify` on CPU."""
     from remove_ai_watermarks import source_classify as sc
 
     weights_file = sc.resolve_weights_path()
@@ -733,7 +733,7 @@ def evaluate_raiw(samples: list[SampleItem]) -> dict[str, Any]:
         with Image.open(io.BytesIO(raw_bytes)) as im:
             res = sc.classify_source(im, weights_path=weights_file)
         return {
-            "pred_ai": res.label != "unknown",
+            "pred_ai": bool(getattr(res, "synthetic_detected", res.label != "unknown")),
             "pred_provider": None if res.label == "unknown" else res.label,
         }
 
@@ -749,16 +749,14 @@ def evaluate_raiw(samples: list[SampleItem]) -> dict[str, Any]:
         preds_by_idx[idx] = _classify_one(samples[idx].raw_bytes)
         latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
-    untimed_indices = [idx for idx in range(len(samples)) if idx not in lat_idx_set]
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        untimed_preds = list(pool.map(lambda i: _classify_one(samples[i].raw_bytes), untimed_indices))
-    for idx, pred in zip(untimed_indices, untimed_preds, strict=True):
-        preds_by_idx[idx] = pred
+    for idx in range(len(samples)):
+        if idx not in lat_idx_set:
+            preds_by_idx[idx] = _classify_one(samples[idx].raw_bytes)
 
     return _summarize_predictions(
         model_id=sc.WEIGHTS_REPO,
         revision=sc.WEIGHTS_REVISION,
-        runtime="NumPy + OpenCV (CPU)",
+        runtime="NumPy + ONNX Runtime (CPU)",
         weights_mb=weights_mb,
         license_id="apache-2.0",
         median_cpu_ms=round(statistics.median(latencies_ms), 1),
@@ -1211,7 +1209,7 @@ def format_markdown_table(results: list[dict[str, Any]]) -> str:
     n_arena = results[0]["arena_ai"]["total"] if results else 0
 
     header = (
-        f"| Model | License | Size | CPU ms | Non-AI FPR (`{n_non_ai}`) | Photo / UI / Diag / Rcpt FPR "
+        f"| Model | License | Size | CPU ms | Non-AI FPR (`{n_non_ai}`) | Photo / UI / Diag / Doc FPR "
         f"| Native AI Recall (`{n_native}`) | Native Attribution (`{n_native}`) "
         f"| Arena AI Recall (`{n_arena}`) | Arena Attribution (`{n_arena}`) | Precision |"
     )
@@ -1223,7 +1221,7 @@ def format_markdown_table(results: list[dict[str, Any]]) -> str:
         arn = r["arena_ai"]
         slice_str = (
             f"{sf.get('camera_photo', 0.0):.0f}% / {sf.get('ui_screenshot', 0.0):.0f}% / "
-            f"{sf.get('science_diagram', 0.0):.0f}% / {sf.get('receipt_invoice', 0.0):.0f}%"
+            f"{sf.get('science_diagram', 0.0):.0f}% / {sf.get('scanned_document', 0.0):.0f}%"
         )
         lines.append(
             f"| `{r['model_id']}` | `{r['license']}` | {r['weights_mb']:.1f} MB | {r['median_cpu_ms']:.0f} ms "

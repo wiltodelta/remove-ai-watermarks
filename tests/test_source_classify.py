@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import struct
 import sys
 from typing import TYPE_CHECKING, Any
 
@@ -334,11 +336,13 @@ def test_cli_classify_source_json_and_text_and_missing_extra(tmp_path: Path, mon
     payload = json.loads(res_json.output)
     assert payload["label"] == "google"
     assert payload["version_subfamily"] == "google:v2"
+    assert payload["synthetic_detected"] is True
     assert payload["watermark_truth"] == "unknown"
 
     res_text = runner.invoke(main, ["classify-source", str(img_path)])
     assert res_text.exit_code == 0, res_text.output
     assert "Label: google" in res_text.output
+    assert "Synthetic: yes (" in res_text.output
     assert "not SynthID detection" in res_text.output
 
     monkeypatch.setattr(source_classify, "is_available", lambda: False)
@@ -360,7 +364,6 @@ def test_provenance_paths_do_not_import_source_classify(monkeypatch: pytest.Monk
 def test_resolve_weights_fetches_config_on_cold_miss_and_caches_resolution(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import hashlib
     import types
 
     source_classify._resolve_hub_weights.cache_clear()
@@ -629,17 +632,24 @@ def test_v4_end_to_end_image_classification_ignores_metadata(tmp_path: Path) -> 
     assert r1.scores == r2.scores
 
 
-def _write_synthetic_v5_npz(
-    path: Path,
+def _apply_npz_overrides(payload: dict[str, Any], overrides: dict[str, Any] | None) -> None:
+    if not overrides:
+        return
+    for key, val in overrides.items():
+        if val is None:
+            payload.pop(key, None)
+        else:
+            payload[key] = val
+
+
+def _synthetic_v5_npz_payload(
     *,
     det_winner: source_classify.ProviderClass = "flux",
     attr_winner: source_classify.ProviderClass = "ideogram",
     det_score: float = 4.0,
     det_threshold: float = 2.0,
     s2_hgb_weight: float = 1.0,
-    overrides: dict[str, Any] | None = None,
-) -> Path:
-    """Create a minimal valid pickle-free multi-provider-source-v5 .npz fixture."""
+) -> dict[str, Any]:
     d = source_classify.FEATURE_DIM_V4
     r_dim = source_classify.REGIME_DIM_V4
     n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
@@ -695,14 +705,28 @@ def _write_synthetic_v5_npz(
     payload[f"s2_{attr_winner}_lin_w"] = np.zeros((stacked_dim, 1), dtype=np.float64)
     payload[f"s2_{attr_winner}_lin_b"] = np.asarray([3.0], dtype=np.float64)
     payload[f"s2_{attr_winner}_lin_hgb_weight"] = np.asarray(s2_hgb_weight, dtype=np.float64)
+    return payload
 
-    if overrides:
-        for k, v in overrides.items():
-            if v is None:
-                payload.pop(k, None)
-            else:
-                payload[k] = v
 
+def _write_synthetic_v5_npz(
+    path: Path,
+    *,
+    det_winner: source_classify.ProviderClass = "flux",
+    attr_winner: source_classify.ProviderClass = "ideogram",
+    det_score: float = 4.0,
+    det_threshold: float = 2.0,
+    s2_hgb_weight: float = 1.0,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    """Create a minimal valid pickle-free multi-provider-source-v5 .npz fixture."""
+    payload = _synthetic_v5_npz_payload(
+        det_winner=det_winner,
+        attr_winner=attr_winner,
+        det_score=det_score,
+        det_threshold=det_threshold,
+        s2_hgb_weight=s2_hgb_weight,
+    )
+    _apply_npz_overrides(payload, overrides)
     np.savez(path, **payload)
     return path
 
@@ -855,3 +879,456 @@ def test_v5_joint_posterior_confidence_caps_ambiguous_attribution(tmp_path: Path
     assert res_abstain.reason == "abstained"
     assert res_abstain.confidence == pytest.approx(source_classify._sigmoid_scalar(-0.6), abs=1e-6)
     assert res_abstain.confidence < 0.5
+    assert res_abstain.synthetic_detected is False
+    assert res_abstain.synthetic_probability == pytest.approx(res_abstain.confidence, abs=1e-9)
+    assert res_exact_tie.synthetic_detected is True
+    assert res_exact_tie.synthetic_probability == pytest.approx(source_classify._sigmoid_scalar(4.0), abs=1e-6)
+
+
+def _build_minimal_const_vit28_onnx_bytes(
+    vit_vec: np.ndarray,
+    *,
+    r_chan_syn_slope: float = 0.0,
+) -> bytes:
+    """Build a minimal valid dynamic-batch ONNX ModelProto (`[B, 3, 384, 384] -> [B, 28]`)."""
+    vals = np.asarray(vit_vec, dtype=np.float32).reshape(source_classify.VIT_OUT_DIM_V7)
+    d_out = len(vals)
+
+    def _varint(val: int) -> bytes:
+        out = bytearray()
+        while val >= 0x80:
+            out.append((val & 0x7F) | 0x80)
+            val >>= 7
+        out.append(val)
+        return bytes(out)
+
+    def _f_bytes(num: int, data: bytes) -> bytes:
+        return _varint((num << 3) | 2) + _varint(len(data)) + data
+
+    def _f_varint(num: int, val: int) -> bytes:
+        return _varint((num << 3) | 0) + _varint(val)
+
+    def _dim(d: int | bytes) -> bytes:
+        return _f_bytes(2, d) if isinstance(d, bytes) else _f_varint(1, d)
+
+    def _value_info(name: str, elem_type: int, dims: list[int | bytes]) -> bytes:
+        shape = b"".join(_f_bytes(1, _dim(d)) for d in dims)
+        tt = _f_bytes(1, _f_varint(1, elem_type) + _f_bytes(2, shape))
+        return _f_bytes(1, name.encode()) + _f_bytes(2, tt)
+
+    def _tensor_f32(name: str, shape: list[int], flat: list[float]) -> bytes:
+        dims_b = b"".join(_f_varint(1, s) for s in shape)
+        raw_b = struct.pack(f"<{len(flat)}f", *flat)
+        return dims_b + _f_varint(2, 1) + _f_bytes(8, name.encode()) + _f_bytes(9, raw_b)
+
+    w_mat = np.zeros((3, d_out), dtype=np.float32)
+    w_mat[0, 0] = float(r_chan_syn_slope)
+    init_w = _tensor_f32("w_zero", [3, d_out], [float(x) for x in w_mat.ravel().tolist()])
+    init_b = _tensor_f32("b_vec", [d_out], [float(x) for x in vals.tolist()])
+
+    n_gap = _f_bytes(1, b"pixel_values") + _f_bytes(2, b"gap_out") + _f_bytes(4, b"GlobalAveragePool")
+    n_flat = _f_bytes(1, b"gap_out") + _f_bytes(2, b"flat_out") + _f_bytes(4, b"Flatten")
+    n_gemm = (
+        _f_bytes(1, b"flat_out")
+        + _f_bytes(1, b"w_zero")
+        + _f_bytes(1, b"b_vec")
+        + _f_bytes(2, b"vit_out")
+        + _f_bytes(4, b"Gemm")
+    )
+    inp = _value_info("pixel_values", 1, [b"batch", 3, 384, 384])
+    out = _value_info("vit_out", 1, [b"batch", d_out])
+    graph = (
+        _f_bytes(1, n_gap)
+        + _f_bytes(1, n_flat)
+        + _f_bytes(1, n_gemm)
+        + _f_bytes(2, b"g")
+        + _f_bytes(5, init_w)
+        + _f_bytes(5, init_b)
+        + _f_bytes(11, inp)
+        + _f_bytes(12, out)
+    )
+    return _f_varint(1, 7) + _f_bytes(7, graph) + _f_bytes(8, _f_varint(2, 13))
+
+
+def _write_synthetic_v7_npz(
+    path: Path,
+    *,
+    vit_vec: np.ndarray | None = None,
+    det_winner: source_classify.ProviderClass = "flux",
+    attr_winner: source_classify.ProviderClass = "ideogram",
+    det_score: float = 1.0,
+    det_threshold: float = 3.0,
+    syn_threshold: float = 0.5,
+    syn_conf_scale: float = 1.0,
+    vit_attr_alpha: float = 0.0,
+    phys_veto_cap: float = 0.0,
+    phys_veto_syn_floor: float = -3.0,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    """Create a minimal valid pickle-free `multi-provider-source-v7` `.npz` fixture."""
+    payload = _synthetic_v5_npz_payload(
+        det_winner=det_winner,
+        attr_winner=attr_winner,
+        det_score=det_score,
+        det_threshold=det_threshold,
+    )
+
+    if vit_vec is None:
+        vit_vec = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+        vit_vec[0] = 2.4
+    onnx_bytes = _build_minimal_const_vit28_onnx_bytes(vit_vec)
+
+    d_s = source_classify.SYN_IN_DIM_V7
+    h_s = 8
+    syn_skip = np.zeros(d_s, dtype=np.float64)
+    syn_skip[0] = 1.0  # pass vit_syn_logit directly through skip connection
+
+    payload["schema"] = np.asarray(source_classify.MODEL_SCHEMA_V7)
+    payload["vit_onnx_bytes"] = np.frombuffer(onnx_bytes, dtype=np.uint8).copy()
+    payload["vit_attr_alpha"] = np.asarray(vit_attr_alpha, dtype=np.float64)
+    payload["phys_veto_cap"] = np.asarray(phys_veto_cap, dtype=np.float64)
+    payload["phys_veto_syn_floor"] = np.asarray(phys_veto_syn_floor, dtype=np.float64)
+    payload["syn_in_mean"] = np.zeros(d_s, dtype=np.float64)
+    payload["syn_in_scale"] = np.ones(d_s, dtype=np.float64)
+    payload["syn_w1"] = np.zeros((d_s, h_s), dtype=np.float64)
+    payload["syn_b1"] = np.zeros(h_s, dtype=np.float64)
+    payload["syn_ln_g"] = np.ones(h_s, dtype=np.float64)
+    payload["syn_ln_b"] = np.zeros(h_s, dtype=np.float64)
+    payload["syn_w2"] = np.zeros(h_s, dtype=np.float64)
+    payload["syn_b2"] = np.asarray(0.0, dtype=np.float64)
+    payload["syn_skip_w"] = syn_skip
+    payload["syn_threshold"] = np.asarray(syn_threshold, dtype=np.float64)
+    payload["syn_conf_scale"] = np.asarray(syn_conf_scale, dtype=np.float64)
+    _apply_npz_overrides(payload, overrides)
+
+    np.savez(path, **payload)
+    return path
+
+
+def test_v7_flagless_transcoded_synthetic_detection_and_honest_abstention(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rng = np.random.default_rng(20261116)
+    img = Image.fromarray(rng.integers(20, 235, size=(288, 320, 3), dtype=np.uint8), mode="RGB")
+
+    # 1. Transcoded AI: 512-d physics abstains (1.0 < 3.0), embedded ViT scores +2.5 >= 0.5 ->
+    # flagless `classify_source` returns honest `label="unknown"` AND `synthetic_detected=True`!
+    vit_pos = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+    vit_pos[0] = 2.5
+    w_pos = _write_synthetic_v7_npz(
+        tmp_path / "v7_transcoded_ai.npz",
+        vit_vec=vit_pos,
+        det_score=1.0,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        syn_conf_scale=1.2,
+    )
+    # Local `.npz` works completely offline even when `huggingface_hub` is absent
+    real_avail = source_classify.module_available
+    with monkeypatch.context() as mp:
+        mp.setattr(
+            source_classify,
+            "module_available",
+            lambda *mods: False if "huggingface_hub" in mods else real_avail(*mods),
+        )
+        res_ai = source_classify.classify_source(img, weights_path=w_pos)
+
+    assert res_ai.label == "unknown"
+    assert res_ai.reason == "abstained"
+    assert res_ai.version_subfamily is None
+    assert res_ai.watermark_truth == "unknown"
+    assert res_ai.model_revision == source_classify.MODEL_SCHEMA_V7
+    assert res_ai.synthetic_detected is True
+    assert res_ai.synthetic_probability == pytest.approx(source_classify._sigmoid_scalar(1.2 * 2.0), abs=1e-5)
+
+    # Feature-only call without `vit_features` uses the 512-d physics branch cleanly;
+    # passing `vit_features` reproduces exact `classify_source(img)` parity.
+    feat_512 = source_classify.extract_512d_v4_features(img)
+    assert feat_512 is not None
+    res_feat_only = source_classify.classify_source_features(feat_512, weights_path=w_pos)
+    assert res_feat_only.label == "unknown"
+    assert res_feat_only.synthetic_detected is False
+    assert res_feat_only.model_revision == source_classify.MODEL_SCHEMA_V7
+
+    res_feat_joint = source_classify.classify_source_features(feat_512, weights_path=w_pos, vit_features=vit_pos)
+    assert res_feat_joint.synthetic_detected is True
+    assert res_feat_joint.synthetic_probability == pytest.approx(res_ai.synthetic_probability, abs=1e-6)
+
+    # 2. Real non-AI image: embedded ViT scores -2.0 < 0.5 -> both `label="unknown"` and `synthetic_detected=False`
+    vit_real = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+    vit_real[0] = -2.0
+    w_real = _write_synthetic_v7_npz(
+        tmp_path / "v7_real.npz",
+        vit_vec=vit_real,
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+    )
+    res_real = source_classify.classify_source(img, weights_path=w_real)
+    assert res_real.label == "unknown"
+    assert res_real.synthetic_detected is False
+    assert res_real.synthetic_probability < 0.5
+
+
+def test_v7_vit_provider_attribution_blend_and_borderline_physics_veto(tmp_path: Path) -> None:
+    rng = np.random.default_rng(77)
+    img = Image.fromarray(rng.integers(0, 256, size=(260, 260, 3), dtype=np.uint8), mode="RGB")
+
+    # 1. When 512-d physics accepts (`det_score=4.2 >= 2.0`), `vit_attr_alpha > 0` blends ViT provider log-odds
+    # to break ties toward `midjourney`, and monotonicity keeps `synthetic_detected=True` even if `vit_syn` is mild.
+    mj_idx = source_classify.ALL_PROVIDER_CLASSES.index("midjourney")
+    vit_mj = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+    vit_mj[0] = -0.2
+    vit_mj[1 + mj_idx] = 14.0
+    vit_mj[1 + len(source_classify.ALL_PROVIDER_CLASSES)] = -2.0
+    w_blend = _write_synthetic_v7_npz(
+        tmp_path / "v7_blend.npz",
+        vit_vec=vit_mj,
+        det_winner="flux",
+        attr_winner="ideogram",
+        det_score=4.2,
+        det_threshold=2.0,
+        syn_threshold=0.5,
+        vit_attr_alpha=0.5,
+    )
+    res_blend = source_classify.classify_source(img, weights_path=w_blend)
+    assert res_blend.label == "midjourney"
+    assert res_blend.reason == "classified"
+    assert res_blend.synthetic_detected is True
+    assert res_blend.synthetic_probability >= 0.5
+
+    # 2. Borderline physics excess (`2.15 - 2.0 = 0.15 < phys_veto_cap=0.30`) strongly contradicted by ViT
+    # (`syn_margin = -3.5 - 0.5 = -4.0 < -2.5`) vetoes the borderline FP on both `label` and `synthetic_detected`.
+    vit_deep_real = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+    vit_deep_real[0] = -3.5
+    w_veto = _write_synthetic_v7_npz(
+        tmp_path / "v7_veto.npz",
+        vit_vec=vit_deep_real,
+        det_winner="flux",
+        attr_winner="flux",
+        det_score=2.15,
+        det_threshold=2.0,
+        syn_threshold=0.5,
+        phys_veto_cap=0.30,
+        phys_veto_syn_floor=-2.5,
+    )
+    res_vetoed = source_classify.classify_source(img, weights_path=w_veto)
+    assert res_vetoed.label == "unknown"
+    assert res_vetoed.reason == "abstained"
+    assert res_vetoed.synthetic_detected is False
+    assert res_vetoed.synthetic_probability < 0.5
+
+
+def test_v7_corrupted_bundle_and_missing_onnxruntime_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    w_bad_onnx = _write_synthetic_v7_npz(
+        tmp_path / "v7_bad_onnx.npz",
+        overrides={"vit_onnx_bytes": np.zeros(16, dtype=np.uint8)},
+    )
+    with pytest.raises(ValueError, match="vit_onnx_bytes"):
+        source_classify._load_model_from_path(w_bad_onnx)
+
+    w_missing_onnx = _write_synthetic_v7_npz(
+        tmp_path / "v7_missing_onnx.npz",
+        overrides={"vit_onnx_bytes": None},
+    )
+    with pytest.raises(ValueError, match="vit_onnx_bytes"):
+        source_classify._load_model_from_path(w_missing_onnx)
+
+    w_bad_alpha = _write_synthetic_v7_npz(
+        tmp_path / "v7_bad_alpha.npz",
+        overrides={"vit_attr_alpha": np.asarray(-0.1, dtype=np.float64)},
+    )
+    with pytest.raises(ValueError, match="v7 synthetic fusion"):
+        source_classify._load_model_from_path(w_bad_alpha)
+
+    w_ok = _write_synthetic_v7_npz(tmp_path / "v7_ok.npz")
+
+    real_avail = source_classify.module_available
+    monkeypatch.setattr(
+        source_classify,
+        "module_available",
+        lambda *mods: False if "onnxruntime" in mods else real_avail(*mods),
+    )
+    assert source_classify.is_available() is False
+    rng = np.random.default_rng(19)
+    img = Image.fromarray(rng.integers(0, 256, size=(256, 256, 3), dtype=np.uint8), mode="RGB")
+    with pytest.raises(ImportError, match="onnxruntime"):
+        source_classify.classify_source(img, weights_path=w_ok)
+
+
+def test_cli_v7_reports_synthetic_on_transcoded_unknown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    img_path = tmp_path / "arena.jpg"
+    rng = np.random.default_rng(123)
+    Image.fromarray(rng.integers(0, 256, size=(280, 280, 3), dtype=np.uint8), mode="RGB").save(img_path, quality=82)
+
+    vit_pos = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+    vit_pos[0] = 3.0
+    w_v7 = _write_synthetic_v7_npz(
+        tmp_path / "cli_v7.npz",
+        vit_vec=vit_pos,
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+    )
+    monkeypatch.setenv(source_classify.WEIGHTS_ENV, str(w_v7))
+
+    runner = CliRunner()
+    res_json = runner.invoke(main, ["classify-source", str(img_path), "--json"])
+    assert res_json.exit_code == 0, res_json.output
+    payload = json.loads(res_json.output)
+    assert payload["label"] == "unknown"
+    assert payload["synthetic_detected"] is True
+    assert payload["synthetic_probability"] > 0.9
+
+    res_txt = runner.invoke(main, ["classify-source", str(img_path)])
+    assert res_txt.exit_code == 0, res_txt.output
+    assert "Label: unknown" in res_txt.output
+    assert "Synthetic: yes (" in res_txt.output
+
+
+def test_v7_open_world_foreign_ai_openset_mm_prov_and_widescreen_detail_pass(
+    tmp_path: Path,
+) -> None:
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    d_mm = source_classify.MM_PROV_IN_DIM_V7
+    h_mm = 8
+
+    # 1. Open-world 12-way layout (`[0..9]=providers, [10]=foreign_ai, [11]=real`):
+    #    Strong `foreign_ai` logit (`vit_out[11]=+7.0` vs `vit_real=-5.0`) produces positive `vit_lse_ai` (+12.0)
+    #    and positive `vit_for_lo` (+12.0) even when all 10 supported providers score `-6.0`!
+    x_dummy = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+    r_zero = np.zeros(source_classify.REGIME_DIM_V4, dtype=np.float64)
+    vit_foreign = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float64)
+    vit_foreign[0] = 3.2  # strong generalist ViT synthetic logit
+    vit_foreign[1 : 1 + n_cls] = -6.0
+    vit_foreign[1 + n_cls] = 7.0  # strong `foreign_ai` logit
+    vit_foreign[2 + n_cls] = -5.0  # low `real_non_ai` logit
+    z_neg = np.full(n_cls + 1, -4.0, dtype=np.float64)
+    z_neg[n_cls] = 0.5
+    s_foreign = source_classify.build_v7_syn_input_1d(x_dummy, z_neg, -5.0, r_zero, vit_foreign)
+    assert s_foreign[1] > 11.9  # vit_lse_ai = logsumexp(prov_10, foreign_ai) - real > 0
+    assert s_foreign[3] == pytest.approx(12.0, abs=1e-6)  # vit_for_lo = foreign_ai - real
+
+    # 2. Open-set 12-way multimodal provider attribution (`_MMProvHeadV7`):
+    #    - Foreign AI (high `mm_foreign_ai` at index `n_cls`) -> `synthetic_detected=True` and `label="unknown"`.
+    #    - Transcoded 10-provider AI (`google` clears `mm_prov_thresholds` and `mm_prov_min_gap`) -> `label="google"`.
+    n_mm_out = n_cls + 2
+    mm_b2_foreign = np.zeros(n_mm_out, dtype=np.float64)
+    mm_b2_foreign[n_cls] = 5.0  # `foreign_ai` class wins strongly over 10 providers
+    mm_b2_foreign[n_cls + 1] = -4.0
+    mm_overrides: dict[str, Any] = {
+        "mm_prov_in_mean": np.zeros(d_mm, dtype=np.float64),
+        "mm_prov_in_scale": np.ones(d_mm, dtype=np.float64),
+        "mm_prov_w1": np.zeros((d_mm, h_mm), dtype=np.float64),
+        "mm_prov_b1": np.zeros(h_mm, dtype=np.float64),
+        "mm_prov_ln_g": np.ones(h_mm, dtype=np.float64),
+        "mm_prov_ln_b": np.zeros(h_mm, dtype=np.float64),
+        "mm_prov_w2": np.zeros((h_mm, n_mm_out), dtype=np.float64),
+        "mm_prov_b2": mm_b2_foreign,
+        "mm_prov_skip_w": np.zeros((d_mm, n_mm_out), dtype=np.float64),
+        "mm_prov_thresholds": np.full(n_cls, 1.5, dtype=np.float64),
+        "mm_prov_min_gap": np.asarray(0.8, dtype=np.float64),
+        "mm_prov_conf_scale": np.asarray(1.0, dtype=np.float64),
+    }
+    w_foreign = _write_synthetic_v7_npz(
+        tmp_path / "v7_foreign_openworld.npz",
+        vit_vec=vit_foreign.astype(np.float32),
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides=mm_overrides,
+    )
+    rng = np.random.default_rng(314)
+    img_sq = Image.fromarray(rng.integers(10, 245, size=(300, 300, 3), dtype=np.uint8), mode="RGB")
+    res_foreign = source_classify.classify_source(img_sq, weights_path=w_foreign)
+    assert res_foreign.label == "unknown"
+    assert res_foreign.reason == "abstained"
+    assert res_foreign.synthetic_detected is True
+    assert res_foreign.synthetic_probability > 0.9
+
+    # Native foreign generator where 512-d physics fires moderately (`eff_phys_excess = +0.8 < 2.2`)
+    # while `_MMProvHeadV7` strongly prefers `foreign_ai` (`max_lo < -0.80`) must still abstain on `label`!
+    w_foreign_nat = _write_synthetic_v7_npz(
+        tmp_path / "v7_foreign_native_phys.npz",
+        vit_vec=vit_foreign.astype(np.float32),
+        det_score=3.8,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides=mm_overrides,
+    )
+    res_foreign_nat = source_classify.classify_source(img_sq, weights_path=w_foreign_nat)
+    assert res_foreign_nat.synthetic_detected is True
+    assert res_foreign_nat.label == "unknown"
+    assert res_foreign_nat.reason == "abstained"
+
+    g_idx = source_classify.ALL_PROVIDER_CLASSES.index("google")
+    mm_b2_google = np.zeros(n_mm_out, dtype=np.float64)
+    mm_b2_google[g_idx] = 4.5
+    mm_b2_google[n_cls] = 0.5
+    mm_b2_google[n_cls + 1] = -3.0  # log-odds > 3.9 >= threshold 1.5, gap >= 0.8
+    mm_overrides_g = dict(mm_overrides, mm_prov_b2=mm_b2_google)
+    w_google_tr = _write_synthetic_v7_npz(
+        tmp_path / "v7_transcoded_google.npz",
+        vit_vec=vit_foreign.astype(np.float32),
+        attr_winner="google",
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides=mm_overrides_g,
+    )
+    res_google_tr = source_classify.classify_source(img_sq, weights_path=w_google_tr)
+    assert res_google_tr.label == "google"
+    assert res_google_tr.reason == "classified"
+    assert res_google_tr.synthetic_detected is True
+    assert res_google_tr.confidence >= 0.5
+
+    # 3. Conditional widescreen two-scale gray-zone detail pass (`1408x768`):
+    #    Center strip has dark R (`~20`, normalized R < 0 -> primary `syn_raw < 0.5` in gray zone),
+    #    while left/right thirds have bright R (`~250`, normalized R > 0 -> detail crops score high!).
+    wide_arr = rng.integers(30, 120, size=(768, 1408, 3), dtype=np.uint8)
+    wide_arr[:, :, 0] = 250
+    wide_arr[:, 480:928, 0] = 20  # center crop (`short_edge=440`) sees low R; left/right `672px` crops see high R
+    wide_img = Image.fromarray(wide_arr, mode="RGB")
+
+    detail_2chw = source_classify.preprocess_vit_384_detail_2chw(wide_img, short_edge=672)
+    assert detail_2chw.shape == (2, 3, 384, 384)
+
+    vit_base = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+    vit_base[0] = 0.35
+    dyn_onnx = _build_minimal_const_vit28_onnx_bytes(vit_base, r_chan_syn_slope=1.5)
+    ms_overrides: dict[str, Any] = {
+        "vit_onnx_bytes": np.frombuffer(dyn_onnx, dtype=np.uint8).copy(),
+        "ms_short_edge": np.asarray(672, dtype=np.int64),
+        "ms_min_short_px": np.asarray(512, dtype=np.int64),
+        "ms_min_long_px": np.asarray(640, dtype=np.int64),
+        "ms_gray_lo": np.asarray(-2.5, dtype=np.float64),
+        "ms_gfx_ceil": np.asarray(1.0, dtype=np.float64),
+        "ms_detail_alpha": np.asarray(0.75, dtype=np.float64),
+        "ms_thr_offset": np.asarray(0.0, dtype=np.float64),
+    }
+    w_no_ms = _write_synthetic_v7_npz(
+        tmp_path / "v7_wide_no_ms.npz",
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides={"vit_onnx_bytes": np.frombuffer(dyn_onnx, dtype=np.uint8).copy()},
+    )
+    w_with_ms = _write_synthetic_v7_npz(
+        tmp_path / "v7_wide_with_ms.npz",
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides=ms_overrides,
+    )
+    res_no_ms = source_classify.classify_source(wide_img, weights_path=w_no_ms)
+    res_with_ms = source_classify.classify_source(wide_img, weights_path=w_with_ms)
+    assert res_no_ms.synthetic_detected is False
+    assert res_with_ms.synthetic_detected is True
+    assert res_with_ms.synthetic_probability > res_no_ms.synthetic_probability

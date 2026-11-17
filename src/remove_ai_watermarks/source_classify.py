@@ -16,6 +16,7 @@ import hashlib
 import logging
 import math
 import os
+import threading
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -76,15 +77,114 @@ CLASSES: tuple[SourceLabel, ...] = (*ALL_PROVIDER_CLASSES, "unknown")
 
 WEIGHTS_ENV = "RAIW_SOURCE_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
-WEIGHTS_REVISION = "d8029a433afe3c27ad74ac75f50d77dfae986b13"
+WEIGHTS_REVISION = "46b331cb8f0831e6ced6eb3a7f7b55db3f91867e"
 CONFIG_FILE = "config.json"
-MODEL_FILE = "multi-provider-source-v6.npz"
-MODEL_SHA256 = "87868eea08b8b811999f675186b82b067c4de655981cb7f25114aac00b1dd284"
+MODEL_FILE = "multi-provider-source-v7.npz"
+MODEL_SHA256 = "4faef51eea48f8194ee804fab1782c48d626384e115e2ef70884f8e8393d7eb1"
 MODEL_SCHEMA_V3 = "multi-provider-source-v3"
 MODEL_SCHEMA_V4 = "multi-provider-source-v4"
 MODEL_SCHEMA_V5 = "multi-provider-source-v5"
-MODEL_SCHEMA = MODEL_SCHEMA_V5
+MODEL_SCHEMA_V7 = "multi-provider-source-v7"
+MODEL_SCHEMA = MODEL_SCHEMA_V7
 SOURCE_CLASSIFY_EXTRA = "'remove-ai-watermarks[source-classify]'"
+
+VIT_SHORT_EDGE_V7 = 440
+VIT_DETAIL_SHORT_EDGE_V7 = 672
+VIT_CROP_SIZE_V7 = 384
+VIT_OUT_DIM_V7 = 28
+SYN_IN_DIM_V7 = 67
+MM_PROV_IN_DIM_V7 = 82
+
+_IMAGENET_MEAN_RGB: tuple[float, float, float] = (0.485, 0.456, 0.406)
+_IMAGENET_STD_RGB: tuple[float, float, float] = (0.229, 0.224, 0.225)
+
+# Zero-leakage 26-d codec- & geometry-invariant macro-scene Born-Digital Graphics Veto
+# over `x_512[464:480]` (Block D4 saturation/achromatic/clipping/palette) + `x_512[502:512]` (Block E scene).
+_GFX_MEAN_26: tuple[float, ...] = (
+    -0.00866062,
+    -0.00369257,
+    -0.03726238,
+    -0.0227263,
+    0.02860176,
+    0.32059201,
+    0.19851867,
+    0.66889976,
+    0.1629835,
+    0.01311125,
+    0.05012025,
+    0.40246035,
+    0.27661094,
+    0.84704429,
+    0.46758068,
+    0.14369827,
+    0.14918268,
+    0.40246035,
+    0.0852835,
+    0.46758068,
+    0.32059201,
+    0.66889976,
+    0.01311125,
+    0.05012025,
+    0.48955523,
+    0.45048192,
+)
+_GFX_SCALE_26: tuple[float, ...] = (
+    0.1038899,
+    0.09136275,
+    0.08558824,
+    0.07392866,
+    0.13310937,
+    0.18244784,
+    0.07912959,
+    0.25684499,
+    0.24843859,
+    0.06171596,
+    0.16283455,
+    0.2023694,
+    0.25040855,
+    0.17989174,
+    0.23715294,
+    0.10365412,
+    0.21141834,
+    0.2023694,
+    0.19076729,
+    0.23715294,
+    0.18244784,
+    0.25684499,
+    0.06171596,
+    0.16283455,
+    0.19453504,
+    0.12261727,
+)
+_GFX_COEF_26: tuple[float, ...] = (
+    0.28593333,
+    -0.01833078,
+    -0.54306846,
+    0.23017136,
+    -0.33946035,
+    -0.20786306,
+    0.41448862,
+    -0.10714731,
+    -0.19169794,
+    0.09411158,
+    0.19919772,
+    0.22211316,
+    -0.4822873,
+    -0.57568771,
+    0.56877772,
+    -0.08537862,
+    -0.67524892,
+    0.22211316,
+    -0.11560082,
+    0.56877772,
+    -0.20786306,
+    -0.10714731,
+    0.09411158,
+    0.19919772,
+    0.42927782,
+    -0.20077164,
+)
+_GFX_INTERCEPT = -4.46995339
 
 MIN_SIDE = 256
 FORENSIC_DIM = 124
@@ -120,6 +220,8 @@ class SourceClassification:
     watermark_truth: Literal["unknown"] = "unknown"
     claim: str = CLAIM
     model_revision: str = MODEL_SCHEMA
+    synthetic_detected: bool = False
+    synthetic_probability: float = 0.0
 
     @property
     def scores(self) -> dict[str, float]:
@@ -140,6 +242,8 @@ class SourceClassification:
             "watermark_truth": self.watermark_truth,
             "claim": self.claim,
             "model_revision": self.model_revision,
+            "synthetic_detected": self.synthetic_detected,
+            "synthetic_probability": self.synthetic_probability,
         }
 
 
@@ -338,19 +442,111 @@ class _SourceModelV5:
     version_heads: dict[str, _Stage2VersionHead]
 
 
-_LoadedSourceModel: TypeAlias = _SourceModel | _SourceModelV4 | _SourceModelV5
+class _V7OnnxHolder:
+    """Lazy, thread-safe ONNX Runtime session holder that drops raw graph bytes after compilation."""
+
+    def __init__(self, npz_path: Path) -> None:
+        self.npz_path = npz_path
+        self._lock = threading.Lock()
+        self._session: Any = None
+
+    def get_session(self) -> Any:
+        if self._session is not None:
+            return self._session
+        _require_dependencies(need_hub=False, need_onnx=True)
+        with self._lock:
+            if self._session is not None:
+                return self._session
+            import numpy as np
+
+            with np.load(self.npz_path, allow_pickle=False) as data:
+                raw_bytes = np.asarray(data["vit_onnx_bytes"], dtype=np.uint8).tobytes()
+            ort: Any = import_module("onnxruntime")
+            sess_opts = ort.SessionOptions()
+            sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            omp_threads = os.environ.get("OMP_NUM_THREADS", "").strip()
+            if omp_threads.isdigit() and int(omp_threads) > 0:
+                sess_opts.intra_op_num_threads = int(omp_threads)
+                sess_opts.inter_op_num_threads = 1
+            self._session = ort.InferenceSession(
+                raw_bytes,
+                sess_options=sess_opts,
+                providers=["CPUExecutionProvider"],
+            )
+            return self._session
+
+
+@dataclass(frozen=True)
+class _MMProvHeadV7:
+    """Open-set 11-way (`10` providers + `unknown`) multimodal attribution head for transcoded AI."""
+
+    in_mean: FloatArray
+    in_scale: FloatArray
+    w1: FloatArray
+    b1: FloatArray
+    ln_g: FloatArray
+    ln_b: FloatArray
+    w2: FloatArray
+    b2: FloatArray
+    skip_w: FloatArray
+    prov_thresholds: FloatArray
+    min_gap: float
+    conf_scale: float
+
+
+@dataclass(frozen=True)
+class _MultiScaleGrayConfigV7:
+    """Conditional second-scale (`672px` 2-crop) configuration for borderline widescreen/high-res frames."""
+
+    short_edge: int
+    min_short_px: int
+    min_long_px: int
+    gray_lo: float
+    gfx_ceil: float
+    detail_alpha: float
+    thr_offset: float
+
+
+@dataclass(frozen=True)
+class _SourceModelV7:
+    """Unified pickle-free v7 model combining 512-d physics/codec ensembles and embedded ViT ONNX."""
+
+    base_v5: _SourceModelV5
+    onnx_holder: _V7OnnxHolder
+    vit_attr_alpha: float
+    phys_veto_cap: float
+    phys_veto_syn_floor: float
+    syn_in_mean: FloatArray
+    syn_in_scale: FloatArray
+    syn_w1: FloatArray
+    syn_b1: FloatArray
+    syn_ln_g: FloatArray
+    syn_ln_b: FloatArray
+    syn_w2: FloatArray
+    syn_b2: float
+    syn_skip_w: FloatArray
+    syn_threshold: float
+    syn_conf_scale: float
+    mm_prov: _MMProvHeadV7 | None = None
+    ms_cfg: _MultiScaleGrayConfigV7 | None = None
+
+
+_LoadedSourceModel: TypeAlias = _SourceModel | _SourceModelV4 | _SourceModelV5 | _SourceModelV7
 
 
 def is_available() -> bool:
     """Return True if optional source-classifier dependencies are installed."""
-    return module_available("numpy", "cv2", "huggingface_hub")
+    return module_available("numpy", "cv2", "huggingface_hub", "onnxruntime")
 
 
-def _require_dependencies() -> None:
-    if not is_available():
+def _require_dependencies(*, need_hub: bool = True, need_onnx: bool = False) -> None:
+    missing_core = not module_available("numpy", "cv2")
+    missing_hub = need_hub and not module_available("huggingface_hub")
+    missing_ort = need_onnx and not module_available("onnxruntime")
+    if missing_core or missing_hub or missing_ort:
         raise ImportError(
-            "Source-pipeline classification requires opencv-python-headless and "
-            f"huggingface-hub. Install with: pip install {SOURCE_CLASSIFY_EXTRA}"
+            "Source-pipeline classification requires opencv-python-headless, "
+            f"huggingface-hub, and onnxruntime. Install with: pip install {SOURCE_CLASSIFY_EXTRA}"
         )
 
 
@@ -373,7 +569,7 @@ def _resolve_hub_weights(
     config_file: str,
     expected_sha256: str,
 ) -> Path:
-    _require_dependencies()
+    _require_dependencies(need_hub=True, need_onnx=False)
     hub: Any = import_module("huggingface_hub")
     try_cache = getattr(hub, "try_to_load_from_cache", None)
     cached = try_cache(repo_id=repo_id, filename=model_file, revision=revision) if callable(try_cache) else None
@@ -419,6 +615,10 @@ def resolve_weights_path(weights_path: Path | None = None) -> Path:
 
 
 _resolve_weights_path = resolve_weights_path
+
+
+def _get_v7_onnx_session(model: _SourceModelV7) -> Any:
+    return model.onnx_holder.get_session()
 
 
 @functools.lru_cache(maxsize=1)
@@ -1233,6 +1433,179 @@ def _load_model_v5(data: Any) -> _SourceModelV5:
     )
 
 
+def _inspect_npz_1d_uint8_length(data: Any, key: str) -> int:
+    import numpy as np
+
+    npfmt: Any = import_module("numpy.lib.format")
+    member = f"{key}.npy"
+    zf = getattr(data, "zip", None)
+    if zf is not None and member in zf.namelist():
+        with zf.open(member) as handle:
+            version: tuple[int, int] = npfmt.read_magic(handle)
+            header_fn: Any = npfmt.read_array_header_1_0 if version == (1, 0) else npfmt.read_array_header_2_0
+            hdr: tuple[tuple[int, ...], bool, Any] = header_fn(handle)
+            shape, _fortran, dtype = hdr
+        if dtype != np.dtype(np.uint8) or len(shape) != 1:
+            raise ValueError(f"Invalid {key} array in v7 model bundle")
+        return int(shape[0])
+    raw = np.asarray(data[key])
+    if raw.dtype != np.uint8 or raw.ndim != 1:
+        raise ValueError(f"Invalid {key} array in v7 model bundle")
+    return int(raw.size)
+
+
+def _load_model_v7(data: Any, resolved: Path) -> _SourceModelV7:
+    import numpy as np
+
+    base_v5 = _load_model_v5(data)
+    if "vit_onnx_bytes" not in data:
+        raise ValueError("Missing vit_onnx_bytes in v7 model bundle")
+    onnx_len = _inspect_npz_1d_uint8_length(data, "vit_onnx_bytes")
+    if onnx_len < 32:
+        raise ValueError("Invalid vit_onnx_bytes array in v7 model bundle")
+
+    syn_in_mean, syn_in_scale = _load_1d_standardizer(
+        data,
+        "syn_in_mean",
+        "syn_in_scale",
+        SYN_IN_DIM_V7,
+        err_msg="Invalid v7 syn_in_mean/syn_in_scale standardization arrays",
+    )
+    syn_w1 = np.asarray(data["syn_w1"], dtype=np.float64)
+    syn_b1 = np.asarray(data["syn_b1"], dtype=np.float64)
+    syn_ln_g = np.asarray(data["syn_ln_g"], dtype=np.float64)
+    syn_ln_b = np.asarray(data["syn_ln_b"], dtype=np.float64)
+    syn_w2 = np.asarray(data["syn_w2"], dtype=np.float64)
+    syn_b2 = float(np.asarray(data["syn_b2"], dtype=np.float64).squeeze())
+    syn_skip_w = np.asarray(data["syn_skip_w"], dtype=np.float64)
+    syn_threshold = float(np.asarray(data["syn_threshold"], dtype=np.float64).squeeze())
+    syn_conf_scale = float(np.asarray(data["syn_conf_scale"], dtype=np.float64).squeeze())
+    vit_attr_alpha = float(np.asarray(data["vit_attr_alpha"], dtype=np.float64).squeeze())
+    phys_veto_cap = float(np.asarray(data["phys_veto_cap"], dtype=np.float64).squeeze())
+    phys_veto_syn_floor = float(np.asarray(data["phys_veto_syn_floor"], dtype=np.float64).squeeze())
+
+    h_syn_dim = syn_b1.shape[0] if syn_b1.ndim == 1 else -1
+    if (
+        h_syn_dim < 4
+        or syn_w1.shape != (SYN_IN_DIM_V7, h_syn_dim)
+        or syn_ln_g.shape != (h_syn_dim,)
+        or syn_ln_b.shape != (h_syn_dim,)
+        or syn_w2.shape != (h_syn_dim,)
+        or syn_skip_w.shape != (SYN_IN_DIM_V7,)
+        or not all(
+            math.isfinite(val)
+            for val in (syn_b2, syn_threshold, syn_conf_scale, vit_attr_alpha, phys_veto_cap, phys_veto_syn_floor)
+        )
+        or syn_conf_scale <= 0.0
+        or vit_attr_alpha < 0.0
+        or not all(np.all(np.isfinite(arr)) for arr in (syn_w1, syn_b1, syn_ln_g, syn_ln_b, syn_w2, syn_skip_w))
+    ):
+        raise ValueError("Invalid v7 synthetic fusion or provider-blend arrays")
+
+    mm_prov: _MMProvHeadV7 | None = None
+    if "mm_prov_w1" in data:
+        n_cls = len(ALL_PROVIDER_CLASSES)
+        n_out = n_cls + 2
+        mm_in_mean, mm_in_scale = _load_1d_standardizer(
+            data,
+            "mm_prov_in_mean",
+            "mm_prov_in_scale",
+            MM_PROV_IN_DIM_V7,
+            err_msg="Invalid v7 mm_prov standardization arrays",
+        )
+        mm_w1 = np.asarray(data["mm_prov_w1"], dtype=np.float64)
+        mm_b1 = np.asarray(data["mm_prov_b1"], dtype=np.float64)
+        mm_ln_g = np.asarray(data["mm_prov_ln_g"], dtype=np.float64)
+        mm_ln_b = np.asarray(data["mm_prov_ln_b"], dtype=np.float64)
+        mm_w2 = np.asarray(data["mm_prov_w2"], dtype=np.float64)
+        mm_b2 = np.asarray(data["mm_prov_b2"], dtype=np.float64)
+        mm_skip_w = np.asarray(data["mm_prov_skip_w"], dtype=np.float64)
+        mm_thr = np.asarray(data["mm_prov_thresholds"], dtype=np.float64)
+        mm_gap = float(np.asarray(data["mm_prov_min_gap"], dtype=np.float64).squeeze())
+        mm_cscale = float(np.asarray(data["mm_prov_conf_scale"], dtype=np.float64).squeeze())
+        h_mm = mm_b1.shape[0] if mm_b1.ndim == 1 else -1
+        if (
+            h_mm < 4
+            or mm_w1.shape != (MM_PROV_IN_DIM_V7, h_mm)
+            or mm_ln_g.shape != (h_mm,)
+            or mm_ln_b.shape != (h_mm,)
+            or mm_w2.shape != (h_mm, n_out)
+            or mm_b2.shape != (n_out,)
+            or mm_skip_w.shape != (MM_PROV_IN_DIM_V7, n_out)
+            or mm_thr.shape != (n_cls,)
+            or not math.isfinite(mm_gap)
+            or mm_gap < 0.0
+            or not math.isfinite(mm_cscale)
+            or mm_cscale <= 0.0
+            or not all(
+                np.all(np.isfinite(arr)) for arr in (mm_w1, mm_b1, mm_ln_g, mm_ln_b, mm_w2, mm_b2, mm_skip_w, mm_thr)
+            )
+        ):
+            raise ValueError("Invalid v7 multimodal open-set provider head arrays")
+        mm_prov = _MMProvHeadV7(
+            in_mean=mm_in_mean,
+            in_scale=mm_in_scale,
+            w1=mm_w1,
+            b1=mm_b1,
+            ln_g=mm_ln_g,
+            ln_b=mm_ln_b,
+            w2=mm_w2,
+            b2=mm_b2,
+            skip_w=mm_skip_w,
+            prov_thresholds=mm_thr,
+            min_gap=mm_gap,
+            conf_scale=mm_cscale,
+        )
+
+    ms_cfg: _MultiScaleGrayConfigV7 | None = None
+    if "ms_detail_alpha" in data:
+        ms_se = int(np.asarray(data["ms_short_edge"], dtype=np.int64).squeeze())
+        ms_min_s = int(np.asarray(data["ms_min_short_px"], dtype=np.int64).squeeze())
+        ms_min_l = int(np.asarray(data["ms_min_long_px"], dtype=np.int64).squeeze())
+        ms_gray_lo = float(np.asarray(data["ms_gray_lo"], dtype=np.float64).squeeze())
+        ms_gfx_ceil = float(np.asarray(data["ms_gfx_ceil"], dtype=np.float64).squeeze())
+        ms_alpha = float(np.asarray(data["ms_detail_alpha"], dtype=np.float64).squeeze())
+        ms_off = float(np.asarray(data["ms_thr_offset"], dtype=np.float64).squeeze())
+        if (
+            ms_se < VIT_CROP_SIZE_V7
+            or ms_min_s < MIN_SIDE
+            or ms_min_l < ms_min_s
+            or not all(math.isfinite(val) for val in (ms_gray_lo, ms_gfx_ceil, ms_alpha, ms_off))
+            or not (0.0 <= ms_alpha <= 1.0)
+        ):
+            raise ValueError("Invalid v7 conditional multiscale gray-zone configuration")
+        ms_cfg = _MultiScaleGrayConfigV7(
+            short_edge=ms_se,
+            min_short_px=ms_min_s,
+            min_long_px=ms_min_l,
+            gray_lo=ms_gray_lo,
+            gfx_ceil=ms_gfx_ceil,
+            detail_alpha=ms_alpha,
+            thr_offset=ms_off,
+        )
+
+    return _SourceModelV7(
+        base_v5=base_v5,
+        onnx_holder=_V7OnnxHolder(resolved),
+        vit_attr_alpha=vit_attr_alpha,
+        phys_veto_cap=phys_veto_cap,
+        phys_veto_syn_floor=phys_veto_syn_floor,
+        syn_in_mean=syn_in_mean,
+        syn_in_scale=syn_in_scale,
+        syn_w1=syn_w1,
+        syn_b1=syn_b1,
+        syn_ln_g=syn_ln_g,
+        syn_ln_b=syn_ln_b,
+        syn_w2=syn_w2,
+        syn_b2=syn_b2,
+        syn_skip_w=syn_skip_w,
+        syn_threshold=syn_threshold,
+        syn_conf_scale=syn_conf_scale,
+        mm_prov=mm_prov,
+        ms_cfg=ms_cfg,
+    )
+
+
 @functools.lru_cache(maxsize=4)
 def _load_model_from_path(resolved: Path) -> _LoadedSourceModel:
     import numpy as np
@@ -1241,6 +1614,8 @@ def _load_model_from_path(resolved: Path) -> _LoadedSourceModel:
         if "schema" not in data:
             raise ValueError(f"Missing schema key in {resolved}")
         schema = str(np.asarray(data["schema"]).item())
+        if schema == MODEL_SCHEMA_V7:
+            return _load_model_v7(data, resolved)
         if schema == MODEL_SCHEMA_V5:
             return _load_model_v5(data)
         if schema == MODEL_SCHEMA_V4:
@@ -1348,7 +1723,122 @@ def _unavailable_result() -> SourceClassification:
         pooled_scores={},
         margins={},
         thresholds={},
+        synthetic_detected=False,
+        synthetic_probability=0.0,
     )
+
+
+@functools.lru_cache(maxsize=1)
+def _gfx_veto_arrays() -> tuple[FloatArray, FloatArray, FloatArray]:
+    import numpy as np
+
+    return (
+        np.asarray(_GFX_MEAN_26, dtype=np.float64),
+        np.asarray(_GFX_SCALE_26, dtype=np.float64),
+        np.asarray(_GFX_COEF_26, dtype=np.float64),
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _imagenet_norm_arrays() -> tuple[FloatArray, FloatArray]:
+    import numpy as np
+
+    return (
+        np.asarray(_IMAGENET_MEAN_RGB, dtype=np.float32).reshape(1, 3, 1, 1),
+        np.asarray(_IMAGENET_STD_RGB, dtype=np.float32).reshape(1, 3, 1, 1),
+    )
+
+
+def eval_born_digital_graphics_score(features_512d: FloatArray) -> float:
+    """Score the 26-d codec-invariant macro-scene Born-Digital Graphics logit on a 512-d v4-v7 vector."""
+    import numpy as np
+
+    x_1d = np.asarray(features_512d, dtype=np.float64)
+    if x_1d.shape != (FEATURE_DIM_V4,) or not np.all(np.isfinite(x_1d)):
+        raise ValueError(f"Expected finite ({FEATURE_DIM_V4},) feature vector, got {x_1d.shape}")
+    scene_26 = np.concatenate([x_1d[464:480], x_1d[502:512]])
+    mean_26, scale_26, coef_26 = _gfx_veto_arrays()
+    z_26 = np.clip((scene_26 - mean_26) / scale_26, -12.0, 12.0)
+    return float(z_26 @ coef_26 + _GFX_INTERCEPT)
+
+
+def _orient_rgb_image(image: Image.Image) -> Image.Image:
+    from PIL import ImageOps
+
+    orientation = image.getexif().get(274, 1)
+    oriented = ImageOps.exif_transpose(image) if orientation not in (1, None) else image
+    return oriented if oriented.mode == "RGB" else oriented.convert("RGB")
+
+
+def preprocess_vit_384_chw(image: Image.Image) -> FloatArray:
+    """Preprocess a PIL image into a C-contiguous 1x3x384x384 float32 normalized ViT tensor."""
+    import numpy as np
+    from PIL import Image as PilImage
+
+    rgb = _orient_rgb_image(image)
+    w, h = rgb.size
+    if w <= h:
+        new_w = VIT_SHORT_EDGE_V7
+        new_h = max(VIT_CROP_SIZE_V7, round(h * VIT_SHORT_EDGE_V7 / w))
+    else:
+        new_h = VIT_SHORT_EDGE_V7
+        new_w = max(VIT_CROP_SIZE_V7, round(w * VIT_SHORT_EDGE_V7 / h))
+    resized = rgb.resize((new_w, new_h), PilImage.Resampling.BILINEAR)
+    left = (new_w - VIT_CROP_SIZE_V7) // 2
+    top = (new_h - VIT_CROP_SIZE_V7) // 2
+    cropped = resized.crop((left, top, left + VIT_CROP_SIZE_V7, top + VIT_CROP_SIZE_V7))
+    buf = np.empty((1, 3, VIT_CROP_SIZE_V7, VIT_CROP_SIZE_V7), dtype=np.float32)
+    buf[0] = np.transpose(np.asarray(cropped, dtype=np.uint8), (2, 0, 1))
+    mean_rgb, std_rgb = _imagenet_norm_arrays()
+    buf *= 1.0 / 255.0
+    buf -= mean_rgb
+    buf /= std_rgb
+    return buf
+
+
+def preprocess_vit_384_detail_2chw(
+    image: Image.Image,
+    *,
+    short_edge: int = VIT_DETAIL_SHORT_EDGE_V7,
+) -> FloatArray:
+    """Extract two complementary 384x384 higher-scale crops (`2x3x384x384`) along the long axis."""
+    import numpy as np
+    from PIL import Image as PilImage
+
+    rgb = _orient_rgb_image(image)
+    w, h = rgb.size
+    target_se = max(VIT_CROP_SIZE_V7, min(int(short_edge), min(w, h)))
+    if w <= h:
+        new_w = target_se
+        new_h = max(VIT_CROP_SIZE_V7, round(h * target_se / w))
+    else:
+        new_h = target_se
+        new_w = max(VIT_CROP_SIZE_V7, round(w * target_se / h))
+    resized = rgb.resize((new_w, new_h), PilImage.Resampling.BILINEAR)
+
+    if new_w >= new_h:
+        span_x = new_w - VIT_CROP_SIZE_V7
+        mid_y = (new_h - VIT_CROP_SIZE_V7) // 2
+        boxes = (
+            (span_x // 4, mid_y, span_x // 4 + VIT_CROP_SIZE_V7, mid_y + VIT_CROP_SIZE_V7),
+            ((3 * span_x) // 4, mid_y, (3 * span_x) // 4 + VIT_CROP_SIZE_V7, mid_y + VIT_CROP_SIZE_V7),
+        )
+    else:
+        span_y = new_h - VIT_CROP_SIZE_V7
+        mid_x = (new_w - VIT_CROP_SIZE_V7) // 2
+        boxes = (
+            (mid_x, span_y // 4, mid_x + VIT_CROP_SIZE_V7, span_y // 4 + VIT_CROP_SIZE_V7),
+            (mid_x, (3 * span_y) // 4, mid_x + VIT_CROP_SIZE_V7, (3 * span_y) // 4 + VIT_CROP_SIZE_V7),
+        )
+
+    buf = np.empty((2, 3, VIT_CROP_SIZE_V7, VIT_CROP_SIZE_V7), dtype=np.float32)
+    for idx_b, box in enumerate(boxes):
+        buf[idx_b] = np.transpose(np.asarray(resized.crop(box), dtype=np.uint8), (2, 0, 1))
+    mean_rgb, std_rgb = _imagenet_norm_arrays()
+    buf *= 1.0 / 255.0
+    buf -= mean_rgb
+    buf /= std_rgb
+    return buf
 
 
 def _eval_two_tower_backbone(
@@ -1412,7 +1902,10 @@ def _resolve_two_tower_subfamilies(
     return best_sub, version_subfamily
 
 
-def _classify_v4_features(x_1d: FloatArray, model: _SourceModelV4) -> SourceClassification:
+def _classify_v4_features(
+    x_1d: FloatArray,
+    model: _SourceModelV4,
+) -> SourceClassification:
     import numpy as np
 
     n_cls = len(ALL_PROVIDER_CLASSES)
@@ -1470,10 +1963,16 @@ def _classify_v4_features(x_1d: FloatArray, model: _SourceModelV4) -> SourceClas
         margins=margins,
         thresholds=dict(thresholds),
         model_revision=MODEL_SCHEMA_V4,
+        synthetic_detected=label != "unknown",
+        synthetic_probability=confidence,
     )
 
 
-def _classify_v5_features(x_1d: FloatArray, model: _SourceModelV5) -> SourceClassification:
+def _eval_v5_core_state(
+    x_1d: FloatArray,
+    model: _SourceModelV5,
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, float]:
+    """Return `(z_det_std, attr_logits, r_std, mean_sub, u_vec, accept_excess)` for v5/v7 models."""
     import numpy as np
 
     n_cls = len(ALL_PROVIDER_CLASSES)
@@ -1489,25 +1988,38 @@ def _classify_v5_features(x_1d: FloatArray, model: _SourceModelV5) -> SourceClas
     g_2d = _eval_2d_gates(u_z, model.gates, cap=36.0)
     phi = np.concatenate([u_sat, h_pos, h_neg, g_2d])
 
-    # 1. Decoupled Regime-Aware Supported-AI Acceptance Gate (10 provider channels + 1 global AI channel)
     z_det_raw = model.det_bias + phi @ model.det_w
     h_null = _silu_np(r_std @ model.null_h_w + model.null_h_b)
     mu_r = model.null_mu_bias + r_std @ model.null_lin_mu_w + h_null @ model.null_mu_w
     sig_lin = np.clip(model.null_sig_bias + r_std @ model.null_lin_sig_w + h_null @ model.null_sig_w, -8.0, 8.0)
     sigma_r = np.log1p(np.exp(sig_lin)) + 0.25
     z_det_std = (z_det_raw - mu_r) / sigma_r
-    det_excess = z_det_std - model.det_thresholds
-    accept_excess = float(np.max(det_excess))
+    accept_excess = float(np.max(z_det_std - model.det_thresholds))
 
-    # 2. Decoupled Prior-Calibrated Conditional Multi-Class Attribution Head (threshold-invariant)
     h_attr = _silu_np(_layernorm_1d(phi @ model.attr_w1 + model.attr_b1, model.attr_ln_g, model.attr_ln_b))
     attr_logits = (phi @ model.attr_skip_w + h_attr @ model.attr_w2 + model.attr_b2) / model.attr_temp
+    return z_det_std, attr_logits, r_std, mean_sub, u_vec, accept_excess
 
+
+def _build_v5_like_result(
+    *,
+    x_1d: FloatArray,
+    base_model: _SourceModelV5,
+    z_det_std: FloatArray,
+    attr_logits: FloatArray,
+    mean_sub: FloatArray,
+    u_vec: FloatArray,
+    accept_excess: float,
+    synthetic_detected: bool,
+    synthetic_probability: float,
+    model_revision: str,
+) -> SourceClassification:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
     win_idx = int(np.argmax(attr_logits))
     best_cls: ProviderClass = ALL_PROVIDER_CLASSES[win_idx]
-    prov_thr = model.det_thresholds[:n_cls]
-    # Synthesize per-provider margins so argmax(margins - thresholds) == best_cls and
-    # margins[best_cls] >= thresholds[best_cls] <=> accept_excess >= 0 across decoupled heads.
+    prov_thr = base_model.det_thresholds[:n_cls]
     prov_margins = prov_thr + accept_excess - (float(attr_logits[win_idx]) - attr_logits)
     pooled_z: dict[str, float] = dict(zip(ALL_PROVIDER_CLASSES, z_det_std[:n_cls].tolist(), strict=True))
     thresholds: dict[str, float] = dict(zip(ALL_PROVIDER_CLASSES, prov_thr.tolist(), strict=True))
@@ -1516,14 +2028,14 @@ def _classify_v5_features(x_1d: FloatArray, model: _SourceModelV5) -> SourceClas
     if accept_excess >= 0.0:
         part = np.partition(attr_logits, -2)
         attr_gap = max(0.0, float(part[-1] - part[-2]))
-        confidence = _sigmoid_scalar(min(model.conf_scale * accept_excess, attr_gap))
+        confidence = _sigmoid_scalar(min(base_model.conf_scale * accept_excess, attr_gap))
         label: SourceLabel = best_cls
         reason: SourceReason = "classified"
         fine_subfamily, version_subfamily = _resolve_two_tower_subfamilies(
-            best_cls, mean_sub, x_1d, u_vec, model.backbone, model.version_heads
+            best_cls, mean_sub, x_1d, u_vec, base_model.backbone, base_model.version_heads
         )
     else:
-        confidence = _sigmoid_scalar(model.conf_scale * accept_excess)
+        confidence = _sigmoid_scalar(base_model.conf_scale * accept_excess)
         label = "unknown"
         reason = "abstained"
         fine_subfamily = None
@@ -1538,13 +2050,263 @@ def _classify_v5_features(x_1d: FloatArray, model: _SourceModelV5) -> SourceClas
         pooled_scores=pooled_z,
         margins=margins,
         thresholds=thresholds,
-        model_revision=MODEL_SCHEMA_V5,
+        model_revision=model_revision,
+        synthetic_detected=synthetic_detected,
+        synthetic_probability=synthetic_probability,
     )
+
+
+def _classify_v5_features(
+    x_1d: FloatArray,
+    model: _SourceModelV5,
+    *,
+    model_revision: str = MODEL_SCHEMA_V5,
+) -> SourceClassification:
+    z_det_std, attr_logits, _r_std, mean_sub, u_vec, accept_excess = _eval_v5_core_state(x_1d, model)
+    return _build_v5_like_result(
+        x_1d=x_1d,
+        base_model=model,
+        z_det_std=z_det_std,
+        attr_logits=attr_logits,
+        mean_sub=mean_sub,
+        u_vec=u_vec,
+        accept_excess=accept_excess,
+        synthetic_detected=accept_excess >= 0.0,
+        synthetic_probability=_sigmoid_scalar(model.conf_scale * accept_excess),
+        model_revision=model_revision,
+    )
+
+
+def _logsumexp_pair(a: float, b: float) -> float:
+    hi = max(a, b)
+    return hi + math.log(math.exp(a - hi) + math.exp(b - hi))
+
+
+def build_v7_syn_input_1d(
+    x_1d: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_out_1d: FloatArray,
+) -> FloatArray:
+    """Assemble the 67-d open-world multimodal synthetic-fusion input vector for schema v7.
+
+    `vit_out_1d` layout (`28-d`):
+    `[orig_syn(0), prov_10(1:11), foreign_ai(11), real_non_ai(12), gfx_veto(13), dom_syn(14), emb(15:28)]`.
+    """
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    vit_syn = float(vit_out_1d[0])
+    vit_all_ai = vit_out_1d[1 : 2 + n_cls]
+    vit_for = float(vit_out_1d[1 + n_cls])
+    vit_real = float(vit_out_1d[2 + n_cls])
+    vit_max_ai = float(np.max(vit_all_ai))
+    vit_lse_ai = float((vit_max_ai + math.log(float(np.sum(np.exp(vit_all_ai - vit_max_ai))))) - vit_real)
+    vit_max_lo = vit_max_ai - vit_real
+    vit_for_lo = vit_for - vit_real
+    vit_tail = vit_out_1d[3 + n_cls : VIT_OUT_DIM_V7]
+
+    z_sat = 8.0 * np.tanh(z_det_std / 8.0)
+    exc_sat = 8.0 * math.tanh(accept_excess / 8.0)
+    ch10 = float(z_det_std[n_cls])
+    gfx_score = eval_born_digital_graphics_score(x_1d)
+    scalars_head = np.asarray([vit_syn, vit_lse_ai, vit_max_lo, vit_for_lo], dtype=np.float64)
+    scalars_tail = np.asarray(
+        [exc_sat, max(0.0, ch10), min(0.0, ch10), gfx_score, max(0.0, gfx_score)],
+        dtype=np.float64,
+    )
+    return np.concatenate([scalars_head, vit_tail, z_sat, scalars_tail, r_std])
+
+
+def build_v7_mm_prov_input_1d(
+    attr_logits: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_out_1d: FloatArray,
+) -> FloatArray:
+    """Assemble the 82-d multimodal open-set 10-provider + `unknown` attribution input vector."""
+    import numpy as np
+
+    attr_sat = 8.0 * np.tanh(attr_logits / 8.0)
+    z_sat = 8.0 * np.tanh(z_det_std / 8.0)
+    exc_sat = np.asarray([8.0 * math.tanh(accept_excess / 8.0)], dtype=np.float64)
+    return np.concatenate([attr_sat, z_sat, exc_sat, vit_out_1d.astype(np.float64), r_std])
+
+
+def _eval_v7_syn_raw(
+    x_1d: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_out_1d: FloatArray,
+    model: _SourceModelV7,
+) -> float:
+    import numpy as np
+
+    s_in = build_v7_syn_input_1d(x_1d, z_det_std, accept_excess, r_std, vit_out_1d)
+    s_std = np.clip((s_in - model.syn_in_mean) / model.syn_in_scale, -12.0, 12.0)
+    h_syn = _silu_np(_layernorm_1d(s_std @ model.syn_w1 + model.syn_b1, model.syn_ln_g, model.syn_ln_b))
+    return float(s_std @ model.syn_skip_w + h_syn @ model.syn_w2 + model.syn_b2)
+
+
+def _eval_v7_mm_prov_log_odds(
+    attr_logits: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_out_1d: FloatArray,
+    mm_head: _MMProvHeadV7,
+) -> FloatArray:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    p_in = build_v7_mm_prov_input_1d(attr_logits, z_det_std, accept_excess, r_std, vit_out_1d)
+    p_std = np.clip((p_in - mm_head.in_mean) / mm_head.in_scale, -12.0, 12.0)
+    h_p = _silu_np(_layernorm_1d(p_std @ mm_head.w1 + mm_head.b1, mm_head.ln_g, mm_head.ln_b))
+    logits_12 = p_std @ mm_head.skip_w + h_p @ mm_head.w2 + mm_head.b2
+    open_null = _logsumexp_pair(float(logits_12[n_cls]), float(logits_12[n_cls + 1]))
+    return logits_12[:n_cls] - open_null
+
+
+def _should_run_v7_detail_pass(
+    x_1d: FloatArray,
+    vit_primary_1d: FloatArray,
+    eff_phys_excess: float,
+    syn_margin_primary: float,
+    image_size: tuple[int, int] | None,
+    ms_cfg: _MultiScaleGrayConfigV7 | None,
+) -> bool:
+    if ms_cfg is None or ms_cfg.detail_alpha <= 0.0:
+        return False
+    if eff_phys_excess >= 0.0 or not (ms_cfg.gray_lo <= syn_margin_primary < 0.0):
+        return False
+    if image_size is not None:
+        w, h = image_size
+        if min(w, h) < ms_cfg.min_short_px or max(w, h) < ms_cfg.min_long_px:
+            return False
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    vit_gfx = float(vit_primary_1d[3 + n_cls])
+    if vit_gfx >= ms_cfg.gfx_ceil:
+        return False
+    return eval_born_digital_graphics_score(x_1d) < 1.20
+
+
+def _classify_v7_with_vit(
+    x_1d: FloatArray,
+    vit_out_1d: FloatArray,
+    model: _SourceModelV7,
+    *,
+    vit_detail_2d: FloatArray | None = None,
+) -> SourceClassification:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    z_det_std, attr_logits, r_std, mean_sub, u_vec, accept_excess = _eval_v5_core_state(x_1d, model.base_v5)
+
+    syn_raw = _eval_v7_syn_raw(x_1d, z_det_std, accept_excess, r_std, vit_out_1d, model)
+    syn_margin = syn_raw - model.syn_threshold
+
+    eff_phys_excess = (
+        -1e-4
+        if (0.0 <= accept_excess < model.phys_veto_cap and syn_margin < model.phys_veto_syn_floor)
+        else accept_excess
+    )
+
+    vit_for_prov = vit_out_1d
+    ms_cfg = model.ms_cfg
+    if (
+        vit_detail_2d is not None
+        and ms_cfg is not None
+        and _should_run_v7_detail_pass(x_1d, vit_out_1d, eff_phys_excess, syn_margin, None, ms_cfg)
+        and float(vit_detail_2d[0, 3 + n_cls]) < ms_cfg.gfx_ceil
+        and float(vit_detail_2d[1, 3 + n_cls]) < ms_cfg.gfx_ceil
+    ):
+        syn_d0 = _eval_v7_syn_raw(x_1d, z_det_std, accept_excess, r_std, vit_detail_2d[0], model)
+        syn_d1 = _eval_v7_syn_raw(x_1d, z_det_std, accept_excess, r_std, vit_detail_2d[1], model)
+        syn_detail_pool = 0.75 * max(syn_d0, syn_d1) + 0.25 * min(syn_d0, syn_d1)
+        syn_raw = (1.0 - ms_cfg.detail_alpha) * syn_raw + ms_cfg.detail_alpha * syn_detail_pool
+        syn_margin = syn_raw - (model.syn_threshold + ms_cfg.thr_offset)
+        vit_for_prov = 0.50 * vit_out_1d + 0.25 * (vit_detail_2d[0] + vit_detail_2d[1])
+
+    if model.mm_prov is not None:
+        mm_log_odds = _eval_v7_mm_prov_log_odds(
+            attr_logits, z_det_std, accept_excess, r_std, vit_for_prov, model.mm_prov
+        )
+    else:
+        open_null_v = _logsumexp_pair(float(vit_for_prov[1 + n_cls]), float(vit_for_prov[2 + n_cls]))
+        mm_log_odds = vit_for_prov[1 : 1 + n_cls] - open_null_v
+
+    joint_attr_logits = attr_logits + model.vit_attr_alpha * mm_log_odds
+    final_excess = eff_phys_excess
+
+    if eff_phys_excess >= 0.0:
+        synthetic_detected = True
+        scaled_joint = max(
+            0.0,
+            model.syn_conf_scale * syn_margin,
+            model.base_v5.conf_scale * eff_phys_excess,
+        )
+        synthetic_probability = _sigmoid_scalar(scaled_joint)
+        if model.mm_prov is not None and eff_phys_excess < 2.20 and float(np.max(mm_log_odds)) < -0.80:
+            final_excess = -1e-4
+    else:
+        synthetic_detected = syn_margin >= 0.0
+        synthetic_probability = _sigmoid_scalar(model.syn_conf_scale * syn_margin)
+        if synthetic_detected and model.mm_prov is not None:
+            win_mm = int(np.argmax(mm_log_odds))
+            part_mm = np.partition(mm_log_odds, -2)
+            gap_mm = float(part_mm[-1] - part_mm[-2])
+            mm_exc = float(mm_log_odds[win_mm] - model.mm_prov.prov_thresholds[win_mm])
+            if mm_exc >= 0.0 and gap_mm >= model.mm_prov.min_gap:
+                joint_attr_logits = mm_log_odds
+                final_excess = max(1e-4, mm_exc * (model.mm_prov.conf_scale / max(model.base_v5.conf_scale, 1e-4)))
+
+    return _build_v5_like_result(
+        x_1d=x_1d,
+        base_model=model.base_v5,
+        z_det_std=z_det_std,
+        attr_logits=joint_attr_logits,
+        mean_sub=mean_sub,
+        u_vec=u_vec,
+        accept_excess=final_excess,
+        synthetic_detected=synthetic_detected,
+        synthetic_probability=synthetic_probability,
+        model_revision=MODEL_SCHEMA_V7,
+    )
+
+
+def _eval_v7_vit_onnx(image: Image.Image, model: _SourceModelV7) -> FloatArray:
+    import numpy as np
+
+    session = _get_v7_onnx_session(model)
+    inp = preprocess_vit_384_chw(image)
+    out = session.run(["vit_out"], {"pixel_values": inp})[0]
+    vec = np.asarray(out, dtype=np.float64).reshape(-1)
+    if vec.shape != (VIT_OUT_DIM_V7,) or not np.all(np.isfinite(vec)):
+        raise RuntimeError(f"Invalid v7 ViT ONNX output shape {vec.shape}")
+    return vec
+
+
+def _eval_v7_vit_detail_onnx(image: Image.Image, model: _SourceModelV7, *, short_edge: int) -> FloatArray:
+    import numpy as np
+
+    session = _get_v7_onnx_session(model)
+    inp = preprocess_vit_384_detail_2chw(image, short_edge=short_edge)
+    out = session.run(["vit_out"], {"pixel_values": inp})[0]
+    mat = np.asarray(out, dtype=np.float64)
+    if mat.shape != (2, VIT_OUT_DIM_V7) or not np.all(np.isfinite(mat)):
+        raise RuntimeError(f"Invalid v7 ViT detail ONNX output shape {mat.shape}")
+    return mat
 
 
 def _classify_loaded_model(
     features: FloatArray,
     model: _LoadedSourceModel,
+    *,
+    vit_features: FloatArray | None = None,
+    vit_detail_features: FloatArray | None = None,
 ) -> SourceClassification:
     import numpy as np
 
@@ -1552,9 +2314,21 @@ def _classify_loaded_model(
     if x_1d.ndim != 1 or not np.all(np.isfinite(x_1d)):
         return _unavailable_result()
 
-    if isinstance(model, (_SourceModelV4, _SourceModelV5)):
+    if isinstance(model, (_SourceModelV4, _SourceModelV5, _SourceModelV7)):
         if x_1d.shape != (FEATURE_DIM_V4,):
             return _unavailable_result()
+        if isinstance(model, _SourceModelV7):
+            if vit_features is None:
+                return _classify_v5_features(x_1d, model.base_v5, model_revision=MODEL_SCHEMA_V7)
+            v_1d = np.asarray(vit_features, dtype=np.float64)
+            if v_1d.shape != (VIT_OUT_DIM_V7,) or not np.all(np.isfinite(v_1d)):
+                return _unavailable_result()
+            v_det: FloatArray | None = None
+            if vit_detail_features is not None:
+                v_det = np.asarray(vit_detail_features, dtype=np.float64)
+                if v_det.shape != (2, VIT_OUT_DIM_V7) or not np.all(np.isfinite(v_det)):
+                    return _unavailable_result()
+            return _classify_v7_with_vit(x_1d, v_1d, model, vit_detail_2d=v_det)
         if isinstance(model, _SourceModelV5):
             return _classify_v5_features(x_1d, model)
         return _classify_v4_features(x_1d, model)
@@ -1648,6 +2422,8 @@ def _classify_loaded_model(
         margins=margins,
         thresholds=dict(thresholds),
         model_revision=MODEL_SCHEMA_V3,
+        synthetic_detected=label != "unknown",
+        synthetic_probability=confidence,
     )
 
 
@@ -1655,15 +2431,22 @@ def classify_source_features(
     features: FloatArray,
     *,
     weights_path: Path | None = None,
+    vit_features: FloatArray | None = None,
+    vit_detail_features: FloatArray | None = None,
 ) -> SourceClassification:
-    """Classify a precomputed 956-d (v3) or 512-d (v4/v5) feature vector into 10 providers or unknown."""
+    """Classify a precomputed 956-d (v3) or 512-d (v4-v7) feature vector into 10 providers or unknown."""
     import numpy as np
 
     x_1d = np.asarray(features, dtype=np.float64)
     if x_1d.ndim != 1 or x_1d.shape[0] not in (FEATURE_DIM, FEATURE_DIM_V4) or not np.all(np.isfinite(x_1d)):
         return _unavailable_result()
 
-    return _classify_loaded_model(x_1d, _load_model(weights_path))
+    return _classify_loaded_model(
+        x_1d,
+        _load_model(weights_path),
+        vit_features=vit_features,
+        vit_detail_features=vit_detail_features,
+    )
 
 
 def classify_source(
@@ -1671,7 +2454,7 @@ def classify_source(
     *,
     weights_path: Path | None = None,
 ) -> SourceClassification:
-    """Classify an image into one of 10 AI provider pipelines or ``unknown``.
+    """Classify an image into 10 AI provider pipelines or ``unknown`` plus synthetic detection.
 
     Parameters
     ----------
@@ -1681,34 +2464,47 @@ def classify_source(
         Optional local ``.npz`` override. Defaults to ``RAIW_SOURCE_CLASSIFY_WEIGHTS``
         or the pinned Hugging Face Hub artifact verified by SHA-256.
     """
-    if not module_available("numpy", "cv2"):
-        _require_dependencies()
+    _require_dependencies(need_hub=False, need_onnx=False)
     from PIL import Image as PilImage
 
     from remove_ai_watermarks import image_io
 
     image_io._register_heif()  # pyright: ignore[reportPrivateUsage]
 
-    def _extract_from_loaded(img: Image.Image) -> tuple[FloatArray, _LoadedSourceModel] | None:
+    def _run_on_image(img: Image.Image) -> SourceClassification:
         if min(img.size) < MIN_SIDE:
-            return None
+            return _unavailable_result()
         loaded_model = _load_model(weights_path)
+        if isinstance(loaded_model, _SourceModelV7):
+            _ = _get_v7_onnx_session(loaded_model)
         extracted = (
             extract_512d_v4_features(img)
-            if isinstance(loaded_model, (_SourceModelV4, _SourceModelV5))
+            if isinstance(loaded_model, (_SourceModelV4, _SourceModelV5, _SourceModelV7))
             else extract_956d_features(img)
         )
         if extracted is None:
-            return None
-        return extracted, loaded_model
+            return _unavailable_result()
+        if not isinstance(loaded_model, _SourceModelV7):
+            return _classify_loaded_model(extracted, loaded_model)
+
+        vit_vec = _eval_v7_vit_onnx(img, loaded_model)
+        vit_detail: FloatArray | None = None
+        if loaded_model.ms_cfg is not None:
+            z_det_std, _attr, r_std, _ms, _uv, accept_exc = _eval_v5_core_state(extracted, loaded_model.base_v5)
+            syn_raw_0 = _eval_v7_syn_raw(extracted, z_det_std, accept_exc, r_std, vit_vec, loaded_model)
+            syn_margin_0 = syn_raw_0 - loaded_model.syn_threshold
+            eff_phys_0 = (
+                -1e-4
+                if (0.0 <= accept_exc < loaded_model.phys_veto_cap and syn_margin_0 < loaded_model.phys_veto_syn_floor)
+                else accept_exc
+            )
+            if _should_run_v7_detail_pass(
+                extracted, vit_vec, eff_phys_0, syn_margin_0, _orient_rgb_image(img).size, loaded_model.ms_cfg
+            ):
+                vit_detail = _eval_v7_vit_detail_onnx(img, loaded_model, short_edge=loaded_model.ms_cfg.short_edge)
+        return _classify_loaded_model(extracted, loaded_model, vit_features=vit_vec, vit_detail_features=vit_detail)
 
     if isinstance(source, (str, os.PathLike)):
         with PilImage.open(source) as opened:
-            pair = _extract_from_loaded(opened)
-    else:
-        pair = _extract_from_loaded(source)
-
-    if pair is None:
-        return _unavailable_result()
-    features, model = pair
-    return _classify_loaded_model(features, model)
+            return _run_on_image(opened)
+    return _run_on_image(source)

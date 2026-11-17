@@ -226,12 +226,13 @@ trustmark = [
     # CPython 3.13+; its 13 detector tests pass on 3.13 with NumPy 2.5.3.
     "trustmark>=0.9.2",
 ]
-# Compact 10-provider source-pipeline and model-version classifier (pure NumPy,
-# CPU-only). identify never imports this extra, and it is not a SynthID
-# detector. Weights download on first use.
+# Unified 10-provider source-pipeline + synthetic-image classifier (NumPy +
+# ONNX Runtime CPU, no torch). identify never imports this extra, and it is not
+# a SynthID detector. Weights download on first use.
 source-classify = [
     "remove-ai-watermarks[pixels]",
     "huggingface-hub>=0.20.0,<2",
+    "onnxruntime>=1.24.0",
 ]
 # Universal region eraser backend -- big-LaMa via onnxruntime (Carve/LaMa-ONNX,
 # Apache-2.0). CPU, no torch. Model (~200 MB) is downloaded on first use and

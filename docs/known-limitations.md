@@ -22,13 +22,16 @@ the pixels look rather than read a mark, and none of these paths targets them.
 
 ## Pixel classification
 
-`classify_source` / `classify-source` is an abstaining 10-provider source-export
-and model-version classifier (`openai`, `google`, `bytedance`, `flux`,
-`stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`), not a
-provenance verifier or SynthID detector. It is useful only while the pixels
-still resemble a supported export or social-recompressed derivative; generators
-outside those 10 families and images smaller than `256x256` abstain to
-`unknown`. Microsoft is not a pixel class (Bing DALL-E exports score as `openai`
+`classify_source` / `classify-source` is an abstaining 10-provider source-export,
+model-version, and calibrated binary synthetic-image classifier (`openai`,
+`google`, `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`,
+`ideogram`, `firefly`, `xai`), not a provenance verifier or SynthID detector.
+Exact provider attribution fires only while the pixels still carry a supported
+export or social-recompressed signature; foreign square-resize/container
+transcoding, generators outside those 10 families, and images smaller than
+`256x256` leave `label` as `unknown`, while `synthetic_detected` and
+`synthetic_probability` still evaluate binary synthetic detection on valid
+images (`>= 256x256`). Microsoft is not a pixel class (Bing DALL-E exports score as `openai`
 and Designer Imagen exports score as `google`). Its provider label is not
 evidence that SynthID is present, and `unknown` is not evidence that SynthID is
 absent (`watermark_truth="unknown"`). The command is never started by

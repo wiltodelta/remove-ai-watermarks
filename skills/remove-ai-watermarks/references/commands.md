@@ -49,12 +49,15 @@ remove-ai-watermarks classify-source image.png --json
 
 Abstaining 10-provider source-pipeline classifier (`openai`, `google`,
 `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`,
-`firefly`, `xai`) with Stage-2 model-version attribution (since CLI 0.48.0), needs the
-`source-classify` extra. It is NOT provenance and NOT a SynthID detector
-(`watermark_truth` is always `unknown`), `unknown` is an abstention rather than
-proof of camera origin, and `identify` never runs it. Offer `classify-source`
-only when `identify` found no signal and the user still wants a provider guess,
-and report it as a guess.
+`firefly`, `xai`) with Stage-2 model-version attribution and unified synthetic
+detection (`synthetic_detected`, `synthetic_probability`) under resize and
+recompression (since CLI 0.48.0), needs the `source-classify` extra. It is NOT
+provenance and NOT a SynthID detector (`watermark_truth` is always `unknown`),
+`unknown` is a family-attribution abstention rather than proof of camera
+origin, and `identify` never runs it. Offer `classify-source` only when
+`identify` found no signal and the user still wants a provider or synthetic
+pixel estimate, and report it as a statistical pixel estimate rather than
+provenance.
 
 ```bash
 remove-ai-watermarks metadata image.png --check

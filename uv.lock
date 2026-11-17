@@ -4064,6 +4064,7 @@ qwen-zimage = [
 source-classify = [
     { name = "huggingface-hub" },
     { name = "numpy" },
+    { name = "onnxruntime" },
     { name = "opencv-python-headless" },
 ]
 text = [
@@ -4158,6 +4159,7 @@ requires-dist = [
     { name = "numpy", marker = "python_full_version < '3.13' and extra == 'pixels'", specifier = ">=1.24.0" },
     { name = "onnxruntime", marker = "extra == 'lama'", specifier = ">=1.24.0" },
     { name = "onnxruntime", marker = "extra == 'migan'", specifier = ">=1.24.0" },
+    { name = "onnxruntime", marker = "extra == 'source-classify'", specifier = ">=1.24.0" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=2.52.0" },
     { name = "opencv-python-headless", marker = "extra == 'pixels'", specifier = ">=4.8.0" },
     { name = "opencv-python-headless", marker = "extra == 'text-draft'", specifier = "==4.10.0.84" },

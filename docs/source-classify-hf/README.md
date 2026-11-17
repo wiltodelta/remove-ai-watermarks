@@ -1,6 +1,6 @@
 ---
 license: apache-2.0
-library_name: numpy
+library_name: onnx
 pipeline_tag: image-classification
 tags:
   - image-forensics
@@ -23,13 +23,13 @@ tags:
   - grok
 ---
 
-# RAIW multi-provider source-pipeline classifier (`multi-provider-source-v6`)
+# RAIW multi-provider source-pipeline classifier (`multi-provider-source-v7`)
 
-This repository contains the compact (`15.52 MB`), CPU-only, pickle-free (`allow_pickle=False`) NumPy weights for the abstaining [`remove-ai-watermarks`](https://github.com/wiltodelta/remove-ai-watermarks) pixel source-pipeline classifier across **10 AI provider families** (`openai`, `google`, `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`) plus `unknown`, with Stage-2 model/export version attribution (`version_subfamily`).
+This repository contains the unified (`55.53 MB`), CPU-only, pickle-free (`allow_pickle=False`) multimodal weights for the abstaining [`remove-ai-watermarks`](https://github.com/wiltodelta/remove-ai-watermarks) pixel source-pipeline and synthetic-image classifier across **10 AI provider families** (`openai`, `google`, `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`, `firefly`, `xai`) plus `unknown`, with Stage-2 model/export version attribution (`version_subfamily`) and calibrated binary synthetic detection (`synthetic_detected`, `synthetic_probability`) under foreign resize and container transcoding.
 
 This model is **not a SynthID detector** and does not decode or verify any cryptographic or invisible watermark payload (`watermark_truth="unknown"`). Its labels describe complete generation and export pixel pipelines, so renderer, geometry, encoding, post-processing, and watermark state may be confounded. `unknown` does not mean that SynthID is absent, and a provider label does not prove that SynthID is present.
 
-## Quickstart (pure NumPy, CPU-only, no PyTorch required)
+## Quickstart (NumPy + ONNX Runtime CPU, no PyTorch required)
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify-hf/demo.ipynb)
 
@@ -41,8 +41,10 @@ pip install "remove-ai-watermarks[source-classify]"
 import remove_ai_watermarks as raiw
 
 res = raiw.classify_source("image.jpg")
-print(res.label, res.version_subfamily, round(res.confidence, 4))
-# e.g. 'openai' 'openai:gpt_image_1_5' 0.9942  (or 'unknown' None 0.9815 on real photos)
+print(res.label, res.version_subfamily, res.synthetic_detected, round(res.synthetic_probability, 4))
+# e.g. 'openai' 'openai:gpt_image_1_5' True 0.9942  (native AI export)
+# e.g. 'unknown' None True 0.9412                  (foreign 1024x1024 transcoded AI image)
+# e.g. 'unknown' None False 0.0084                 (camera photo, UI screenshot, diagram, or scanned document)
 ```
 
 Command line (installed CLI or zero-setup `uv run` with the bundled `infer.py` and open-detector `benchmark.py`):
@@ -55,31 +57,46 @@ uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/bench
 uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/benchmark.py --tier frontier
 ```
 
-Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v6.npz` or its parent directory for air-gapped deployments.
+Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v7.npz` or its parent directory for air-gapped deployments.
 
 ## Model architecture
 
-- **Input (`512-d`, `extract_512d_v4_features`):**
+- **Physics, sublattice, sensor, and codec branch (`512-d`, `extract_512d_v4_features`):**
   - `112-d` adaptive overlapping native-tile truncated SRM micro-residuals across flat and textured regions.
   - `128-d` phase-resolved modulo-8 / modulo-16 sublattice energy, cropped-grid secondary-phase detection, interior VAE modulation, and `8x8` block-DCT quantization comb statistics.
   - `144-d` Moisan periodic-plus-smooth (`p + s`) spectral decomposition, radial decay profile, and continuous scale-invariant period-comb scanner.
   - `96-d` patch-averaged cross-channel spectral phase coherence, Bayer/Quad-Bayer CFA periodicity, heteroscedastic shot-noise slope, and radial chromatic-aberration alignment.
   - `32-d` explicit codec, aspect-ratio, scale, and social-recompression regime vector (`x[480:512]`).
-- **Stage 1 (`154` unit channels + `96` 2D multiplicative interaction gates across `10` canonical providers):**
-  - Two-tower ensemble executed in pure NumPy: `5` multi-seed Regime-FiLM `LayerNorm` + `SiLU` residual MLP trunks (`12` provider/unknown/supported-AI logits + `45` subfamily logits) paired with `65` packed `HistGradientBoosting` specialist forests (global provider, subfamily, codec-regime, hard-domain veto, and `21` pairwise cross-AI disambiguator heads), trained with strict parent-disjoint geometry positives (`crop96_jpeg` + `resize_lanczos_jpeg`).
-  - Decoupled Stage-1.5 router over the `558-d` gate-expanded feature vector (`multi-provider-source-v5` runtime schema): an `11`-channel regime-aware acceptance detector (per-provider acceptance channels plus a global supported-AI channel standardized against a regime-null baseline) paired with a prior-calibrated `LayerNorm` + `SiLU` conditional attribution MLP with linear skip projection (`attr_skip_w`), making provider attribution invariant to `unknown` threshold tightening.
+- **Visual multi-task branch (`ViT-S/16 @ 384` weight-fp16 ONNX, `vit_onnx_bytes`):**
+  - Permissive MIT `ViT-S/16 @ 384` frozen visual stem (`OwensLab/commfor-model-384` / `TensorFold/detectra-v1` lineage) paired with open-world multi-task readout heads (`[cls_tok(384), patch_mean(384), patch_std(384)]` -> `28-d` vector `[orig_syn(0), prov_10(1:11), foreign_ai(11), real_non_ai(12), gfx_veto(13), dom_syn(14), emb(15:28)]`) stored as a weight-fp16 -> fp32-compute ONNX graph inside the pickle-free `.npz` bundle and executed via `onnxruntime` on CPU, plus a conditional `short_edge=672` 2-crop gray-zone pass for widescreen native exports.
+- **Stage 1 & 1.5 (`154` unit channels + `96` 2D gates + `82-d` open-set provider head + `67-d` open-world synthetic fusion):**
+  - Two-tower `512-d` ensemble in pure NumPy (`5` multi-seed Regime-FiLM `LayerNorm` + `SiLU` residual MLP trunks + `65` packed `HistGradientBoosting` specialist forests) feeding an `11`-channel regime-standardized acceptance detector, conditional attribution MLP, and an `82-d -> 64-d -> 12` open-set multimodal provider head (`10` providers vs `logsumexp(foreign_ai, real_non_ai)`) that recovers exact `label` on transcoded 10-provider images while keeping unseen generators as honest `unknown`.
+  - Anchored `67-d -> 48-d -> 1` `LayerNorm` + `SiLU` skip multimodal synthetic fusion head combining the `28-d` ViT output, bounded `11`-channel Stage-1.5 physics acceptance vector, positive/negative global physics cues, the `26-d` codec-invariant born-digital graphics score, and the `32-d` regime block. When container laundering or an unseen generator prevents 10-family attribution, `label` honestly abstains as `unknown` while `synthetic_detected` and `synthetic_probability` retain binary synthetic recall without sacrificing screenshot, diagram, or document specificity.
 - **Stage 2 (`9` stacked blended version heads, `666-d`):**
   - Vectorized `HistGradientBoosting` tree ensembles blended with standardized linear heads over the `512-d` descriptor concatenated with the `154` Stage-1 unit scores (`666-d`) to predict the canonical model/export subfamily (`version_subfamily`).
-- **Artifact:** `multi-provider-source-v6.npz` (`allow_pickle=False`, `15.52 MB`)
-- **SHA-256:** `87868eea08b8b811999f675186b82b067c4de655981cb7f25114aac00b1dd284`
+- **Artifact:** `multi-provider-source-v7.npz` (`allow_pickle=False`, `55.53 MB`)
+- **SHA-256:** `4faef51eea48f8194ee804fab1782c48d626384e115e2ef70884f8e8393d7eb1`
 
-The artifact contains only learned parameters, normalization constants, tree arrays, labels, and calibrated thresholds. It does not contain training images, paths, image hashes, embeddings, or a training catalog.
+The artifact contains only learned parameters, weight-fp16 ONNX graph bytes, normalization constants, tree arrays, labels, and calibrated thresholds. It does not contain training images, paths, image hashes, embeddings, or a training catalog.
 
-## Evaluation (`145,110` deduplicated feature views; `10,585` locked test)
+## Evaluation
 
-The operating point was selected strictly on disjoint calibration partitions (`8,363` primary calibration views, `3,011` social-recompressed real negatives, and `2,972` crop/resize development views across 16 fine-grained real-image varieties and group-locked `parent_sha256` families). On the `10,585`-image locked test split (`4,538` multi-variety `unknown` negatives + `6,047` AI provider images across native, resized, and social-recompressed views):
+### Open 578-image multi-regime benchmark (`benchmark.py`)
 
-- **Unified 10-provider router:** `99.93%` `unknown` specificity (`3 / 4,538` false positives, `0.07%` test `unknown` FPR; `0.00%` photographic FPR and `0.13%` non-photographic structured FPR), `83.28%` exact provider recall (`84.14%` on clean-provenance AI; `86.67%` any-AI recall; `92.45%` native, `92.95%` resized, and `77.06%` recompressed exact recall), `99.94%` any-AI precision when firing (`96.09%` exact-provider accuracy among classified AI; `95.93%` overall Stage-2 version accuracy given exact provider), and `0.9977` binary ROC-AUC / `0.9985` binary PR-AUC (`0.9977` mean standalone provider ROC-AUC).
+Evaluated end-to-end via `classify_source` on `200` non-AI false-positive traps (`50` camera photos, `50` UI screenshots, `50` science diagrams, `50` scanned documents), `125` untouched native AI exports (`25` each across FLUX.1-dev, GPT-Image-1, Gemini Nano Banana Pro, SDXL, Midjourney v6.1), and `253` square-resized/transcoded crowd-arena AI images (`Rapidata` and `bitmind` `1024x1024` JPEG/WebP/PNG):
+
+- **Non-AI false-positive rate (`200` traps):** **`0.0%` (`0 / 200`)** across all four slices (`0%` camera photo, `0%` UI screenshot, `0%` science diagram, `0%` scanned document) and **`100.0%` precision**.
+- **Native AI exports (`125`):** **`99.2%` binary synthetic recall** (`124 / 125`, including `96.0%` on widescreen `1408x768` Gemini Nano Banana Pro and `100.0%` on widescreen `1456x816` Midjourney v6.1, FLUX.1-dev, GPT-Image-1, and SDXL) and **`71.2%` exact generator attribution** (`89 / 125`).
+- **Transcoded crowd-arena AI (`253`):** **`87.0%` binary synthetic recall** (`220 / 253`, up from `30.4%` in `v6`) and **`18.6%` exact generator attribution** (`47 / 253`, up from `9.5%` in `v6` via open-set multimodal attribution while keeping honest `unknown` abstention when provider identity is unrecoverable; **`329 ms`** median single-image CPU latency).
+
+### Internal locked test & external blind multi-variety verification
+
+The operating point was selected strictly on parent-disjoint calibration partitions (`parent_sha256` grouped). Across sealed held-out benchmarks:
+
+- **End-to-end RGB + ViT on `4,415` resolved `locked_test` parents (`2,074` supported AI + `2,341` real non-AI across 15 real varieties):** **`0.09%` real synthetic FPR** (`2 / 2,341` false positives, `0` on camera photos, UI, diagrams, vectors, and documents; **`0.04%` real provider FPR**, `1 / 2,341`), **`97.54%` native synthetic recall** (`92.82%` exact provider recall; **`0.9995` ROC-AUC / `0.9994` PR-AUC**), and **`65.43%` synthetic recall** (`25.41%` exact provider recall) after forced `1024x1024` JPEG/WebP arena transcoding across all 10 provider families (`0.9740` ROC-AUC).
+- **Sealed open-world foreign-generator check (`84` held-out views outside the 10 provider families):** **`97.62%` honest `label="unknown"` abstention** (`82 / 84`; `0 / 58` false attributions on `cal-fit` foreign AI) with **`69.05%` binary synthetic recall** across unseen generators including hard-flash DreamBooth style transfers.
+- **External blind `selective-v8` end-to-end RGB + ViT (`1,512` untouched real-variety parents):** **`0 / 1,297` (`0.00%` FPR)** across all camera photo (`0 / 25`), `diagram` (`0 / 305`), `document` (`0 / 308`), `interface` (`0 / 327`), and `vector` (`0 / 332`) parents, and `4 / 215` on `game_art` (`4 / 1,512 = 0.26%` overall synthetic FPR; **`0 / 1,512 = 0.00%` provider FPR**; `1 / 2,267 = 0.04%` across all `2,267` `512-d` rows).
+- **Full `10,585`-row `locked_test` `512-d` provider router:** `99.93%` `unknown` specificity (`3 / 4,538` false positives, `0.07%` FPR), `83.28%` exact provider recall (`92.45%` native, `92.95%` resized, `77.06%` social-recompressed), `99.94%` any-AI precision, and `95.93%` Stage-2 version accuracy given exact provider.
 
 | Provider | Test count | Standalone ROC AUC | Router recall | Router precision | Stage-2 version accuracy |
 |---|---:|---:|---:|---:|---:|
@@ -93,42 +110,6 @@ The operating point was selected strictly on disjoint calibration partitions (`8
 | `ideogram` | 118 | 0.9999 | 84.7% | 78.7% | 77.0% |
 | `firefly` | 103 | 0.9948 | 61.2% | 91.3% | 100.0% |
 | `xai` | 48 | 0.9990 | 45.8% | 91.7% | 77.3% |
-
-### Held-out real-image specificity by variety (`4,538` test negatives across 16 real classes + foreign AI)
-
-| Real-image variety | Test count | False positives | False-positive rate | Specificity |
-|---|---:|---:|---:|---:|
-| `photo` | 2,183 | 0 | 0.00% | 100.00% |
-| `photo_retouched` | 339 | 2 | 0.59% | 99.41% |
-| `classical_inpaint` | 17 | 0 | 0.00% | 100.00% |
-| `digital_art` | 440 | 1 | 0.23% | 99.77% |
-| `game_art` | 174 | 0 | 0.00% | 100.00% |
-| `vector` | 135 | 0 | 0.00% | 100.00% |
-| `interface` | 180 | 0 | 0.00% | 100.00% |
-| `diagram` | 98 | 0 | 0.00% | 100.00% |
-| `chart_data_viz` | 159 | 0 | 0.00% | 100.00% |
-| `technical_architecture` | 84 | 0 | 0.00% | 100.00% |
-| `procedural_graphic` | 13 | 0 | 0.00% | 100.00% |
-| `document` | 165 | 0 | 0.00% | 100.00% |
-| `gov_scientific_doc` | 32 | 0 | 0.00% | 100.00% |
-| `receipt_invoice` | 181 | 0 | 0.00% | 100.00% |
-| `print_publishing` | 229 | 0 | 0.00% | 100.00% |
-| `stress_recompressed` | 103 | 0 | 0.00% | 100.00% |
-| `foreign_ai` | 6 | 0 | 0.00% | 100.00% |
-
-### External blind multi-variety real-image verification (`selective-v8`, `2,267` untouched images)
-
-Evaluated on the external `selective-v8` blind real-image cohorts (`2,267` images; `2,265` strictly parent-disjoint from `locked_test`): **1 / 2,267 false positives (`0.04%` overall FPR, `99.96%` specificity)**, plus **0 / 60 false positives (`0.00%` FPR)** on external phone thermal receipts.
-
-| Blind `selective-v8` cell | Evaluated | False positives | False-positive rate | Specificity |
-|---|---:|---:|---:|---:|
-| `photo` | 450 | 0 | 0.00% | 100.00% |
-| `vector` | 332 | 0 | 0.00% | 100.00% |
-| `game_art` | 230 | 0 | 0.00% | 100.00% |
-| `interface` | 342 | 0 | 0.00% | 100.00% |
-| `diagram` | 305 | 0 | 0.00% | 100.00% |
-| `document` | 308 | 0 | 0.00% | 100.00% |
-| `stress_recompressed` | 300 | 1 | 0.33% | 99.67% |
 
 ## Intended use
 

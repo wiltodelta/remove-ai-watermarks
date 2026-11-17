@@ -22,6 +22,7 @@ def test_hub_ids_match_the_runtime_loader() -> None:
     assert publish.HUB_REPO == WEIGHTS_REPO
     assert publish.CONFIG_FILE == CONFIG_FILE
     assert publish.MODEL_FILE == MODEL_FILE
+    assert "multi-provider-source-v6.npz" not in publish.RETIRED_FILES
     assert "wiltodelta/raiw-photo-classify" in publish.RETIRED_HUB_REPOS
 
 
@@ -127,19 +128,22 @@ def test_standalone_infer_script_inspects_weights_and_classifies_images(tmp_path
     sc_mod = _load_module("raiw_test_source_classify", Path(__file__).with_name("test_source_classify.py"))
     infer_mod = _load_module("raiw_hf_infer", publish.CARD_DIR / "infer.py")
 
-    weights = sc_mod._write_synthetic_v5_npz(
-        tmp_path / "synthetic_v5.npz",
+    weights = sc_mod._write_synthetic_v7_npz(
+        tmp_path / "synthetic_v7.npz",
         det_winner="openai",
         attr_winner="openai",
         det_score=-2.0,
         det_threshold=2.0,
+        syn_threshold=0.5,
     )
     summary = infer_mod.inspect_weights(weights)
-    assert summary["schema"] == "multi-provider-source-v5"
+    assert summary["schema"] == "multi-provider-source-v7"
     assert summary["feature_dim"] == 512
     assert len(summary["providers"]) == 10
     assert summary["abstain_label"] == "unknown"
     assert summary["watermark_truth"] == "unknown"
+    assert summary["synthetic_threshold"] == 0.5
+    assert summary["vit_onnx_size_bytes"] > 64
     assert "openai" in summary["version_subfamilies"]
 
     sample_img = tmp_path / "gradient.png"
@@ -161,6 +165,7 @@ def test_standalone_infer_script_inspects_weights_and_classifies_images(tmp_path
     assert len(rows) == 1
     assert rows[0]["label"] == "unknown"
     assert rows[0]["reason"] == "abstained"
+    assert rows[0]["synthetic_detected"] is True
     assert rows[0]["watermark_truth"] == "unknown"
 
 

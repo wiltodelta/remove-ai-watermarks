@@ -20,10 +20,12 @@ Install `remove-ai-watermarks[source-classify]`, then call the explicit API:
 import remove_ai_watermarks as raiw
 
 result = raiw.classify_source("metadata-stripped.png")
-print(result.label)              # one of 10 providers or "unknown"
-print(result.version_subfamily)  # Stage-2 model subfamily or None
-print(result.reason)             # "classified" | "abstained" | "feature_unavailable"
-print(result.watermark_truth)    # always "unknown"
+print(result.label)                  # one of 10 providers or "unknown"
+print(result.version_subfamily)      # Stage-2 model subfamily or None
+print(result.synthetic_detected)     # bool, stays True on transcoded AI when label is "unknown"
+print(result.synthetic_probability)  # calibrated [0.0, 1.0] synthetic probability
+print(result.reason)                 # "classified" | "abstained" | "feature_unavailable"
+print(result.watermark_truth)        # always "unknown"
 ```
 
 This signal classifies a complete image-generation and export

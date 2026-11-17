@@ -143,7 +143,7 @@ remove-ai-watermarks classify-source image.png
 import remove_ai_watermarks as raiw
 
 result = raiw.classify_source("image.png")
-print(result.label, result.version_subfamily, result.confidence)
+print(result.label, result.version_subfamily, result.synthetic_detected, result.confidence)
 ```
 
 Guide: [source-pipeline classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify.md). Model card: [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify).

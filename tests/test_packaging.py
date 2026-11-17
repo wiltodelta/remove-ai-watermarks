@@ -83,8 +83,8 @@ def test_extras_use_capability_names_without_legacy_aliases():
 
 def test_source_classify_extra_stays_lightweight() -> None:
     names = _requirement_names("source-classify")
-    assert "huggingface-hub" in names
-    assert {"torch", "transformers", "onnxruntime"}.isdisjoint(names)
+    assert {"huggingface-hub", "onnxruntime"} <= names
+    assert {"torch", "transformers"}.isdisjoint(names)
 
 
 def test_qwen_zimage_extra_owns_every_profile_tokenizer_backend() -> None:

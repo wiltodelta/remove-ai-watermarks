@@ -126,6 +126,22 @@ def inspect_weights(weights_path: Path | None = None) -> dict[str, Any]:
                         version_subfamilies[prov] = subs
 
         array_count = len(data.files)
+        synthetic_threshold: float | None = None
+        vit_onnx_size_bytes: int | None = None
+        if "syn_threshold" in data:
+            synthetic_threshold = round(float(np.asarray(data["syn_threshold"], dtype=np.float64).squeeze()), 6)
+        if "vit_onnx_bytes" in data:
+            import numpy.lib.format as npfmt
+
+            zf = getattr(data, "zip", None)
+            if zf is not None and "vit_onnx_bytes.npy" in zf.namelist():
+                with zf.open("vit_onnx_bytes.npy") as handle:
+                    ver = npfmt.read_magic(handle)
+                    hdr_fn = npfmt.read_array_header_1_0 if ver == (1, 0) else npfmt.read_array_header_2_0
+                    shape, _fortran, _dtype = hdr_fn(handle)
+                vit_onnx_size_bytes = int(shape[0]) if len(shape) == 1 else int(np.prod(shape))
+            else:
+                vit_onnx_size_bytes = int(np.asarray(data["vit_onnx_bytes"], dtype=np.uint8).size)
 
     summary: dict[str, Any] = {
         "artifact_file": resolved.name,
@@ -144,6 +160,10 @@ def inspect_weights(weights_path: Path | None = None) -> dict[str, Any]:
     }
     if global_ai_threshold is not None:
         summary["global_ai_threshold"] = global_ai_threshold
+    if synthetic_threshold is not None:
+        summary["synthetic_threshold"] = synthetic_threshold
+    if vit_onnx_size_bytes is not None:
+        summary["vit_onnx_size_bytes"] = vit_onnx_size_bytes
     return summary
 
 
@@ -198,8 +218,11 @@ def _write_human_predictions(rows: Sequence[dict[str, Any]]) -> None:
     for row in rows:
         sub = row.get("version_subfamily") or "-"
         conf = float(row.get("confidence", 0.0))
+        syn_flag = "yes" if row.get("synthetic_detected") else "no"
+        syn_prob = float(row.get("synthetic_probability", 0.0))
         sys.stdout.write(
             f"{row['path']}\tlabel={row['label']}\tversion={sub}\t"
+            f"synthetic={syn_flag}({syn_prob:.4f})\t"
             f"confidence={conf:.4f}\treason={row['reason']}\twatermark_truth={row['watermark_truth']}\n"
         )
 

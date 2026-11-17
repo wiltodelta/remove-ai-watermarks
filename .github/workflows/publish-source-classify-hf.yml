@@ -12,7 +12,7 @@ on:
       weights_tag:
         description: "GitHub Release tag holding the frozen source-classify weights"
         required: true
-        default: source-classify-v6-freeze-2026-11-13
+        default: source-classify-v7-freeze-2026-11-16
 
 jobs:
   publish:
