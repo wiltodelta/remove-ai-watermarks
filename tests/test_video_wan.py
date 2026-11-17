@@ -368,7 +368,12 @@ def test_auto_video_profile_routes_bytedance_and_google_across_cuda_and_cpu(tmp_
 
     # 2. On CUDA: ByteDance -> wan21-seedance-experimental; Google -> wan21-synthid-experimental
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda including_emulation=True: True)
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _d=0: SimpleNamespace(total_memory=24 * 1024**3, major=8),
+    )
     assert (
         video._resolve_video_invisible_profile(
             "auto",
@@ -395,16 +400,33 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
     source = _source_mp4(tmp_path, width=64, height=48, frames=6)
     output = tmp_path / "out.mp4"
 
-    # 1. BF16 capability check
+    # 1. Native NVIDIA BF16 capability check (rejects emulation-only and ROCm HIP)
     monkeypatch.setattr(wan, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: False)
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _d=0: SimpleNamespace(total_memory=24 * 1024**3, major=8),
+    )
+    seen_emulation_args = []
+
+    def fake_bf16(*, including_emulation=True):
+        seen_emulation_args.append(including_emulation)
+        return bool(including_emulation)  # True with emulation, False for native hardware!
+
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", fake_bf16)
     with pytest.raises(RuntimeError, match="BF16"):
         wan.resolve_wan_device("auto")
+    assert seen_emulation_args == [False]
     assert wan.can_run_wan_on_source(source, device="auto") is False
 
-    # 2. Frame-pixel / host-RAM budget rejects oversized input BEFORE decoding frames
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda including_emulation=True: True)
+    monkeypatch.setattr(torch.version, "hip", "6.1.0", raising=False)
+    with pytest.raises(RuntimeError, match="NVIDIA CUDA"):
+        wan.resolve_wan_device("auto")
+    monkeypatch.setattr(torch.version, "hip", None, raising=False)
+
+    # 2. Frame-pixel / host-RAM budget & VRAM floor & auto 720p cap
     frames_decoded = []
     monkeypatch.setattr(wan, "_frames", lambda p: (frames_decoded.append(p), iter(()))[1])
     monkeypatch.setattr(
@@ -417,15 +439,37 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
     assert frames_decoded == []
     assert wan.can_run_wan_on_source(source, device="auto") is False
 
+    # 1080p is rejected for auto (capped at evidenced 1280x720) but allowed for explicit wan21-* within total budget
     monkeypatch.setattr(
         wan,
         "validate_experimental_mp4_source",
-        lambda *_a, **_k: (1280, 720, 24.0, tuple(range(1000))),
+        lambda *_a, **_k: (1920, 1080, 24.0, tuple(range(10))),
     )
-    with pytest.raises(ValueError, match="host-memory budget"):
-        wan.regenerate_wan_experimental(source, output)
-    assert frames_decoded == []
-    assert wan.can_run_wan_on_source(source, device="auto") is False
+    assert wan.can_run_wan_on_source(source, device="auto", for_auto=True) is False
+    assert wan.can_run_wan_on_source(source, device="auto", for_auto=False) is True
+
+    # Insufficient VRAM (< 16 GiB) skips Wan under auto
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _d=0: SimpleNamespace(total_memory=8 * 1024**3, major=8),
+    )
+    monkeypatch.setattr(
+        wan,
+        "validate_experimental_mp4_source",
+        lambda *_a, **_k: (1280, 720, 24.0, tuple(range(10))),
+    )
+    assert wan.can_run_wan_on_source(source, device="auto", for_auto=True) is False
+
+    # Unknown component_depth=None must be rejected by validate_experimental_mp4_source
+    from remove_ai_watermarks import video_seedance
+
+    with pytest.raises(ValueError, match="SDR 8-bit"):
+        video_seedance.validate_experimental_mp4_source(
+            source,
+            label="Experimental Wan 2.1 processing",
+            encode_profile=VideoEncodeProfile(component_depth=None),
+        )
 
     # 3. VideoWanExperimentalResult exposes explicit strength alongside compatibility noise_std
     res = raiw.VideoWanExperimentalResult(
@@ -439,3 +483,84 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
     )
     assert res.strength == pytest.approx(0.12)
     assert res.noise_std == pytest.approx(0.12)
+
+
+@pytest.mark.parametrize("frame_count", [192, 193, 194, 370])
+def test_stream_wan_windows_matches_batch_math_and_bounds_live_frames(frame_count):
+    pytest.importorskip("torch")
+    live_frames = 0
+    peak_live_frames = 0
+
+    class DeterministicPipe:
+        def __call__(self, **kwargs):
+            # Uses cached prompt_embeds when supplied on runtime
+            assert "prompt_embeds" in kwargs
+            assert kwargs["prompt_embeds"] == "CACHED_EMBEDS"
+            assert kwargs.get("prompt") is None
+            n_frames = len(kwargs["video"])
+            h, w = kwargs["height"], kwargs["width"]
+            arr = np.stack([np.asarray(img, dtype=np.float32) / 255.0 for img in kwargs["video"]], axis=0)
+            # Deterministic position-dependent perturbation so window overlap math is exercised nontrivial
+            offset = ((np.arange(n_frames, dtype=np.float32) % 7) / 255.0)[:, None, None, None]
+            return SimpleNamespace(frames=[np.clip(arr + offset, 0.0, 1.0).reshape(n_frames, h, w, 3)])
+
+    runtime = wan.VideoWanRuntime(
+        model=wan.WAN21_MODEL_ID,
+        revision=wan.WAN21_MODEL_REVISION,
+        resolved_device="cpu",
+        pipe=DeterministicPipe(),
+        prompt_embeds="CACHED_EMBEDS",
+    )
+    rng = np.random.default_rng(frame_count)
+    raw = [rng.integers(5, 240, size=(16, 32, 3), dtype=np.uint8) for _ in range(frame_count)]
+
+    # Reference batch evaluation across 193/17 schedule
+    orig_t = len(raw)
+    orig_h, orig_w = raw[0].shape[:2]
+    if orig_t <= 193:
+        expected = wan._run_wan_window(raw, runtime, strength=0.38, seed=11, orig_h=orig_h, orig_w=orig_w)
+    else:
+        expected = np.empty((orig_t, orig_h, orig_w, 3), dtype=np.uint8)
+        fade_in = (0.5 - 0.5 * np.cos(np.pi * np.arange(1, 18, dtype=np.float32) / 18.0))[:, None, None, None]
+        fade_out = 1.0 - fade_in
+        prev_end = 0
+        w_idx = 0
+        while prev_end < orig_t:
+            start = 0 if w_idx == 0 else prev_end - 17
+            end = min(orig_t, start + 193)
+            curr = wan._run_wan_window(
+                raw[start:end], runtime, strength=0.38, seed=11 + w_idx, orig_h=orig_h, orig_w=orig_w
+            )
+            if w_idx == 0:
+                expected[:end] = curr
+            else:
+                blended = (
+                    expected[start:prev_end].astype(np.float32) * fade_out + curr[:17].astype(np.float32) * fade_in
+                )
+                expected[start:prev_end] = np.clip(np.rint(blended), 0, 255).astype(np.uint8)
+                expected[prev_end:end] = curr[17:]
+            prev_end = end
+            w_idx += 1
+
+    def tracked_source():
+        nonlocal live_frames, peak_live_frames
+        for frame in raw:
+            live_frames += 1
+            peak_live_frames = max(peak_live_frames, live_frames)
+            yield frame
+
+    streamed = []
+    for out_frame in wan._stream_wan_windows(
+        tracked_source(),
+        runtime,
+        strength=0.38,
+        seed=11,
+        chunk_frames=193,
+        overlap_frames=17,
+    ):
+        streamed.append(out_frame)
+        live_frames -= 1
+
+    got = np.stack(streamed, axis=0)
+    np.testing.assert_array_equal(got, expected)
+    assert peak_live_frames <= 193 + 18

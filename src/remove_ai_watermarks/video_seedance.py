@@ -330,7 +330,7 @@ def validate_experimental_mp4_source(
 ) -> tuple[int, int, float, tuple[float, ...]]:
     """Validate SDR 8-bit, even-dimension, timestamped video input."""
     active_profile = encode_profile if encode_profile is not None else probe_video_encode_profile(source)
-    if (active_profile.component_depth or 0) > 8 or active_profile.color_transfer in _HDR_TRANSFERS:
+    if active_profile.component_depth != 8 or active_profile.color_transfer in _HDR_TRANSFERS:
         raise ValueError(f"{label} requires SDR 8-bit video")
     width, height, fps = geometry if geometry is not None else probe_video_geometry(source)
     if width % 2 or height % 2:

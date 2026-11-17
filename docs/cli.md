@@ -32,7 +32,7 @@ defaults. This page focuses on choosing the right command.
 | Audio `--scheme silentcipher16` | `audio-silentcipher`, for the experimental terminated eight-symbol 16k pattern |
 | Audio `--scheme perth` | `audio-perth`, for pinned public Perth v1 |
 | Audio `--scheme wavmark` | `audio-wavmark`; `--scheme all` needs `audio-detect`, `audio-wavmark`, `audio-perth`, and `audio-silentcipher` |
-| `audio invisible --force --no-verify` | `remove-ai-watermarks[audio]` plus ffmpeg and ffprobe |
+| `audio invisible --allow-unverified --no-verify` | `remove-ai-watermarks[audio]` plus ffmpeg and ffprobe |
 | `audio invisible --method encodec` and `video audio --method encodec` | Add `audio-codec`; keep `audio-detect` for default verification |
 | `video audio` | Same audio extras and tools; no video pixel runtime is required |
 | `video visible`, `video all`, and visible/all batch modes | `remove-ai-watermarks[video]` (includes FFmpeg and ffprobe) |
@@ -94,21 +94,19 @@ saved output is negative in whole-clip and window checks. A resistant or
 incompletely checked candidate raises an error and preserves an existing output.
 No targeted source signal exits 2 without writing. Hard failures exit 1.
 
-Use `--force` to write a candidate with incomplete verification, or
-`--force --no-verify` to process without a decoder. A written candidate that
-still tests positive exits 1. Forced unverified processing exits 0 with
+Use `--allow-unverified` (for example with `--method dac` on proprietary audio marks or alongside `--no-verify`) to process without a local source-positive decoder match while still enforcing the saved-file SNR, RMS, and 1-second active-window integrity gate. Use `--allow-positive` only when you explicitly want to retain an output that still tests positive on the final attempt (exits 1), and `--allow-quality-override` only when you explicitly want to bypass the audio integrity gate. `--force` remains an alias enabling `--allow-unverified`, `--allow-positive`, and `--allow-quality-override` on the final attempt. Unverified processing exits 0 with
 `verified_removed: null`; this is not a removal certificate. `--verify` is the
 default. The default output is `SOURCE_processed.wav`; `-o` / `--output`
 accepts `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, or `.opus` (`libopus` 192 kbps). Encoding discards AI metadata and preserves native sample
-rate and channels (Opus internally codes on its RFC 7845 48 kHz grid and resamples back to the source clock during fidelity measurement). Reports measure fidelity and run decoder verification on
-the actual saved file, so lossy recompression relapses are caught before publication. The filter changes audible content and can fail on tonal inputs.
+rate and channels (Opus internally codes on its RFC 7845 48 kHz grid and resamples back to the source clock during fidelity measurement). Reports measure fidelity (including `worst_window_rms_ratio` across 1-second active windows and stereo `max_side_mid_drift_db`) and run decoder verification on
+the actual saved file, so lossy recompression relapses and mid-track dropouts are caught before publication. The filter changes audible content and can fail on tonal inputs.
 See [audio coverage](audio-video-removal.md) for tested families and limits.
 
 `audio metadata` inspects (`--check`, default) or strips (`--remove`) AI creation tags and C2PA manifests on standalone audio files without altering PCM/compressed audio frames via stream-copy remuxing (`-o` / `--output` defaults to `<source>_clean<ext>`; `--keep-standard/--remove-all` controls non-AI tags; `--json` emits JSON).
 
-`audio all` provides the predictable single-file product contract (`<source>_clean<ext>` by default): it always strips verified AI metadata (`--keep-standard/--remove-all`) and, when `--invisible` is passed (`--no-invisible` is the default), runs compatible waveform watermark removal (`--scheme auto` by default, plus `--method`, `--bandwidth`, `--vocoder-device`, `--force`, `--verify/--no-verify`, `--stream`, `--json`). When `--invisible` finds no positive compatible watermark, `audio all` still writes a metadata-cleaned passthrough rather than failing with no output.
+`audio all` provides the predictable single-file product contract (`<source>_clean<ext>` by default): it always strips verified AI metadata (`--keep-standard/--remove-all`) and, when `--invisible` is passed (`--no-invisible` is the default), runs compatible waveform watermark removal (`--scheme auto` by default, plus `--method`, `--bandwidth`, `--vocoder-device`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--stream`, `--json`). When `--invisible` finds no positive compatible watermark (and neither `--allow-unverified` nor `--force` is set) and the source carries no AI metadata, `audio all` copies the source file byte-for-byte rather than re-muxing container headers unnecessarily.
 
-`audio batch` processes every supported audio file in a top-level directory (`-o` / `--output-dir` defaults to `<dir>_clean`, `--mode [all|metadata]` defaults to `all`, with `--invisible/--no-invisible`, `--scheme`, `--method`, `--bandwidth`, `--vocoder-device`, `--force`, `--verify/--no-verify`, `--keep-standard/--remove-all`, and `--json`).
+`audio batch` processes every supported audio file in a top-level directory (`-o` / `--output-dir` defaults to `<dir>_clean`, `--mode [all|metadata]` defaults to `all`, with `--invisible/--no-invisible`, `--scheme`, `--method`, `--bandwidth`, `--vocoder-device`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--keep-standard/--remove-all`, and `--json`).
 
 `--method spectral` fixes the spectral profile. `--method encodec` selects
 optional neural resynthesis. `--bandwidth` accepts
@@ -178,8 +176,8 @@ remove-ai-watermarks video audio input.mp4 -o processed.mkv --stream 0 --json
 remove-ai-watermarks video audio input.mp4 -o processed.mp4 --all-streams --scheme auto --json
 ```
 
-This command processes one selected audio track (`--stream N`, default `0`) or every watermarked audio track (`--all-streams`) while copying encoded video and subtitle streams.
-It accepts `--force`, `--verify/--no-verify`, `--stream`, `--all-streams`, `--scheme`, `--json`, and
+This command processes one selected audio track (`--stream N`, default `0`) or every watermarked audio track (`--all-streams`, optionally restricted to repeatable zero-based ordinals via `--target-stream N`) while copying encoded video and subtitle streams.
+It accepts `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--stream`, `--all-streams`, `--target-stream`, `--scheme`, `--json`, and
 `-o` / `--output` with the same verification and exit policy as `audio invisible`.
 It also accepts `--method`, `--bandwidth`, and `--vocoder-device` with the same audio backend rules.
 When `--all-streams` is passed, every audio track in the container is inspected sequentially; unmarked tracks are stream-copied unchanged while each positively detected track is cleaned and verified in the final mux.
@@ -420,14 +418,18 @@ Inspect every locally supported video signal:
 
 ```bash
 remove-ai-watermarks video identify input.mp4
+remove-ai-watermarks video identify input.mp4 --audio --audio-scheme auto
 remove-ai-watermarks video identify input.mp4 --json
 remove-ai-watermarks video identify input.mp4 --no-visible
 ```
 
 The default scans the complete clip for stable registered visible marks and
-inspects supported metadata. A result with no signals is reported as unknown,
+inspects supported metadata. Pass `--audio` (`--no-audio` is the default) with
+`--audio-scheme` (default `auto`) to also inspect every audio stream in the
+container with compatible public decoders and include `audio_streams` plus a
+suggested `recommended_recipe` when signals are detected. A result with no signals is reported as unknown,
 not clean, because proprietary pixel watermarks have no public local decoder.
-`--no-visible` performs metadata-only inspection.
+`--no-visible` performs metadata-only inspection (or metadata + audio when `--audio` is set).
 The text report lists invisible watermark hints; JSON exposes them as
 `invisible_watermark_hints`. These name C2PA-declared watermark schemes,
 supported SynthID metadata, or Amazon Nova Reel from Bedrock video provenance.
@@ -443,8 +445,7 @@ remove-ai-watermarks video all input.mp4 -o clean.mp4
 ```
 
 It removes a stable supported visible mark when found and always strips
-verified AI metadata. When neither signal is found, it writes a same-container
-passthrough instead of returning a missing output. The source is never
+verified AI metadata. When no visual, metadata, or audio signal requires rewriting, it copies the source file byte-for-byte instead of re-muxing container headers. The source is never
 overwritten.
 
 Invisible regeneration is deliberately opt-in:
@@ -455,7 +456,7 @@ remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --keep-fps --a
 ```
 
 That option is supported only for MP4, MOV, and M4V. It is lossy and uses the
-same default SynthID profile as `video invisible` (including default motion-compensated `--temporal-stabilize` / `--no-temporal-stabilize` and optional `--keep-fps` to preserve native source frame rate). Pass `--audio-invisible` (`--no-audio-invisible` is the default) alongside `--audio-scheme` (default `auto`), `--audio-method` (default `auto`), and optional `--audio-force` to also inspect and clean all compatible watermarked audio tracks in the same atomic pipeline, yielding 4-layer audiovisual cleaning (metadata + visible marks + video pixels + audio tracks). To select the experimental
+same default SynthID profile as `video invisible` (including default motion-compensated `--temporal-stabilize` / `--no-temporal-stabilize` and optional `--keep-fps` to preserve native source frame rate). Pass `--audio-invisible` (`--no-audio-invisible` is the default) alongside `--audio-scheme` (default `auto`), `--audio-method` (default `auto`), repeatable `--audio-stream N` (to restrict inspection/processing to specific zero-based audio tracks), and optional `--audio-allow-unverified` (`--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline, yielding 4-layer audiovisual cleaning (metadata + visible marks + video pixels + audio tracks). Silent videos skip `scipy` audio-extra requirements even when `--audio-invisible` is set. To select the experimental
 Seedance recipe for an owned MP4:
 
 ```bash
@@ -658,13 +659,16 @@ public decoder (such as short Google Veo/Gemini clips with SynthID audio), opt i
 explicitly to both visual regeneration and the experimental 3-codebook DAC pass:
 
 ```bash
-remove-ai-watermarks video all veo.mp4 -o veo_clean.mp4 --invisible --profile auto --audio-invisible --audio-method dac --audio-force
+remove-ai-watermarks video all veo.mp4 -o veo_clean.mp4 --invisible --profile auto --audio-invisible --audio-method dac --audio-allow-unverified
 ```
 
-Always pass an explicit `--audio-method` when forcing a public-decoder-negative
-track: `--audio-force` with the default `--audio-method auto` truncates to
-`spectral` only, and `--audio-force` also bypasses the minimum audio integrity
-gate. Current `dac` provider-oracle evidence covers short single-pass clips
+Prefer `--audio-allow-unverified` over `--audio-force` when processing a
+public-decoder-negative track: `--audio-allow-unverified` keeps the saved-file
+SNR, RMS, and 1-second active-window integrity gate active, whereas
+`--audio-force` also enables `--audio-allow-positive` and
+`--audio-allow-quality-override`. Always pass an explicit `--audio-method`
+because `--audio-method auto` without a positive public decoder runs `spectral`
+only. Current `dac` provider-oracle evidence covers short single-pass clips
 (`<= 10 s`); `focalcodec` failed on a held-out 10 s native Gemini audio output.
 
 ## Apply the experimental Seedance profile
@@ -689,16 +693,18 @@ to have been handled already; `video all` runs its existing visible stage first.
 
 ## Apply the experimental CUDA 3D Wan 2.1 video diffusion profiles and `--profile auto`
 
-On hosts with a BF16-capable NVIDIA CUDA GPU (Ampere or newer), two explicit 3D
-causal video diffusion profiles preserve native resolution and frame rate on SDR
-8-bit MP4 clips within the conservative decoded-frame budget (`<= 1920x1080`
-frame area and `<= 552,960,000` total decoded pixel-frames, processing clips
-longer than 193 frames through overlapping 3D causal windows with 17-frame
-raised-cosine temporal crossfades), and `--profile auto` automatically routes
-eligible ByteDance/Seedance MP4s to `wan21-seedance-experimental` on BF16 CUDA
-(`seedance-experimental` on CPU/MPS or when the Wan budget is exceeded) and
-other SDR 8-bit MP4s to `wan21-synthid-experimental` on BF16 CUDA (`synthid`
-fallback otherwise):
+On hosts with a hardware BF16-capable NVIDIA CUDA GPU (Ampere or newer; ROCm and
+pre-Ampere emulation are excluded), two explicit 3D causal video diffusion
+profiles preserve native resolution and frame rate on SDR 8-bit MP4 clips within
+the conservative decoded-frame budget (`<= 1920x1080` frame area and
+`<= 552,960,000` total decoded pixel-frames, streaming clips longer than 193
+frames through overlapping 3D causal windows with 17-frame raised-cosine
+temporal crossfades directly to the encoder without buffering the full clip in
+host RAM), and `--profile auto` automatically routes eligible ByteDance/Seedance
+MP4s (`<= 1280x720` frame area and `>= 16 GiB` total GPU VRAM) to
+`wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` on CPU/MPS
+or when the auto Wan budget is exceeded) and other eligible SDR 8-bit MP4s to
+`wan21-synthid-experimental` on BF16 CUDA (`synthid` fallback otherwise):
 
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile auto

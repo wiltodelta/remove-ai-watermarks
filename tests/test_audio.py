@@ -1029,3 +1029,102 @@ def test_native_clock_or_channel_failure_on_output_blocks_verification(tmp_path,
     with pytest.raises(audio.AudioVerificationIncomplete):
         audio.remove_audio_invisible(src_48k, out_wav, scheme="auto", method="spectral")
     assert not out_wav.exists()
+
+
+def test_split_audio_permissions_allow_unverified_while_enforcing_quality_and_positive_gates(tmp_path, monkeypatch):
+    from remove_ai_watermarks import audio
+
+    monkeypatch.setattr(audio.audioseal, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audioseal, "load_pinned_detector", object)
+    monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
+    monkeypatch.setattr(audio.perth, "is_available", lambda: False)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+
+    # Public decoder is negative on source (simulating proprietary Google SynthID audio)
+    monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: audio.audioseal.AudioSealReading(0.0, 0.0, (0,) * 16))
+    src_wav = _source(tmp_path, frames=16000)
+
+    # 1. allow_unverified=True with DAC processes and enforces quality gate (rejects silent output!)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda samples, *_a, **_k: samples * 0.0)
+    bad_out = tmp_path / "silent_dac.wav"
+    with pytest.raises(audio.AudioVerificationIncomplete, match="quality gate"):
+        audio.remove_audio_invisible(
+            src_wav,
+            bad_out,
+            scheme="auto",
+            method="dac",
+            allow_unverified=True,
+        )
+    assert not bad_out.exists()
+
+    # 2. allow_unverified=True + allow_quality_override=True publishes with quality_passed=False
+    override_out = tmp_path / "silent_override.wav"
+    res_override = audio.remove_audio_invisible(
+        src_wav,
+        override_out,
+        scheme="auto",
+        method="dac",
+        allow_unverified=True,
+        allow_quality_override=True,
+    )
+    assert res_override.skipped is False
+    assert res_override.verified_removed is None
+    assert res_override.quality_passed is False
+    assert override_out.is_file()
+
+    # 3. Healthy DAC resynthesis passes under allow_unverified=True with quality_passed=True
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda samples, *_a, **_k: samples * 0.9)
+    good_out = tmp_path / "good_dac.wav"
+    res_good = audio.remove_audio_invisible(
+        src_wav,
+        good_out,
+        scheme="auto",
+        method="dac",
+        allow_unverified=True,
+    )
+    assert res_good.skipped is False
+    assert res_good.verified_removed is None
+    assert res_good.quality_passed is True
+    assert good_out.is_file()
+
+    # 4. Still-positive public mark is still rejected when only allow_unverified=True, unless allow_positive=True
+    monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: audio.audioseal.AudioSealReading(1.0, 1.0, (0, 1) * 8))
+    still_pos = tmp_path / "still_pos.wav"
+    with pytest.raises(audio.AudioVerificationIncomplete):
+        audio.remove_audio_invisible(src_wav, still_pos, scheme="auto", method="dac", allow_unverified=True)
+    assert not still_pos.exists()
+
+    res_pos = audio.remove_audio_invisible(
+        src_wav,
+        still_pos,
+        scheme="auto",
+        method="dac",
+        allow_positive=True,
+    )
+    assert res_pos.verified_removed is False
+    assert still_pos.is_file()
+
+
+def test_windowed_audio_quality_gate_catches_mid_track_dropout_and_stereo_drift(tmp_path):
+    from remove_ai_watermarks._internal import audio_io
+    from remove_ai_watermarks._internal.audio_quality import audio_quality_passed, measure_fidelity
+
+    src_wav = _source(tmp_path, frames=64000, rate=16000)  # 4.0 seconds stereo
+    dropout_wav = tmp_path / "dropout.wav"
+    t = np.arange(64000) / 16000
+    left = 0.2 * np.sin(2 * np.pi * 500 * t) + 0.1 * np.sin(2 * np.pi * 1250 * t)
+    right = 0.2 * np.sin(2 * np.pi * 3000 * t) + 0.1 * np.sin(2 * np.pi * 1250 * t)
+    # Zero out seconds 1.0..2.5 (whole-track RMS stays ~79% of source, passing global RMS bounds!)
+    left[16000:40000] = 0.0
+    right[16000:40000] = 0.0
+    with wave.open(str(dropout_wav), "wb") as stream:
+        stream.setnchannels(2)
+        stream.setsampwidth(2)
+        stream.setframerate(16000)
+        stream.writeframes((np.column_stack((left, right)) * 32767).astype("<i2").tobytes())
+
+    info = audio_io.probe_audio(src_wav)
+    fid = measure_fidelity(src_wav, info, dropout_wav)
+    assert fid.worst_window_rms_ratio == pytest.approx(0.0, abs=1e-4)
+    assert fid.max_side_mid_drift_db is not None
+    assert audio_quality_passed(fid, lossy=False) is False

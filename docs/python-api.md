@@ -709,7 +709,10 @@ print(report.invisible_watermark_hints)
 It reports a recurring registered mark and supported AI-origin metadata as positive
 signals. When neither is present, `is_ai_generated` is `None`, never `False`.
 The absence of a public local video SynthID decoder is included in `caveats`.
-Pass `check_visible=False` for a bounded metadata-only inspection.
+Pass `check_visible=False` for a bounded metadata-only inspection, or
+`check_audio=True` (with `audio_scheme="auto"`) to inspect every audio stream in
+the container with compatible public decoders (`VideoProvenanceReport.audio_streams`)
+and populate `VideoProvenanceReport.recommended_recipe` when signals are detected.
 `invisible_watermark_hints` names registered watermark algorithms declared by
 C2PA, supported SynthID metadata, and Amazon Nova Reel inferred from Bedrock
 video provenance. Fingerprint algorithms are excluded. These are metadata or
@@ -729,8 +732,9 @@ if result.remaining_metadata:
 ```
 
 The default removes one stable supported visible provider mark when present,
-always strips verified AI metadata, and writes a same-container output even
-when neither signal is found. This gives callers one predictable output path.
+always strips verified AI metadata, and copies the source file byte-for-byte
+when no visual, metadata, or audio signal requires rewriting. This gives callers
+one predictable output path without mutating clean containers.
 It does not run lossy invisible regeneration by default.
 
 `include_invisible=True` explicitly adds VAE regeneration for MP4, MOV, or M4V
@@ -739,8 +743,8 @@ with the default `invisible_profile="synthid"`, motion-compensated `temporal_sta
 recipe, or `invisible_profile="wan21-synthid-experimental"` / `"wan21-seedance-experimental"`
 on NVIDIA CUDA GPUs for full native-resolution 3D `Wan 2.1` video diffusion, and
 `invisible_quality="delivery"` (default) or `"master"` for their output encode.
-Pass `include_audio_invisible=True` (with `audio_scheme="auto"`, `audio_method="auto"`, `audio_force=False`) to also inspect and clean all compatible watermarked audio tracks in the same atomic pipeline.
-These options also apply to `remove_video_batch(..., mode="all")`.
+Pass `include_audio_invisible=True` (with `audio_scheme="auto"`, `audio_method="auto"`, `audio_allow_unverified=False`, `audio_allow_positive=False`, `audio_allow_quality_override=False`, `audio_streams=None`, or compatibility alias `audio_force=False`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline.
+These options also apply to `remove_video_batch(..., mode="all")`, where each `VideoBatchItem` also exposes `audio_verification_scope` and `audio_quality_passed`.
 `VideoAllResult.invisible_profile` records the selected stage, or `None` when
 it did not run.
 `VideoAllResult.invisible_removed` remains the compatibility boolean for whether
@@ -909,21 +913,24 @@ stage before the selected pixel stage. The CLI exposes the same choice through
 `--profile seedance-experimental`; all/batch mode also requires `--invisible`.
 SynthID remains the default.
 
-On hosts with a BF16-capable NVIDIA CUDA GPU, `remove_video_wan_experimental`
+On hosts with a hardware BF16-capable NVIDIA CUDA GPU (Ampere or newer; ROCm and
+emulated BF16 are excluded), `remove_video_wan_experimental`
 (and `profile="auto"`, `"wan21-synthid-experimental"`, or
 `"wan21-seedance-experimental"` in `remove_video_invisible`, `remove_video_all`,
 and `remove_video_batch`) runs pinned Apache-2.0 3D `Wan 2.1`
 (`Wan-AI/Wan2.1-T2V-1.3B-Diffusers` at `0fad780a534b6463e45facd96134c9f345acfa5b`)
 at native resolution and exact frame timestamps on SDR 8-bit MP4 clips within
 `WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
-(`600 * 1280 * 720`, blending clips exceeding `chunk_frames=193` across
-`overlap_frames=17` raised-cosine 3D causal windows), returning
+(`600 * 1280 * 720`, streaming clips exceeding `chunk_frames=193` across
+`overlap_frames=17` raised-cosine 3D causal windows directly to the encoder and
+pre-encoding `prompt_embeds` once so the T5 text encoder is freed before 3D
+denoising), returning
 `VideoWanExperimentalResult` (which exposes `strength` alongside the compatible
 `noise_std` mirror). `profile="auto"` selects `wan21-seedance-experimental` on
-eligible BF16 CUDA sources (`seedance-experimental` fallback on CPU/MPS or when
-the Wan frame budget is exceeded) when ByteDance/Seedance metadata or visible
-marks are present, and `wan21-synthid-experimental` (`synthid` fallback)
-otherwise. `wan21-synthid-experimental` uses `strength=0.38`
+eligible BF16 CUDA sources (`<= 1280x720` frame area and `>= 16 GiB` total VRAM;
+`seedance-experimental` fallback on CPU/MPS or when the auto Wan budget is
+exceeded) when ByteDance/Seedance metadata or visible marks are present, and
+`wan21-synthid-experimental` (`synthid` fallback) otherwise. `wan21-synthid-experimental` uses `strength=0.38`
 and `wan21-seedance-experimental` uses `strength=0.12`. Both accept
 `quality="delivery"` or `"master"` and `seed`, reuse one loaded pipeline across
 batch items, and perform no runtime oracle verification. `VideoAllResult` also

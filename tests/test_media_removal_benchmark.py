@@ -294,6 +294,7 @@ def test_evaluate_multistream_and_four_layer_surfaces(
             visible_mark="kling",
             visible_removed_frames=24,
             audio=SimpleNamespace(stream_action="processed", watermark_status="not_detected"),
+            audio_quality_passed=True,
         )
 
     monkeypatch.setattr(bench.video_audio, "remove_video_audio_all_streams", fake_multistream)
@@ -306,12 +307,34 @@ def test_evaluate_multistream_and_four_layer_surfaces(
     monkeypatch.setattr(
         bench.video_messages,
         "identify_video_message",
-        lambda _p, **_kw: SimpleNamespace(status="not_matched"),
+        lambda p, **_kw: SimpleNamespace(status="matched" if str(p) == str(src_v) else "not_matched"),
     )
     monkeypatch.setattr(
         bench.audio,
         "identify_audio",
         lambda _p, **_kw: SimpleNamespace(watermark_status="not_detected"),
+    )
+
+    # Clean-control predicate must reject unverified before_status
+    assert (
+        bench._check_outcome(
+            "skipped_clean",
+            skipped=True,
+            verified_removed=None,
+            quality_passed=None,
+            before_status="unverified",
+        )
+        is False
+    )
+    assert (
+        bench._check_outcome(
+            "skipped_clean",
+            skipped=True,
+            verified_removed=None,
+            quality_passed=None,
+            before_status="not_detected",
+        )
+        is True
     )
 
     manifest = _write_manifest(

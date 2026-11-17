@@ -107,7 +107,7 @@ uv tool install --force "remove-ai-watermarks[audio-detect]"
 `audio` installs NumPy and SciPy, without OpenCV or Torch. `audio-detect` adds
 the pinned open AudioSeal runtime and downloads hash-checked detector weights
 on first use. It needs no CUDA. Default removal requires that decoder; explicit
-`--method spectral --force --no-verify` processing only requires `audio`. Outputs are WAV or FLAC.
+`--method spectral --allow-unverified --no-verify` processing only requires `audio` while retaining the audio integrity gate. Outputs are WAV, FLAC, MP3, M4A, OGG, or Opus.
 See [audio coverage and limitations](audio-video-removal.md).
 
 Add `audio-codec` for EnCodec resynthesis with `--method encodec`, `combined`,

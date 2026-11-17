@@ -18,7 +18,7 @@ from remove_ai_watermarks._internal.audio_quality import audio_quality_passed, m
 from remove_ai_watermarks._internal.utils import staged_sibling
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Sequence
 
 log = logging.getLogger(__name__)
 
@@ -254,6 +254,9 @@ def remove_video_audio(
     bandwidth_kbps: float = 24.0,
     scheme: audio.AudioScheme = "audioseal",
     vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
     _before: audio.AudioProvenanceReport | None = None,
 ) -> VideoAudioRemovalResult:
     """Filter one audio track, copying every other stream without shortening tails.
@@ -292,6 +295,7 @@ def remove_video_audio(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
     )
     before = (
         _before
@@ -300,7 +304,8 @@ def remove_video_audio(
     )
     if method == "auto":
         profiles = audio.adaptive_auto_profiles(scheme, before)
-    if not force and before.watermark_status != "detected":
+    eff_unverified = force or allow_unverified
+    if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
         first = profiles[0]
         return VideoAudioRemovalResult(
             source,
@@ -315,12 +320,20 @@ def remove_video_audio(
             vocoder_device=vocoder_device if first in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
             caveats=caveats,
         )
-    if not verify or before.watermark_status != "detected" or (not force and audio.missing_decoder_reason(before)):
+    if (
+        not verify
+        or before.watermark_status != "detected"
+        or (not eff_unverified and audio.missing_decoder_reason(before))
+    ):
         profiles = profiles[:1]
     last: audio.AudioVerificationIncomplete | None = None
     with tempfile.TemporaryDirectory(prefix="raiw-video-audio-") as tmp:
         for attempt, profile in enumerate(profiles):
-            attempt_force = force and attempt == len(profiles) - 1
+            is_last = attempt == len(profiles) - 1
+            attempt_force = force and is_last
+            attempt_unverified = (force or allow_unverified) and is_last
+            attempt_positive = (force or allow_positive) and is_last
+            attempt_quality = (force or allow_quality_override) and is_last
             candidate = Path(tmp) / f"processed-{attempt}.wav"
             try:
                 processed = audio.remove_audio_profile(
@@ -335,6 +348,9 @@ def remove_video_audio(
                     _before=before,
                     _skip_post_verify=True,
                     vocoder_device=vocoder_device,
+                    allow_unverified=allow_unverified and is_last,
+                    allow_positive=allow_positive and is_last,
+                    allow_quality_override=allow_quality_override and is_last,
                 )
                 if processed.frames_processed != count:
                     raise RuntimeError("Audio timeline and decoded sample-frame counts disagree")
@@ -400,14 +416,18 @@ def remove_video_audio(
                         raise RuntimeError("Mux changed the selected audio timeline")
                     after = audio.identify_audio(staged, check_invisible=verify, stream=stream, scheme=scheme)
                     verified = audio.verification_outcome(before, after)
-                    if not attempt_force and verified is not True:
-                        raise audio.AudioVerificationIncomplete(before, after, audio.verification_failure_reason(after))
                     fidelity = measure_fidelity(source, info, staged, stream=stream)
                     quality_ok = audio_quality_passed(fidelity, lossy=lossy)
-                    if not attempt_force and not quality_ok:
-                        raise audio.AudioVerificationIncomplete(
-                            before, after, "Delivered audio failed the minimum quality gate"
-                        )
+                    audio.enforce_audio_publication_gates(
+                        before,
+                        after,
+                        verified=verified,
+                        quality_ok=quality_ok,
+                        force=attempt_force,
+                        allow_unverified=attempt_unverified,
+                        allow_positive=attempt_positive,
+                        allow_quality_override=attempt_quality,
+                    )
                     unchanged = tuple(int(s["index"]) for s in streams if s["index"] != info.index)
                     for index in unchanged:
                         _verify_packets(source, staged, index)
@@ -446,6 +466,15 @@ def remove_video_audio(
     raise last
 
 
+def _resolve_selected_ordinals(streams: Sequence[int] | None, count: int) -> list[int]:
+    """Normalize and bounds-check zero-based audio stream ordinals."""
+    ordinals = list(range(count)) if streams is None else sorted({int(o) for o in streams})
+    for ordinal in ordinals:
+        if ordinal < 0 or ordinal >= count:
+            raise ValueError(f"Audio stream ordinal {ordinal} is out of range for {count} track(s)")
+    return ordinals
+
+
 def preflight_video_audio_workload(
     source: str | Path,
     *,
@@ -455,53 +484,95 @@ def preflight_video_audio_workload(
     bandwidth_kbps: float = 24.0,
     scheme: audio.AudioScheme = "auto",
     vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
-) -> None:
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
+    streams: Sequence[int] | None = None,
+) -> tuple[audio.AudioProvenanceReport, ...]:
     """Validate audio dependencies, layout, and bounded-track limits before visual processing."""
+    _ = allow_quality_override
     source_path = Path(source).expanduser().resolve()
-    profiles = audio.resolve_audio_profiles(
+    profiles = audio.validate_audio_arguments(
         method=method,
         scheme=scheme,
         verify=verify,
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
     )
-    streams = stream_inventory(source_path)
-    if [s["index"] for s in streams] != list(range(len(streams))):
+    container_streams = stream_inventory(source_path)
+    if [s["index"] for s in container_streams] != list(range(len(container_streams))):
         raise ValueError("Video stream indices must be contiguous")
-    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+    audio_streams = [s for s in container_streams if s.get("codec_type") == "audio"]
     if not audio_streams:
-        return
+        return ()
+    selected_ordinals = _resolve_selected_ordinals(streams, len(audio_streams))
+    audio.resolve_audio_profiles(
+        method=method,
+        scheme=scheme,
+        verify=verify,
+        force=force,
+        bandwidth_kbps=bandwidth_kbps,
+        vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
+    )
     if method != "auto":
         audio.require_audio_profile_runtime(method)
     if not any("sample_rate" in s and "channels" in s for s in audio_streams):
-        return
-    if force:
+        return ()
+    eff_unverified = force or allow_unverified
+    selected_set = set(selected_ordinals)
+    inspected: list[audio.AudioProvenanceReport] = []
+    if eff_unverified and not verify:
         target_profile = profiles[0]
         audio.require_audio_profile_runtime(target_profile)
-        for s in audio_streams:
-            if "sample_rate" not in s or "channels" not in s:
-                continue
-            raw_dur = s.get("duration")
-            dur = Fraction(str(raw_dur)) if raw_dur not in (None, "", "N/A") else None
-            info = audio_io.AudioStreamInfo(
-                index=int(s["index"]),
-                sample_rate=int(s["sample_rate"]),
-                channels=int(s["channels"]),
-                codec=str(s.get("codec_name", "")),
-                start_time=None,
-                duration=dur,
-                channel_layout=s.get("channel_layout"),
-            )
+        for ordinal in selected_ordinals:
+            info = _preflight_stream_info(source_path, audio_streams, ordinal)
             audio.validate_audio_stream_for_profile(info, target_profile)
-        return
+        return ()
     for ordinal in range(len(audio_streams)):
-        rep = audio.identify_audio(source_path, check_invisible=verify, stream=ordinal, scheme=scheme)
-        if rep.watermark_status != "detected":
+        try:
+            rep = audio.identify_audio(source_path, check_invisible=verify, stream=ordinal, scheme=scheme)
+            inspected.append(rep)
+        except Exception:
+            if eff_unverified and ordinal in selected_set:
+                info = _preflight_stream_info(source_path, audio_streams, ordinal)
+                audio.require_audio_profile_runtime(profiles[0])
+                audio.validate_audio_stream_for_profile(info, profiles[0])
+                continue
+            raise
+        if ordinal not in selected_set:
+            continue
+        if not (eff_unverified or allow_positive) and rep.watermark_status != "detected":
             continue
         selected = audio.adaptive_auto_profiles(scheme, rep)[0] if method == "auto" else method
         audio.require_audio_profile_runtime(selected)
         audio.validate_audio_stream_for_profile(rep.stream, selected)
+    return tuple(inspected) if len(inspected) == len(audio_streams) else ()
+
+
+def _preflight_stream_info(
+    source_path: Path,
+    audio_streams: list[dict[str, Any]],
+    ordinal: int,
+) -> audio_io.AudioStreamInfo:
+    """Build AudioStreamInfo from stream_inventory or canonical probe_audio fallback."""
+    s = audio_streams[ordinal]
+    if "sample_rate" in s and "channels" in s and int(s["sample_rate"]) > 0 and int(s["channels"]) > 0:
+        channels = int(s["channels"])
+        raw_dur = s.get("duration")
+        dur = Fraction(str(raw_dur)) if raw_dur not in (None, "", "N/A") else None
+        return audio_io.AudioStreamInfo(
+            index=int(s["index"]),
+            sample_rate=int(s["sample_rate"]),
+            channels=channels,
+            codec=str(s.get("codec_name", "")),
+            start_time=None,
+            duration=dur,
+            channel_layout=s.get("channel_layout") or {1: "mono", 2: "stereo"}.get(channels),
+        )
+    return audio_io.probe_audio(source_path, stream=ordinal)
 
 
 def remove_video_audio_all_streams(
@@ -514,6 +585,11 @@ def remove_video_audio_all_streams(
     bandwidth_kbps: float = 24.0,
     scheme: audio.AudioScheme = "auto",
     vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
+    streams: Sequence[int] | None = None,
+    _befores: Sequence[audio.AudioProvenanceReport] | None = None,
 ) -> VideoAudioMultiStreamResult:
     """Inspect and clean every watermarked audio track while preserving video and clean tracks."""
     source_path, output_path = Path(source).expanduser().resolve(), Path(output).expanduser()
@@ -528,13 +604,15 @@ def remove_video_audio_all_streams(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
     )
-    streams = _streams(source_path)
-    if [s["index"] for s in streams] != list(range(len(streams))):
+    container_streams = _streams(source_path)
+    if [s["index"] for s in container_streams] != list(range(len(container_streams))):
         raise ValueError("Video stream indices must be contiguous")
-    audio_global_indices = [int(s["index"]) for s in streams if s.get("codec_type") == "audio"]
+    audio_global_indices = [int(s["index"]) for s in container_streams if s.get("codec_type") == "audio"]
     if not audio_global_indices:
         raise ValueError("Source has no audio stream")
+    selected_set = set(_resolve_selected_ordinals(streams, len(audio_global_indices)))
     lossy = output_path.suffix.lower() == ".mp4"
     caveats = (
         "All source-positive audio tracks are processed; clean tracks and video marks remain unchanged.",
@@ -546,11 +624,20 @@ def remove_video_audio_all_streams(
         else "Processed tracks are stored as uncompressed float PCM, which can increase file size.",
     )
     source_sha = sha256_file(source_path)
-    befores = [
-        audio.identify_audio(source_path, check_invisible=verify, stream=ordinal, scheme=scheme)
-        for ordinal in range(len(audio_global_indices))
+    if _befores is not None and len(_befores) == len(audio_global_indices):
+        befores = [replace(rep, source=source_path, sha256=source_sha) for rep in _befores]
+    else:
+        befores = [
+            audio.identify_audio(source_path, check_invisible=verify, stream=ordinal, scheme=scheme)
+            for ordinal in range(len(audio_global_indices))
+        ]
+    eff_unverified = force or allow_unverified
+    eff_positive = force or allow_positive
+    to_process = [
+        ordinal
+        for ordinal, rep in enumerate(befores)
+        if ordinal in selected_set and (eff_unverified or eff_positive or rep.watermark_status == "detected")
     ]
-    to_process = [ordinal for ordinal, rep in enumerate(befores) if force or rep.watermark_status == "detected"]
     if not to_process:
         first = profiles[0]
         skipped_items = tuple(
@@ -574,7 +661,7 @@ def remove_video_audio_all_streams(
             output=None,
             streams=skipped_items,
             processed_ordinals=(),
-            unchanged_streams=tuple(range(len(streams))),
+            unchanged_streams=tuple(range(len(container_streams))),
             verified_removed=None,
             skipped=True,
             caveats=caveats,
@@ -582,7 +669,7 @@ def remove_video_audio_all_streams(
         )
 
     processed_global = {audio_global_indices[o] for o in to_process}
-    unchanged = tuple(int(s["index"]) for s in streams if int(s["index"]) not in processed_global)
+    unchanged = tuple(int(s["index"]) for s in container_streams if int(s["index"]) not in processed_global)
     processed_map: dict[int, VideoAudioRemovalResult] = {}
     final_items: list[VideoAudioRemovalResult] = []
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -599,13 +686,14 @@ def remove_video_audio_all_streams(
                 bandwidth_kbps=bandwidth_kbps,
                 scheme=scheme,
                 vocoder_device=vocoder_device,
+                allow_unverified=allow_unverified,
+                allow_positive=allow_positive,
+                allow_quality_override=allow_quality_override,
                 _before=befores[sole],
             )
             if sole_res.skipped or sole_res.output is None:
                 raise RuntimeError("Selected audio stream was unexpectedly skipped during multi-stream processing")
             processed_map[sole] = sole_res
-            if sha256_file(source_path) != source_sha:
-                raise RuntimeError("Video source changed during multi-stream audio processing")
         else:
             with tempfile.TemporaryDirectory(prefix="raiw-video-audio-multi-") as tmp:
                 current = source_path
@@ -622,6 +710,9 @@ def remove_video_audio_all_streams(
                         bandwidth_kbps=bandwidth_kbps,
                         scheme=scheme,
                         vocoder_device=vocoder_device,
+                        allow_unverified=allow_unverified,
+                        allow_positive=allow_positive,
+                        allow_quality_override=allow_quality_override,
                         _before=befores[ordinal] if step == 0 else None,
                     )
                     if res.skipped or res.output is None:
@@ -632,10 +723,8 @@ def remove_video_audio_all_streams(
                     current = step_target
             for idx in unchanged:
                 _verify_packets(source_path, staged_output, idx)
-                if streams[idx]["codec_type"] == "audio":
+                if container_streams[idx]["codec_type"] == "audio":
                     _verify_audio_trimming(source_path, staged_output, idx)
-            if sha256_file(source_path) != source_sha:
-                raise RuntimeError("Video source changed during multi-stream audio processing")
 
         last_processed = to_process[-1]
         for ordinal, before_rep in enumerate(befores):
@@ -677,17 +766,19 @@ def remove_video_audio_all_streams(
                 else audio.identify_audio(staged_output, check_invisible=verify, stream=ordinal, scheme=scheme)
             )
             verified = audio.verification_outcome(before_rep, after_rep)
-            if not force and verified is not True:
-                raise audio.AudioVerificationIncomplete(
-                    before_rep, after_rep, audio.verification_failure_reason(after_rep)
-                )
             info = audio_io.probe_audio(source_path, stream=ordinal)
             fidelity = measure_fidelity(source_path, info, staged_output, stream=ordinal)
             q_ok = audio_quality_passed(fidelity, lossy=lossy)
-            if not force and not q_ok:
-                raise audio.AudioVerificationIncomplete(
-                    before_rep, after_rep, "Delivered audio failed the minimum quality gate"
-                )
+            audio.enforce_audio_publication_gates(
+                before_rep,
+                after_rep,
+                verified=verified,
+                quality_ok=q_ok,
+                force=force,
+                allow_unverified=allow_unverified,
+                allow_positive=allow_positive,
+                allow_quality_override=allow_quality_override,
+            )
             final_items.append(
                 replace(
                     prev,
@@ -702,6 +793,8 @@ def remove_video_audio_all_streams(
                     quality_passed=q_ok,
                 )
             )
+        if sha256_file(source_path) != source_sha:
+            raise RuntimeError("Video source changed during multi-stream audio processing")
 
     active = [final_items[o] for o in to_process]
     inactive = [item for o, item in enumerate(final_items) if o not in processed_map]

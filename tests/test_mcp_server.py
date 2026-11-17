@@ -549,3 +549,24 @@ def test_mcp_convenience_tools_route_audio_and_video_audio_all_streams() -> None
     assert "--all-streams" in runner.calls[-1]
     assert runner.calls[-1][runner.calls[-1].index("--scheme") + 1] == "auto"
     _assert_the_cli_accepts(runner.calls[-1])
+
+    # Split audio permissions and check_audio identify flag
+    res_id_vid_audio = mcp_server.call_tool("identify", {"path": "clip.mp4", "check_audio": True}, runner)
+    assert res_id_vid_audio["isError"] is False
+    assert "--audio" in runner.calls[-1]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_id_audio_skip = mcp_server.call_tool("identify", {"path": "song.wav", "check_audio": False}, runner)
+    assert res_id_audio_skip["isError"] is False
+    assert "--no-invisible" in runner.calls[-1]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_dac_perm = mcp_server.call_tool(
+        "audio_invisible",
+        {"path": "veo.wav", "method": "dac", "allow_unverified": True},
+        runner,
+    )
+    assert res_dac_perm["isError"] is False
+    assert "--allow-unverified" in runner.calls[-1]
+    assert "--force" not in runner.calls[-1]
+    _assert_the_cli_accepts(runner.calls[-1])

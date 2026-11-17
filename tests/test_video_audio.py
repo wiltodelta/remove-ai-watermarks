@@ -701,3 +701,65 @@ def test_remove_video_audio_all_streams_unverified_unprocessed_track_blocks_aggr
         assert item.before.source == source.resolve()
         if item.after is not None:
             assert item.after.source == output
+
+
+def test_preflight_untagged_stereo_post_fidelity_hash_and_selected_stream_ordinals(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from remove_ai_watermarks import audio, video_audio
+
+    _spectral_detector(monkeypatch)
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+        monkeypatch.setattr(backend, "is_available", lambda: False)
+
+    # 1. Forced preflight accepts untagged 2-channel PCM stereo in MKV (where raw channel_layout is omitted)
+    source = _video(tmp_path, first_offset=0, selected_offset=0)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    orig_inventory = video_audio.stream_inventory
+    monkeypatch.setattr(
+        video_audio,
+        "stream_inventory",
+        lambda p: [{k: v for k, v in s.items() if k != "channel_layout"} for s in orig_inventory(p)],
+    )
+    video_audio.preflight_video_audio_workload(source, force=True, method="dac", scheme="auto")
+    monkeypatch.setattr(video_audio, "stream_inventory", orig_inventory)
+
+    # 2. Multi-track source mutation during final measure_fidelity must abort BEFORE publishing destination
+    existing = tmp_path / "sentinel.mkv"
+    existing.write_bytes(b"SENTINEL-MUST-SURVIVE-FINAL-FIDELITY-SOURCE-MUTATION")
+    orig_measure = video_audio.measure_fidelity
+    orig_sha = video_audio.sha256_file
+    mutated = False
+
+    def measure_then_mutate(src, info, out, *, stream=0):
+        nonlocal mutated
+        res_fid = orig_measure(src, info, out, stream=stream)
+        mutated = True
+        return res_fid
+
+    monkeypatch.setattr(video_audio, "measure_fidelity", measure_then_mutate)
+    monkeypatch.setattr(
+        video_audio,
+        "sha256_file",
+        lambda p: "f" * 64 if mutated and Path(p).resolve() == source.resolve() else orig_sha(p),
+    )
+    with pytest.raises(RuntimeError, match="changed during"):
+        video_audio.remove_video_audio_all_streams(source, existing, scheme="auto")
+    assert existing.read_bytes() == b"SENTINEL-MUST-SURVIVE-FINAL-FIDELITY-SOURCE-MUTATION"
+    monkeypatch.setattr(video_audio, "measure_fidelity", orig_measure)
+    monkeypatch.setattr(video_audio, "sha256_file", orig_sha)
+
+    # 3. Explicit streams=(0,) with allow_unverified=True processes ONLY track 0 and leaves track 1 untouched
+    monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: audio.audioseal.AudioSealReading(0.0, 0.0, (0,) * 16))
+    selective_out = tmp_path / "selective_track0.mkv"
+    res_sel = video_audio.remove_video_audio_all_streams(
+        source,
+        selective_out,
+        scheme="auto",
+        method="spectral",
+        allow_unverified=True,
+        streams=(0,),
+    )
+    assert res_sel.processed_ordinals == (0,)
+    assert res_sel.streams[0].skipped is False
+    assert res_sel.streams[1].skipped is True

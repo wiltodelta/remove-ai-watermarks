@@ -66,11 +66,11 @@ when an optional backend is absent.
 
 | Tool | Runs | Writes |
 | --- | --- | --- |
-| `identify` | `identify --json` for an image, `video identify --json` for a video suffix, `audio identify --json` for an audio suffix, or `text identify --json` for a text suffix; `check_visible: false` adds `--no-visible` (or `--no-invisible` for audio) | Nothing |
+| `identify` | `identify --json` for an image, `video identify --json` for a video suffix (`check_audio: true` adds `--audio`), `audio identify --json` for an audio suffix, or `text identify --json` for a text suffix; `check_visible: false` adds `--no-visible` (or `--no-invisible` for audio unless `check_audio` overrides it) | Nothing |
 | `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all --invisible` for audio; `text metadata --remove` or `text all` for text | One output file, `<name>_clean` beside the source unless `output` is given |
 | `batch` | `batch --mode` for images, `video batch --mode` for video (`media: "video"`), or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
 | `audio_identify` | `audio identify --json`; `check_invisible: false` skips models | Nothing |
-| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
+| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `allow_unverified`, `allow_positive`, `allow_quality_override`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
 | `video_message_identify` | `video message identify --json`, required `reference`, optional `scheme` | Nothing |
 | `video_message_remove` | `video message remove --json`, same reference and scheme, profile and verification options | MP4, MOV, or M4V, `<name>_message_processed.mp4` by default |
 | `video_audio` | `video audio --json`, with the same audio options plus `all_streams` | MKV/MOV with PCM or MP4 with AAC, `<name>_audio_processed.mkv` by default |
@@ -80,8 +80,7 @@ Audio tools ship since 0.63.0. `stream` is a nonnegative audio-track ordinal (`v
 or `"combined"`, and integer
 `bandwidth` (`6`, `12`, or `24`, default `24`) for the optional codec backend.
 `audio_invisible` requires `audio-detect` for default source-positive and
-saved-output-negative verification. `force: true, verify: false` permits
-unverified processing with the `audio` extra. Audio tools require ffmpeg and
+saved-output-negative verification. `allow_unverified: true` (for example with `method: "dac"`, or alongside `verify: false`) permits unverified processing with the `audio` extra while keeping the audio SNR/RMS/window integrity gate active (`force: true` remains an alias enabling `allow_unverified`, `allow_positive`, and `allow_quality_override`). Audio tools require ffmpeg and
 ffprobe. `scheme: "audioseal"` (default), `"auto"` (scans installed non-experimental decoders `audioseal`, `wavmark`, `perth` without failing on missing optional extras), `"wavmark"`, `"perth"`, `"silentcipher"`, `"silentcipher16"`, or `"all"` selects
 compatible public-model checks. WavMark needs `audio-wavmark`, Perth v1 needs `audio-perth`, and both experimental SilentCipher receivers need
 `audio-silentcipher`; `all` needs every decoder extra. Auto tries spectral then combined for AudioSeal and Perth v1, neural then

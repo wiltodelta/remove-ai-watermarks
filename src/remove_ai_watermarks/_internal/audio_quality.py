@@ -29,6 +29,8 @@ class AudioFidelity:
     output_rms: float = 0.0
     source_peak: float = 0.0
     source_samples_above_full_scale: int = 0
+    worst_window_rms_ratio: float = 1.0
+    max_side_mid_drift_db: float | None = None
 
 
 def sha256_file(path: Path) -> str:
@@ -52,12 +54,19 @@ def audio_quality_passed(fidelity: AudioFidelity, *, lossy: bool = False) -> boo
             fidelity.source_rms,
             fidelity.output_rms,
             fidelity.source_peak,
+            fidelity.worst_window_rms_ratio,
         )
     ):
+        return False
+    if fidelity.max_side_mid_drift_db is not None and not isfinite(fidelity.max_side_mid_drift_db):
         return False
     if fidelity.source_rms >= 1e-3 and fidelity.output_rms < max(1e-5, fidelity.source_rms * 0.005):
         return False
     if fidelity.source_rms >= 1e-4 and fidelity.output_rms > fidelity.source_rms * 4.0:
+        return False
+    if fidelity.source_rms >= 1e-3 and (
+        fidelity.worst_window_rms_ratio < 0.005 or fidelity.worst_window_rms_ratio > 4.0
+    ):
         return False
     if lossy:
         allowed_above = max(fidelity.source_samples_above_full_scale, max(16, fidelity.frames // 500))
@@ -94,6 +103,41 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
     count = above = source_above = 0
     tail_slack = max(2, info.sample_rate // 100) if opus_clock else 0
     total_before = total_after = 0
+    win_target = max(1, info.sample_rate)
+    win_min_tail = max(1, win_target // 4)
+    win_frames = 0
+    win_src_power = win_out_power = 0.0
+    win_mid_a = win_side_a = win_mid_b = win_side_b = 0.0
+    min_win_ratio: float | None = None
+    max_win_ratio: float | None = None
+    max_sm_drift_db: float | None = None
+
+    def flush_window() -> None:
+        nonlocal win_frames, win_src_power, win_out_power, win_mid_a, win_side_a, win_mid_b, win_side_b
+        nonlocal min_win_ratio, max_win_ratio, max_sm_drift_db
+        if win_frames <= 0:
+            return
+        denom = win_frames * info.channels
+        src_w = sqrt(win_src_power / denom)
+        out_w = sqrt(win_out_power / denom)
+        if src_w >= 1e-3:
+            ratio = out_w / src_w
+            min_win_ratio = ratio if min_win_ratio is None else min(min_win_ratio, ratio)
+            max_win_ratio = ratio if max_win_ratio is None else max(max_win_ratio, ratio)
+        if info.channels == 2:
+            ma = sqrt(win_mid_a / win_frames)
+            sa = sqrt(win_side_a / win_frames)
+            mb = sqrt(win_mid_b / win_frames)
+            sb = sqrt(win_side_b / win_frames)
+            if ma >= 1e-3 and mb >= 1e-3 and (sa >= 1e-4 or sb >= 1e-4):
+                sm_a = max(sa, 1e-6) / ma
+                sm_b = max(sb, 1e-6) / mb
+                drift = abs(20.0 * log10(sm_b / sm_a))
+                max_sm_drift_db = drift if max_sm_drift_db is None else max(max_sm_drift_db, drift)
+        win_frames = 0
+        win_src_power = win_out_power = 0.0
+        win_mid_a = win_side_a = win_mid_b = win_side_b = 0.0
+
     try:
         for before, after in zip_longest(left, right):
             if before is not None:
@@ -116,8 +160,6 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
             a, b = before.astype(np.float64), after.astype(np.float64)
             delta = b - a
             abs_a, abs_b = np.abs(a), np.abs(b)
-            power += float(np.sum(a * a))
-            output_power += float(np.sum(b * b))
             residual += float(np.sum(delta * delta))
             max_error = max(max_error, float(np.max(np.abs(delta))))
             source_peak = max(source_peak, float(np.max(abs_a)))
@@ -125,6 +167,36 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
             source_above += int(np.count_nonzero(abs_a > 1))
             above += int(np.count_nonzero(abs_b > 1))
             count += pair_len
+
+            pos = 0
+            while pos < pair_len:
+                take = min(win_target - win_frames, pair_len - pos)
+                seg_a = a[pos : pos + take]
+                seg_b = b[pos : pos + take]
+                if info.channels == 2:
+                    la, ra = seg_a[:, 0], seg_a[:, 1]
+                    lb, rb = seg_b[:, 0], seg_b[:, 1]
+                    pa = float(la @ la + ra @ ra)
+                    pb = float(lb @ lb + rb @ rb)
+                    ca = float(la @ ra)
+                    cb = float(lb @ rb)
+                    win_mid_a += 0.25 * (pa + 2.0 * ca)
+                    win_side_a += 0.25 * (pa - 2.0 * ca)
+                    win_mid_b += 0.25 * (pb + 2.0 * cb)
+                    win_side_b += 0.25 * (pb - 2.0 * cb)
+                else:
+                    pa = float(np.sum(seg_a * seg_a))
+                    pb = float(np.sum(seg_b * seg_b))
+                power += pa
+                output_power += pb
+                win_src_power += pa
+                win_out_power += pb
+                win_frames += take
+                pos += take
+                if win_frames >= win_target:
+                    flush_window()
+        if win_frames >= win_min_tail or (min_win_ratio is None and win_frames > 0):
+            flush_window()
         if opus_clock:
             for extra_b in left:
                 total_before += len(extra_b)
@@ -139,6 +211,11 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
                 close()
     total_values = count * info.channels
     snr = 10 * log10(power / residual) if power > 0 and residual > 0 else None
+    worst_ratio = 1.0
+    if min_win_ratio is not None and max_win_ratio is not None:
+        worst_ratio = max_win_ratio if max_win_ratio > 4.0 else min_win_ratio
+    if info.channels == 2 and max_sm_drift_db is None:
+        max_sm_drift_db = 0.0
     return AudioFidelity(
         count,
         sqrt(residual / total_values),
@@ -150,4 +227,6 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
         output_rms=sqrt(output_power / total_values),
         source_peak=source_peak,
         source_samples_above_full_scale=source_above,
+        worst_window_rms_ratio=worst_ratio,
+        max_side_mid_drift_db=max_sm_drift_db,
     )

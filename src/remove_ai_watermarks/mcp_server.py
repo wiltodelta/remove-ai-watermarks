@@ -78,6 +78,13 @@ TOOLS: list[dict[str, Any]] = [
                         "Run pixel, visible-mark, or public audio-model detectors. False checks metadata only."
                     ),
                 },
+                "check_audio": {
+                    "type": "boolean",
+                    "description": (
+                        "Inspect audio streams with compatible public decoders (overrides check_visible for audio "
+                        "files; adds --audio on video identify)."
+                    ),
+                },
             },
             "required": ["path"],
             "additionalProperties": False,
@@ -168,6 +175,9 @@ for _name, _description, _options in (
             **_options,
             "output": {"type": "string"},
             "force": {"type": "boolean", "default": False},
+            "allow_unverified": {"type": "boolean", "default": False},
+            "allow_positive": {"type": "boolean", "default": False},
+            "allow_quality_override": {"type": "boolean", "default": False},
             "verify": {"type": "boolean", "default": True},
             "method": {
                 "type": "string",
@@ -341,10 +351,12 @@ def _identify_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     if _is_text(path):
         return ["text", "identify", "--json", "--", path], None
     if _is_audio(path):
-        flags = [] if values["check_visible"] else ["--no-invisible"]
+        run_audio = values.get("check_audio", values["check_visible"])
+        flags = [] if run_audio else ["--no-invisible"]
         return ["audio", "identify", "--json", *flags, "--", path], None
     prefix = ["video", "identify"] if _is_video(path) else ["identify"]
-    return [*prefix, "--json", *([] if values["check_visible"] else ["--no-visible"]), "--", path], None
+    extra = ["--audio"] if _is_video(path) and values.get("check_audio") is True else []
+    return [*prefix, "--json", *([] if values["check_visible"] else ["--no-visible"]), *extra, "--", path], None
 
 
 def _require_distinct_output(source: Path, output: str, *, message: str) -> None:
@@ -389,13 +401,32 @@ def _batch_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     return [*command, "--mode", values["mode"], "-o", output_dir, "--", directory], output_dir
 
 
-def _validate_output_and_verify_flags(source: Path, output: str, values: dict[str, Any]) -> list[str]:
+def _validate_output_and_verify_flags(
+    source: Path,
+    output: str,
+    values: dict[str, Any],
+    *,
+    allow_audio_permissions: bool = False,
+) -> list[str]:
     _require_distinct_output(source, output, message="'output' must differ from the source")
-    if not values["verify"] and not values["force"]:
-        raise ToolInputError("Disabling verification requires force=true")
+    allow_unverified = allow_audio_permissions and bool(values.get("allow_unverified", False))
+    if not values["verify"] and not (values["force"] or allow_unverified):
+        msg = (
+            "Disabling verification requires force=true or allow_unverified=true"
+            if allow_audio_permissions
+            else "Disabling verification requires force=true"
+        )
+        raise ToolInputError(msg)
     flags = ["-o", output]
     if values["force"]:
         flags.append("--force")
+    if allow_audio_permissions:
+        if allow_unverified:
+            flags.append("--allow-unverified")
+        if values.get("allow_positive"):
+            flags.append("--allow-positive")
+        if values.get("allow_quality_override"):
+            flags.append("--allow-quality-override")
     if not values["verify"]:
         flags.append("--no-verify")
     return flags
@@ -413,7 +444,7 @@ def _audio_command(values: dict[str, Any], *, video: bool = False) -> tuple[list
     else:
         suffix = "_audio_processed.mkv" if video else "_processed.wav"
         output = values.get("output") or str(source.with_name(source.stem + suffix))
-        command.extend(_validate_output_and_verify_flags(source, output, values))
+        command.extend(_validate_output_and_verify_flags(source, output, values, allow_audio_permissions=True))
         if values["method"] != AUDIO_METHODS[0]:
             command.extend(["--method", values["method"]])
         if values["bandwidth"] != AUDIO_BANDWIDTHS_KBPS[-1]:

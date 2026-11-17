@@ -372,8 +372,14 @@ Its auto-processing order is neural then combined, with the existing saved-file
 and final-mux gates. SDK byte framing and the general 32-bit profile remain unqualified.
 
 `_internal/audio_quality.py` shares saved-file fidelity, model-free
-`audio_quality_passed` gating (method-aware SNR, clipping-delta, and silent-drop
-checks), and source hashing across audio and video. `video_audio.py` processes
+`audio_quality_passed` gating (method-aware SNR, clipping-delta, global silent-drop,
+1-second active-window `worst_window_rms_ratio` in `[0.005, 4.0]`, and stereo
+`max_side_mid_drift_db` diagnostics), and source hashing across audio and video.
+`audio.py` splits argument validation (`validate_audio_arguments`) from decoder/backend
+resolution (`resolve_audio_profiles`), separates `allow_unverified`,
+`allow_positive`, and `allow_quality_override` (`force=True` remains a final-attempt
+compatibility alias), and copies completely clean inputs byte-for-byte in
+`remove_audio_all`. `video_audio.py` processes
 one selected audio track into MKV/MOV with float PCM or MP4 with AAC (target
 192 kbps), stream-copies the other tracks, runs `method="auto"` candidate
 fallback across the final muxed container so an AAC-recompressed relapse on
@@ -383,8 +389,9 @@ tick), copied-audio skip-sample/discard-padding side data, stream languages and
 dispositions, exact decoded audio frame count and start offset, then repeats the
 compatible decoder on the actual mux. AAC priming and tail trimming must preserve
 the native decoded count and offset; there is no padding, truncation, or timing
-repair. Final fidelity also uses decoded mux audio.
-Its CLI route is `video audio` (`--stream N` for single-track `remove_video_audio`, or `--all-streams` for multi-track `remove_video_audio_all_streams`), separate from visual processing unless `include_audio_invisible=True` (`--audio-invisible`) is passed to `remove_video_all` or `remove_video_batch` (which preflights selected audio dependencies, layouts, and bounded full-track limits via `preflight_video_audio_workload` before visual processing, and wraps multi-track muxes plus final aggregate checks inside one outer `staged_sibling` transaction). Post-processing verification across `audio.py` and `video_audio.py` delegates to `audio.verification_outcome`, requiring every source-positive `(scheme, channel, decoder_sample_rate)` check to return `not_detected` on the saved output while distinguishing short-clip window inapplicability from execution failures under `scheme="auto"`. Other stream
+repair. Final fidelity also uses decoded mux audio, with the final source-SHA256
+immutability assertion evaluated after all staged reads complete.
+Its CLI route is `video audio` (`--stream N` for single-track `remove_video_audio`, or `--all-streams` / `--target-stream N` for multi-track `remove_video_audio_all_streams`), separate from visual processing unless `include_audio_invisible=True` (`--audio-invisible`) is passed to `remove_video_all` or `remove_video_batch` (which inspects `stream_inventory` first so silent videos do not require `scipy`, probes canonical `audio_io.probe_audio` channel layouts with untagged 1/2-channel fallbacks, checks `adaptive_auto_profiles`, returns reusable source `AudioProvenanceReport` readings to avoid duplicate packet scans, wraps `remove_video_all` in an outer `atomic_video_output` transaction across final `get_ai_metadata` verification, and copies completely clean videos byte-for-byte). Post-processing verification across `audio.py` and `video_audio.py` delegates to `audio.verification_outcome`, requiring every source-positive `(scheme, channel, decoder_sample_rate)` check to return `not_detected` on the saved output while distinguishing short-clip window inapplicability from execution failures under `scheme="auto"`. Other stream
 marks and metadata remain outside standalone `video audio`'s verification scope. The packet format is
 FFmpeg's [per-packet hash muxer](https://ffmpeg.org/ffmpeg-formats.html#framemd5).
 
@@ -688,24 +695,28 @@ The profile accepts SDR 8-bit MP4 with even dimensions and handles visible
 labels as a separate input-preparation concern.
 
 [`video_wan.py`](../src/remove_ai_watermarks/video_wan.py) packages the optional
-BF16 CUDA-only 3D causal video diffusion profiles (`wan21-synthid-experimental` at
+BF16 NVIDIA CUDA-only 3D causal video diffusion profiles (`wan21-synthid-experimental` at
 `strength=0.38` and `wan21-seedance-experimental` at `strength=0.12`), exposed
 through `remove_video_wan_experimental` and the shared `profile` /
 `invisible_profile` selectors (`VideoWanExperimentalResult`, which carries
 explicit `strength` alongside the compatible `noise_std` mirror). It verifies
-BF16 CUDA capability and enforces `WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and
-`WAN21_MAX_TOTAL_PIXEL_FRAMES` (`600 * 1280 * 720`) before frame decoding, loads pinned
+hardware BF16 NVIDIA CUDA capability (`torch.version.hip` excluded,
+`torch.cuda.is_bf16_supported(including_emulation=False)`) and enforces
+`WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
+(`600 * 1280 * 720`) before frame decoding, loads pinned
 Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers@0fad780a534b6463e45facd96134c9f345acfa5b`
 (`licenses/wan/NOTICE.txt`) with an FP32 tiled/sliced `AutoencoderKLWan`, BF16
 `WanVideoToVideoPipeline`, and `UniPCMultistepScheduler(flow_shift=3.0, 20 steps,
-guidance_scale=1.0)`, applying symmetric 16-pixel reflection padding, `4k+1` tail-frame causal padding,
-and `chunk_frames=193` / `overlap_frames=17` raised-cosine temporal crossfade
-windows on longer clips before cropping back to exact source dimensions and
-validating source PTS and duration through the shared `_encode_frames` /
-`_encode_delivery` pipeline. `video.py` also exposes `profile="auto"`, routing
-eligible ByteDance/Seedance MP4s to `wan21-seedance-experimental` on BF16 CUDA
-(`seedance-experimental` fallback on CPU/MPS or when the Wan frame budget is
-exceeded) and other SDR 8-bit MP4s to `wan21-synthid-experimental` on BF16 CUDA
+guidance_scale=1.0)`, pre-encodes `WAN21_DEFAULT_PROMPT` once into cached
+`prompt_embeds` and releases `text_encoder` / `tokenizer` before 3D denoising,
+and streams `_stream_wan_windows` (`chunk_frames=193` / `overlap_frames=17`
+raised-cosine temporal crossfades with symmetric 16-pixel reflection padding and
+`4k+1` tail-frame causal padding) directly into `_finalize_experimental_output`
+without buffering the full decoded video in host RAM. `video.py` also exposes
+`profile="auto"`, routing eligible ByteDance/Seedance MP4s (`WAN21_AUTO_MAX_FRAME_PIXELS = 1280 * 720`
+and `WAN21_MIN_CUDA_VRAM_BYTES = 16 GiB`) to `wan21-seedance-experimental` on BF16 CUDA
+(`seedance-experimental` fallback on CPU/MPS or when the auto Wan budget is
+exceeded) and other eligible SDR 8-bit MP4s to `wan21-synthid-experimental` on BF16 CUDA
 (`synthid` fallback otherwise). Coverage in
 `tests/test_video_seedance.py` includes source-detail separation, quantization,
 VFR/nonzero-start/audio-tail preservation, and failure-before-publication.

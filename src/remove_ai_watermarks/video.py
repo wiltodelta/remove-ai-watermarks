@@ -28,9 +28,10 @@ from remove_ai_watermarks.video_synthid import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from remove_ai_watermarks._internal.constants import AudioMethod, AudioScheme, WanExperimentalProfile
+    from remove_ai_watermarks.audio import AudioProvenanceReport
     from remove_ai_watermarks.video_invisible import RegenerationMetrics, VideoVaeRuntime
     from remove_ai_watermarks.video_visible import VideoScan
     from remove_ai_watermarks.video_wan import VideoWanRuntime
@@ -115,6 +116,8 @@ class VideoProvenanceReport:
     metadata_markers: dict[str, str]
     caveats: tuple[str, ...]
     invisible_watermark_hints: tuple[str, ...] = ()
+    audio_streams: tuple[AudioProvenanceReport, ...] = ()
+    recommended_recipe: str | None = None
 
 
 @dataclass(frozen=True)
@@ -235,6 +238,8 @@ class VideoBatchItem(_VideoAudioBoundary):
     invisible_removed: bool
     error: str | None = None
     audio_status: VideoAudioStatus | None = None
+    audio_verification_scope: tuple[str, ...] = ()
+    audio_quality_passed: bool | None = None
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -510,12 +515,56 @@ def _video_invisible_watermark_hints(markers: dict[str, str]) -> tuple[str, ...]
     return tuple(sorted(hints))
 
 
+def _recommend_video_recipe(
+    *,
+    markers: dict[str, str],
+    selected_mark: str | None,
+    claims_ai: bool,
+    invisible_hints: tuple[str, ...],
+    audio_streams: tuple[AudioProvenanceReport, ...],
+) -> str | None:
+    """Suggest an explicit read-only command recipe without claiming hidden marks exist."""
+    if _is_bytedance_video_provenance(markers, selected_mark):
+        if selected_mark is None:
+            return (
+                "remove-ai-watermarks video metadata input.mp4 --remove -o clean.mp4 "
+                "(try lossless C2PA strip first; add video all --invisible --profile auto "
+                "only for consumer CapCut pixel marks)"
+            )
+        return (
+            "remove-ai-watermarks video all input.mp4 -o clean.mp4 "
+            "(strips visible mark and C2PA; add --invisible --profile auto only for consumer CapCut pixel marks)"
+        )
+    platform = _platform_from_video_metadata(markers) if claims_ai else None
+    is_google = (
+        any("synthid" in h.lower() for h in invisible_hints)
+        or (platform is not None and "google" in platform.lower())
+        or selected_mark == "veo"
+    )
+    if is_google:
+        if any(r.watermark_status != "detected" for r in audio_streams):
+            return (
+                "remove-ai-watermarks video all input.mp4 -o clean.mp4 "
+                "--invisible --profile auto --audio-invisible --audio-method dac --audio-allow-unverified"
+            )
+        if audio_streams:
+            return "remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile auto --audio-invisible"
+        return "remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile auto"
+    if any(r.watermark_status == "detected" for r in audio_streams):
+        return "remove-ai-watermarks video all input.mp4 -o clean.mp4 --audio-invisible"
+    if selected_mark is not None or claims_ai:
+        return "remove-ai-watermarks video all input.mp4 -o clean.mp4"
+    return None
+
+
 def identify_video(
     source: str | Path,
     *,
     check_visible: bool = True,
+    check_audio: bool = False,
+    audio_scheme: AudioScheme = "auto",
 ) -> VideoProvenanceReport:
-    """Identify locally readable AI provenance and stable visible video marks.
+    """Identify locally readable AI provenance, stable visible marks, and optional audio marks.
 
     A negative result is reported as unknown, never clean. Proprietary pixel
     watermarks such as video SynthID have no public local decoder.
@@ -543,8 +592,21 @@ def identify_video(
             selected_mark, _scan, regions, _padding, _mask_style = selected
             detected_frames = sum(region is not None for region in regions)
 
+    audio_reports: list[AudioProvenanceReport] = []
+    if check_audio:
+        from remove_ai_watermarks import audio as _audio_mod
+        from remove_ai_watermarks import video_audio as _video_audio_mod
+
+        inv = _video_audio_mod.stream_inventory(source_path)
+        n_audio = sum(1 for s in inv if s.get("codec_type") == "audio")
+        for ordinal in range(n_audio):
+            audio_reports.append(
+                _audio_mod.identify_audio(source_path, check_invisible=True, stream=ordinal, scheme=audio_scheme)
+            )
+    audio_tuple = tuple(audio_reports)
+    any_audio_detected = any(r.watermark_status == "detected" for r in audio_tuple)
     claims_ai = _video_markers_claim_ai(markers)
-    has_signal = claims_ai or selected_mark is not None
+    has_signal = claims_ai or selected_mark is not None or any_audio_detected
     invisible_hints = _video_invisible_watermark_hints(markers)
     caveats = ["No public local decoder can verify proprietary pixel watermarks such as video SynthID."]
     if invisible_hints:
@@ -554,6 +616,11 @@ def identify_video(
         )
     if not check_visible:
         caveats.append("Visible video-mark detection was skipped.")
+    if check_audio:
+        caveats.append(
+            "Audio stream inspection covers installed compatible public decoders only; "
+            "proprietary audio marks such as SynthID are not checked locally."
+        )
     if not has_signal and ("issuer" in markers or "actions" in markers):
         caveats.append(
             f"A C2PA manifest signed by {markers.get('issuer', 'an unregistered signer')} records "
@@ -564,6 +631,13 @@ def identify_video(
         caveats.append("Metadata does not establish AI origin; this is unknown, not proof that the video is clean.")
     elif not has_signal:
         caveats.append("No supported signal was found; absence is unknown, not proof that the video is clean.")
+    recipe = _recommend_video_recipe(
+        markers=markers,
+        selected_mark=selected_mark,
+        claims_ai=claims_ai,
+        invisible_hints=invisible_hints,
+        audio_streams=audio_tuple,
+    )
     return VideoProvenanceReport(
         source=source_path,
         is_ai_generated=True if has_signal else None,
@@ -582,6 +656,8 @@ def identify_video(
         metadata_markers=markers,
         caveats=tuple(caveats),
         invisible_watermark_hints=invisible_hints,
+        audio_streams=audio_tuple,
+        recommended_recipe=recipe,
     )
 
 
@@ -784,7 +860,7 @@ def _resolve_video_invisible_profile(
     else:
         from remove_ai_watermarks import video_wan
 
-        can_wan = video_wan.can_run_wan_on_source(source_path, device=device, runtime=runtime)
+        can_wan = video_wan.can_run_wan_on_source(source_path, device=device, runtime=runtime, for_auto=True)
         if not can_wan and seed != 0:
             resolved = "synthid"
         else:
@@ -877,6 +953,10 @@ def remove_video_all(
     audio_vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
     audio_force: bool = False,
     audio_verify: bool = True,
+    audio_allow_unverified: bool = False,
+    audio_allow_positive: bool = False,
+    audio_allow_quality_override: bool = False,
+    audio_streams: Sequence[int] | None = None,
     _invisible_runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _detected_metadata: dict[str, str] | None = None,
     _runtime_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None,
@@ -919,12 +999,13 @@ def remove_video_all(
     if include_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
         raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
+    preflight_befores: tuple[AudioProvenanceReport, ...] = ()
     if include_audio_invisible:
         if source_path.suffix.lower() not in {".mp4", ".mov", ".mkv"}:
             raise ValueError("Video audio watermark processing requires MP4, MOV, or MKV input")
         from remove_ai_watermarks import video_audio as _video_audio_mod
 
-        _video_audio_mod.preflight_video_audio_workload(
+        preflight_befores = _video_audio_mod.preflight_video_audio_workload(
             source_path,
             force=audio_force,
             verify=audio_verify,
@@ -932,6 +1013,10 @@ def remove_video_all(
             bandwidth_kbps=audio_bandwidth_kbps,
             scheme=audio_scheme,
             vocoder_device=audio_vocoder_device,
+            allow_unverified=audio_allow_unverified,
+            allow_positive=audio_allow_positive,
+            allow_quality_override=audio_allow_quality_override,
+            streams=audio_streams,
         )
     _require_video_runtime()
     detected_metadata = _detected_metadata if _detected_metadata is not None else get_ai_metadata(source_path)
@@ -940,8 +1025,11 @@ def remove_video_all(
     audio_verification_scope: tuple[str, ...] = ()
     audio_quality_passed: bool | None = None
 
-    with TemporaryDirectory(prefix=f".{source_path.stem}-video-all-", dir=source_path.parent) as temp_dir:
-        stage_target = Path(temp_dir) / f"visual-final{source_path.suffix}" if include_audio_invisible else output_path
+    with (
+        atomic_video_output(output_path) as staged_final,
+        TemporaryDirectory(prefix=f".{source_path.stem}-video-all-", dir=source_path.parent) as temp_dir,
+    ):
+        stage_target = Path(temp_dir) / f"visual-final{source_path.suffix}" if include_audio_invisible else staged_final
         visible_output = Path(temp_dir) / f"visible{source_path.suffix}" if include_invisible else stage_target
         visible_result = remove_video_visible(
             source_path,
@@ -1011,15 +1099,31 @@ def remove_video_all(
             published_by_audio = False
             wm_state: Literal["unverified", "not_detected", "detected"] = "unverified"
             if has_audio:
+                reusable_befores: Sequence[AudioProvenanceReport] | None = None
+                if preflight_befores:
+                    try:
+                        src_a = [int(rep.stream.index) for rep in preflight_befores]
+                        dst_a = [int(s["index"]) for s in streams if s.get("codec_type") == "audio"]
+                        if len(src_a) == len(dst_a):
+                            for sa, da in zip(src_a, dst_a, strict=True):
+                                video_audio.verify_stream_packets(source_path, stage_target, sa, output_index=da)
+                            reusable_befores = preflight_befores
+                    except Exception:
+                        reusable_befores = None
                 audio_res = video_audio.remove_video_audio_all_streams(
                     stage_target,
-                    output_path,
+                    staged_final,
                     force=audio_force,
                     verify=audio_verify,
                     method=audio_method,
                     bandwidth_kbps=audio_bandwidth_kbps,
                     scheme=audio_scheme,
                     vocoder_device=audio_vocoder_device,
+                    allow_unverified=audio_allow_unverified,
+                    allow_positive=audio_allow_positive,
+                    allow_quality_override=audio_allow_quality_override,
+                    streams=audio_streams,
+                    _befores=reusable_befores,
                 )
                 seen_schemes: set[str] = set()
                 for s in audio_res.streams:
@@ -1038,7 +1142,7 @@ def remove_video_all(
                     wm_state = "not_detected" if all_neg else "unverified"
                 else:
                     published_by_audio = True
-                    remaining_metadata = get_ai_metadata(output_path)
+                    remaining_metadata = get_ai_metadata(staged_final)
                     unprocessed_detected = any(
                         getattr(s, "skipped", False) and s.before.watermark_status == "detected"
                         for s in audio_res.streams
@@ -1056,12 +1160,17 @@ def remove_video_all(
                     audio_status = VideoAudioStatus(stream_action="processed", watermark_status=wm_state)
                     audio_processed_streams = audio_res.processed_ordinals
             if not published_by_audio:
-                with atomic_video_output(output_path) as temporary_output:
-                    shutil.copyfile(stage_target, temporary_output)
+                shutil.copyfile(stage_target, staged_final)
                 audio_status = VideoAudioStatus(
                     stream_action="copied_if_present" if has_audio else "absent",
                     watermark_status=wm_state,
                 )
+
+        if remaining_metadata:
+            raise RuntimeError(
+                f"{len(remaining_metadata)} AI metadata marker(s) survived the complete pipeline: "
+                f"{sorted(remaining_metadata)}"
+            )
 
     return VideoAllResult(
         source=source_path,
@@ -1107,6 +1216,10 @@ def remove_video_batch(
     audio_vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
     audio_force: bool = False,
     audio_verify: bool = True,
+    audio_allow_unverified: bool = False,
+    audio_allow_positive: bool = False,
+    audio_allow_quality_override: bool = False,
+    audio_streams: Sequence[int] | None = None,
 ) -> VideoBatchResult:
     """Process every supported video in one directory.
 
@@ -1149,13 +1262,14 @@ def remove_video_batch(
     if include_audio_invisible:
         from remove_ai_watermarks import audio as _audio_mod
 
-        _audio_mod.resolve_audio_profiles(
+        _audio_mod.validate_audio_arguments(
             method=audio_method,
             scheme=audio_scheme,
             verify=audio_verify,
             force=audio_force,
             bandwidth_kbps=audio_bandwidth_kbps,
             vocoder_device=audio_vocoder_device,
+            allow_unverified=audio_allow_unverified,
         )
     if mode != "metadata":
         _require_video_runtime()
@@ -1214,9 +1328,6 @@ def remove_video_batch(
                         allowed_exts = {".mp4"} if invisible_profile != "synthid" else _REGENERATED_VIDEO_EXTENSIONS
                         if source_path.suffix.lower() in allowed_exts:
                             selected_runtime = _get_batch_runtime("wan" if needs_wan else "vae")
-                extra_all_kwargs: dict[str, object] = {}
-                if lazy_getter is not None:
-                    extra_all_kwargs["_runtime_getter"] = lazy_getter
                 all_result = remove_video_all(
                     source_path,
                     item_output,
@@ -1241,8 +1352,12 @@ def remove_video_batch(
                     audio_vocoder_device=audio_vocoder_device,
                     audio_force=audio_force,
                     audio_verify=audio_verify,
+                    audio_allow_unverified=audio_allow_unverified,
+                    audio_allow_positive=audio_allow_positive,
+                    audio_allow_quality_override=audio_allow_quality_override,
+                    audio_streams=audio_streams,
                     _invisible_runtime=selected_runtime,
-                    **extra_all_kwargs,  # type: ignore[arg-type]
+                    _runtime_getter=lazy_getter,
                 )
                 if all_result.remaining_metadata:
                     raise RuntimeError(
@@ -1262,6 +1377,8 @@ def remove_video_batch(
                         visible_mark=all_result.visible_mark,
                         invisible_removed=all_result.invisible_removed,
                         audio_status=all_result.audio_status,
+                        audio_verification_scope=all_result.audio_verification_scope,
+                        audio_quality_passed=all_result.audio_quality_passed,
                     )
                 )
             elif mode == "visible":

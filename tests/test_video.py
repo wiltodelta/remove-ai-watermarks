@@ -4133,3 +4133,113 @@ class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
                 audio_force=True,
             )
         assert visible_calls == []
+
+    def test_silent_video_without_scipy_atomic_metadata_gate_identify_audio_and_batch_scope(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from types import SimpleNamespace
+
+        from remove_ai_watermarks import audio, video, video_audio
+        from remove_ai_watermarks.video import VideoAudioStatus, identify_video, remove_video_all, remove_video_batch
+
+        source = _video_with_c2pa(tmp_path / "clip.mp4")
+
+        # 1. Silent video with include_audio_invisible=True succeeds even when scipy (audio_spectral) is absent
+        monkeypatch.setattr(audio.audio_spectral, "is_available", lambda: False)
+        monkeypatch.setattr(video_audio, "stream_inventory", lambda _p: [{"index": 0, "codec_type": "video"}])
+        monkeypatch.setattr(
+            video,
+            "remove_video_visible",
+            lambda src, _out, **_kw: SimpleNamespace(
+                source=src,
+                output=None,
+                mark="auto",
+                total_frames=6,
+                detected_frames=0,
+                removed_frames=0,
+                remaining_metadata={},
+            ),
+        )
+        silent_out = tmp_path / "silent_no_scipy.mp4"
+        res_silent = remove_video_all(source, silent_out, include_audio_invisible=True)
+        assert res_silent.audio == VideoAudioStatus(stream_action="absent", watermark_status="unverified")
+
+        # 2. Final metadata survival or error in remove_video_all must NOT replace pre-existing destination
+        sentinel = tmp_path / "existing_dest.mp4"
+        sentinel.write_bytes(b"KEEP-EXISTING-MP4-ON-LATE-METADATA-SURVIVAL")
+        monkeypatch.setattr(
+            video,
+            "remove_video_metadata",
+            lambda _src, dst, **_kw: (
+                dst.write_bytes(_MP4_FTYP + _box(b"mdat", _VIDEO_PAYLOAD)),
+                SimpleNamespace(remaining={"c2pa_manifest": "survived"}),
+            )[1],
+        )
+        monkeypatch.setattr(
+            "remove_ai_watermarks.metadata.get_ai_metadata",
+            lambda p: {"c2pa_manifest": "survived"} if p != source else {"c2pa_manifest": "present"},
+        )
+        with pytest.raises(RuntimeError, match="survived"):
+            remove_video_all(source, sentinel)
+        assert sentinel.read_bytes() == b"KEEP-EXISTING-MP4-ON-LATE-METADATA-SURVIVAL"
+
+        # 3. identify_video(check_audio=True) populates audio_streams and recommended_recipe
+        monkeypatch.undo()
+        monkeypatch.setattr(
+            "remove_ai_watermarks.metadata.get_ai_metadata",
+            lambda _p: {"issuer": "Google LLC", "synthid_watermark": "present"},
+        )
+        monkeypatch.setattr(
+            video_audio,
+            "stream_inventory",
+            lambda _p: [{"index": 0, "codec_type": "video"}, {"index": 1, "codec_type": "audio"}],
+        )
+        fake_audio_rep = SimpleNamespace(
+            watermark_status="not_detected",
+            detections=(),
+            caveats=(),
+        )
+        monkeypatch.setattr(audio, "identify_audio", lambda *_a, **_k: fake_audio_rep)
+        rep = identify_video(source, check_visible=False, check_audio=True)
+        assert len(rep.audio_streams) == 1
+        assert rep.recommended_recipe is not None
+        assert "dac" in rep.recommended_recipe
+        assert "allow-unverified" in rep.recommended_recipe
+
+        # 4. VideoBatchItem retains audio_verification_scope and audio_quality_passed
+        batch_dir = tmp_path / "in_vids"
+        batch_dir.mkdir()
+        (batch_dir / "one.mp4").write_bytes(source.read_bytes())
+        monkeypatch.setattr(
+            video,
+            "remove_video_all",
+            lambda src, dst, **_kw: (
+                Path(dst).write_bytes(_MP4_FTYP + _box(b"mdat", _VIDEO_PAYLOAD)),
+                video.VideoAllResult(
+                    source=Path(src),
+                    output=Path(dst),
+                    visible_mark=None,
+                    total_frames=6,
+                    visible_detected_frames=0,
+                    visible_removed_frames=0,
+                    detected_metadata={"synthid_watermark": "present"},
+                    remaining_metadata={},
+                    invisible_removed=True,
+                    invisible_profile="synthid",
+                    audio_status=VideoAudioStatus(stream_action="processed", watermark_status="not_detected"),
+                    audio_processed_streams=(0,),
+                    audio_verification_scope=("audioseal",),
+                    audio_quality_passed=True,
+                ),
+            )[1],
+        )
+        b_res = remove_video_batch(
+            batch_dir,
+            tmp_path / "out_vids",
+            include_invisible=True,
+            include_audio_invisible=True,
+        )
+        assert b_res.items[0].audio_verification_scope == ("audioseal",)
+        assert b_res.items[0].audio_quality_passed is True

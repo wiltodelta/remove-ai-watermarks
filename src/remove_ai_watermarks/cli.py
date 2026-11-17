@@ -1170,15 +1170,46 @@ def _audio_method_options(func: Any) -> Any:
     )(func)
 
 
-def _audio_scheme_option(func: Any = None, *, default: AudioScheme = AUDIO_SCHEMES[0]) -> Any:
+def _audio_scheme_option(
+    func: Any = None,
+    *,
+    default: AudioScheme = AUDIO_SCHEMES[0],
+    flag: str = "--scheme",
+) -> Any:
     opt = click.option(
-        "--scheme",
+        flag,
         type=click.Choice(list(AUDIO_SCHEMES)),
         default=default,
         show_default=True,
         help="Compatible public models to check; all requests every named model, auto checks installed models.",
     )
     return opt if func is None else opt(func)
+
+
+def _audio_permission_options(func: Any = None, *, prefix: str = "--") -> Any:
+    """Apply split audio verification and quality-override flags."""
+
+    def apply(target: Any) -> Any:
+        target = click.option(
+            f"{prefix}allow-quality-override",
+            is_flag=True,
+            help="Permit writing an output that fails the audio SNR/RMS/window integrity gate on the final attempt.",
+        )(target)
+        target = click.option(
+            f"{prefix}allow-positive",
+            is_flag=True,
+            help="Permit writing an output that still tests positive under local decoders on the final attempt.",
+        )(target)
+        return click.option(
+            f"{prefix}allow-unverified",
+            is_flag=True,
+            help=(
+                "Process without a local source-positive decoder match (or with --no-verify), "
+                "keeping the quality gate active."
+            ),
+        )(target)
+
+    return apply if func is None else apply(func)
 
 
 def _audio_check_label(scheme: str) -> str:
@@ -1292,6 +1323,7 @@ def cmd_audio_metadata(
 @cmd_audio.command("invisible")
 @_audio_method_options
 @_audio_scheme_option
+@_audio_permission_options
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option(
     "-o",
@@ -1299,12 +1331,16 @@ def cmd_audio_metadata(
     type=click.Path(dir_okay=False, path_type=Path),
     help="Output WAV, FLAC, MP3, M4A, OGG, or Opus, default SOURCE_processed.wav.",
 )
-@click.option("--force", is_flag=True, help="Allow an unverified or still-positive candidate to be written.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override on the final attempt.",
+)
 @click.option(
     "--verify/--no-verify",
     default=True,
     show_default=True,
-    help="Check selected compatible models before and after; disabling requires --force.",
+    help="Check selected compatible models before and after; disabling requires --allow-unverified or --force.",
 )
 @click.option(
     "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
@@ -1314,6 +1350,9 @@ def cmd_audio_invisible(
     source: Path,
     output: Path | None,
     force: bool,
+    allow_unverified: bool,
+    allow_positive: bool,
+    allow_quality_override: bool,
     verify: bool,
     stream: int,
     as_json: bool,
@@ -1333,6 +1372,9 @@ def cmd_audio_invisible(
             source,
             target,
             force=force,
+            allow_unverified=allow_unverified,
+            allow_positive=allow_positive,
+            allow_quality_override=allow_quality_override,
             verify=verify,
             stream=stream,
             method=method,
@@ -1348,7 +1390,7 @@ def cmd_audio_invisible(
         _banner()
         if result.skipped:
             console.print("  No compatible source-positive audio check was found; no output was written.")
-            console.print("  Use --force for unverified processing.")
+            console.print("  Use --allow-unverified (or --force) for unverified processing.")
         else:
             console.print(f"  Audio: {result.frames_processed} frames -> {result.output}")
             console.print(f"  Processing method: {result.method}")
@@ -1379,6 +1421,7 @@ def cmd_audio_invisible(
 @cmd_audio.command("all")
 @_audio_method_options
 @_audio_scheme_option(default="auto")
+@_audio_permission_options
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option(
     "-o",
@@ -1395,7 +1438,7 @@ def cmd_audio_invisible(
 @click.option(
     "--force",
     is_flag=True,
-    help="Allow unverified or still-positive audio processing when --invisible is set.",
+    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override when --invisible is set.",
 )
 @click.option(
     "--verify/--no-verify",
@@ -1413,6 +1456,9 @@ def cmd_audio_all(
     output: Path | None,
     invisible: bool,
     force: bool,
+    allow_unverified: bool,
+    allow_positive: bool,
+    allow_quality_override: bool,
     verify: bool,
     stream: int,
     keep_standard: bool,
@@ -1433,6 +1479,9 @@ def cmd_audio_all(
             output,
             include_invisible=invisible,
             force=force,
+            allow_unverified=allow_unverified,
+            allow_positive=allow_positive,
+            allow_quality_override=allow_quality_override,
             verify=verify,
             stream=stream,
             method=method,
@@ -1466,6 +1515,7 @@ def cmd_audio_all(
 @cmd_audio.command("batch")
 @_audio_method_options
 @_audio_scheme_option(default="auto")
+@_audio_permission_options
 @click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option(
     "-o",
@@ -1489,7 +1539,7 @@ def cmd_audio_all(
 @click.option(
     "--force",
     is_flag=True,
-    help="Allow unverified or still-positive audio processing when --invisible is set.",
+    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override when --invisible is set.",
 )
 @click.option(
     "--verify/--no-verify",
@@ -1505,6 +1555,9 @@ def cmd_audio_batch(
     mode: Literal["all", "metadata"],
     invisible: bool,
     force: bool,
+    allow_unverified: bool,
+    allow_positive: bool,
+    allow_quality_override: bool,
     verify: bool,
     keep_standard: bool,
     as_json: bool,
@@ -1525,6 +1578,9 @@ def cmd_audio_batch(
             mode=mode,
             include_invisible=invisible,
             force=force,
+            allow_unverified=allow_unverified,
+            allow_positive=allow_positive,
+            allow_quality_override=allow_quality_override,
             verify=verify,
             method=method,
             bandwidth_kbps=float(bandwidth),
@@ -1651,9 +1707,23 @@ def _video_invisible_options(f: Any) -> Any:
 def _video_audio_invisible_options(f: Any) -> Any:
     """Apply optional multi-stream audio-watermark options to video all / video batch."""
     f = click.option(
+        "--audio-stream",
+        "audio_streams",
+        type=click.IntRange(min=0),
+        multiple=True,
+        help=(
+            "Restrict --audio-invisible inspection/processing to specific zero-based "
+            "audio stream ordinals (repeatable)."
+        ),
+    )(f)
+    f = _audio_permission_options(f, prefix="--audio-")
+    f = click.option(
         "--audio-force",
         is_flag=True,
-        help="Force audio processing even when no compatible source-positive audio signal is detected.",
+        help=(
+            "Alias enabling --audio-allow-unverified, --audio-allow-positive, and --audio-allow-quality-override "
+            "when --audio-invisible is set."
+        ),
     )(f)
     f = click.option(
         "--audio-method",
@@ -1662,13 +1732,7 @@ def _video_audio_invisible_options(f: Any) -> Any:
         show_default=True,
         help="Audio watermark removal method when --audio-invisible is enabled.",
     )(f)
-    f = click.option(
-        "--audio-scheme",
-        type=click.Choice(list(AUDIO_SCHEMES)),
-        default="auto",
-        show_default=True,
-        help="Compatible public audio models to check when --audio-invisible is enabled.",
-    )(f)
+    f = _audio_scheme_option(f, default="auto", flag="--audio-scheme")
     return click.option(
         "--audio-invisible/--no-audio-invisible",
         default=False,
@@ -1793,6 +1857,7 @@ def cmd_video_message_remove(
 @cmd_video.command("audio")
 @_audio_method_options
 @_audio_scheme_option
+@_audio_permission_options
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option(
     "-o",
@@ -1808,12 +1873,23 @@ def cmd_video_message_remove(
     is_flag=True,
     help="Inspect and process every source-positive audio track instead of one --stream ordinal.",
 )
-@click.option("--force", is_flag=True, help="Permit an unverified or still-positive candidate.")
+@click.option(
+    "--target-stream",
+    "target_streams",
+    type=click.IntRange(min=0),
+    multiple=True,
+    help="Audio stream ordinal to include in multi-stream processing (repeatable; implies --all-streams).",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override on the final attempt.",
+)
 @click.option(
     "--verify/--no-verify",
     default=True,
     show_default=True,
-    help="Verify selected compatible models; disabling requires --force.",
+    help="Verify selected compatible models; disabling requires --allow-unverified or --force.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the delivered-video report as JSON.")
 def cmd_video_audio(
@@ -1821,7 +1897,11 @@ def cmd_video_audio(
     output: Path | None,
     stream: int,
     all_streams: bool,
+    target_streams: tuple[int, ...],
     force: bool,
+    allow_unverified: bool,
+    allow_positive: bool,
+    allow_quality_override: bool,
     verify: bool,
     as_json: bool,
     method: AudioMethod,
@@ -1834,6 +1914,7 @@ def cmd_video_audio(
 
     from remove_ai_watermarks.video_audio import remove_video_audio, remove_video_audio_all_streams
 
+    use_multi = all_streams or bool(target_streams)
     target = output if output is not None else source.with_name(f"{source.stem}_audio_processed.mkv")
     try:
         outcome: Any = (
@@ -1841,18 +1922,25 @@ def cmd_video_audio(
                 source,
                 target,
                 force=force,
+                allow_unverified=allow_unverified,
+                allow_positive=allow_positive,
+                allow_quality_override=allow_quality_override,
                 verify=verify,
                 method=method,
                 bandwidth_kbps=float(bandwidth),
                 vocoder_device=vocoder_device,
                 scheme=scheme,
+                streams=target_streams or None,
             )
-            if all_streams
+            if use_multi
             else remove_video_audio(
                 source,
                 target,
                 stream=stream,
                 force=force,
+                allow_unverified=allow_unverified,
+                allow_positive=allow_positive,
+                allow_quality_override=allow_quality_override,
                 verify=verify,
                 method=method,
                 bandwidth_kbps=float(bandwidth),
@@ -1870,7 +1958,7 @@ def cmd_video_audio(
             if outcome.verified_removed is True
             else ("STILL DETECTED" if outcome.verified_removed is False else "UNVERIFIED")
         )
-        if all_streams:
+        if use_multi:
             if outcome.skipped:
                 console.print("No compatible source-positive audio signal across streams; no output written.")
             else:
@@ -1899,16 +1987,29 @@ def cmd_video_audio(
 @cmd_video.command("identify")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--no-visible", is_flag=True, help="Skip visible-mark detection; inspect metadata only.")
+@click.option("--audio/--no-audio", default=False, help="Inspect audio streams with compatible public decoders.")
+@_audio_scheme_option(default="auto", flag="--audio-scheme")
 @click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
-def cmd_video_identify(source: Path, no_visible: bool, as_json: bool) -> None:
+def cmd_video_identify(
+    source: Path,
+    no_visible: bool,
+    audio: bool,
+    audio_scheme: AudioScheme,
+    as_json: bool,
+) -> None:
     """Identify supported provenance and visible AI marks in video."""
     from dataclasses import asdict
 
     from remove_ai_watermarks.video import identify_video
 
     try:
-        report = identify_video(source, check_visible=not no_visible)
-    except (OSError, RuntimeError, ValueError) as e:
+        report = identify_video(
+            source,
+            check_visible=not no_visible,
+            check_audio=audio,
+            audio_scheme=audio_scheme,
+        )
+    except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
     if as_json:
@@ -1930,6 +2031,14 @@ def cmd_video_identify(source: Path, no_visible: bool, as_json: bool) -> None:
         console.print(f"  AI metadata markers: {', '.join(sorted(report.metadata_markers))}")
     else:
         console.print("  AI metadata markers: none found")
+    if audio:
+        if report.audio_streams:
+            statuses = ", ".join(f"stream {i}={s.watermark_status}" for i, s in enumerate(report.audio_streams))
+            console.print(f"  Audio streams: {statuses}")
+        else:
+            console.print("  Audio streams: none found")
+    if report.recommended_recipe is not None:
+        console.print(f"  Recommended recipe: {report.recommended_recipe}")
     if report.invisible_watermark_hints:
         console.print(f"  Invisible watermark hints: {', '.join(report.invisible_watermark_hints)}")
     if report.caveats:
@@ -2154,6 +2263,10 @@ def cmd_video_all(
     audio_scheme: AudioScheme,
     audio_method: AudioMethod,
     audio_force: bool,
+    audio_allow_unverified: bool,
+    audio_allow_positive: bool,
+    audio_allow_quality_override: bool,
+    audio_streams: tuple[int, ...],
 ) -> None:
     """Remove stable visible marks, AI metadata, and optional pixel/audio marks from video."""
     from remove_ai_watermarks.video import remove_video_all
@@ -2188,6 +2301,10 @@ def cmd_video_all(
             audio_scheme=audio_scheme,
             audio_method=audio_method,
             audio_force=audio_force,
+            audio_allow_unverified=audio_allow_unverified,
+            audio_allow_positive=audio_allow_positive,
+            audio_allow_quality_override=audio_allow_quality_override,
+            audio_streams=audio_streams or None,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -2263,6 +2380,10 @@ def cmd_video_batch(
     audio_scheme: AudioScheme,
     audio_method: AudioMethod,
     audio_force: bool,
+    audio_allow_unverified: bool,
+    audio_allow_positive: bool,
+    audio_allow_quality_override: bool,
+    audio_streams: tuple[int, ...],
 ) -> None:
     """Process every supported video in a directory."""
     from remove_ai_watermarks.video import remove_video_batch
@@ -2291,6 +2412,10 @@ def cmd_video_batch(
             audio_scheme=audio_scheme,
             audio_method=audio_method,
             audio_force=audio_force,
+            audio_allow_unverified=audio_allow_unverified,
+            audio_allow_positive=audio_allow_positive,
+            audio_allow_quality_override=audio_allow_quality_override,
+            audio_streams=audio_streams or None,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e

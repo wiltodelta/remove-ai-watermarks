@@ -149,7 +149,28 @@ def _synthetic_speechlike_carrier(sample_rate: int, seconds: float, *, seed: int
     return sig.astype(np.float32)
 
 
-def build_builtin_suite(work_dir: Path) -> Path:
+STRICT_BUILTIN_REQUIRED_CASE_IDS: tuple[str, ...] = (
+    "audioseal-mono-clean",
+    "audioseal-mono-marked",
+    "auto-scheme-audioseal-marked",
+    "audioseal-lossy-m4a-marked",
+    "audioseal-lossy-mp3-marked",
+    "audioseal-stereo-marked",
+    "audioseal-long31s-marked",
+    "audioseal-video-mp4-aac192k",
+    "video-audio-multistream-marked",
+    "wavmark-clean",
+    "wavmark-marked",
+    "wavmark-stereo-ms-marked",
+    "perth-clean",
+    "perth-marked-auto",
+    "videoseal-clean",
+    "videoseal-marked-auto",
+    "video-all-4layer-marked",
+)
+
+
+def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
     """Synthesize deterministic clean/marked audio and video fixtures and write manifest.jsonl."""
     import cv2
     import numpy as np
@@ -550,6 +571,12 @@ def build_builtin_suite(work_dir: Path) -> Path:
                         device=dev,
                     )
 
+    if strict:
+        emitted_ids = {str(r["case_id"]) for r in rows}
+        missing = [cid for cid in STRICT_BUILTIN_REQUIRED_CASE_IDS if cid not in emitted_ids]
+        if missing:
+            raise RuntimeError(f"--builtin-suite --strict missing required case(s): {', '.join(missing)}")
+
     manifest_path = work_dir / "manifest.jsonl"
     manifest_path.write_text("\n".join(json.dumps(r, sort_keys=True) for r in rows) + "\n", encoding="utf-8")
     return manifest_path
@@ -614,6 +641,7 @@ def evaluate_removal_case(
                 skipped=res_a.skipped,
                 verified_removed=res_a.verified_removed,
                 quality_passed=res_a.quality_passed,
+                before_status=res_a.before.watermark_status,
             )
             return {
                 **base,
@@ -643,6 +671,7 @@ def evaluate_removal_case(
                 skipped=res_va.skipped,
                 verified_removed=res_va.verified_removed,
                 quality_passed=res_va.quality_passed,
+                before_status=res_va.before.watermark_status,
             )
             return {
                 **base,
@@ -667,11 +696,18 @@ def evaluate_removal_case(
                 scheme=case.scheme,  # type: ignore[arg-type]
             )
             elapsed = time.monotonic() - started
+            vam_befores = [getattr(getattr(s, "before", None), "watermark_status", None) for s in res_vam.streams]
+            vam_before_status = (
+                "not_detected"
+                if vam_befores and all(st == "not_detected" for st in vam_befores)
+                else ("detected" if "detected" in vam_befores else "unverified")
+            )
             passed = _check_outcome(
                 case.expected_outcome,
                 skipped=res_vam.skipped,
                 verified_removed=res_vam.verified_removed,
                 quality_passed=res_vam.quality_passed,
+                before_status=vam_before_status,
             )
             first_fid = next((s.fidelity for s in res_vam.streams if s.fidelity is not None), None)
             methods = sorted({s.method for i, s in enumerate(res_vam.streams) if i in res_vam.processed_ordinals})
@@ -682,6 +718,7 @@ def evaluate_removal_case(
                 "status": "passed" if passed else "failed",
                 "output_sha256": _output_sha256(last_stream),
                 "selected_method": "+".join(methods) if methods else "-",
+                "before_status": vam_before_status,
                 "processed_ordinals": list(res_vam.processed_ordinals),
                 "unchanged_streams": list(res_vam.unchanged_streams),
                 "skipped": res_vam.skipped,
@@ -694,6 +731,9 @@ def evaluate_removal_case(
         if case.surface == "video_all_4layer":
             if not case.reference_hex:
                 raise ValueError(f"Case {case.case_id}: video_all_4layer requires reference_hex")
+            msg_before = video_messages.identify_video_message(
+                case.source_path, reference_hex=case.reference_hex, scheme="videoseal"
+            )
             res_4l = video.remove_video_all(
                 case.source_path,
                 out_path,
@@ -714,7 +754,8 @@ def evaluate_removal_case(
             audio_after = audio.identify_audio(out_path, scheme=case.scheme)  # type: ignore[arg-type]
             audio_after_status = audio_after.watermark_status
             layers_ok = (
-                bool(res_4l.detected_metadata)
+                msg_before.status == "matched"
+                and bool(res_4l.detected_metadata)
                 and not res_4l.remaining_metadata
                 and res_4l.visible_mark is not None
                 and res_4l.visible_removed_frames > 0
@@ -725,7 +766,8 @@ def evaluate_removal_case(
                 and res_4l.audio.watermark_status == "not_detected"
                 and audio_after_status == "not_detected"
             )
-            passed = case.expected_outcome == "verified_removed" and layers_ok
+            q_passed = getattr(res_4l, "audio_quality_passed", None) is True
+            passed = case.expected_outcome == "verified_removed" and layers_ok and q_passed
             visual_label = getattr(res_4l, "invisible_profile", None) or "vae"
             return {
                 **base,
@@ -734,11 +776,12 @@ def evaluate_removal_case(
                 "selected_method": f"4-layer(meta+vis+{visual_label}+audio)",
                 "visible_mark_removed": res_4l.visible_mark,
                 "metadata_cleared": not res_4l.remaining_metadata,
+                "pixel_message_before": msg_before.status,
                 "pixel_message_after": msg_after.status,
                 "audio_after": audio_after_status,
                 "skipped": False,
                 "verified_removed": layers_ok,
-                "quality_passed": layers_ok,
+                "quality_passed": q_passed,
                 "elapsed_seconds": round(elapsed, 3),
             }
 
@@ -760,6 +803,7 @@ def evaluate_removal_case(
                 skipped=res_vm.skipped,
                 verified_removed=res_vm.verified_removed,
                 quality_passed=res_vm.quality_passed,
+                before_status=res_vm.before.status,
             )
             return {
                 **base,
@@ -799,9 +843,14 @@ def _check_outcome(
     skipped: bool,
     verified_removed: bool | None,
     quality_passed: bool | None,
+    before_status: str | None = None,
 ) -> bool:
     if expected == "skipped_clean":
-        return skipped is True and verified_removed is None
+        return (
+            skipped is True
+            and verified_removed is None
+            and (before_status is None or before_status in {"not_detected", "not_matched"})
+        )
     if expected == "verified_removed":
         return skipped is False and verified_removed is True and quality_passed is True
     return False
@@ -852,6 +901,9 @@ def run_removal_benchmark(
         _ensure_new_file(output_markdown)
 
     cases = load_manifest(manifest_path)
+    if not cases:
+        raise ValueError(f"Benchmark manifest {manifest_path} contains zero cases")
+
     # Pre-verify all source hashes before running any removal model
     checked_digests: dict[Path, str] = {}
     for case in cases:
@@ -908,7 +960,7 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args.work_dir.mkdir(parents=True, exist_ok=True)
-    manifest = build_builtin_suite(args.work_dir) if args.builtin_suite else args.manifest
+    manifest = build_builtin_suite(args.work_dir, strict=args.strict) if args.builtin_suite else args.manifest
     if manifest is None:
         raise ValueError("A benchmark manifest path is required")
 

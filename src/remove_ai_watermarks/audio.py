@@ -704,7 +704,25 @@ def adaptive_auto_profiles(scheme: AudioScheme, before: AudioProvenanceReport) -
     return ("combined",)
 
 
-def resolve_audio_profiles(
+def enforce_audio_publication_gates(
+    before: AudioProvenanceReport,
+    after: AudioProvenanceReport,
+    *,
+    verified: bool | None,
+    quality_ok: bool,
+    force: bool = False,
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
+) -> None:
+    """Enforce post-processing decoder verification and model-free audio integrity gates."""
+    if (verified is False and not (force or allow_positive)) or (verified is None and not (force or allow_unverified)):
+        raise AudioVerificationIncomplete(before, after, verification_failure_reason(after))
+    if not (force or allow_quality_override) and not quality_ok:
+        raise AudioVerificationIncomplete(before, after, "Delivered audio failed the minimum quality gate")
+
+
+def validate_audio_arguments(
     *,
     method: AudioMethod,
     scheme: AudioScheme,
@@ -712,10 +730,11 @@ def resolve_audio_profiles(
     force: bool,
     bandwidth_kbps: float,
     vocoder_device: Literal["cpu", "mps", "cuda"],
+    allow_unverified: bool = False,
 ) -> tuple[AudioProfile, ...]:
-    """Validate public audio processing arguments and return candidate profiles."""
-    if not verify and not force:
-        raise ValueError("Disabling verification requires force=True")
+    """Validate public audio processing arguments without requiring audio runtime dependencies."""
+    if not verify and not (force or allow_unverified):
+        raise ValueError("Disabling verification requires force=True or allow_unverified=True")
     if method not in AUDIO_METHODS:
         raise ValueError("Audio method must be auto, spectral, encodec, combined, bigvgan, mimi, focalcodec, or dac")
     if vocoder_device not in AUDIO_VOCODER_DEVICES:
@@ -724,10 +743,33 @@ def resolve_audio_profiles(
         raise ValueError("A non-CPU vocoder device requires method=bigvgan")
     if scheme not in _AUTO_PROFILES:
         raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
-    if method in {"auto", "encodec", "combined"} and bandwidth_kbps not in audio_codec.BANDWIDTHS_KBPS:
+    if method in {"auto", "encodec", "combined"} and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
         raise ValueError("EnCodec bandwidth must be 6, 12, or 24 kbps")
-    _require_base_audio_runtime(method)
     return _AUTO_PROFILES[scheme] if method == "auto" else (method,)
+
+
+def resolve_audio_profiles(
+    *,
+    method: AudioMethod,
+    scheme: AudioScheme,
+    verify: bool,
+    force: bool,
+    bandwidth_kbps: float,
+    vocoder_device: Literal["cpu", "mps", "cuda"],
+    allow_unverified: bool = False,
+) -> tuple[AudioProfile, ...]:
+    """Validate public audio processing arguments and return candidate profiles."""
+    profiles = validate_audio_arguments(
+        method=method,
+        scheme=scheme,
+        verify=verify,
+        force=force,
+        bandwidth_kbps=bandwidth_kbps,
+        vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
+    )
+    _require_base_audio_runtime(method)
+    return profiles
 
 
 def remove_audio_invisible(
@@ -741,14 +783,21 @@ def remove_audio_invisible(
     bandwidth_kbps: float = 24.0,
     scheme: AudioScheme = "audioseal",
     vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
 ) -> AudioRemovalResult:
     """Process audio and publish only a fully checked negative by default.
 
     Auto chooses a model-specific first profile and falls back to combined
     processing only after local verification fails. Each attempt uses the same
-    hash-bound source report. Force permits a final unverified or still-positive
-    candidate. Output files (.wav, .flac, .mp3, .m4a, .ogg, .opus) discard
-    metadata and preserve channel geometry.
+    hash-bound source report. ``allow_unverified=True`` authorizes processing
+    without a local source-positive decoder and publishing an unverified output
+    while keeping positive-detection and quality gates active; ``allow_positive=True``
+    permits a still-positive output; ``allow_quality_override=True`` overrides a
+    failed integrity gate; ``force=True`` remains an alias enabling all three.
+    Output files (.wav, .flac, .mp3, .m4a, .ogg, .opus) discard metadata and
+    preserve channel geometry.
     Explicit bigvgan, mimi, focalcodec, and dac are experimental bounded
     full-track raw M/S profiles, excluded from auto. None supplies a SynthID
     verifier. Mimi, FocalCodec, and DAC use CPU float32 (fixed 32-quantizer
@@ -763,6 +812,7 @@ def remove_audio_invisible(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
     )
     target, original = Path(output).expanduser(), Path(source).expanduser().resolve()
     if target.resolve() == original or (target.exists() and target.samefile(original)):
@@ -770,7 +820,8 @@ def remove_audio_invisible(
     before = identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
     if method == "auto":
         profiles = adaptive_auto_profiles(scheme, before)
-    if not force and before.watermark_status != "detected":
+    eff_unverified = force or allow_unverified
+    if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
         profile = profiles[0]
         return AudioRemovalResult(
             before.source,
@@ -785,15 +836,16 @@ def remove_audio_invisible(
             bandwidth_kbps=bandwidth_kbps if profile in {"encodec", "combined"} else None,
             vocoder_device=vocoder_device if profile in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
         )
-    if not verify or before.watermark_status != "detected" or (not force and _missing_decoder_reason(before)):
+    if not verify or before.watermark_status != "detected" or (not eff_unverified and _missing_decoder_reason(before)):
         profiles = profiles[:1]
     last: AudioVerificationIncomplete | None = None
     for index, profile in enumerate(profiles):
+        is_last = index == len(profiles) - 1
         try:
             return _remove_audio_profile(
                 source,
                 output,
-                force=force and index == len(profiles) - 1,
+                force=force and is_last,
                 verify=verify,
                 stream=stream,
                 method=profile,
@@ -801,6 +853,9 @@ def remove_audio_invisible(
                 scheme=scheme,
                 _before=before,
                 vocoder_device=vocoder_device,
+                allow_unverified=allow_unverified and is_last,
+                allow_positive=allow_positive and is_last,
+                allow_quality_override=allow_quality_override and is_last,
             )
         except AudioVerificationIncomplete as exc:
             last = exc
@@ -828,18 +883,24 @@ def _remove_audio_profile(
     _before: AudioProvenanceReport | None = None,
     _skip_post_verify: bool = False,
     vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
 ) -> AudioRemovalResult:
     """Apply the selected audio profile and verify the saved candidate.
 
     The default requires a compatible source-positive decoder and publishes
     only a fully negative result under that decoder. ``force=True`` permits
     an unverified or still-positive candidate; the result never labels that
-    outcome as verified removal. ``verify=False`` requires explicit force.
+    outcome as verified removal. ``verify=False`` requires explicit force or
+    ``allow_unverified=True``.
     Output is WAV, FLAC, MP3, M4A, OGG, or Opus, with metadata discarded during
     fresh encoding.
     """
-    if not verify and not force:
-        raise ValueError("Disabling verification requires force=True")
+    eff_unverified = force or allow_unverified
+    eff_positive = force or allow_positive
+    if not verify and not eff_unverified:
+        raise ValueError("Disabling verification requires force=True or allow_unverified=True")
     if method not in AUDIO_PROFILES:
         raise ValueError("Audio method must be spectral, encodec, combined, bigvgan, mimi, focalcodec, or dac")
     neural = method in {"encodec", "combined"}
@@ -854,7 +915,7 @@ def _remove_audio_profile(
         _before if _before is not None else identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
     )
     validate_audio_stream_for_profile(before.stream, method)
-    if not force and before.watermark_status != "detected":
+    if not (eff_unverified or eff_positive) and before.watermark_status != "detected":
         return AudioRemovalResult(
             before.source,
             None,
@@ -933,10 +994,16 @@ def _remove_audio_profile(
         if after.metadata_markers:
             raise RuntimeError(f"AI metadata remains in the processed audio: {sorted(after.metadata_markers)}")
         verified = verification_outcome(before, after)
-        if not force and verified is not True:
-            raise AudioVerificationIncomplete(before, after, verification_failure_reason(after))
-        if not force and not quality_ok:
-            raise AudioVerificationIncomplete(before, after, "Delivered audio failed the minimum quality gate")
+        enforce_audio_publication_gates(
+            before,
+            after,
+            verified=verified,
+            quality_ok=quality_ok,
+            force=force,
+            allow_unverified=allow_unverified,
+            allow_positive=allow_positive,
+            allow_quality_override=allow_quality_override,
+        )
         if sha256_file(before.source) != before.sha256:
             raise RuntimeError("Audio source changed during processing")
     after = replace(after, source=target)
@@ -1206,6 +1273,9 @@ def remove_audio_all(
     scheme: AudioScheme = "auto",
     vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
     keep_standard: bool = True,
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
 ) -> AudioAllResult:
     """Remove AI metadata and optionally process compatible invisible audio watermarks.
 
@@ -1236,6 +1306,7 @@ def remove_audio_all(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
     )
     if output is not None:
         target = Path(output).expanduser()
@@ -1259,6 +1330,9 @@ def remove_audio_all(
         bandwidth_kbps=bandwidth_kbps,
         scheme=scheme,
         vocoder_device=vocoder_device,
+        allow_unverified=allow_unverified,
+        allow_positive=allow_positive,
+        allow_quality_override=allow_quality_override,
     )
     detected_metadata = dict(inv_res.before.metadata_markers)
     if not inv_res.skipped and inv_res.output is not None:
@@ -1312,6 +1386,9 @@ def remove_audio_batch(
     scheme: AudioScheme = "auto",
     vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
     keep_standard: bool = True,
+    allow_unverified: bool = False,
+    allow_positive: bool = False,
+    allow_quality_override: bool = False,
 ) -> AudioBatchSummary:
     """Process every supported audio file in one directory sequentially."""
     directory_path = Path(directory).expanduser()
@@ -1331,6 +1408,7 @@ def remove_audio_batch(
             force=force,
             bandwidth_kbps=bandwidth_kbps,
             vocoder_device=vocoder_device,
+            allow_unverified=allow_unverified,
         )
 
     output_path = (
@@ -1369,6 +1447,9 @@ def remove_audio_batch(
                     scheme=scheme,
                     vocoder_device=vocoder_device,
                     keep_standard=keep_standard,
+                    allow_unverified=allow_unverified,
+                    allow_positive=allow_positive,
+                    allow_quality_override=allow_quality_override,
                 )
                 if all_res.remaining_metadata:
                     raise RuntimeError(
