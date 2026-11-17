@@ -21,7 +21,7 @@ def baseline(tmp_path):
     (original / "config.yaml").write_bytes(b"config")
     source = tmp_path / "materialized"
     shutil.copytree(original, source)
-    hashes = {str(p.relative_to(original)): adapter.sha(p) for p in original.rglob("*") if p.is_file()}
+    hashes = {p.relative_to(original).as_posix(): adapter.sha(p) for p in original.rglob("*") if p.is_file()}
     row = {
         "id": "baseline-AAR-context3",
         "kind": "baseline",
