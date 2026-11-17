@@ -121,11 +121,15 @@ def _load_module(name: str, path: Path) -> Any:
     return module
 
 
-def test_standalone_infer_script_inspects_weights_and_classifies_images(tmp_path: Path) -> None:
+def test_standalone_infer_script_inspects_weights_and_classifies_images(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import numpy as np
     from PIL import Image
 
     sc_mod = _load_module("raiw_test_source_classify", Path(__file__).with_name("test_source_classify.py"))
+    sc_mod.install_stub_ort_if_missing(monkeypatch)
     infer_mod = _load_module("raiw_hf_infer", publish.CARD_DIR / "infer.py")
 
     weights = sc_mod._write_synthetic_v7_npz(

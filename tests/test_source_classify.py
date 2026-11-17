@@ -316,6 +316,7 @@ def test_load_model_rejects_bad_schema_and_hash_mismatch(tmp_path: Path) -> None
 
 
 def test_cli_classify_source_json_and_text_and_missing_extra(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install_stub_ort_if_missing(monkeypatch)
     img_path = tmp_path / "sample.png"
     rng = np.random.default_rng(7)
     rgb = rng.integers(0, 256, size=(256, 256, 3), dtype=np.uint8)
@@ -1005,10 +1006,52 @@ def _write_synthetic_v7_npz(
     return path
 
 
+def install_stub_ort_if_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provide a pure-NumPy ONNX Runtime stub for synthetic v7 fixtures when `--extra dev` omits `onnxruntime`."""
+    import importlib.util
+    import types
+
+    if importlib.util.find_spec("onnxruntime") is not None:
+        return
+
+    d_out = source_classify.VIT_OUT_DIM_V7
+    w_marker = b"\x42\x06w_zero\x4a\xd0\x02"
+    b_marker = b"\x42\x05b_vec\x4a\x70"
+
+    class _StubSessionOptions:
+        intra_op_num_threads: int = 0
+        inter_op_num_threads: int = 0
+
+    class _StubInferenceSession:
+        def __init__(self, model_bytes: bytes, **_kwargs: Any) -> None:
+            wi = model_bytes.index(w_marker) + len(w_marker)
+            bi = model_bytes.index(b_marker) + len(b_marker)
+            self._w = np.frombuffer(model_bytes[wi : wi + 3 * d_out * 4], dtype="<f4").reshape(3, d_out).copy()
+            self._b = np.frombuffer(model_bytes[bi : bi + d_out * 4], dtype="<f4").reshape(d_out).copy()
+
+        def run(self, _outputs: list[str], feeds: dict[str, np.ndarray]) -> list[np.ndarray]:
+            x = np.asarray(feeds["pixel_values"], dtype=np.float32)
+            gap = x.mean(axis=(2, 3))
+            return [(gap @ self._w + self._b).astype(np.float32)]
+
+    stub_ort: Any = types.ModuleType("onnxruntime")
+    stub_ort.SessionOptions = _StubSessionOptions
+    stub_ort.GraphOptimizationLevel = types.SimpleNamespace(ORT_ENABLE_ALL=99)
+    stub_ort.InferenceSession = _StubInferenceSession
+    monkeypatch.setitem(sys.modules, "onnxruntime", stub_ort)
+    real_avail = source_classify.module_available
+    monkeypatch.setattr(
+        source_classify,
+        "module_available",
+        lambda *mods: real_avail(*(m for m in mods if m != "onnxruntime")),
+    )
+
+
 def test_v7_flagless_transcoded_synthetic_detection_and_honest_abstention(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    install_stub_ort_if_missing(monkeypatch)
     rng = np.random.default_rng(20261116)
     img = Image.fromarray(rng.integers(20, 235, size=(288, 320, 3), dtype=np.uint8), mode="RGB")
 
@@ -1071,7 +1114,11 @@ def test_v7_flagless_transcoded_synthetic_detection_and_honest_abstention(
     assert res_real.synthetic_probability < 0.5
 
 
-def test_v7_vit_provider_attribution_blend_and_borderline_physics_veto(tmp_path: Path) -> None:
+def test_v7_vit_provider_attribution_blend_and_borderline_physics_veto(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_stub_ort_if_missing(monkeypatch)
     rng = np.random.default_rng(77)
     img = Image.fromarray(rng.integers(0, 256, size=(260, 260, 3), dtype=np.uint8), mode="RGB")
 
@@ -1164,6 +1211,7 @@ def test_cli_v7_reports_synthetic_on_transcoded_unknown(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    install_stub_ort_if_missing(monkeypatch)
     img_path = tmp_path / "arena.jpg"
     rng = np.random.default_rng(123)
     Image.fromarray(rng.integers(0, 256, size=(280, 280, 3), dtype=np.uint8), mode="RGB").save(img_path, quality=82)
@@ -1195,7 +1243,9 @@ def test_cli_v7_reports_synthetic_on_transcoded_unknown(
 
 def test_v7_open_world_foreign_ai_openset_mm_prov_and_widescreen_detail_pass(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    install_stub_ort_if_missing(monkeypatch)
     n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
     d_mm = source_classify.MM_PROV_IN_DIM_V7
     h_mm = 8
