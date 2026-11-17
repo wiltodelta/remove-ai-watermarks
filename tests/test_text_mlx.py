@@ -209,12 +209,13 @@ def test_mlx_availability_accepts_a_cold_namespace_with_a_concrete_core(tmp_path
     import sys
 
     for name in list(sys.modules):
-        if name == "mlx" or name.startswith("mlx.") or name == "mlx_lm":
+        if name == "mlx" or name.startswith("mlx.") or name in {"mlx_lm", "py3langid"}:
             monkeypatch.delitem(sys.modules, name)
     package = tmp_path / "mlx"
     package.mkdir()
     (package / "core.py").write_text("# Concrete runtime stand-in.\n")
     (tmp_path / "mlx_lm.py").write_text("# Language model runtime stand-in.\n")
+    (tmp_path / "py3langid.py").write_text("# Language detector stand-in.\n")
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(lib.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(lib.platform, "machine", lambda: "arm64")

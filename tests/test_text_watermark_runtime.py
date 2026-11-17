@@ -200,6 +200,7 @@ def test_local_rewriter_refuses_obvious_long_passage_collapse(monkeypatch, colla
     candidate = "The archive lends books." if collapse else passage.replace("lends", "loans").replace("holds", "hosts")
     tokenizer = _Tokenizer(candidate)
     monkeypatch.setattr(text_module, "_load_local_rewriter_runtime", lambda *_a, **_k: (tokenizer, model, "cpu"))
+    monkeypatch.setattr(text_module, "_classify_text_language", lambda _text: ("en", 0.99))
     rewrite = text_module._build_local_lm_rewriter()
     if collapse:
         with pytest.raises(RuntimeError, match="rewrite"):

@@ -37,7 +37,7 @@ def test_frozen_input_hashes_are_checked_before_loading_models(tmp_path):
     source = "  An original synthetic sentence.\r\n"
     baseline = "A separate unmarked control."
     for name, text in [("source", source), ("baseline", baseline)]:
-        (tmp_path / f"{name}.txt").write_text(text)
+        (tmp_path / f"{name}.txt").write_text(text, encoding="utf-8", newline="")
     manifest = {
         "inputs_sha256": {
             "source": hashlib.sha256(source.encode()).hexdigest(),

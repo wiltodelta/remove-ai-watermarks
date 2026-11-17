@@ -73,6 +73,7 @@ def test_invalid_model_output_rejected(monkeypatch, fault):
     ],
 )
 def test_bad_source_fails_before_model_load(monkeypatch, value):
+    monkeypatch.setattr(vocoder, "is_available", lambda: True)
     monkeypatch.setattr(vocoder, "load_pinned_model", lambda *a, **kw: pytest.fail("Loaded invalid source"))
     with pytest.raises(ValueError, match="BigVGAN"):
         vocoder.resynthesize(value, 48000)

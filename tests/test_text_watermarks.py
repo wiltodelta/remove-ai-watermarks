@@ -86,13 +86,13 @@ def test_c2patxt_appendix_a8_roundtrip_inspect_and_strip(tmp_path: Path) -> None
     assert report.stego_codepoint_count == 1 + 13 + len(SYNTHETIC_JUMBF_MANIFEST) + 8
 
     src = tmp_path / "doc.txt"
-    src.write_text(watermarked, encoding="utf-8")
+    src.write_text(watermarked, encoding="utf-8", newline="")
     res = remove_text_metadata(src)
     assert res.output == tmp_path / "doc_clean.txt"
     assert res.cleaned_text == carrier
     assert res.remaining_markers == {}
     assert res.output is not None
-    assert res.output.read_text(encoding="utf-8") == carrier
+    assert res.output.read_bytes().decode("utf-8") == carrier
 
 
 def test_c2patxt_without_bom_sentinel_reports_caveat() -> None:
@@ -253,6 +253,8 @@ def test_span_protected_regeneration_locks_technical_spans_verbatim(tmp_path: Pa
 
 
 def test_keyed_statistical_watermark_scorers_detect_and_clear_after_regeneration() -> None:
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
     unwatermarked = [((i * 1103515245 + 12345) >> 16) % 4990 + 10 for i in range(240)]
     synthid_keys = tuple(range(101, 131))
     secret_key = 99991

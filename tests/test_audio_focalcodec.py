@@ -318,7 +318,7 @@ def test_build_focalcodec_architecture_forward_and_validation():
             "hop_length": 10,
         },
     }
-    model = network.build_focalcodec(tiny_cfg).eval()
+    model = network.build_focalcodec(tiny_cfg).train(False)
     # Receptive field of [k=10,s=5] -> [k=3,s=2] is 10 + 5*(3-1) = 20, total stride 10;
     # 30 core samples + (5, 5) symmetric context = 40 -> 3 frames -> 30 output samples.
     with torch.inference_mode():
@@ -352,6 +352,7 @@ def test_cached_pinned_checkpoint_end_to_end_when_present():
 
 
 def test_resynthesize_conditioned_preconditions_midband_and_restores_subband_envelopes(monkeypatch):
+    monkeypatch.setattr(focal, "is_available", lambda: True)
     seen_inputs = []
 
     def fake_resynthesize(samples, sample_rate, *, stereo_mode="ms", local_files_only=True):

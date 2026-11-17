@@ -97,7 +97,7 @@ def _tree_files(source: Path) -> dict[str, str]:
         if path.is_symlink():
             raise ValueError("Baseline source tree must not contain symlinks")
         if path.is_file():
-            result[str(path.relative_to(source))] = sha(path)
+            result[path.relative_to(source).as_posix()] = sha(path)
     return result
 
 
@@ -156,7 +156,7 @@ def verify_submission(store: Path, source: Path, inventory: Path, identifier: st
         if path.is_symlink():
             raise ValueError("Materialized submission must not contain symlinks")
         if path.is_file():
-            actual.add(str(path.relative_to(source)))
+            actual.add(path.relative_to(source).as_posix())
     if actual != set(mapping):
         raise ValueError("Materialized submission has missing or extra files")
     for relative, digest in mapping.items():

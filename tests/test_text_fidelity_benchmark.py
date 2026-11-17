@@ -130,6 +130,7 @@ def test_oversize_pairs_are_recorded_without_truncation_or_model_inference(tmp_p
         "import_module",
         lambda name: {"torch": torch, "transformers": transformers}.get(name) or original_import(name),
     )
+    monkeypatch.setattr(bench.importlib.metadata, "version", lambda _name: "0.0-test")
     report = bench.evaluate(
         SimpleNamespace(
             cases=path, model_dir=model_dir, output_dir=tmp_path / "output", device="cpu", max_pair_tokens=1
