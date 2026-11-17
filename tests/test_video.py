@@ -4208,10 +4208,14 @@ class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
         assert "dac" in rep.recommended_recipe
         assert "allow-unverified" in rep.recommended_recipe
 
-        # 4. VideoBatchItem retains audio_verification_scope and audio_quality_passed
+        # 4. VideoBatchItem retains audio_verification_scope and audio_quality_passed without diffusion extra
         batch_dir = tmp_path / "in_vids"
         batch_dir.mkdir()
         (batch_dir / "one.mp4").write_bytes(source.read_bytes())
+        monkeypatch.setattr(
+            "remove_ai_watermarks.video_invisible.load_video_vae_runtime",
+            lambda **_kw: object(),
+        )
         monkeypatch.setattr(
             video,
             "remove_video_all",
