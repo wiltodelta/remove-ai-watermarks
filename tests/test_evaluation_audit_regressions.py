@@ -131,12 +131,12 @@ def test_temporal_study_measures_only_saved_decodes(monkeypatch, tmp_path):
         decoded[path] = np.full_like(raw, len(decoded) / 20 + 0.1)
         return path
 
-    def read(_model, frames):
+    def read(_model, frames, *, message):
         assert any(frames is value for value in decoded.values())
         measured.append(frames)
         return SimpleNamespace(bit_accuracy=0.75, per_frame_bit_accuracy=[0.75, 0.75])
 
-    def matrix(_model, frames):
+    def matrix(_model, frames, *, message):
         assert any(frames is value for value in decoded.values())
         measured.append(frames)
         return {"avg": 0.75}

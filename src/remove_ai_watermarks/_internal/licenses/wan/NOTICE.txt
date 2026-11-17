@@ -1,0 +1,16 @@
+Wan 2.1 optional model attribution
+
+Wan 2.1 (Wan2.1-T2V-1.3B-Diffusers) was developed by the Wan Team (Alibaba).
+Model: https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers
+Revision: 0fad780a534b6463e45facd96134c9f345acfa5b
+Weights license: Apache License 2.0.
+https://www.apache.org/licenses/LICENSE-2.0
+The checkpoint is downloaded separately on explicit use and is not bundled here.
+No endorsement by the model authors is implied.
+
+Runtime implementation: Hugging Face Diffusers WanVideoToVideoPipeline and
+AutoencoderKLWan, Apache-2.0.
+https://github.com/huggingface/diffusers/tree/main/src/diffusers/pipelines/wan
+This wrapper uses pinned CUDA inference parameters with native spatial padding,
+tail-frame causal alignment, and source timestamp preservation. Model
+availability does not supply a watermark detector or per-file removal guarantee.

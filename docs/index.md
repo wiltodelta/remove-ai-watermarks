@@ -24,6 +24,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Watermark benchmark kernel](benchmark-kernel.md) | Reproducible local detection, removal-observation, and fidelity measurements. |
 | [Code provenance](code-provenance.md) | Required notices for licensed derivative work. |
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
+| [Real video and audio roadmap](media-removal-roadmap.md) | Ranked experiments, competitor and paper evidence, provider verifiers, and native product sample acquisition. |
 | [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, `wiltodelta/raiw-source-classify` Hub model, ComfyUI Registry, and the release workflow. |
 | [Agent skill](agent-skill.md) | Install and maintain the published Agent Skill, the Claude plugin and the Codex plugin. |
 | [MCP server](mcp-server.md) | Connect an MCP client to `remove-ai-watermarks mcp`, or publish it to the MCP registry. |
@@ -53,6 +54,7 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [SynthID detector and removal plan](synthid-detector-removal-plan.md) (chronological mixed archive)
 - [Text protection research](text-protection-research.md)
 - [Text watermark and provenance research](text-watermark-research.md) (C2PA 2.3/2.4 text/HTML Appendices A.7/A.8/A.9, `VSRMark`, Unicode steganography, and statistical token watermarks in Google `SynthID-Text`, Anthropic Claude Fable 5.2 / Mythos 5.2, OpenAI GPT-6 Astra `textGrain`, KGW, and Unigram)
+- [Local text-watermark validation](text-watermark-validation.md) (real local-model rewrites, known reference keys, frozen controls and explicit refusals; not a private provider-detector result)
 - [Audio provenance experiment](audio-provenance-experiment.md) (local AudioSeal matched-oracle study of video audio tracks across visual cleaning)
 - [VideoSeal temporal evaluation](videoseal-temporal-evaluation.md) (per-frame scores, aggregation matrix, and crf decay on synthetic and real clips)
 - [Temporal video inpainting evaluation](video-inpainting-research.md) (VACE and ROSE against the shipped visible-video fills)

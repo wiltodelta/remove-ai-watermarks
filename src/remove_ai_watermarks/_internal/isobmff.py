@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
     _RawMetadataItem = tuple[bytes, tuple[int, int], bytes | None, tuple[int, int] | None, int, int, bytes]
 
+from remove_ai_watermarks._internal.audio_creation import creation_tool
 from remove_ai_watermarks.metadata import (
     AIGC_MARKERS,
     C2PA_UUID,
@@ -471,6 +472,22 @@ def _ai_metadata_regions(
     return regions
 
 
+def _audio_creation_regions(stream: BinaryIO, file_size: int) -> list[tuple[int, int]]:
+    """Locate exact creation declarations in bounded metadata-list values."""
+    return [
+        (start, end)
+        for _name, _span, start, end, value in _metadata_items(stream, file_size)
+        if creation_tool(value) is not None
+    ]
+
+
+def has_audio_creation_comment(path: str | Path) -> bool:
+    """Find potential declarations before the audio-only stream probe."""
+    with open(path, "rb") as stream:
+        stream.seek(0, 2)
+        return bool(_audio_creation_regions(stream, stream.tell()))
+
+
 def _app_metadata_regions(
     stream: BinaryIO,
     file_size: int,
@@ -800,13 +817,15 @@ def strip_isobmff_media_file(
     output: str | Path,
     *,
     max_box_scan: int = STREAM_SCAN_BYTES,
+    strip_audio_comments: bool = False,
 ) -> tuple[int, int]:
     """Stream-copy an MP4/MOV/M4A while removing supported AI metadata.
 
     The output retains every box size and byte offset. A top-level C2PA/JUMBF or
     AI-label box is converted to a ``free`` box and its payload is zeroed; native
-    TC260, generation-key and app-export key/value spans, and the Kling SEI tag in
-    ``mdat``, are blanked in place. Keeping the original lengths is required
+    TC260, generation-key and app-export key/value spans, opted-in native audio
+    creation comments, and the Kling SEI tag in ``mdat`` are blanked in place.
+    The caller must confirm audio-only scope before opting in. Keeping the original lengths is required
     because removing a pre-``mdat`` box would invalidate absolute media offsets in
     an existing sample table.
 
@@ -852,6 +871,9 @@ def strip_isobmff_media_file(
                     stream, file_size, raw_items=raw_items
                 )
             )
+        audio_regions = (
+            _audio_creation_regions(stream, file_size) if targets is not None and strip_audio_comments else []
+        )
         mdat_ranges = (
             [
                 (payload, end)
@@ -877,6 +899,8 @@ def strip_isobmff_media_file(
                         temporary.seek(key_span[0])
                         temporary.write((b"free" + b" " * max(0, span_len - 4))[:span_len])
                     _overwrite_range(temporary, value_start, value_end, byte=b" ")
+                for value_start, value_end in audio_regions:
+                    _overwrite_range(temporary, value_start, value_end, byte=b" ")
                 # Spaces keep the SEI message well-formed: its length fields stand,
                 # and a 0x20 run cannot form an emulation-prevention sequence.
                 for offset in kling_sei_offsets:
@@ -894,7 +918,7 @@ def strip_isobmff_media_file(
     # Every copy of the Kling tag is one tag, however many samples repeat it.
     return (
         len(targets),
-        len(blanked_key_spans) + bool(kling_sei_offsets),
+        len(blanked_key_spans) + bool(kling_sei_offsets) + len(audio_regions),
     )
 
 

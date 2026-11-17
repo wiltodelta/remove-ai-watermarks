@@ -1,0 +1,17 @@
+Descript Audio Codec (DAC) optional model attribution
+
+Descript Audio Codec was developed by Rithesh Kumar, Prem Seetharaman,
+Alejandro Luebs, Ishaan Kumar, and Kundan Kumar.
+Model: https://huggingface.co/descript/dac_44khz
+Revision: c1bc521685adf9cfe247bc39a5ca58917eda1ac4
+Weights license: MIT License.
+https://opensource.org/licenses/MIT
+The checkpoint is downloaded separately on explicit use and is not bundled here.
+No endorsement by Descript is implied.
+
+Runtime implementation: Hugging Face Transformers DacModel, Apache-2.0.
+https://github.com/huggingface/transformers/tree/main/src/transformers/models/dac
+This wrapper uses the built-in implementation, fixed 3 codebooks (44.1 kHz
+internal sampling rate), CPU float32, rational native clocks, and raw mid/side
+stereo mapping. Model availability does not establish watermark removal or
+voice identity preservation.

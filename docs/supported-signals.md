@@ -133,10 +133,11 @@ The inspection and stripping code handles signals in these groups:
   (`-----BEGIN C2PA MANIFEST-----`), Appendix A.7 HTML `<script type="application/c2pa">`
   and `<link rel="c2pa-manifest">`, `VSRMark` (`com.cognitive-proof.vsrmark.1`,
   `VSR1` + CRC32 in interleaved Variation Selectors), Unicode Tags
-  (`U+E0000`..`U+E007F`), and zero-width steganography. Token-level statistical
-  LLM watermarks (Google `SynthID-Text`, Anthropic Claude Fable 5.1/5.2 and
-  Mythos 5.1/5.2, OpenAI GPT-6 Astra `textGrain`, KGW, Unigram) are handled via
-  span-protected local prose regeneration (`text invisible`, `text all --invisible`);
+  (`U+E0000`..`U+E007F`), the [published Windows AI Unicode sequence](text-watermark-validation.md#published-format-fixtures)
+  (synthetic format tests, no provider attribution), and zero-width steganography. Statistical
+  token-watermark disruption uses best-effort span-protected local prose
+  regeneration (`text invisible`, `text all --invisible`); this is not a verified
+  private-provider detector or removal guarantee;
   see [text watermark research](text-watermark-research.md).
 
 `identify` combines detected signals into a `ProvenanceReport`. It reports
@@ -183,12 +184,59 @@ Metadata inspection and removal additionally have container paths for:
 - WebM, MKV, MKA, AVI, FLV, MP3, WAV, FLAC, OGG, OGA, Opus, and AAC when
   ffmpeg is available.
 
+With ffprobe installed, audio-only MP3, WAV, FLAC, Ogg, and ISOBMFF inputs
+can expose exact native Suno or Suno Studio creation comments as
+`audio_generator`. Attached covers do not count as video. These unsigned
+declarations are removable metadata, not proof of authenticity or a waveform
+watermark. Arbitrary Suno mentions are not supported signals.
+
 JPEG image metadata stripping removes targeted metadata segments without
 re-encoding the entropy coded image scan. PNG and WebP removal preserves pixel
 values through lossless output paths. HEIC, HEIF, AVIF, and other containers
 use their format specific paths.
 
 ## Invisible watermarks
+
+The optional audio API and `audio` CLI group inspect pinned public AudioSeal
+and WavMark models, public Perth v1, and an experimental SilentCipher-44k receiver.
+`--scheme` selects one model or all named models. AudioSeal checks both 16 kHz
+and native sample clocks for validated 24 and 48 kHz sources. Other native
+clocks are not added automatically; neither a quiet resampled receiver
+nor a matching public-model mark establishes production-provider attribution.
+WavMark separately checks the published OpenVoice default raw framing at
+fixed native offsets, alongside its synchronized public-model scan. This
+signature does not cover custom messages or shifted/resampled framing, and its
+binomial-tail diagnostic is not a calibrated false-positive probability.
+They provide
+streaming spectral, neural-codec, and combined processing, plus explicit
+experimental full-track BigVGAN, Mimi, and FocalCodec profiles. Mimi uses fixed
+CPU FP32 and an internal 24 kHz grid; FocalCodec uses fixed CPU FP32 continuous
+6-layer WavLM-to-Vocos resynthesis on an internal 16 kHz grid (`8 kHz` ceiling);
+BigVGAN has an explicit device selector. All three use
+bounded mono/stereo processing, preserve the native sample grid and expose
+quality limitations separately. None implements a SynthID decoder.
+Default removal requires a
+source-positive and saved-output-negative check; resistant and incomplete
+candidates are rejected. This does not establish compatibility with proprietary
+audio marks. Public Perth v1 has a pinned runtime via `--scheme perth` and
+`audio-perth`. The inspected default Chatterbox checkpoint has native Nano
+source-positive and saved-output-negative evidence through this route, including
+the original PerTh reader and final video mux. A PerTh response alone does not
+identify Chatterbox. This does not certify proprietary PerTh v2. SilentCipher-44k uses
+`--scheme silentcipher` and
+`audio-silentcipher`, with three-second windows and a project-defined repeated-symbol
+threshold. Neither its negative nor loss of a fixed message certifies complete erasure.
+Reports identify its 44.1 kHz decoder clock separately from the source rate.
+The published 16 kHz model has incompatible SDK byte framing and is outside
+this receiver, including when the input itself is 16 kHz.
+The separate `--scheme silentcipher16` route checks an experimental terminated
+eight-symbol pattern with the pinned 16 kHz model and the same `audio-silentcipher`
+extra. It labels readings `framing="terminated8"` and reports seven ternary
+`payload_symbols`, not bytes, and a 16 kHz decoder
+clock. `all` includes both receivers. The SDK byte API and general 32-bit profile
+remain unqualified; a negative does not rule out other framing or deployed marks.
+Negative results cover the requested decoder checks; they do not certify
+erasure of every residual payload bit. See [audio coverage and local results](audio-video-removal.md).
 
 The `invisible` command uses diffusion regeneration. Specialized Python APIs can
 instead apply decoder-guided disruption to a positively identified local
@@ -313,11 +361,25 @@ margin with no separate vendor strength floor needed.
 
 For MP4, MOV, and M4V, `video invisible` or the explicit
 `video all --invisible` option can regenerate the video through a VAE and strip
-source metadata. The shipped profile is oracle-certified, but it is not a local
-decoder. A fresh source-positive, output-negative pair from Gemini's built-in
+source metadata. The shipped profile is oracle-certified for SynthID, but it is
+not a local decoder. A fresh source-positive, output-negative pair from Gemini's built-in
 SynthID verifier is an optional per-file audit. A normal Gemini answer may instead
 infer from a visible logo or metadata; asking it to reinterpret a completed
 verifier result is not a second oracle run.
+The [VideoSeal VAE comparison](videoseal-temporal-evaluation.md#vae-regeneration-evaluation-2026-11-08)
+found a surviving matched message on one of four standardized carriers under
+the benchmark's threshold. The SynthID certification does not certify VideoSeal
+removal.
+
+The explicit [`video message`](cli.md#public-model-video-messages-experimental) route
+compares an independently known message under pinned public VideoSeal or PixelSeal
+weights and gates processing on saved-file checks. It does not add these signals
+to generic AI-origin identification.
+
+[Non-SynthID video coverage](non-synthid-video.md) separates registry
+declarations, open-model VideoSeal/PixelSeal checks, and provider verification.
+Amazon Nova Reel, Microsoft video watermarks, and Adobe FlowMark remain subject
+to the verifier and positive-carrier limits recorded there.
 
 Seedance has an explicit `seedance-experimental` profile in the common video
 invisible/all/batch pipeline (`--profile seedance-experimental` in the CLI),
@@ -327,7 +389,21 @@ The fixed recipe has a positive-control/negative-output CapCut check on an
 owned label-free forest clip. It preserves native geometry, the complete frame
 clock and copied audio, while changing texture and color. This is an explicit
 experimental pixel transform, not a local detector or the default SynthID
-profile. Prepare visible labels separately. See the
+profile. Prepare visible labels separately. On NVIDIA CUDA GPUs, explicit
+`wan21-synthid-experimental` (`strength=0.38`) and `wan21-seedance-experimental`
+(`strength=0.12`) additionally provide native-resolution 3D `Wan 2.1` video-to-video
+regeneration (`remove_video_wan_experimental`, using `chunk_frames=193` and
+`overlap_frames=17` raised-cosine window blending for clips over 193 frames), and
+`--profile auto` (`profile="auto"`) selects the Seedance or SynthID family from
+pre-strip metadata and visible-mark signals while preferring CUDA `Wan 2.1` when
+available. On the label-free Seedance `forest` and held-out `bottle`
+carriers, `wan21-seedance-experimental` passed matched-control CapCut checks at
+higher PSNR and lower temporal residual than `seedance-experimental` (whereas
+Dreamina and BytePlus enterprise API exports cleared via C2PA metadata stripping
+alone); on `flow-001`, `lite-003`, 2-window 240-frame
+`google-gemini-omni-flash-api`, and `veo-3-1`, `wan21-synthid-experimental`
+passed matched-control Google Gemini checks at native `1280x720 @ 24 fps`,
+including full-audiovisual MP4 deliveries paired with 44.1 kHz `--method dac`. See the
 [Python API](python-api.md#experimental-seedance-video-reconstruction) and
 [recorded study](seedance-video-study.md).
 
@@ -336,12 +412,19 @@ open DWT-DCT watermark used by some Stable Diffusion, SDXL, and FLUX workflows.
 That signal is carrier and transformation sensitive, so a negative is still
 not a universal clean verdict.
 
+Video identification exposes `invisible_watermark_hints` for registered
+C2PA-declared watermark schemes and supported SynthID metadata. It also infers
+Amazon Nova Reel from AI-asserting Bedrock video provenance, following
+[Amazon's Nova Reel service card](https://docs.aws.amazon.com/ai/responsible-ai/nova-reel/overview.html).
+These hints do not verify a surviving pixel watermark or successful removal.
+Registered fingerprint algorithms remain metadata, outside the watermark hints.
+
 ## Provider overview
 
 | Provider or family | Visible | Invisible path | Metadata or provenance |
 | --- | --- | --- | --- |
 | Google Gemini | Sparkle | Diffusion regeneration | C2PA and related source signals |
-| Google Veo video | Veo diamond and legacy text | Oracle-certified VAE removal for SynthID | C2PA and related source signals |
+| Google Veo video | Veo diamond and legacy text | Oracle-certified VAE removal for SynthID (`synthid`); optional CUDA 3D `Wan 2.1` native-resolution profile (`wan21-synthid-experimental`) | C2PA and related source signals |
 | OpenAI image generators | None registered | Diffusion regeneration for supported invisible signals | C2PA and generator provenance |
 | Meta Muse Image | None on Muse output (legacy `Imagined with AI` unregistered) | Diffusion regeneration for Content Seal, oracle-verified on the default profile | XMP IPTC `trainedAlgorithmicMedia` companion tag; no local Content Seal decoder |
 | Microsoft Paint local `Watermarker.dll` format | None registered | Local repeated-payload decoder and decoder-guided disruption; no usable external oracle for this format | Paint C2PA soft-binding algorithm and matching UUID |
@@ -352,7 +435,7 @@ not a universal clean verdict.
 | Adobe Firefly | None registered | Optional TrustMark decoder and neural remover (`P`, `Q`, `C`); diffusion fallback when C2PA declares `com.adobe.trustmark.*` | C2PA |
 | Midjourney | None registered | No registered pixel decoder | EXIF, XMP, and IPTC signals |
 | Luma AI | None registered | No registered pixel decoder | PNG text generator tags (Uni-1) |
-| ByteDance generators | Doubao, Jimeng, Dola, and Seedance marks | Experimental Seedance reconstruction through the Python API; no local pixel decoder | TC260 AIGC (Doubao, Jimeng, Volcano Engine), supported C2PA (Dreamina, Dola, Pippit AI, BytePlus), and exact app-export AIGC disclosures |
+| ByteDance generators | Doubao, Jimeng, Dola, and Seedance marks | Experimental Seedance reconstruction (`seedance-experimental` and CUDA `wan21-seedance-experimental`); no local pixel decoder | TC260 AIGC (Doubao, Jimeng, Volcano Engine), supported C2PA (Dreamina, Dola, Pippit AI, BytePlus), and exact app-export AIGC disclosures |
 | Tencent Yuanbao and WorkBuddy | Yuanbao and WorkBuddy image marks | No registered pixel decoder | TC260 AIGC (with raw-hex SM2 `SecurityData` on Yuanbao) |
 | Meitu, vivo, Xiaomi, and Agnes AI | Generic `AI生成` label on vivo and Xiaomi Gallery AI edits | No registered pixel decoder | TC260 AIGC producer attribution |
 | Sync Labs, PixelBin.io, and TikTok AI | None registered | No registered pixel decoder | C2PA attribution |

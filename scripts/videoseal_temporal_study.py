@@ -17,6 +17,10 @@ provider API is contacted; artifacts stay outside the repository under
 
     uv run --extra dev python scripts/videoseal_temporal_study.py \
       --output-dir .local-eval/videoseal-temporal-v1
+
+Use ``--regenerate`` instead of the attack sweep to compare the shipped VAE profile against a codec control,
+a zero-noise VAE round trip, and a regenerated clean negative on each carrier.
+This uses the optional diffusion stack and the cached/default VAE checkpoint.
 """
 
 from __future__ import annotations
@@ -28,7 +32,9 @@ import logging
 import shutil
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -47,6 +53,9 @@ from watermark_benchmark_video_cohort import (  # noqa: E402
 )
 
 log = logging.getLogger("videoseal_temporal_study")
+
+if TYPE_CHECKING:
+    from remove_ai_watermarks.video_invisible import VideoVaeRuntime
 
 CRF_SWEEP: tuple[int, ...] = (18, 23, 28, 32)
 ATTACKS: tuple[str, ...] = ("scale_075", "fps_half")
@@ -162,9 +171,67 @@ def apply_fps_half(ffmpeg: str, marked: Path, workdir: Path) -> Path:
     return target
 
 
+def regeneration_rows(model: object, clean: Path, marked: Path, runtime: VideoVaeRuntime) -> list[dict[str, object]]:
+    """Compare the shipped regeneration with a matching codec and zero-noise control."""
+    from video_fidelity_probe import _measure
+
+    from remove_ai_watermarks.video_invisible import (
+        _fit_size,
+        _probe_video,
+        encode_video_frames,
+        read_sampled_frames,
+        regenerate_video_candidate,
+    )
+    from remove_ai_watermarks.video_synthid import DEFAULT_VIDEO_SYNTHID_FPS, DEFAULT_VIDEO_SYNTHID_LONG_SIDE
+
+    geometry = _probe_video(marked)
+    frames, fps = read_sampled_frames(
+        marked,
+        duration=None,
+        output_fps=DEFAULT_VIDEO_SYNTHID_FPS,
+        size=_fit_size(*geometry[:2], DEFAULT_VIDEO_SYNTHID_LONG_SIDE),
+    )
+    control = marked.with_stem(f"{marked.stem}-codec-control")
+    encode_video_frames(frames, marked, control, fps=fps)
+    artifacts: list[tuple[str, Path, Path, dict[str, object]]] = [("codec-control", control, marked, {})]
+    for name, source, options in (
+        ("vae-zero-noise", marked, {"noise_std": 0.0}),
+        ("vae-default", marked, {}),
+        ("clean-vae-default", clean, {}),
+    ):
+        path = source.with_stem(f"{source.stem}-{name}")
+        metrics = regenerate_video_candidate(source, path, runtime=runtime, device=runtime.requested_device, **options)
+        artifacts.append((name, path, source, asdict(metrics)))
+
+    rows = []
+    for name, path, reference, metrics in artifacts:
+        frames, digest = decode_video_artifact(path)
+        reading = read(model, frames)
+        rows.append(
+            {
+                "stage": "regeneration",
+                "arm": name,
+                "path": path.name,
+                "sha256": digest,
+                "reference_sha256": sha256_file(reference),
+                "measurement_domain": "decoded_artifact",
+                "bit_accuracy_avg": reading.bit_accuracy,
+                "detected": reading.detected,
+                "per_frame_bit_accuracy": list(reading.per_frame_bit_accuracy),
+                "engine_metrics": metrics,
+                "delivered_fidelity": _measure(reference, path, source_geometry=geometry, duration=None),
+            }
+        )
+    return rows
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--adapter", choices=("videoseal", "pixelseal-video"), default="videoseal")
+    parser.add_argument(
+        "--regenerate", action="store_true", help="Evaluate the shipped VAE profile instead of the attack sweep."
+    )
     args = parser.parse_args()
     out_dir: Path = args.output_dir.resolve()
     if out_dir.exists():
@@ -173,8 +240,26 @@ def main() -> int:
 
     ffmpeg = require_tools()
     out_dir.mkdir(parents=True)
-    model = videoseal_oracle.load_model()
-    message = videoseal_oracle.message_bits()
+    if args.adapter == "pixelseal-video":
+        import pixelseal_oracle
+
+        oracle = pixelseal_oracle
+        embed = pixelseal_oracle.embed_video
+        checkpoint_digest = pixelseal_oracle.CHECKPOINT_SHA256
+    else:
+        oracle = videoseal_oracle
+        embed = videoseal_oracle.embed
+        checkpoint_digest = videoseal_oracle.JIT_SHA256
+    model = oracle.load_model()
+    message = oracle.message_bits()
+    runtime = None
+    if args.regenerate:
+        import torch
+
+        from remove_ai_watermarks.video_invisible import load_video_vae_runtime
+
+        torch.set_num_threads(2)
+        runtime = load_video_vae_runtime()
 
     rows: list[dict[str, object]] = []
 
@@ -188,11 +273,34 @@ def main() -> int:
     record(
         "pins",
         torch=md.version("torch"),
-        videoseal_jit_sha256=videoseal_oracle.JIT_SHA256,
+        oracle_name="PixelSeal" if args.adapter == "pixelseal-video" else "VideoSeal",
+        adapter=args.adapter,
+        oracle_checkpoint_sha256=checkpoint_digest,
+        oracle_source_commit=oracle.SOURCE_COMMIT,
+        oracle_source_sha256=sha256_file(Path(oracle.__file__)),
         study_source_sha256=sha256_file(Path(__file__)),
         ffmpeg=ffmpeg_version(ffmpeg),
         message_sha256=hashlib.sha256(bytes(message)).hexdigest(),
     )
+    if runtime is not None:
+        from huggingface_hub import snapshot_download
+
+        from remove_ai_watermarks import video_invisible, video_synthid
+
+        snapshot = Path(snapshot_download(runtime.model, local_files_only=True))
+        record(
+            "regeneration_pins",
+            model=runtime.model,
+            model_revision=snapshot.name,
+            model_artifacts={path.name: sha256_file(path) for path in sorted(snapshot.iterdir()) if path.is_file()},
+            device=runtime.resolved_device,
+            scaling_factor=runtime.scaling_factor,
+            engine_sha256=sha256_file(Path(video_invisible.__file__)),
+            noise_std=video_synthid.DEFAULT_VIDEO_SYNTHID_NOISE_STD,
+            long_side=video_synthid.DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
+            fps=video_synthid.DEFAULT_VIDEO_SYNTHID_FPS,
+            seed=0,
+        )
 
     carriers: dict[str, tuple[np.ndarray, dict[str, object]]] = {
         name: (synth_carrier(name)[:STUDY_FRAMES], {"recipe": "synthetic cohort carrier"})
@@ -211,21 +319,21 @@ def main() -> int:
             carrier=name,
             sha256=clean_digest,
             measurement_domain="decoded_artifact",
-            aggregation_matrix=read_aggregation_matrix(model, clean_frames),
+            aggregation_matrix=read_aggregation_matrix(model, clean_frames, message=message),
             **provenance,
         )
 
-        marked_frames = np.asarray(videoseal_oracle.embed(model, clean_frames, message), dtype=np.float32)
+        marked_frames = np.asarray(embed(model, clean_frames, message), dtype=np.float32)
         marked_path = encode_clip(ffmpeg, workdir / f"{name}-marked.mp4", marked_frames)
         marked_frames, marked_digest = decode_video_artifact(marked_path)
-        marked_read = read(model, marked_frames)
+        marked_read = read(model, marked_frames, message=message)
         record(
             "carrier_marked",
             carrier=name,
             sha256=marked_digest,
             measurement_domain="decoded_artifact",
             bit_accuracy_avg=marked_read.bit_accuracy,
-            aggregation_matrix=read_aggregation_matrix(model, marked_frames),
+            aggregation_matrix=read_aggregation_matrix(model, marked_frames, message=message),
             per_frame_bit_accuracy=[round(v, 4) for v in marked_read.per_frame_bit_accuracy],
             wm_snr_db=round(
                 float(
@@ -239,16 +347,16 @@ def main() -> int:
             ),
         )
 
-        attacked: list[tuple[str, Path]] = [
-            (f"crf{crf}", apply_crf(ffmpeg, marked_path, crf, workdir)) for crf in CRF_SWEEP
-        ]
-        attacked += [
-            ("scale_075", apply_scale(ffmpeg, marked_path, workdir)),
-            ("fps_half", apply_fps_half(ffmpeg, marked_path, workdir)),
-        ]
+        attacked: list[tuple[str, Path]] = []
+        if runtime is None:
+            attacked = [(f"crf{crf}", apply_crf(ffmpeg, marked_path, crf, workdir)) for crf in CRF_SWEEP]
+            attacked += [
+                ("scale_075", apply_scale(ffmpeg, marked_path, workdir)),
+                ("fps_half", apply_fps_half(ffmpeg, marked_path, workdir)),
+            ]
         for attack, path in attacked:
             frames, digest = decode_video_artifact(path)
-            reading = read(model, frames)
+            reading = read(model, frames, message=message)
             record(
                 "attack",
                 carrier=name,
@@ -257,16 +365,22 @@ def main() -> int:
                 measurement_domain="decoded_artifact",
                 frames=frames.shape[0],
                 bit_accuracy_avg=reading.bit_accuracy,
-                aggregation_matrix=read_aggregation_matrix(model, frames),
+                aggregation_matrix=read_aggregation_matrix(model, frames, message=message),
                 per_frame_bit_accuracy=[round(v, 4) for v in reading.per_frame_bit_accuracy],
             )
+
+        if runtime is not None:
+            for row in regeneration_rows(model, clean_path, marked_path, runtime):
+                record(carrier=name, **row)
+        # Retain completed carriers even when a later model or encode fails.
+        (out_dir / "cases.jsonl").write_text("".join(json.dumps(r, default=str) + "\n" for r in rows))
 
     cases_path = out_dir / "cases.jsonl"
     cases_path.write_text("".join(json.dumps(r, default=str) + "\n" for r in rows))
     summary_path = out_dir / "matrix.md"
     summary_path.write_text(render_matrix(rows))
-    print(f"wrote {cases_path}")
-    print(f"wrote {summary_path}")
+    log.info("Wrote %s", cases_path)
+    log.info("Wrote %s", summary_path)
     return 0
 
 
@@ -278,8 +392,11 @@ def cast_to_matrix(value: object) -> dict[str, float]:
 
 def render_matrix(rows: list[dict[str, object]]) -> str:
     aggregations = videoseal_oracle.AGGREGATIONS
+    oracle_name = next(
+        (str(row.get("oracle_name", "VideoSeal")) for row in rows if row["stage"] == "pins"), "VideoSeal"
+    )
     lines = [
-        "# VideoSeal temporal evaluation study",
+        f"# {oracle_name} temporal evaluation study",
         "",
         "Bit accuracy of the aggregated 256-bit decode per carrier, attack, and",
         "frame aggregation. The benchmark threshold (0.9) is the adapter's",
@@ -313,6 +430,25 @@ def render_matrix(rows: list[dict[str, object]]) -> str:
         lines.append(
             f"| {r['carrier']} | {min(per_frame):.3f} | {sum(per_frame) / len(per_frame):.3f} | {max(per_frame):.3f} |"
         )
+    regeneration = [row for row in rows if row["stage"] == "regeneration"]
+    if regeneration:
+        lines += [
+            "",
+            "Regeneration readings use avg aggregation on saved artifacts. Fidelity",
+            "is measured against the decoded marked source (clean source for the negative arm).",
+            "A negative codec control cannot establish a VAE-specific removal effect.",
+            "",
+            "| Carrier | Arm | Bit accuracy | Detected | Delivered PSNR (dB) | SSIM |",
+            "| --- | --- | ---: | --- | ---: | ---: |",
+        ]
+        for row in regeneration:
+            fidelity = row["delivered_fidelity"]
+            if not isinstance(fidelity, dict):
+                raise TypeError("delivered_fidelity must be a dict")
+            lines.append(
+                f"| {row['carrier']} | {row['arm']} | {float(row['bit_accuracy_avg']):.3f} | "
+                f"{row['detected']} | {fidelity['source_psnr_db']:.2f} | {fidelity['source_ssim']:.4f} |"
+            )
     lines.append("")
     return "\n".join(lines)
 

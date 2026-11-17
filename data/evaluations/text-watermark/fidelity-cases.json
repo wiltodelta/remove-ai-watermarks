@@ -1,0 +1,1575 @@
+{
+  "schema_version": 1,
+  "provenance": "Handwritten synthetic English/Russian/Bulgarian meaning-preservation pairs. These are judge-calibration inputs, not watermarked model outputs or proof of complete semantic coverage.",
+  "history": "The first 8B critic saw development pairs before held-out pairs. The held-out partition is now public development evidence, not a fresh holdout for future tuning. Residency/citizenship pairs were added after a separate generated candidate exposed that confusion. Visitor/tourist and child-age cases were added after a full-document 27B judge missed category narrowing, despite accepting or rejecting the earlier short calibration pairs correctly. The mobility positive was clarified to retain the reader category after a label review exposed its broader people wording. Duration-expansion and omitted-supervision pairs were added after the independent AliMark trial. Earlier measurements refer to their archived input hash and do not evaluate this revision. Split place-name and owner/employee pairs were added after the Q64 AliMark sentence trial exposed these failures. They are examined development cases, not fresh holdout. Supplied-object roles, cleanup timing, plan realization and optional-demonstration pairs were added after the stronger-inserter PostMark trial exposed these failures. They are handwritten examined development evidence, not fresh held-out measurements. Resource availability/abundance pairs were added after reviewing the accepted MLX follow-up. Season loss/range and maintenance/visit frequency pairs were added after the selected AutoMark trial exposed these issues. These handwritten examined cases are not a fresh holdout; the season guard does not establish preservation of daily/occasional frequency or full event binding. Reopening, oldest-harvest and visitor-beneficiary pairs were added after the visible-names experiment produced more complete but factually changed outputs. These are examined development cases, not a new holdout or proof that the default fact checker catches them. Russian whole/scaled cardinal, bound and duration-adjective pairs were added after reviewing unsupported spelled quantities. These are examined regression evidence. The earlier English-only MiniCheck trial refers to its archived input hash and does not evaluate these added pairs. Whole English cardinal, signed/exponent value, literal-address and whole-bound-binding pairs were added after numeric-parser regressions. These are examined synthetic regression cases. Earlier NLI, LLM and MiniCheck results refer to their archived input hashes, not this revised corpus. Scheduling certainty, intended allocation versus dispatch, explicit visitor/staff instruction roles and during-versus-throughout pairs were added after a pinned Qwen3.5-9B MLX trial exposed meaning changes. These short handwritten pairs disambiguate the observed failure types. They are examined development evidence, not a fresh holdout. Earlier judge measurements do not cover this revised corpus or its added Bulgarian cases. Selected unit, unit/value/bound binding and Russian duration-unit pairs were added after adjacent-measurement regressions. A measurement-role pair records a fresh unmarked default-model precision invention despite intact units. These are examined development cases, not held-out evidence or a complete semantic guarantee; earlier judge metrics do not evaluate this revised hash. Alternate-day recurrence and invented weekly scheduling pairs were added after the exact FreshRace/RenewalRace source-state cohort returned detector-negative but meaning-changed prose. These are examined synthetic development cases. Earlier judge results refer to their archived corpus hashes and do not evaluate this revision. Indefinite English duration and conditional-light pairs were added after a native recurrence-guard follow-up still dropped the source's for-a-day condition. These are examined synthetic development cases; previous judge measurements remain bound to their archived corpus hashes. Bare-number multiplicity, frequency-to-event binding and resident/tool provenance pairs were added after paired native 9B rewrite experiments exposed duplicate numbers and role/scope changes. These are examined, disambiguated synthetic development cases, not fresh holdout measurements; ambiguous model wording is not treated as a definite binary-label contradiction. Earlier judge results remain bound to their archived corpus hashes. Added examined English/Russian approval, responsibility and permission development counterparts after native Qwen3-4B observations. Earlier judge measurements remain bound to their earlier corpus hash; these additions are not an independent holdout. Added examined honorific/surname and initials development counterparts after a native ChoirMark output lost a surname. These are not new held-out judge measurements.",
+  "cases": [
+    {
+      "id": "development-00",
+      "partition": "development",
+      "name": "mobility",
+      "language": "en",
+      "source": "Readers with mobility issues can use the service.",
+      "candidate": "Readers who have difficulty moving can access the service.",
+      "equivalent": true
+    },
+    {
+      "id": "development-01",
+      "partition": "development",
+      "name": "mobility",
+      "language": "en",
+      "source": "Readers with mobility issues can use the service.",
+      "candidate": "Readers with transportation problems can use the service.",
+      "equivalent": false
+    },
+    {
+      "id": "development-02",
+      "partition": "development",
+      "name": "literacy",
+      "language": "en",
+      "source": "The program improved literacy rates.",
+      "candidate": "The initiative increased the proportion of people able to read and write.",
+      "equivalent": true
+    },
+    {
+      "id": "development-03",
+      "partition": "development",
+      "name": "literacy",
+      "language": "en",
+      "source": "The program improved literacy rates.",
+      "candidate": "The program changed reading habits.",
+      "equivalent": false
+    },
+    {
+      "id": "development-04",
+      "partition": "development",
+      "name": "modality",
+      "language": "en",
+      "source": "The service may help some residents.",
+      "candidate": "It is possible that the service benefits a portion of residents.",
+      "equivalent": true
+    },
+    {
+      "id": "development-05",
+      "partition": "development",
+      "name": "modality",
+      "language": "en",
+      "source": "The service may help some residents.",
+      "candidate": "The service helps every resident.",
+      "equivalent": false
+    },
+    {
+      "id": "development-06",
+      "partition": "development",
+      "name": "only",
+      "language": "en",
+      "source": "Only registered users can borrow equipment.",
+      "candidate": "Equipment loans are restricted to registered users.",
+      "equivalent": true
+    },
+    {
+      "id": "development-07",
+      "partition": "development",
+      "name": "only",
+      "language": "en",
+      "source": "Only registered users can borrow equipment.",
+      "candidate": "Registered users can borrow equipment.",
+      "equivalent": false
+    },
+    {
+      "id": "development-08",
+      "partition": "development",
+      "name": "causation",
+      "language": "en",
+      "source": "The study did not establish causation.",
+      "candidate": "The study did not demonstrate a causal link.",
+      "equivalent": true
+    },
+    {
+      "id": "development-09",
+      "partition": "development",
+      "name": "causation",
+      "language": "en",
+      "source": "The study did not establish causation.",
+      "candidate": "The study found no association.",
+      "equivalent": false
+    },
+    {
+      "id": "development-10",
+      "partition": "development",
+      "name": "space",
+      "language": "en",
+      "source": "The old building has limited space.",
+      "candidate": "Space in the old building is restricted.",
+      "equivalent": true
+    },
+    {
+      "id": "development-11",
+      "partition": "development",
+      "name": "space",
+      "language": "en",
+      "source": "The old building has limited space.",
+      "candidate": "The building has no space.",
+      "equivalent": false
+    },
+    {
+      "id": "development-12",
+      "partition": "development",
+      "name": "inclusion",
+      "language": "en",
+      "source": "The participants included teachers and students.",
+      "candidate": "Teachers and students were among those who took part.",
+      "equivalent": true
+    },
+    {
+      "id": "development-13",
+      "partition": "development",
+      "name": "inclusion",
+      "language": "en",
+      "source": "The participants included teachers and students.",
+      "candidate": "All participants were teachers or students.",
+      "equivalent": false
+    },
+    {
+      "id": "development-14",
+      "partition": "development",
+      "name": "roles",
+      "language": "en",
+      "source": "Anna sent the book to Boris.",
+      "candidate": "Boris received the book from Anna.",
+      "equivalent": true
+    },
+    {
+      "id": "development-15",
+      "partition": "development",
+      "name": "roles",
+      "language": "en",
+      "source": "Anna sent the book to Boris.",
+      "candidate": "Boris sent the book to Anna.",
+      "equivalent": false
+    },
+    {
+      "id": "development-16",
+      "partition": "development",
+      "name": "literacy",
+      "language": "ru",
+      "source": "Программа повысила долю людей, которые умеют читать и писать.",
+      "candidate": "Благодаря программе выросла доля людей, умеющих читать и писать.",
+      "equivalent": true,
+      "revision_note": "Clarified the source metric after the first evaluation; the previous broad phrase about literacy level was ambiguous. Earlier results do not evaluate this revised pair."
+    },
+    {
+      "id": "development-17",
+      "partition": "development",
+      "name": "literacy",
+      "language": "ru",
+      "source": "Программа повысила долю людей, которые умеют читать и писать.",
+      "candidate": "Программа изменила привычки чтения.",
+      "equivalent": false,
+      "revision_note": "Clarified the source metric after the first evaluation; the previous broad phrase about literacy level was ambiguous. Earlier results do not evaluate this revised pair."
+    },
+    {
+      "id": "development-18",
+      "partition": "development",
+      "name": "modality",
+      "language": "ru",
+      "source": "Эта услуга может помочь некоторым жителям.",
+      "candidate": "Возможно, услуга принесёт пользу части жителей.",
+      "equivalent": true
+    },
+    {
+      "id": "development-19",
+      "partition": "development",
+      "name": "modality",
+      "language": "ru",
+      "source": "Эта услуга может помочь некоторым жителям.",
+      "candidate": "Эта услуга помогает всем жителям.",
+      "equivalent": false
+    },
+    {
+      "id": "development-20",
+      "partition": "development",
+      "name": "roles",
+      "language": "ru",
+      "source": "Анна передала книгу Борису.",
+      "candidate": "Борис получил книгу от Анны.",
+      "equivalent": true
+    },
+    {
+      "id": "development-21",
+      "partition": "development",
+      "name": "roles",
+      "language": "ru",
+      "source": "Анна передала книгу Борису.",
+      "candidate": "Борис передал книгу Анне.",
+      "equivalent": false
+    },
+    {
+      "id": "development-22",
+      "partition": "development",
+      "name": "inclusion",
+      "language": "ru",
+      "source": "Среди участников были учителя и студенты.",
+      "candidate": "В числе участников присутствовали студенты и учителя.",
+      "equivalent": true
+    },
+    {
+      "id": "development-23",
+      "partition": "development",
+      "name": "inclusion",
+      "language": "ru",
+      "source": "Среди участников были учителя и студенты.",
+      "candidate": "Все участники были учителями или студентами.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-00",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "restriction",
+      "language": "en",
+      "source": "Only staff can access the archive.",
+      "candidate": "Archive access is limited to staff.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-01",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "restriction",
+      "language": "en",
+      "source": "Only staff can access the archive.",
+      "candidate": "Staff can access the archive.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-02",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "evidence",
+      "language": "en",
+      "source": "The report found a correlation, not proof of a cause.",
+      "candidate": "The report identified an association without establishing causality.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-03",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "evidence",
+      "language": "en",
+      "source": "The report found a correlation, not proof of a cause.",
+      "candidate": "The report proved that one factor caused the other.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-04",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "lower_bound",
+      "language": "en",
+      "source": "At least 20 visitors attended.",
+      "candidate": "No fewer than 20 visitors attended.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-05",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "lower_bound",
+      "language": "en",
+      "source": "At least 20 visitors attended.",
+      "candidate": "Exactly 20 visitors attended.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-06",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "metric",
+      "language": "en",
+      "source": "The intervention reduced the arithmetic mean waiting time.",
+      "candidate": "The intervention lowered the mean time that people waited.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-07",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "metric",
+      "language": "en",
+      "source": "The intervention reduced the arithmetic mean waiting time.",
+      "candidate": "The intervention lowered the median waiting time.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-08",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "roles",
+      "language": "en",
+      "source": "Alex taught Robin to swim.",
+      "candidate": "Robin was taught to swim by Alex.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-09",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "roles",
+      "language": "en",
+      "source": "Alex taught Robin to swim.",
+      "candidate": "Robin taught Alex to swim.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-10",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "scope",
+      "language": "en",
+      "source": "The library charges no membership fee.",
+      "candidate": "Library membership is free of charge.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-11",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "scope",
+      "language": "en",
+      "source": "The library charges no membership fee.",
+      "candidate": "The library charges no fees for any service.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-12",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "metric",
+      "language": "ru",
+      "source": "Медианная зарплата выросла.",
+      "candidate": "Медианный размер зарплаты увеличился.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-13",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "metric",
+      "language": "ru",
+      "source": "Медианная зарплата выросла.",
+      "candidate": "Средняя арифметическая зарплата выросла.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-14",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "quantifier",
+      "language": "ru",
+      "source": "Эффект наблюдали у некоторых участников.",
+      "candidate": "У части участников наблюдался этот эффект.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-15",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "quantifier",
+      "language": "ru",
+      "source": "Эффект наблюдали у некоторых участников.",
+      "candidate": "Эффект наблюдали у всех участников.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-16",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "evidence",
+      "language": "ru",
+      "source": "Исследование подтвердило корреляцию, но не доказало причинную связь.",
+      "candidate": "Исследование установило связь, однако его результаты не доказывают причинность.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-17",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "evidence",
+      "language": "ru",
+      "source": "Исследование подтвердило корреляцию, но не доказало причинную связь.",
+      "candidate": "Исследование доказало причинную связь.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-18",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "requirement",
+      "language": "ru",
+      "source": "Регистрация обязательна для доступа.",
+      "candidate": "Без регистрации доступ невозможен.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-19",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "requirement",
+      "language": "ru",
+      "source": "Регистрация обязательна для доступа.",
+      "candidate": "Регистрация необязательна для доступа.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-20",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "time",
+      "language": "ru",
+      "source": "Заявку можно подать в течение 30 дней.",
+      "candidate": "На подачу заявки есть срок 30 дней.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-21",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "time",
+      "language": "ru",
+      "source": "Заявку можно подать в течение 30 дней.",
+      "candidate": "Заявку можно подать только через 30 дней.",
+      "equivalent": false
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-22",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "modality",
+      "language": "ru",
+      "source": "Цена может упасть.",
+      "candidate": "Снижение цены возможно.",
+      "equivalent": true
+    },
+    {
+      "id": "held_out_at_first_8b_evaluation-23",
+      "partition": "held_out_at_first_8b_evaluation",
+      "name": "modality",
+      "language": "ru",
+      "source": "Цена может упасть.",
+      "candidate": "Цена обязательно снизится.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-en-1",
+      "partition": "discovered_failure",
+      "language": "en",
+      "name": "residency_vs_citizenship",
+      "source": "The service is available to all residents.",
+      "candidate": "The service is available to every resident.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-en-0",
+      "partition": "discovered_failure",
+      "language": "en",
+      "name": "residency_vs_citizenship",
+      "source": "The service is available to all residents.",
+      "candidate": "The service is available to all citizens.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-ru-1",
+      "partition": "discovered_failure",
+      "language": "ru",
+      "name": "residency_vs_citizenship",
+      "source": "Услуга доступна всем жителям.",
+      "candidate": "Услуга доступна каждому жителю.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-ru-0",
+      "partition": "discovered_failure",
+      "language": "ru",
+      "name": "residency_vs_citizenship",
+      "source": "Услуга доступна всем жителям.",
+      "candidate": "Услуга доступна всем гражданам.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-paragraph-en-visitor_category-1",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "en",
+      "name": "visitor_category",
+      "source": "Visitors used the reading room.",
+      "candidate": "The reading room was used by visitors.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-paragraph-en-visitor_category-0",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "en",
+      "name": "visitor_category",
+      "source": "Visitors used the reading room.",
+      "candidate": "Tourists used the reading room.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-paragraph-en-age_restriction-1",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "en",
+      "name": "age_restriction",
+      "source": "Families with children used the library.",
+      "candidate": "The library was used by families with children.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-paragraph-en-age_restriction-0",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "en",
+      "name": "age_restriction",
+      "source": "Families with children used the library.",
+      "candidate": "Families with young children used the library.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-paragraph-ru-visitor_category-1",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "ru",
+      "name": "visitor_category",
+      "source": "Посетители пользовались читальным залом.",
+      "candidate": "Читальным залом пользовались посетители.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-paragraph-ru-visitor_category-0",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "ru",
+      "name": "visitor_category",
+      "source": "Посетители пользовались читальным залом.",
+      "candidate": "Туристы пользовались читальным залом.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-paragraph-ru-age_restriction-1",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "ru",
+      "name": "age_restriction",
+      "source": "Семьи с детьми пользовались библиотекой.",
+      "candidate": "Библиотекой пользовались семьи с детьми.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-paragraph-ru-age_restriction-0",
+      "partition": "discovered_failure_after_full_document_trial",
+      "language": "ru",
+      "name": "age_restriction",
+      "source": "Семьи с детьми пользовались библиотекой.",
+      "candidate": "Семьи с маленькими детьми пользовались библиотекой.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-alimark-en-duration_expansion-1",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "en",
+      "name": "duration_expansion",
+      "source": "The decision followed years of discussions.",
+      "candidate": "Years of discussions preceded the decision.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-alimark-en-duration_expansion-0",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "en",
+      "name": "duration_expansion",
+      "source": "The decision followed years of discussions.",
+      "candidate": "The decision followed several decades of discussions.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-alimark-ru-duration_expansion-1",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "ru",
+      "name": "duration_expansion",
+      "source": "Решение приняли после многолетних обсуждений.",
+      "candidate": "Принятию решения предшествовали многолетние обсуждения.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-alimark-ru-duration_expansion-0",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "ru",
+      "name": "duration_expansion",
+      "source": "Решение приняли после многолетних обсуждений.",
+      "candidate": "Решение приняли после нескольких десятилетий обсуждений.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-alimark-en-omitted_supervision-1",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "en",
+      "name": "omitted_supervision",
+      "source": "Architects and contractors supervised the volunteers during construction.",
+      "candidate": "During construction, the volunteers were supervised by architects and contractors.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-alimark-en-omitted_supervision-0",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "en",
+      "name": "omitted_supervision",
+      "source": "Architects and contractors supervised the volunteers during construction.",
+      "candidate": "The volunteers helped during construction.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-alimark-ru-omitted_supervision-1",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "ru",
+      "name": "omitted_supervision",
+      "source": "Архитекторы и подрядчики руководили работой волонтёров во время строительства.",
+      "candidate": "Во время строительства волонтёры работали под руководством архитекторов и подрядчиков.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-alimark-ru-omitted_supervision-0",
+      "partition": "discovered_failure_after_alimark_trial",
+      "language": "ru",
+      "name": "omitted_supervision",
+      "source": "Архитекторы и подрядчики руководили работой волонтёров во время строительства.",
+      "candidate": "Волонтёры помогали во время строительства.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-q64-en-split_place_name-1",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "en",
+      "name": "split_place_name",
+      "source": "A village sits in Willow Creek.",
+      "candidate": "Within Willow Creek sits a village.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-q64-en-split_place_name-0",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "en",
+      "name": "split_place_name",
+      "source": "A village sits in Willow Creek.",
+      "candidate": "A village named Creek sits in Willow.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-q64-ru-split_place_name-1",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "ru",
+      "name": "split_place_name",
+      "source": "Жители посетили Уиллоу Крик.",
+      "candidate": "Уиллоу Крик посетили жители.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-q64-ru-split_place_name-0",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "ru",
+      "name": "split_place_name",
+      "source": "Жители посетили Уиллоу Крик.",
+      "candidate": "Город Крик посетили жители Уиллоу.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-q64-en-owner_employee-1",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "en",
+      "name": "owner_employee",
+      "source": "A retired bookstore owner donated books.",
+      "candidate": "Books were donated by a retired bookstore owner.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-q64-en-owner_employee-0",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "en",
+      "name": "owner_employee",
+      "source": "A retired bookstore owner donated books.",
+      "candidate": "A former bookstore employee donated books.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-q64-ru-owner_employee-1",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "ru",
+      "name": "owner_employee",
+      "source": "Книги подарил владелец книжного магазина, вышедший на пенсию.",
+      "candidate": "Владелец книжного магазина, вышедший на пенсию, подарил книги.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-q64-ru-owner_employee-0",
+      "partition": "discovered_failure_after_q64_alimark_trial",
+      "language": "ru",
+      "name": "owner_employee",
+      "source": "Книги подарил владелец книжного магазина, вышедший на пенсию.",
+      "candidate": "Книги подарил бывший сотрудник книжного магазина.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-postmark27-en-supplied_objects-1",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "supplied_objects",
+      "source": "Visitors brought objects to repair, and organizers supplied the tools.",
+      "candidate": "Visitors brought the objects they wanted to repair, while the organizers provided the tools.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-postmark27-en-supplied_objects-0",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "supplied_objects",
+      "source": "Visitors brought objects to repair, and organizers supplied the tools.",
+      "candidate": "Organizers supplied objects to repair, and visitors brought the tools.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-postmark27-en-cleanup_timing-1",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "cleanup_timing",
+      "source": "After each session, volunteers cleaned the tables.",
+      "candidate": "Volunteers cleaned the tables following every session.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-postmark27-en-cleanup_timing-0",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "cleanup_timing",
+      "source": "After each session, volunteers cleaned the tables.",
+      "candidate": "Volunteers cleaned the tables during each session.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-postmark27-en-plan_completion-1",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "plan_completion",
+      "source": "The library planned to use the notes for future activities.",
+      "candidate": "The library intended to use the notes for later activities.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-postmark27-en-plan_completion-0",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "plan_completion",
+      "source": "The library planned to use the notes for future activities.",
+      "candidate": "The library used the notes to improve later activities.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-postmark27-en-optional_demonstration-1",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "optional_demonstration",
+      "source": "Participants could watch a demonstration before deciding whether to try the task.",
+      "candidate": "Participants had the option to view a demonstration before choosing whether to attempt the task.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-postmark27-en-optional_demonstration-0",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "optional_demonstration",
+      "source": "Participants could watch a demonstration before deciding whether to try the task.",
+      "candidate": "Participants watched a demonstration and then tried the task.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-postmark27-en-resource_abundance-1",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "resource_abundance",
+      "source": "Resources were readily available to support the community.",
+      "candidate": "Resources were easily available to support the community.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-postmark27-en-resource_abundance-0",
+      "partition": "discovered_failure_after_postmark27_trial",
+      "language": "en",
+      "name": "resource_abundance",
+      "source": "Resources were readily available to support the community.",
+      "candidate": "Abundant resources were available to support the community.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-automark-en-season_loss-1",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "season_loss",
+      "source": "Families visited in autumn.",
+      "candidate": "Families visited in the fall.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-automark-en-season_loss-0",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "season_loss",
+      "source": "Families visited in autumn.",
+      "candidate": "Families visited throughout the year.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-automark-en-season_range-1",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "season_range",
+      "source": "The garden stayed open in autumn.",
+      "candidate": "The garden stayed open during the fall.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-automark-en-season_range-0",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "season_range",
+      "source": "The garden stayed open in autumn.",
+      "candidate": "The garden stayed open from spring to fall.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-automark-ru-season_loss-1",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "ru",
+      "name": "season_loss",
+      "source": "Семьи приезжали осенью.",
+      "candidate": "Осенью приезжали семьи.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-automark-ru-season_loss-0",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "ru",
+      "name": "season_loss",
+      "source": "Семьи приезжали осенью.",
+      "candidate": "Семьи приезжали круглый год.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-automark-en-maintenance_frequency-1",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "maintenance_frequency",
+      "source": "The caretakers maintain the beds daily.",
+      "candidate": "The caretakers tend to the beds every day.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-automark-en-maintenance_frequency-0",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "maintenance_frequency",
+      "source": "The caretakers maintain the beds daily.",
+      "candidate": "The caretakers maintain the beds regularly.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-automark-en-visit_frequency-1",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "visit_frequency",
+      "source": "Gardeners often unlocked the door.",
+      "candidate": "Gardeners frequently unlocked the door.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-automark-en-visit_frequency-0",
+      "partition": "discovered_failure_after_automark_selected_trial",
+      "language": "en",
+      "name": "visit_frequency",
+      "source": "Gardeners often unlocked the door.",
+      "candidate": "Gardeners occasionally unlocked the door.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-visible-names-en-reopening-1",
+      "partition": "discovered_failure_after_visible_names_trial",
+      "language": "en",
+      "name": "reopening",
+      "source": "The library prepared for its grand reopening.",
+      "candidate": "The library prepared to open again.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-visible-names-en-reopening-0",
+      "partition": "discovered_failure_after_visible_names_trial",
+      "language": "en",
+      "name": "reopening",
+      "source": "The library prepared for its grand reopening.",
+      "candidate": "The library prepared for its grand opening.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-visible-names-en-oldest_harvest-1",
+      "partition": "discovered_failure_after_visible_names_trial",
+      "language": "en",
+      "name": "oldest_harvest",
+      "source": "The oldest harvest was displayed.",
+      "candidate": "The harvest older than every other harvest was displayed.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-visible-names-en-oldest_harvest-0",
+      "partition": "discovered_failure_after_visible_names_trial",
+      "language": "en",
+      "name": "oldest_harvest",
+      "source": "The oldest harvest was displayed.",
+      "candidate": "An older harvest was displayed.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-visible-names-en-visitor_beneficiary-1",
+      "partition": "discovered_failure_after_visible_names_trial",
+      "language": "en",
+      "name": "visitor_beneficiary",
+      "source": "The garden supports an ecosystem for visitors.",
+      "candidate": "The garden supports an ecosystem for people visiting.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-visible-names-en-visitor_beneficiary-0",
+      "partition": "discovered_failure_after_visible_names_trial",
+      "language": "en",
+      "name": "visitor_beneficiary",
+      "source": "The garden supports an ecosystem for visitors.",
+      "candidate": "The garden supports an ecosystem for villagers.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-whole_cardinal-1",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "whole_cardinal",
+      "source": "Передали двадцать пять книг.",
+      "candidate": "Передали 25 книг.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-whole_cardinal-0",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "whole_cardinal",
+      "source": "Передали двадцать пять книг.",
+      "candidate": "Передали двадцать шесть книг.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-scaled_cardinal-1",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "scaled_cardinal",
+      "source": "Передали две тысячи пять книг.",
+      "candidate": "Передали 2005 книг.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-scaled_cardinal-0",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "scaled_cardinal",
+      "source": "Передали две тысячи пять книг.",
+      "candidate": "Передали пять тысяч две книги.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-cardinal_bound-1",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "cardinal_bound",
+      "source": "Передали не более двадцати пяти книг.",
+      "candidate": "Передали максимум 25 книг.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-cardinal_bound-0",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "cardinal_bound",
+      "source": "Передали не более двадцати пяти книг.",
+      "candidate": "Передали более двадцати пяти книг.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-duration_cardinal-1",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "duration_cardinal",
+      "source": "Пять лет работы завершились.",
+      "candidate": "Завершилась пятилетняя работа.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-russian-cardinal-ru-duration_cardinal-0",
+      "partition": "discovered_failure_after_russian_cardinal_review",
+      "language": "ru",
+      "name": "duration_cardinal",
+      "source": "Пять лет работы завершились.",
+      "candidate": "Завершилась шестилетняя работа.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-integer-facts-en-compound_cardinal-1",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "compound_cardinal",
+      "source": "They recorded twenty-five units.",
+      "candidate": "They recorded 25 units.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-integer-facts-en-compound_cardinal-0",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "compound_cardinal",
+      "source": "They recorded twenty-five units.",
+      "candidate": "They recorded five twenty units.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-integer-facts-en-scientific_value-1",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "scientific_value",
+      "source": "They recorded 1e3 units.",
+      "candidate": "They recorded 1000 units.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-integer-facts-en-scientific_value-0",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "scientific_value",
+      "source": "They recorded 1e3 units.",
+      "candidate": "They recorded 2e3 units.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-integer-facts-en-signed_word_value-1",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "signed_word_value",
+      "source": "The measured value was minus five.",
+      "candidate": "The measured value was -5.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-integer-facts-en-signed_word_value-0",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "signed_word_value",
+      "source": "The measured value was minus five.",
+      "candidate": "The measured value was five.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-integer-facts-en-whole_bound_binding-1",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "whole_bound_binding",
+      "source": "At least twenty-five labels and twenty boxes arrived.",
+      "candidate": "No fewer than 25 labels and 20 boxes arrived.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-integer-facts-en-whole_bound_binding-0",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "whole_bound_binding",
+      "source": "At least twenty-five labels and twenty boxes arrived.",
+      "candidate": "At least twenty labels and twenty-five boxes arrived.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-integer-facts-en-literal_address-1",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "literal_address",
+      "source": "The address was 127.0.0.1.",
+      "candidate": "127.0.0.1 was the address.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-integer-facts-en-literal_address-0",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "en",
+      "name": "literal_address",
+      "source": "The address was 127.0.0.1.",
+      "candidate": "The address was 0.1.127.0.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-integer-facts-ru-signed_word_value-1",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "ru",
+      "name": "signed_word_value",
+      "source": "Измерили минус пять единиц.",
+      "candidate": "Измерили -5 единиц.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-integer-facts-ru-signed_word_value-0",
+      "partition": "discovered_failure_after_integer_fact_review",
+      "language": "ru",
+      "name": "signed_word_value",
+      "source": "Измерили минус пять единиц.",
+      "candidate": "Измерили пять единиц.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen9b-bg-schedule_certainty-1",
+      "partition": "development",
+      "name": "schedule_certainty",
+      "language": "bg",
+      "source": "Следващата среща още не е насрочена.",
+      "candidate": "Следващата среща все още не е насрочена.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen9b-bg-schedule_certainty-0",
+      "partition": "development",
+      "name": "schedule_certainty",
+      "language": "bg",
+      "source": "Следващата среща още не е насрочена.",
+      "candidate": "Все още не е известно дали следващата среща е насрочена.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen9b-ru-allocation_vs_dispatch-1",
+      "partition": "development",
+      "name": "allocation_vs_dispatch",
+      "language": "ru",
+      "source": "Десять коробок предназначены для северного филиала.",
+      "candidate": "Десять коробок отведены для северного филиала.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen9b-ru-allocation_vs_dispatch-0",
+      "partition": "development",
+      "name": "allocation_vs_dispatch",
+      "language": "ru",
+      "source": "Десять коробок предназначены для северного филиала.",
+      "candidate": "Десять коробок отправляются в северный филиал.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen9b-en-visitor_instruction_roles-1",
+      "partition": "development",
+      "name": "visitor_instruction_roles",
+      "language": "en",
+      "source": "The visitors explained garden techniques to the staff.",
+      "candidate": "The visitors described gardening methods to the staff.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen9b-en-visitor_instruction_roles-0",
+      "partition": "development",
+      "name": "visitor_instruction_roles",
+      "language": "en",
+      "source": "The visitors explained garden techniques to the staff.",
+      "candidate": "The staff explained garden techniques to the visitors.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen9b-en-trial_duration_strength-1",
+      "partition": "development",
+      "name": "trial_duration_strength",
+      "language": "en",
+      "source": "The program reduced waiting times during a winter trial.",
+      "candidate": "The program shortened waiting times in a winter trial.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen9b-en-trial_duration_strength-0",
+      "partition": "development",
+      "name": "trial_duration_strength",
+      "language": "en",
+      "source": "The program reduced waiting times during a winter trial.",
+      "candidate": "The program reduced waiting times throughout the entire winter trial.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-measurement-en-distance_unit-1",
+      "partition": "development",
+      "name": "distance_unit",
+      "language": "en",
+      "source": "The distance was five kilometers.",
+      "candidate": "The distance was 5 km.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-measurement-en-distance_unit-0",
+      "partition": "development",
+      "name": "distance_unit",
+      "language": "en",
+      "source": "The distance was five kilometers.",
+      "candidate": "The distance was five miles.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-measurement-en-power_unit_case-1",
+      "partition": "development",
+      "name": "power_unit_case",
+      "language": "en",
+      "source": "The power was 5 mW.",
+      "candidate": "The power was five milliwatts.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-measurement-en-power_unit_case-0",
+      "partition": "development",
+      "name": "power_unit_case",
+      "language": "en",
+      "source": "The power was 5 mW.",
+      "candidate": "The power was 5 MW.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-measurement-en-unit_value_binding-1",
+      "partition": "development",
+      "name": "unit_value_binding",
+      "language": "en",
+      "source": "The distances were 5 km and 10 miles.",
+      "candidate": "The distances were 5 kilometers and 10 miles.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-measurement-en-unit_value_binding-0",
+      "partition": "development",
+      "name": "unit_value_binding",
+      "language": "en",
+      "source": "The distances were 5 km and 10 miles.",
+      "candidate": "The distances were 10 km and 5 miles.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-measurement-en-unit_bound_binding-1",
+      "partition": "development",
+      "name": "unit_bound_binding",
+      "language": "en",
+      "source": "The limits were at least 5 km and at most 5 miles.",
+      "candidate": "The limits were no fewer than 5 kilometers and no more than 5 miles.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-measurement-en-unit_bound_binding-0",
+      "partition": "development",
+      "name": "unit_bound_binding",
+      "language": "en",
+      "source": "The limits were at least 5 km and at most 5 miles.",
+      "candidate": "The limits were at most 5 km and at least 5 miles.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-measurement-ru-duration_unit-1",
+      "partition": "development",
+      "name": "duration_unit",
+      "language": "ru",
+      "source": "Началась двухлетняя работа.",
+      "candidate": "Началась работа на два года.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-measurement-ru-duration_unit-0",
+      "partition": "development",
+      "name": "duration_unit",
+      "language": "ru",
+      "source": "Началась двухлетняя работа.",
+      "candidate": "Началась двухдневная работа.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-measurement-en-measurement_role-1",
+      "partition": "development",
+      "name": "measurement_role",
+      "language": "en",
+      "source": "The reading was 5 mW.",
+      "candidate": "The reading was five milliwatts.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-measurement-en-measurement_role-0",
+      "partition": "development",
+      "name": "measurement_role",
+      "language": "en",
+      "source": "The reading was 5 mW.",
+      "candidate": "The precision was 5 mW.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-freshrace-en-alternate_day_interval-1",
+      "partition": "discovered_failure_after_exact_freshrace_trial",
+      "name": "alternate_day_interval",
+      "language": "en",
+      "source": "Volunteers inspected the tools every other day.",
+      "candidate": "Volunteers inspected the tools once every two days.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-freshrace-en-alternate_day_interval-0",
+      "partition": "discovered_failure_after_exact_freshrace_trial",
+      "name": "alternate_day_interval",
+      "language": "en",
+      "source": "Volunteers inspected the tools every other day.",
+      "candidate": "Volunteers inspected the tools periodically.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-freshrace-en-occasional_schedule-1",
+      "partition": "discovered_failure_after_exact_freshrace_trial",
+      "name": "occasional_schedule",
+      "language": "en",
+      "source": "Volunteers occasionally inspected the shelves.",
+      "candidate": "Volunteers inspected the shelves from time to time.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-freshrace-en-occasional_schedule-0",
+      "partition": "discovered_failure_after_exact_freshrace_trial",
+      "name": "occasional_schedule",
+      "language": "en",
+      "source": "Volunteers occasionally inspected the shelves.",
+      "candidate": "Volunteers inspected the shelves every week.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-indefinite-duration-en-indefinite_duration-1",
+      "partition": "discovered_failure_after_indefinite_duration_review",
+      "name": "indefinite_duration",
+      "language": "en",
+      "source": "The loan lasted a day.",
+      "candidate": "The loan lasted one day.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-indefinite-duration-en-indefinite_duration-0",
+      "partition": "discovered_failure_after_indefinite_duration_review",
+      "name": "indefinite_duration",
+      "language": "en",
+      "source": "The loan lasted a day.",
+      "candidate": "The loan lasted.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-indefinite-duration-en-conditional_duration-1",
+      "partition": "discovered_failure_after_indefinite_duration_review",
+      "name": "conditional_duration",
+      "language": "en",
+      "source": "The light came on when a tool was borrowed for a day.",
+      "candidate": "The light came on when a tool was borrowed for one day.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-indefinite-duration-en-conditional_duration-0",
+      "partition": "discovered_failure_after_indefinite_duration_review",
+      "name": "conditional_duration",
+      "language": "en",
+      "source": "The light came on when a tool was borrowed for a day.",
+      "candidate": "The light came on when a tool was borrowed.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-rewrite-9b-bare_quantity_binding_en-1",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "bare_quantity_binding_en",
+      "language": "en",
+      "source": "Two boxes are stored at two depots. Three inspectors work at one depot.",
+      "candidate": "2 boxes are stored at 2 depots. 3 inspectors work at 1 depot.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-rewrite-9b-bare_quantity_binding_en-0",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "bare_quantity_binding_en",
+      "language": "en",
+      "source": "Two boxes are stored at two depots. Three inspectors work at one depot.",
+      "candidate": "Two boxes are stored at three depots. Three inspectors work at one depot.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-rewrite-9b-bare_quantity_binding_ru-1",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "bare_quantity_binding_ru",
+      "language": "ru",
+      "source": "Две коробки стоят у двух дверей. Три коробки стоят у одной двери.",
+      "candidate": "2 коробки стоят у 2 дверей. 3 коробки стоят у 1 двери.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-rewrite-9b-bare_quantity_binding_ru-0",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "bare_quantity_binding_ru",
+      "language": "ru",
+      "source": "Две коробки стоят у двух дверей. Три коробки стоят у одной двери.",
+      "candidate": "Две коробки стоят у трёх дверей. Три коробки стоят у одной двери.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-rewrite-9b-frequency_event_binding-1",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "frequency_event_binding",
+      "language": "en",
+      "source": "Every other day, volunteers inspect the shelf. Residents can borrow tools from it.",
+      "candidate": "Volunteers inspect the shelf on alternate days. Residents can borrow tools from it.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-rewrite-9b-frequency_event_binding-0",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "frequency_event_binding",
+      "language": "en",
+      "source": "Every other day, volunteers inspect the shelf. Residents can borrow tools from it.",
+      "candidate": "Residents can borrow tools from the shelf every other day. Volunteers inspect it.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-rewrite-9b-resident_tool_provenance-1",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "resident_tool_provenance",
+      "language": "en",
+      "source": "Residents of Oakwood displayed borrowed tools.",
+      "candidate": "Borrowed tools were displayed by Oakwood residents.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-rewrite-9b-resident_tool_provenance-0",
+      "partition": "discovered_failure_after_paired_9b_rewrite_trial",
+      "name": "resident_tool_provenance",
+      "language": "en",
+      "source": "Residents of Oakwood displayed borrowed tools.",
+      "candidate": "Residents displayed tools borrowed from Oakwood.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-approval_en-1",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "approval_en",
+      "language": "en",
+      "source": "Funding has been approved.",
+      "candidate": "Approval has been granted for the funding.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-approval_en-0",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "approval_en",
+      "language": "en",
+      "source": "Funding has been approved.",
+      "candidate": "Funding is available.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-responsibility_en-1",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "responsibility_en",
+      "language": "en",
+      "source": "Staff are responsible for inspections.",
+      "candidate": "Responsibility for inspections rests with staff.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-responsibility_en-0",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "responsibility_en",
+      "language": "en",
+      "source": "Staff are responsible for inspections.",
+      "candidate": "Staff perform inspections.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-permission_en-1",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "permission_en",
+      "language": "en",
+      "source": "Borrowers are permitted to repair tools.",
+      "candidate": "Borrowers are allowed to repair tools.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-permission_en-0",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "permission_en",
+      "language": "en",
+      "source": "Borrowers are permitted to repair tools.",
+      "candidate": "Borrowers repair tools.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-approval_ru-1",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "approval_ru",
+      "language": "ru",
+      "source": "Финансирование одобрено.",
+      "candidate": "Финансирование получило одобрение.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-approval_ru-0",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "approval_ru",
+      "language": "ru",
+      "source": "Финансирование одобрено.",
+      "candidate": "Финансирование обеспечено.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-responsibility_ru-1",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "responsibility_ru",
+      "language": "ru",
+      "source": "Сотрудники несут ответственность за осмотр.",
+      "candidate": "Сотрудники отвечают за осмотр.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-responsibility_ru-0",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "responsibility_ru",
+      "language": "ru",
+      "source": "Сотрудники несут ответственность за осмотр.",
+      "candidate": "Сотрудники проводят осмотр.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-permission_ru-1",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "permission_ru",
+      "language": "ru",
+      "source": "Заёмщикам разрешено ремонтировать инструменты.",
+      "candidate": "Заёмщики получили разрешение на ремонт инструментов.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-permission_ru-0",
+      "partition": "discovered_failure_after_qwen4b_rewrite_trial",
+      "name": "permission_ru",
+      "language": "ru",
+      "source": "Заёмщикам разрешено ремонтировать инструменты.",
+      "candidate": "Заёмщики ремонтируют инструменты.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-titled_surname-1",
+      "partition": "discovered_failure_after_multivoice_rewrite_trial",
+      "name": "titled_surname",
+      "language": "en",
+      "source": "The librarian called Mr. Smith.",
+      "candidate": "Mr. Smith was called by the librarian.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-titled_surname-0",
+      "partition": "discovered_failure_after_multivoice_rewrite_trial",
+      "name": "titled_surname",
+      "language": "en",
+      "source": "The librarian called Mr. Smith.",
+      "candidate": "The librarian called Mr. Jones.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen4b-titled_initials-1",
+      "partition": "discovered_failure_after_multivoice_rewrite_trial",
+      "name": "titled_initials",
+      "language": "en",
+      "source": "The librarian called Prof. J. R. Tolkien.",
+      "candidate": "Prof. J. R. Tolkien was called by the librarian.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen4b-titled_initials-0",
+      "partition": "discovered_failure_after_multivoice_rewrite_trial",
+      "name": "titled_initials",
+      "language": "en",
+      "source": "The librarian called Prof. J. R. Tolkien.",
+      "candidate": "The librarian called Prof. J. R. Jones.",
+      "equivalent": false
+    }
+  ]
+}

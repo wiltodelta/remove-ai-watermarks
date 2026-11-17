@@ -1,0 +1,1119 @@
+{
+  "schema_version": 1,
+  "source": "https://github.com/eth-sri/automark",
+  "reference_revision": "349abd3badfe72e4b2e3e735768b187a5b332d01",
+  "manifest_sha256": "a392068a7e3f88ed886824d6f72eef1b60702adfe1185480150fed7a2a499db5",
+  "scope": "Pinned published submission inventory, not provider model versions or proof of watermark removal. Every referenced object was hash-verified; metadata inspection is not execution coverage. Selected-package RotationFirst/ConcordMark experiments are accounted for separately.",
+  "submissions": [
+    {
+      "id": "candidate-001",
+      "scheme": "CascadeCopula",
+      "kind": "candidate",
+      "configuration_path": "configs/CascadeCopula.yaml",
+      "configuration_sha256": "fc2dacfe2bf479c0ca785f2af74c32304a2848907a20c167b8c3e92049e8c4ee",
+      "source_map_sha256": "07993411a30f0e75d391ba4c7ccd7ff973eca141292f2f5c36db0a8790d9be1a",
+      "watermark_class": "CascadeCopula",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "The exact content-addressed source/configuration ran with an unchanged CPU author processor and detector using local HF Qwen2.5-1.5B MPS float32 logits. A marked source and negative control completed with EOS and exact text-token round trips. Fresh author detection confirmed the local contrast; native strict library rewriting refused full output. This is one-key smaller-model bridge evidence, not native vLLM/paper-model parity, production FPR calibration, successful removal or qualification of another submission.",
+      "execution": {
+        "adapter": "automark_submission_reference",
+        "model": "Qwen/Qwen2.5-1.5B-Instruct",
+        "model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "reference_revision": "349abd3badfe72e4b2e3e735768b187a5b332d01",
+        "research_key": 45123,
+        "alpha": 0.01,
+        "source_pvalue": 1.5158813209343072e-60,
+        "baseline_pvalue": 1.0,
+        "source_scored_tokens": 307,
+        "baseline_scored_tokens": 265,
+        "library_source_sha256": "8e80ac72da9c1cdc1a22547d4cc2e126ee6f68062848af6c35f5b9edb78f7467",
+        "removal_status": "no_after_output"
+      }
+    },
+    {
+      "id": "candidate-002",
+      "scheme": "LexicalCopula",
+      "kind": "candidate",
+      "configuration_path": "configs/LexicalCopula.yaml",
+      "configuration_sha256": "395a6b660b482c433f91c3907eb6a1d3df577151f46a2da5aa5d3ccefb309fe3",
+      "source_map_sha256": "7b1503cea531132c732cf17877c7e5ec008b2a2979583ffb6f3dd944d2ea2579",
+      "watermark_class": "CascadeCopula",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-003",
+      "scheme": "PortfolioRace",
+      "kind": "candidate",
+      "configuration_path": "configs/PortfolioRace.yaml",
+      "configuration_sha256": "fd4c34f3f0afe371c8ed1dffe526af71822e1a6e49cc0ccf3e4151a04fdbb3c8",
+      "source_map_sha256": "718db1c533d41050531b0cfe28ee5dc86b5311e9f3936bda5cd4105582bf7231",
+      "watermark_class": "PortfolioRace",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-004",
+      "scheme": "TailRace",
+      "kind": "candidate",
+      "configuration_path": "configs/TailRace.yaml",
+      "configuration_sha256": "d90ae58754ac5e84c7d675c81e7508246c45b4c47c5bd71a97f341d9882b28e3",
+      "source_map_sha256": "bbca9ae88c0a24ec2d08cd5c16b83ea3be915da1e58a16219a599aff4433ff72",
+      "watermark_class": "PartitionRace",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-005",
+      "scheme": "DirectionalRenewal",
+      "kind": "candidate",
+      "configuration_path": "configs/DirectionalRenewal.yaml",
+      "configuration_sha256": "e30f616d99da2c38d0a61ad689041e600475e4b0631450a20c13d16de1cbe449",
+      "source_map_sha256": "92e30a64ce1d9ddd39298782d7b295a25e5d9a415e10f8eddaac529cc49c14ed",
+      "watermark_class": "SphericalRenewal",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-006",
+      "scheme": "HaarCap",
+      "kind": "candidate",
+      "configuration_path": "configs/HaarCap.yaml",
+      "configuration_sha256": "894958aa222fc050cbed76d0603db8ee2e41acc38a77962f090b5f4d8c6694b3",
+      "source_map_sha256": "fed2cb2f9f3b59a68c165e4fdedd3f4bc9a946d0b84ccef65effad4954b02ea3",
+      "watermark_class": "HaarRenewal",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-007",
+      "scheme": "HaarGamma",
+      "kind": "candidate",
+      "configuration_path": "configs/HaarGamma.yaml",
+      "configuration_sha256": "f7cc4099c9f4a9f75093e6f39ab6e5466ec9fb12eb3d8bdf0782b2ad385b75da",
+      "source_map_sha256": "2fdb20c446ed3d4cac42ec8710d17aa84234f5d97fd7077a6378b33302ff0260",
+      "watermark_class": "HaarGamma",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-008",
+      "scheme": "HaarPredictive",
+      "kind": "candidate",
+      "configuration_path": "configs/HaarPredictive.yaml",
+      "configuration_sha256": "d9e5e8a2a32e185fce3f338cbfdd90a78d9b9dc5edebc473207980133f6fb923",
+      "source_map_sha256": "91aaefcf5310fd67d9ba3a9f232c7dff764cd3b5422f027842d6a2b9357a3657",
+      "watermark_class": "HaarPredictive",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-009",
+      "scheme": "HaarGraph",
+      "kind": "candidate",
+      "configuration_path": "configs/HaarGraph.yaml",
+      "configuration_sha256": "f32446cd37b4f23368b6fd8cc0cd0bcbed07ff422786aaf8efd6c6b64e843a1f",
+      "source_map_sha256": "ac0da8773dad82b8e8a49d80acfbe17aef4ae6a6223fe4f960f1bb96b106264f",
+      "watermark_class": "HaarGraph",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-010",
+      "scheme": "HaarLexical",
+      "kind": "candidate",
+      "configuration_path": "configs/HaarLexical.yaml",
+      "configuration_sha256": "e530a8d50c55f41187f667d5f0384d3b5a68d40c1b0629c0f616f91f484e6351",
+      "source_map_sha256": "f410749e9ac337733aca36f2a9ecb9f6564e8d99c7c6d88f026f178c62cc43b5",
+      "watermark_class": "HaarLexical",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-011",
+      "scheme": "HaarLexicalFirst",
+      "kind": "candidate",
+      "configuration_path": "configs/HaarLexicalFirst.yaml",
+      "configuration_sha256": "abed70a4caffbdf8b1adcf814d4f8308db4626490c57e521ebd3ff493f4d2afb",
+      "source_map_sha256": "729eeaf9a90bdbbc63a02bfbfd6464179bca47e539513853115290be0856ee9c",
+      "watermark_class": "HaarLexicalFirst",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-012",
+      "scheme": "ProjectiveFirst",
+      "kind": "candidate",
+      "configuration_path": "configs/ProjectiveFirst.yaml",
+      "configuration_sha256": "ba72c5a971f5e72956a7aa85fdd8e12fcc4eed39e496971356496f18e93409cf",
+      "source_map_sha256": "ca58f8886d3b339531342929352750d41410ede44c4f135d5f567ad4d61762e7",
+      "watermark_class": "ProjectiveFirst",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-013",
+      "scheme": "AxialFirst",
+      "kind": "candidate",
+      "configuration_path": "configs/AxialFirst.yaml",
+      "configuration_sha256": "c9013d771ce480759a30ba8a79a6adce0fbadd7a8aa5199d0b447865348eadb6",
+      "source_map_sha256": "80560011ffb04faf7d3cd72b45dc7afbdad73053a870db64929e396c996f4bac",
+      "watermark_class": "AxialFirst",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-014",
+      "scheme": "RotationFirst",
+      "kind": "candidate",
+      "configuration_path": "configs/RotationFirst.yaml",
+      "configuration_sha256": "76c9c26382f5c9747a194ff88bc83dc4d09353e5fd9814ee3c38242f8768913f",
+      "source_map_sha256": "6faea6bd66803ded462024c2464b085922209a55dc594a0da9b8747377762cf3",
+      "watermark_class": "RotationFirst",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection and a declared Llama-3.2-1B MPS sampling bridge; pinned full tokenizer semantics and lexical assets verified. EOS/round-trip and source/shared-negative-control gates passed at alpha 0.01. Fresh author replay reproduced scores. Native strict library returned no whole-document output. One prompt/key/seed; shared control and duplicate source texts are not independent trials or successful removal."
+    },
+    {
+      "id": "candidate-015",
+      "scheme": "FreshRace",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace.yaml",
+      "configuration_sha256": "b67e0ba1ba5ae121f8b60994c956ef4d88bf3695e802d5735c306c76ab9e771a",
+      "source_map_sha256": "91030dbef937c1c3410533c6c6763670fb3171729c2b9b6f179665e984d1fa2e",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace.FreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-016",
+      "scheme": "FreshRace-selective",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-selective.yaml",
+      "configuration_sha256": "ba4eda11d6341835bb9a2b49d1edbdc0d2be31f1bbc4ced8798faec6fdffa84a",
+      "source_map_sha256": "c8ccb97275b42b533aedd3ccaf76d1f6efbdac4e726b798326b71db7ade69084",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace.SelectiveFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-017",
+      "scheme": "FreshRace-deployment",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-deployment.yaml",
+      "configuration_sha256": "019b9ca8db87fc12187d0e6cada6aa95bace1b42eaab75e927cb5ef45ccd2b39",
+      "source_map_sha256": "52dc2fa1de0d54cbc9fe30754c3ebe29ee41f4c66062885adda946854b4f37f6",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace.DeploymentFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-018",
+      "scheme": "FreshRace-channels",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-channels.yaml",
+      "configuration_sha256": "78c0632232d4d0a58092e03f75091ed4863ad41b58621592822b0cef2450c8c1",
+      "source_map_sha256": "66d51cf19ae4b57d4cbd23fb4b296d5033648a35726e6e833b71bf300557a81d",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace.ChannelFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-019",
+      "scheme": "FreshRace-adaptive-channels",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-adaptive-channels.yaml",
+      "configuration_sha256": "1f313be43e2dbbe008b8c96ef568cd1e0620dfbe19e10410a3b99ab37406c634",
+      "source_map_sha256": "9c0a8c1cb8409badcef080de1d89400bc01ebac92ae85699434a69635fceb4ac",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace.AdaptiveChannelFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. An initial whole-document output fell below the detector threshold but changed frequency and facts. A native explicit-frequency-guard follow-up refused output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage.",
+      "experimental_rewriter_followups": {
+        "model": "mlx-community/Qwen3.5-9B-MLX-4bit",
+        "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+        "backend": "mlx",
+        "diagnostic_alpha": 0.01,
+        "review_scope": "Assistant comparison of examined development outputs, not independent human labels or semantic certification. One prompt/key/seed; source and negative control reused. Alternative prompts/message construction are retained prototypes, not production defaults. All returned outputs remained detected; no faithful-removal success is claimed. Original default-runtime outcomes remain separate.",
+        "trials": [
+          {
+            "variant": "default",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 1.893256719085086e-30,
+              "baseline": 0.46181921990968117,
+              "after": 0.0003691914696854434
+            },
+            "fidelity_review": "material_claims_preserved_on_review"
+          },
+          {
+            "variant": "minimal",
+            "detector_status": "no_after_output",
+            "pvalues": {
+              "source": 1.893256719085086e-30,
+              "baseline": 0.46181921990968117
+            },
+            "fidelity_review": "no_output"
+          },
+          {
+            "variant": "context",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 1.893256719085086e-30,
+              "baseline": 0.46181921990968117,
+              "after": 7.7275918666536e-06
+            },
+            "fidelity_review": "material_claims_preserved_on_review"
+          },
+          {
+            "variant": "syntax",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 1.893256719085086e-30,
+              "baseline": 0.46181921990968117,
+              "after": 2.1415067252086817e-16
+            },
+            "fidelity_review": "meaning_changed"
+          },
+          {
+            "variant": "combined",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 1.893256719085086e-30,
+              "baseline": 0.46181921990968117,
+              "after": 4.558263894859521e-16
+            },
+            "fidelity_review": "meaning_changed"
+          }
+        ]
+      },
+      "experimental_rewriter_model_followups": [
+        {
+          "repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+          "revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+          "backend": "mlx",
+          "library_text_module_sha256": "e0b9680408adefa986c62f71fdbf6dd5bbee10a19a2e19f61033e890168c6bc8",
+          "alpha": 0.01,
+          "pvalues": {
+            "source": 1.893256719085086e-30,
+            "baseline": 0.46181921990968117,
+            "after": 0.0020280802588118585
+          },
+          "removal_status": "retained",
+          "semantic_quality": "Not established by assistant review; complete faithful removal is not credited.",
+          "scope": "Examined development input under an earlier guard snapshot, not a new independent provider or FPR trial."
+        }
+      ]
+    },
+    {
+      "id": "candidate-020",
+      "scheme": "FreshRace-split",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-split.yaml",
+      "configuration_sha256": "426517d46826f14a8e539210d16a0fe18fe5376e5e3a47c3aa898ab2afa5d83c",
+      "source_map_sha256": "2fe82a55cf2acf31c34f6ee8f9ddf3448dec2240e51f100542518d5b90e68453",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace_grouped.GroupedFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-021",
+      "scheme": "FreshRace-antithetic-reservoir",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-antithetic-reservoir.yaml",
+      "configuration_sha256": "6572433c665c38131ff9cceed422aa7fa9e06c9085c9cfcad901a31139b4d726",
+      "source_map_sha256": "5986c85d5c56dd5868a7329021b4f9fd16aa4ed4fff253098bccb32811576a12",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace_antithetic.AntitheticReservoirFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-022",
+      "scheme": "FreshRace-balanced",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-balanced.yaml",
+      "configuration_sha256": "046b50be2b2b8a351089fd4fbcf39971dadb15f0621e75854e2e66b5f1ad276c",
+      "source_map_sha256": "8a9fb850c6cdefbff2bf327773fadc9ea70f2751733d89f840b78aa22224396d",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace_antithetic.BalancedFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-023",
+      "scheme": "FreshRace-lexical",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-lexical.yaml",
+      "configuration_sha256": "569339cb66f933c9542878fc873b0f4d725a79634edde7de09630bd2213aed26",
+      "source_map_sha256": "dbc8d08bc2b376e8cfac6ed4e058b14fe17e840323211f6bfe366f294dff031a",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace_lexical.LexicalFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-024",
+      "scheme": "FreshRace-lexical",
+      "kind": "candidate",
+      "configuration_path": "configs/FreshRace-lexical.yaml",
+      "configuration_sha256": "569339cb66f933c9542878fc873b0f4d725a79634edde7de09630bd2213aed26",
+      "source_map_sha256": "fd1271bc598755563570fd1de2f52a806282f2caf99596eeb5c3bb1b5a96f122",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.freshrace_lexical.LexicalFreshRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage."
+    },
+    {
+      "id": "candidate-025",
+      "scheme": "RenewalRace",
+      "kind": "candidate",
+      "configuration_path": "configs/RenewalRace.yaml",
+      "configuration_sha256": "c74647ae30d5fb8f94608eb1f84529f5812d1d4f7ce5e31631857fdd7f16acab",
+      "source_map_sha256": "6ad9ec0d75173b452aeca169aba773c1de100746acd520a661e9515518e85cfe",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.renewalrace.RenewalRaceWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Llama-3.2-1B MPS sampling bridge. Published FreshRace assets are unchanged but do not embed build-tokenizer metadata; the reference follows the author default Llama-3.1 evaluation model. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Initial and explicit-frequency-guard follow-up outputs fell below the diagnostic detector threshold, but manual review found changed roles, invented individual toolboxes and an omitted duration condition. Successful faithful removal is not established. One prompt/key/seed, duplicate sources and a reused control do not establish independent trials, FPR calibration, paper-model parity or provider coverage. A subsequent native indefinite-duration-guard follow-up refused the complete document after three attempts. Earlier detector-negative, meaning-changed outputs remain retained failures. Other source states were not rerun on this duration-guard revision.",
+      "experimental_rewriter_followups": {
+        "model": "mlx-community/Qwen3.5-9B-MLX-4bit",
+        "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+        "backend": "mlx",
+        "diagnostic_alpha": 0.01,
+        "review_scope": "Assistant comparison of examined development outputs, not independent human labels or semantic certification. One prompt/key/seed; source and negative control reused. Alternative prompts/message construction are retained prototypes, not production defaults. All returned outputs remained detected; no faithful-removal success is claimed. Original default-runtime outcomes remain separate.",
+        "trials": [
+          {
+            "variant": "minimal",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 9.82347104146006e-21,
+              "baseline": 0.16595011349551353,
+              "after": 3.232737104836583e-13
+            },
+            "fidelity_review": "meaning_changed"
+          },
+          {
+            "variant": "default",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 9.82347104146006e-21,
+              "baseline": 0.16595011349551353,
+              "after": 5.073255632490317e-07
+            },
+            "fidelity_review": "not_established_location_specificity"
+          },
+          {
+            "variant": "context",
+            "detector_status": "no_after_output",
+            "pvalues": {
+              "source": 9.82347104146006e-21,
+              "baseline": 0.16595011349551353
+            },
+            "fidelity_review": "no_output"
+          },
+          {
+            "variant": "syntax",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 9.82347104146006e-21,
+              "baseline": 0.16595011349551353,
+              "after": 3.429429010522636e-16
+            },
+            "fidelity_review": "meaning_changed"
+          },
+          {
+            "variant": "combined",
+            "detector_status": "retained",
+            "pvalues": {
+              "source": 9.82347104146006e-21,
+              "baseline": 0.16595011349551353,
+              "after": 1.479642443391763e-17
+            },
+            "fidelity_review": "not_established"
+          }
+        ]
+      },
+      "experimental_rewriter_model_followups": [
+        {
+          "repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+          "revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+          "backend": "mlx",
+          "library_text_module_sha256": "e0b9680408adefa986c62f71fdbf6dd5bbee10a19a2e19f61033e890168c6bc8",
+          "alpha": 0.01,
+          "pvalues": {
+            "source": 9.82347104146006e-21,
+            "baseline": 0.16595011349551353,
+            "after": 3.4837451884428075e-05
+          },
+          "removal_status": "retained",
+          "semantic_quality": "Not established by assistant review; complete faithful removal is not credited.",
+          "scope": "Examined development input under an earlier guard snapshot, not a new independent provider or FPR trial."
+        }
+      ]
+    },
+    {
+      "id": "candidate-026",
+      "scheme": "OmniSeal",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal.yaml",
+      "configuration_sha256": "9464c9cedc9a9510244a526e10147e0dfd403a56f733847ed5b483e55a5d189e",
+      "source_map_sha256": "12fff33a5f2c9f51dde025412ab22357c03d444f039464ee3f726631b3245fbc",
+      "watermark_class": "OmniSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-027",
+      "scheme": "OmniSeal",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal.yaml",
+      "configuration_sha256": "9464c9cedc9a9510244a526e10147e0dfd403a56f733847ed5b483e55a5d189e",
+      "source_map_sha256": "296b2d63b9c2f8393f82fbaa1b44169c27b5e9d55bf96652411e080a38d1f2bd",
+      "watermark_class": "OmniSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-028",
+      "scheme": "OmniSeal",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal.yaml",
+      "configuration_sha256": "9464c9cedc9a9510244a526e10147e0dfd403a56f733847ed5b483e55a5d189e",
+      "source_map_sha256": "7dc2e9dbde217fb470ca219f073d4cb9fe74ef2b1d3ba3882bc39dc988af5497",
+      "watermark_class": "OmniSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-029",
+      "scheme": "OmniSeal",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal.yaml",
+      "configuration_sha256": "41487533db886f09e0574ec3399e10f8793a834034e20b067538277d4dc715ad",
+      "source_map_sha256": "8223f8c8ca17eca8508fa08e028f98443b8c53cbaa2e5e5a87496f86cab72bb3",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-030",
+      "scheme": "OmniSeal-G0",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal-G0.yaml",
+      "configuration_sha256": "e77be668a2a61eaa7100eb40ecaa115e945fe6ef4c63c7a4467d452a5a50d6af",
+      "source_map_sha256": "6ca5eaee5173a1018dcf74eaa016c9d95d13ca16e31e089f64873b8e815c68df",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-031",
+      "scheme": "OmniSeal-K40",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal-K40.yaml",
+      "configuration_sha256": "44f9c27e9abc9c3cb1bff7f8b6ab36dadb12521c4c4a3ef4de87156cce244d08",
+      "source_map_sha256": "581857b1d724a41a6665b902b3a8a0d2099df49469d63ce9e5b98eb7ebe050df",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-032",
+      "scheme": "OmniSeal-K45",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal-K45.yaml",
+      "configuration_sha256": "a691554ef9a7097e047b8f2b6c200740425075360ad9f1c236c5049fa93fbdf9",
+      "source_map_sha256": "a32d13c592adad908f0f0c3a1d953bbfe69bacaf6f6be43a2ef6ec0a455d4d46",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-033",
+      "scheme": "OmniSeal-K35",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal-K35.yaml",
+      "configuration_sha256": "1de97a5c7743c1406c7c3f897e9f0bf0c2c2ea80ecfa7ce308f517831b06196a",
+      "source_map_sha256": "799d15e743ceaf0a691c3a4150a4bf60431e8782b95486c89fad72ebe34827a3",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-034",
+      "scheme": "OmniSeal-W05",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal-W05.yaml",
+      "configuration_sha256": "05ddbfa0e8d144089a3438e2eb875c1a1920ff0429ae965da56a2b0c47149251",
+      "source_map_sha256": "d3d5bf6d46538926169708c5bb3ea624613640e7bc3a9ad3a92f9d427bcc815c",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-035",
+      "scheme": "OmniSeal-C4",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal-C4.yaml",
+      "configuration_sha256": "bc4ad23afdec452e10c1c4beb97610998caf54781302f52c139105718e4013d5",
+      "source_map_sha256": "7523644eb97e25de9b57e77494f8b8ae2b40b4c7bc8774c36e320b5cea6da2cc",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-036",
+      "scheme": "OmniSeal-K30",
+      "kind": "candidate",
+      "configuration_path": "configs/OmniSeal-K30.yaml",
+      "configuration_sha256": "952e21e4bd969c3378e12a3dcafcf7561818febe9c89edb2ccd36b736ad099db",
+      "source_map_sha256": "9bd788cab26dcd9a82a457e916aeeda1d2ab43491b91b0da8f2a893b2c3c66a9",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+    },
+    {
+      "id": "candidate-037",
+      "scheme": "TallyMark",
+      "kind": "candidate",
+      "configuration_path": "configs/TallyMark.yaml",
+      "configuration_sha256": "2319bdc2c9f74bf02d8930d0c6461cc6ab56e9cd7865cd2f673873ab5b240bdb",
+      "source_map_sha256": "0023f13fafef1fb0d978b5e00bde011a7cd09f29c33de6a1e9cff76c97ff72ff",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.tallymark.TallyMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Qwen2.5-1.5B MPS float32 sampling bridge. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate states/texts and a reused control do not establish independent trials, FPR calibration, paper-model parity, source-text quality or provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "TallyMarkWatermark",
+        "detector_class": "TallyMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "source_pvalue": 3.2778136144222663e-50,
+        "shared_unmarked_control_pvalue": 0.5258220529403034,
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "e0b9680408adefa986c62f71fdbf6dd5bbee10a19a2e19f61033e890168c6bc8"
+      }
+    },
+    {
+      "id": "candidate-038",
+      "scheme": "TallyMark",
+      "kind": "candidate",
+      "configuration_path": "configs/TallyMark.yaml",
+      "configuration_sha256": "e62e22bdb37425b9ac2a43c82354363b5095157ff36dc53fb11faff00d60c564",
+      "source_map_sha256": "cf259c4bdab70b4a25899bfc97ccc7ff04d7d2c063e0db13e48281ac20291603",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.tallymark.TallyMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Qwen2.5-1.5B MPS float32 sampling bridge. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate states/texts and a reused control do not establish independent trials, FPR calibration, paper-model parity, source-text quality or provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "TallyMarkWatermark",
+        "detector_class": "TallyMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "source_pvalue": 7.121113114583601e-14,
+        "shared_unmarked_control_pvalue": 0.07870071948854099,
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "e0b9680408adefa986c62f71fdbf6dd5bbee10a19a2e19f61033e890168c6bc8"
+      }
+    },
+    {
+      "id": "candidate-039",
+      "scheme": "TallyMark",
+      "kind": "candidate",
+      "configuration_path": "configs/TallyMark.yaml",
+      "configuration_sha256": "a15251deee5ef41157d4b2f8477ad20b2224e07fb7a83839bb9013a7a6c4a756",
+      "source_map_sha256": "9f274fedb44c5a7086909b234d16cb2ba3b8b46d3dcf48274e160432a7891d50",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.tallymark.TallyMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Qwen2.5-1.5B MPS float32 sampling bridge. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate states/texts and a reused control do not establish independent trials, FPR calibration, paper-model parity, source-text quality or provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "TallyMarkWatermark",
+        "detector_class": "TallyMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "source_pvalue": 2.25718783295748e-32,
+        "shared_unmarked_control_pvalue": 1.0,
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "e0b9680408adefa986c62f71fdbf6dd5bbee10a19a2e19f61033e890168c6bc8"
+      }
+    },
+    {
+      "id": "candidate-040",
+      "scheme": "TallyMark",
+      "kind": "candidate",
+      "configuration_path": "configs/TallyMark.yaml",
+      "configuration_sha256": "a15251deee5ef41157d4b2f8477ad20b2224e07fb7a83839bb9013a7a6c4a756",
+      "source_map_sha256": "9f274fedb44c5a7086909b234d16cb2ba3b8b46d3dcf48274e160432a7891d50",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.tallymark.TallyMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a declared Qwen2.5-1.5B MPS float32 sampling bridge. EOS/round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. The native strict library refused whole-document output. One prompt/key/seed, duplicate states/texts and a reused control do not establish independent trials, FPR calibration, paper-model parity, source-text quality or provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "TallyMarkWatermark",
+        "detector_class": "TallyMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "source_pvalue": 2.25718783295748e-32,
+        "shared_unmarked_control_pvalue": 1.0,
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "e0b9680408adefa986c62f71fdbf6dd5bbee10a19a2e19f61033e890168c6bc8"
+      }
+    },
+    {
+      "id": "candidate-041",
+      "scheme": "ChoirMark",
+      "kind": "candidate",
+      "configuration_path": "configs/ChoirMark.yaml",
+      "configuration_sha256": "083f257b0513da7c8fd354030f3ec34019386fe2ef891208d3fa32de3d3f64fb",
+      "source_map_sha256": "4e413e661de77953ed7b8cce697ac834b12816c0812b67af31c98aef02da0038",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.choirmark.ChoirMarkWatermark",
+      "status": "author_reference_positive_control_and_retained_mark",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "ChoirMarkWatermark",
+        "detector_class": "ChoirMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 7.872270573068534e-52,
+          "baseline": 0.03352268304308379,
+          "after": 8.974368427829607e-19
+        },
+        "removal_status": "retained",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      },
+      "titled_name_followup": {
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "strict_rewrite_status": "no_after_output",
+        "allow_partial_status": "retained",
+        "partial_after_pvalue": 4.403001261971377e-19,
+        "retained_prose_spans": 1,
+        "quality": "Both title/name mentions retained byte-identically in the untouched middle paragraph; complete source-detail fidelity remains unverified."
+      }
+    },
+    {
+      "id": "candidate-042",
+      "scheme": "CanonMark",
+      "kind": "candidate",
+      "configuration_path": "configs/CanonMark.yaml",
+      "configuration_sha256": "d1d4cccd83cd4c6830b7c0f8323bd21f3bcee663df7300ce703a1e521fc67625",
+      "source_map_sha256": "d6578f9d445c312c40dcd69ee6342e5d52ee8ffcac5c91cdac56901be07f4ff7",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.canonmark.CanonMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "CanonMarkWatermark",
+        "detector_class": "CanonMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 8.681628477060447e-67,
+          "baseline": 0.2519665659754352
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      }
+    },
+    {
+      "id": "candidate-043",
+      "scheme": "LadderMark",
+      "kind": "candidate",
+      "configuration_path": "configs/LadderMark.yaml",
+      "configuration_sha256": "d5b9d83065e9051434d91724e4c8ee1b2565161013fbddded4c417ac811ef074",
+      "source_map_sha256": "effb9c5c4a36b941a5fea515597b5ecf0a8319ec6321eb2741b578b2b8180e0d",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.laddermark.LadderMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "LadderMarkWatermark",
+        "detector_class": "LadderMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 7.624919765944692e-74,
+          "baseline": 0.1403808937516953
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      }
+    },
+    {
+      "id": "candidate-044",
+      "scheme": "PreludeMark",
+      "kind": "candidate",
+      "configuration_path": "configs/PreludeMark.yaml",
+      "configuration_sha256": "e69fbe41ec6bf096122e84d9fd23c63add95c30a8f452a4aae5fef299aaeef3d",
+      "source_map_sha256": "7c9ff7a4d60309e1ac6b4421110553f614a677099658f6b15b08dff8d1c37e80",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.preludemark.PreludeMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "PreludeMarkWatermark",
+        "detector_class": "PreludeMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 5.784108393068213e-67,
+          "baseline": 1.0
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      }
+    },
+    {
+      "id": "candidate-045",
+      "scheme": "ConsortMark",
+      "kind": "candidate",
+      "configuration_path": "configs/ConsortMark.yaml",
+      "configuration_sha256": "55dd3d5e55bbc26e742ac803f890ad3b350d3b6455058d41ff4522fb27458afb",
+      "source_map_sha256": "909ff8f982134b7bb008ee55b6dcb5a04d231960fbc9771b9c2e42fe53c666fe",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.consortmark.ConsortMarkWatermark",
+      "status": "author_reference_positive_control_and_retained_mark",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "ConsortMarkWatermark",
+        "detector_class": "ConsortMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 2.0522797429898657e-116,
+          "baseline": 1.0,
+          "after": 1.5255636128144047e-11
+        },
+        "removal_status": "retained",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      }
+    },
+    {
+      "id": "candidate-046",
+      "scheme": "SestetMark",
+      "kind": "candidate",
+      "configuration_path": "configs/SestetMark.yaml",
+      "configuration_sha256": "c4564ec3db2c26856e3f36ed41e338b0af2a21e0bbcc9db0eb469a98b3635506",
+      "source_map_sha256": "caf030b1e699ad78a83a0d1c971db12282b45c0524507768b6cd967a5693753b",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.sestetmark.SestetMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "SestetMarkWatermark",
+        "detector_class": "SestetMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.2942359612774209e-72,
+          "baseline": 1.0
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      }
+    },
+    {
+      "id": "candidate-047",
+      "scheme": "MotetMark",
+      "kind": "candidate",
+      "configuration_path": "configs/MotetMark.yaml",
+      "configuration_sha256": "abfb3c97e392de1b7f63a56512ba03104d7a5ee8acdfabdb5279a6cd5f298c9b",
+      "source_map_sha256": "64ecf3fddfd6074a61b4e8456c156ee314068d152c7523978fefe488ef9324ae",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.motetmark.MotetMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "MotetMarkWatermark",
+        "detector_class": "MotetMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.0353887690219367e-72,
+          "baseline": 1.0
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      }
+    },
+    {
+      "id": "candidate-048",
+      "scheme": "CodaMark",
+      "kind": "candidate",
+      "configuration_path": "configs/CodaMark.yaml",
+      "configuration_sha256": "efe3c1916c872472553fb0dc92353bea6939a381946f560ebe0d252fc2b8f458",
+      "source_map_sha256": "4eed132dd4ee30beb50495ffad951e5e269c6eebb71d253b6ffdee56b1918468",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.codamark.CodaMarkWatermark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge, followed by experimental native MLX Qwen3-4B rewriting. EOS, token round-trip and source/shared-negative-control gates passed; fresh author replay reproduced scores. Returned outputs remain detected at the frozen diagnostic alpha and are not quality-certified; other complete rewrites are refused. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "CodaMarkWatermark",
+        "detector_class": "CodaMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 2.4812410583373223e-78,
+          "baseline": 0.9344786719706385
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "648c00475125ba8132673797d7e5f1d0476d769029d2e418ca05550229115d82",
+        "rewriter_repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "rewriter_revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        "rewriter_backend": "mlx",
+        "production_default_changed": false
+      }
+    },
+    {
+      "id": "candidate-049",
+      "scheme": "AccentMark",
+      "kind": "candidate",
+      "configuration_path": "configs/AccentMark.yaml",
+      "configuration_sha256": "537728d11e6d16598e61eea3ab160608d0b21fddebac6f97f5f3c9d496b554a8",
+      "source_map_sha256": "ebfd1583bda3d18430f7f0961baa6b87ee1b56b691363544e10dba6db4025dfb",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.accentmark.AccentMarkWatermark",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [
+          "token_logprobs"
+        ],
+        "processor_class": "AccentMarkWatermark",
+        "detector_class": "AccentMarkWatermark"
+      }
+    },
+    {
+      "id": "candidate-050",
+      "scheme": "RowMark",
+      "kind": "candidate",
+      "configuration_path": "configs/RowMark.yaml",
+      "configuration_sha256": "f21e91036068cd2dfa253bbb20f7fb8231dda26817ad5dbf1c09f0aaaf4e4f79",
+      "source_map_sha256": "88262b3f59777f825701d517004b116c2430d6957dcbd442930b0a1418b4508e",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.rowmark.RowMarkWatermark",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [
+          "token_logprobs",
+          "row_id_0",
+          "row_id_1",
+          "row_id_2",
+          "row_id_3",
+          "row_id_4",
+          "row_id_5",
+          "row_id_6",
+          "row_id_7",
+          "row_lp_0",
+          "row_lp_1",
+          "row_lp_2",
+          "row_lp_3",
+          "row_lp_4",
+          "row_lp_5",
+          "row_lp_6",
+          "row_lp_7"
+        ],
+        "processor_class": "RowMarkWatermark",
+        "detector_class": "RowMarkWatermark"
+      }
+    },
+    {
+      "id": "candidate-051",
+      "scheme": "UnisonMark",
+      "kind": "candidate",
+      "configuration_path": "configs/UnisonMark.yaml",
+      "configuration_sha256": "38dd40a718482d601342493ed0ab5c7552c2e33ae455617c5d796edc0f4dcb20",
+      "source_map_sha256": "1cee4e2b349ae957c9f692f4cd94f8d9996cf8218681f2658957502891a67c5b",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.unisonmark.UnisonMarkWatermark",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [
+          "token_logprobs",
+          "row_id_0",
+          "row_id_1",
+          "row_id_2",
+          "row_id_3",
+          "row_id_4",
+          "row_id_5",
+          "row_id_6",
+          "row_id_7",
+          "row_lp_0",
+          "row_lp_1",
+          "row_lp_2",
+          "row_lp_3",
+          "row_lp_4",
+          "row_lp_5",
+          "row_lp_6",
+          "row_lp_7"
+        ],
+        "processor_class": "UnisonMarkWatermark",
+        "detector_class": "UnisonMarkWatermark"
+      }
+    },
+    {
+      "id": "candidate-052",
+      "scheme": "ConcordMark",
+      "kind": "candidate",
+      "configuration_path": "configs/ConcordMark.yaml",
+      "configuration_sha256": "9f549f0b051538bf734813f65b26399b12dbcb6b42479c51dc0bf1e863c8afef",
+      "source_map_sha256": "79a2c7e4860adac5d55ea5e7191f17d99abb238d5b489d52b1d8e3de309b9713",
+      "watermark_class": "lm_wm_tools.watermarks.logits_processors.concordmark.ConcordMarkWatermark",
+      "status": "not_executed",
+      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [
+          "token_logprobs",
+          "row_id_0",
+          "row_id_1",
+          "row_id_2",
+          "row_id_3",
+          "row_id_4",
+          "row_id_5",
+          "row_id_6",
+          "row_id_7",
+          "row_lp_0",
+          "row_lp_1",
+          "row_lp_2",
+          "row_lp_3",
+          "row_lp_4",
+          "row_lp_5",
+          "row_lp_6",
+          "row_lp_7"
+        ],
+        "processor_class": "ConcordMarkWatermark",
+        "detector_class": "ConcordMarkWatermark"
+      }
+    },
+    {
+      "id": "baseline-TextSeal",
+      "scheme": "TextSeal",
+      "kind": "baseline",
+      "source_project": "../lm-wm-library/base",
+      "configuration_path": "configs/TextSeal.yaml",
+      "configuration_sha256": "a2b4330000ac9ef99c9c742e03f93c52de1430f0d14c0031033cac8bf2bf6c63",
+      "source_tree_sha256": "4409572252e2cccf94174a73ece564ce423ddd6a45718ae9369587ab788f4cf1",
+      "watermark_class": "TextSeal",
+      "status": "not_executed",
+      "reason": "Baseline source is in the declared project, not a content-addressed submission map. Other-reference results do not establish execution of this source state.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [
+          "entropies"
+        ],
+        "processor_class": "TextSealWatermark",
+        "detector_class": "TextSealWatermark"
+      }
+    },
+    {
+      "id": "baseline-AAR-context3",
+      "scheme": "AAR",
+      "kind": "baseline",
+      "source_project": "../lm-wm-library/base",
+      "configuration_path": "configs/AAR.yaml",
+      "configuration_sha256": "f1fabbfc85df487f3b8ef9a1263b668f7c3d807a864b1127dd85fb39628918fe",
+      "source_tree_sha256": "4409572252e2cccf94174a73ece564ce423ddd6a45718ae9369587ab788f4cf1",
+      "watermark_class": "AAR",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact declared baseline project and configuration verified against the published manifest, original source-tree digest and complete materialized tree. Unchanged CPU author generation/detection on a Qwen2.5-1.5B MPS float32 sampling bridge passed EOS, token round-trip, scored-length and source/shared-negative-control checks. Fresh author replay reproduced scores. The native strict library refused complete output after three attempts. One prompt/key/seed and a reused control do not establish FPR calibration, source-quality certification, native paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "AARWatermark",
+        "detector_class": "AARWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "source_pvalue": 0.0,
+        "shared_unmarked_control_pvalue": 0.42595651745796204,
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "source_tree_sha256": "4409572252e2cccf94174a73ece564ce423ddd6a45718ae9369587ab788f4cf1"
+      }
+    },
+    {
+      "id": "baseline-SynthID-context3",
+      "scheme": "SynthID",
+      "kind": "baseline",
+      "source_project": "../lm-wm-library/base",
+      "configuration_path": "configs/SynthID.yaml",
+      "configuration_sha256": "2c2182765458f4b5becd762b964474d440a122df641a3f5291a57a1e3bd1f672",
+      "source_tree_sha256": "4409572252e2cccf94174a73ece564ce423ddd6a45718ae9369587ab788f4cf1",
+      "watermark_class": "SynthID",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact declared baseline project and configuration verified against the published manifest, original source-tree digest and complete materialized tree. Unchanged CPU author generation/detection on a Qwen2.5-1.5B MPS float32 sampling bridge passed EOS, token round-trip, scored-length and source/shared-negative-control checks. Fresh author replay reproduced scores. The native strict library refused complete output after three attempts. One prompt/key/seed and a reused control do not establish FPR calibration, source-quality certification, native paper-model parity or private-provider coverage.",
+      "requirements_audit": {
+        "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
+        "required_auxiliary_signals": [],
+        "processor_class": "SynthIDWatermark",
+        "detector_class": "SynthIDWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "source_pvalue": 1.2454503910864507e-63,
+        "shared_unmarked_control_pvalue": 0.8227372472887176,
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "source_tree_sha256": "4409572252e2cccf94174a73ece564ce423ddd6a45718ae9369587ab788f4cf1"
+      }
+    }
+  ],
+  "tokenizer_references": {
+    "llama3_wordnet": {
+      "model": "meta-llama/Llama-3.1-8B-Instruct",
+      "revision": "0e9e39f249a16976918f6564b8830bc894c89659",
+      "git_blob_id": "5cc5f00a5b203e90a27a3bd60d1ec393b07971e8",
+      "tokenizer_sha256": "79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4"
+    }
+  }
+}

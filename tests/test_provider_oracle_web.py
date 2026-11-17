@@ -161,18 +161,19 @@ def test_openai_link_wrapped_provider_error_is_settled() -> None:
 
 
 @pytest.mark.parametrize(
-    ("surface", "ready_state"),
+    ("surface", "ready_state", "expected_events"),
     [
-        ("meta-web", "networkidle"),
-        ("microsoft-web", "networkidle"),
-        ("openai-web", "load"),
-        ("synthid-web", "networkidle"),
+        ("meta-web", "load", ["ready:load", "dropzone-visible", "input-located", "input-attached", "file-assigned"]),
+        ("microsoft-web", "networkidle", ["ready:networkidle", "input-located", "input-attached", "file-assigned"]),
+        ("openai-web", "load", ["ready:load", "input-located", "input-attached", "file-assigned"]),
+        ("synthid-web", "networkidle", ["ready:networkidle", "input-located", "input-attached", "file-assigned"]),
     ],
 )
 def test_react_uploads_wait_for_surface_readiness_before_assigning_the_file(
     tmp_path: Path,
     surface: str,
     ready_state: str,
+    expected_events: list[str],
 ) -> None:
     events: list[str] = []
 
@@ -187,6 +188,17 @@ def test_react_uploads_wait_for_surface_readiness_before_assigning_the_file(
             assert timeout == 5_000
             events.append("file-assigned")
 
+    class FakeDropzone:
+        def wait_for(self, *, state: str, timeout: int) -> None:
+            assert state == "visible"
+            assert timeout == 5_000
+            events.append("dropzone-visible")
+
+    class FakeDropzoneLocator:
+        @property
+        def first(self) -> FakeDropzone:
+            return FakeDropzone()
+
     class FakeLocator:
         @property
         def first(self) -> FakeInput:
@@ -198,6 +210,10 @@ def test_react_uploads_wait_for_surface_readiness_before_assigning_the_file(
             assert timeout == 5_000
             events.append(f"ready:{state}")
 
+        def get_by_text(self, text: str) -> FakeDropzoneLocator:
+            assert text == "Upload or drag an image, video, or audio file"
+            return FakeDropzoneLocator()
+
         def locator(self, selector: str) -> FakeLocator:
             assert selector == 'input[type="file"]'
             events.append("input-located")
@@ -205,7 +221,7 @@ def test_react_uploads_wait_for_surface_readiness_before_assigning_the_file(
 
     web._set_upload_file(FakePage(), surface, tmp_path / "upload.webp", 5.0)  # type: ignore[arg-type]
 
-    assert events == [f"ready:{ready_state}", "input-located", "input-attached", "file-assigned"]
+    assert events == expected_events
 
 
 def test_proxy_settings_are_loaded_from_an_environment_reference() -> None:
@@ -481,3 +497,67 @@ def test_run_web_batch_requires_a_slot_for_synthid(
 
     with pytest.raises(ValueError, match="explicit execution slot"):
         web.run_web_batch(manifest_path, acknowledge_uploads=True)
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("SynthID was detected\nThis media was made or edited with Google AI", "detected"),
+        ("SynthID was detected\nSynthID was not detected", "indeterminate"),
+    ],
+)
+def test_current_synthid_positive_label_settles_without_losing_conflicts(label: str, expected: str) -> None:
+    assert web._settled("synthid-web", label)
+    assert web.parse_provider_result("synthid-web", label).watermark_result == expected
+
+
+@pytest.mark.parametrize("outcome", ["detected", "not_detected", "indeterminate", "refused", "unreachable"])
+def test_batch_continues_only_after_conclusive_verdicts_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tmp_clean_png: Path,
+    outcome: str,
+) -> None:
+    slot: oracles.ExecutionSlot = {
+        "name": "synthid-direct",
+        "surface": "synthid-web",
+        "account_label": None,
+        "browser_profile": None,
+        "google_account_index": None,
+        "network_label": "direct",
+        "proxy_url_env": None,
+    }
+    from PIL import Image
+
+    other = tmp_path / "other.png"
+    Image.new("RGB", (3, 2), "navy").save(other)
+    manifest = oracles.prepare_batch(
+        "synthid-web", [tmp_clean_png, other], output_dir=tmp_path / "bounded-batch", slot=slot
+    )
+    submitted: list[int] = []
+    closed: list[bool] = []
+    held: list[object] = []
+
+    def submit(*_args: object, **_kwargs: object):
+        def stream():
+            try:
+                for index in range(2):
+                    submitted.append(index)
+                    yield web.WebVerdict(outcome if index == 0 else "not_detected", "unavailable", "Observed reply")
+            finally:
+                closed.append(True)
+
+        iterator = stream()
+        held.append(iterator)  # Explicit cleanup must work even while another reference keeps the generator alive.
+        return iterator
+
+    monkeypatch.setattr(web, "_submit_batch", submit)
+    report = web.run_web_batch(manifest, acknowledge_uploads=True, headed=False, environ={})
+    conclusive = outcome in {"detected", "not_detected"}
+    assert submitted == ([0, 1] if conclusive else [0])
+    assert closed == [True]
+    assert report["complete"] is conclusive
+    assert report["recorded"] == len(submitted)
+    results = json.loads((manifest.parent / "results.json").read_text())
+    assert results["rows"][0]["watermark_result"] == outcome
+    assert results["rows"][1]["watermark_result"] == ("not_detected" if conclusive else None)

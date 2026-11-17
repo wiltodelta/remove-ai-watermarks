@@ -1,5 +1,11 @@
 # Text Watermark and Provenance Research
 
+> Reference compatibility: except for the corrected HF SynthID adapter, the
+> legacy local statistical score helpers use a custom BLAKE2 PRF. Treat their
+> numerical examples as simulations, not vendor verification. New removal
+> experiments must use an independently matched generator and detector, with
+> positive/negative controls. See [validation](text-watermark-validation.md).
+
 This document records the architecture, binary framing, statistical mechanics,
 and empirical removal benchmarks for AI text provenance and LLM token
 watermarks supported by `remove-ai-watermarks`.
@@ -14,7 +20,7 @@ flowchart TD
     Input["Input Text / Markdown / HTML"] --> Stage1["Stage 1: Deterministic Metadata & Steganography Scrub (`text metadata`)"]
     Stage1 --> C2PA["C2PA 2.3/2.4 Text & HTML<br/>• Appendix A.7 (`text/html` `<head>`)<br/>• Appendix A.8 (`C2PATXT\\0` Variation Selectors)<br/>• Appendix A.9 (`BEGIN C2PA MANIFEST` ASCII Armor)"]
     Stage1 --> Stego["Character Steganography & Soft Bindings<br/>• `VSRMark` (`VSR1` + CRC32 in Variation Selectors)<br/>• Unicode Tags (`U+E0000..U+E007F`)<br/>• Anomalous Zero-Width Characters (Emoji ZWJ/VS preserved)"]
-    C2PA --> CleanChars["Character-Clean Text (100% lossless visible text)"]
+    C2PA --> CleanChars["Character-Clean Text (review Unicode changes)"]
     Stego --> CleanChars
     CleanChars --> Stage2["Stage 2: Span-Protected Local Regeneration (`text invisible`)"]
     Stage2 --> LockSpans["Lock Low-Entropy & Structural Spans Verbatim<br/>• Fenced & inline code<br/>• LaTeX math (`$$...$$`, `$...$`)<br/>• URLs, file paths, HTML tags, Markdown headings"]
@@ -25,9 +31,9 @@ flowchart TD
 
 | Layer | Signal family | Examples | Local detection | Removal mechanism | Fidelity |
 | --- | --- | --- | --- | --- | --- |
-| **1. Container & character-wrapper C2PA** | Cryptographic JUMBF manifest embedded in HTML or invisible Unicode suffixes/comments | C2PA 2.3/2.4 Appendix A.7 (`text/html`), Appendix A.8 (`C2PATXT\0`), Appendix A.9 (`-----BEGIN C2PA MANIFEST-----`) | **Deterministic (100%)** via JUMBF / `c2pa-rs` inspection | Exact structural strip (`text metadata`) | **Lossless** on visible prose and code |
-| **2. Character-level steganography & soft bindings** | Invisible codepoints interleaved with or appended to visible characters | `VSRMark` (`com.cognitive-proof.vsrmark.1`), Unicode Tags (`U+E0000`..`U+E007F`), zero-width steganography (`U+200B`..`U+200D`, `U+2060`..`U+2064`, `U+FEFF`) | **Deterministic (100%)** via byte bijection, magic header, and CRC32 check | Emoji-preserving codepoint strip (`text metadata`) | **Lossless** on visible prose and code |
-| **3. Token-level statistical LLM watermarks** | Keyed pseudorandom bias or tournament selection during autoregressive token sampling | Google `SynthID-Text`, Anthropic **Claude Fable 5.1/5.2 & Mythos 5.1/5.2**, OpenAI **GPT-6 Astra `textGrain`**, KGW Red-Green List, Unigram | **Key-gated** (requires the provider's secret key or private detector endpoint; unkeyed text carries no local statistical proof) | Span-protected prose regeneration with an unwatermarked local model (`text invisible`) | **Semantic-preserving** (rewrites prose tokens; locks code, math, URLs, and paths byte-for-byte) |
+| **1. Container & character-wrapper C2PA** | Cryptographic JUMBF manifest embedded in HTML or invisible Unicode suffixes/comments | C2PA 2.3/2.4 Appendix A.7 (`text/html`), Appendix A.8 (`C2PATXT\0`), Appendix A.9 (`-----BEGIN C2PA MANIFEST-----`) | **Deterministic for recognized supported framing** via JUMBF / `c2pa-rs` inspection | Exact structural strip (`text metadata`) | **Lossless** on visible prose and code |
+| **2. Character-level steganography & soft bindings** | Invisible codepoints interleaved with or appended to visible characters | `VSRMark` (`com.cognitive-proof.vsrmark.1`), Unicode Tags (`U+E0000`..`U+E007F`), zero-width steganography (`U+200B`..`U+200D`, `U+2060`..`U+2064`, `U+FEFF`) | **Deterministic for recognized supported framing** via byte bijection, magic header, and CRC32 check | Emoji-preserving codepoint strip (`text metadata`) | **Lossless** on visible prose and code |
+| **3. Token-level statistical LLM watermarks** | Keyed pseudorandom bias or tournament selection during autoregressive token sampling | SynthID-Text, KGW, Unigram; provider/model scope is tracked in the coverage catalog | **Key-gated** (requires the provider's secret key or private detector endpoint; unkeyed text carries no local statistical proof) | Span-protected prose regeneration with an unwatermarked local model (`text invisible`) | **Best effort, with semantic review required** (rewrites prose tokens; locks supported technical spans byte-for-byte) |
 | **4. Post-hoc stylometric / perplexity classifiers** | Unkeyed statistical classifiers over token entropy and burstiness | GPTZero, Originality.ai, Binoculars | Not provenance (high false-positive rate on structured and non-native prose) | Out of scope (stylometric guessing is not a watermark) | N/A |
 
 ---
@@ -190,19 +196,26 @@ positives on ordinary text while recovering the exact embedded payload string.
 
 ## Layer 3: Token-level statistical LLM watermarks
 
-### Provider landscape (as of November 2026)
+### Provider and reference boundaries
 
-| Provider & models | Watermark scheme | Sampling mechanism | Scope & opt-out policy | Local detector availability |
-| --- | --- | --- | --- | --- |
-| **Google** (`Gemini` text models, Gemma `SynthID-Text`) | `SynthID-Text` (Dathathri et al., *Nature* 634, 818-823, 2024) | $m$-layer tournament sampling ($m=30$ layers, context window $H=5$, repeated-context masking) using pseudorandom $g$-values $g_\ell(y_t, c_t) \in \{0, 1\}$ | Enabled on consumer Gemini web/app; reference open-weights implementation in Hugging Face `transformers` (`SynthIDTextWatermarkLogitsProcessor`) | Keyed: requires the deployment's secret `[m]` key vector; Google's production key is private |
-| **Anthropic** (**Claude Fable 5.2**, **Claude Mythos 5.2**, Claude Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5) | Claude Text Watermark (`SynthID-Text` tournament-sampling variant) | Speculative tournament sampling ($H=5$, $m=30$) over token distributions during decoding; announced 2026-08-14 / updated 2026-09-01 (`anthropic.com/news/claude-text-watermark`) and shipped across Fable 5.2 and Mythos 5.2 on 2026-11-09 (`anthropic.com/claude-fable-and-mythos-5-2`) | **Mandatory globally across all surfaces** (API, Claude.ai, Claude Code, Amazon Bedrock, Google Cloud Vertex AI, Microsoft Foundry) with **no opt-out**; serves both provenance and anti-distillation defense (`anthropic.com/research/distillation-defenses`) | Private preview detector API for vetted organizations; secret keys are not public |
-| **OpenAI** (**GPT-6 Astra**, ChatGPT, Codex) | `textGrain` (Li et al., *textGrain: Entropy-Calibrated Watermarking for Language Model Text*, OpenAI report, 2026) | Distortion-free entropy-calibrated Sinkhorn optimal-transport coupling over $B=256$ vocabulary blocks and $m=256$ columns ($h=3$ context tokens, target entropy removal fraction $\beta=0.5$); GPT-6 Astra released 2026-09-03 (`openai.com/index/gpt-6-astra/`), `textGrain` announced 2026-10-05 (`openai.com/index/eu-text-provenance/`) | **Default-on in the EU** for ChatGPT and Codex on outputs $\ge 200$ tokens (~150 words; ~80% TPR at 200 tokens and ~95% TPR at 400 tokens at 1% FPR); **opt-in globally** for API organizations/projects | Restricted to approved external researchers; reference algorithm implemented in `facebookresearch/textseal` (`textgrain.py`) and [`score_textgrain_text`](../src/remove_ai_watermarks/text.py) |
-| **Meta** (`TextSeal`, `TextSeal2`, Llama watermarked deployments) | `TextSeal` (`arXiv:2605.12456`) & `TextSeal2` (`arXiv:2610.40613`) | Dual-key Gumbel-max (`TextSeal`, routing $\alpha=0.5$) and two-key Gaussian copula exponential races (`TextSeal2`, virtual key $G^* = (G_A+G_B)/\sqrt{2}$, correlation $\rho=0.9$, $h=3$) with exact memoryless speculative decoding (`verify_block_j`) and dual-key `TamperTest` | Open-source reference toolkit in `facebookresearch/textseal` (`pip install textseal`) | Keyed: public key $k_A$ for detection, private key $k_B$ for `TamperTest` scrubbing/spoofing detection; [`score_textseal2_text`](../src/remove_ai_watermarks/text.py) |
-| **Open-weights / Academic** | **KGW Red-Green List** (Kirchenbauer et al., ICML 2023) & **Unigram** (Zhao et al., ICLR 2024) | Logit bias $+\delta$ added to a pseudorandom green list of fraction $\gamma$ of the vocabulary, seeded by $k$ preceding tokens ($k \ge 1$ for KGW; fixed $k=0$ partition for Unigram) | Used in open-weights deployments (`WatermarkLogitsProcessor` in `transformers`, `THU-BPM/MarkLLM`) | Keyed: requires the secret hash key / partition seed |
+The [coverage catalog](../data/evaluations/text-watermark/catalog.json) is the
+source of truth for reviewed provider/model entries and source URLs. Anthropic,
+OpenAI and Google production text-detector access is not configured in this
+study. Windows AI uses a published character sequence, tested separately as a
+synthetic format. These are distinct claims from open-reference algorithm trials.
+
+Research-owned SynthID, MarkLLM and Meta TextSeal keys do not reproduce a vendor's
+production keys, configuration or deployment. In particular, the local legacy
+`score_textgrain_text` and `score_textseal2_text` helpers are simulations, not the
+authors' detectors. The independent harnesses use the external reference code.
+
+The historical mathematical notes below describe research families, not verified
+mechanisms of a named private-provider model. Parameter choices must come from
+the specific generator/detector configuration saved with a run.
 
 ### Mathematical formulation of the token-watermark families
 
-1. **Tournament sampling (`SynthID-Text` / Anthropic Fable 5.2 & Mythos 5.2)**:
+1. **Tournament sampling (`SynthID-Text` research family)**:
    Given context $c_t = (y_{t-H+1}, \dots, y_{t-1})$ of length $H-1$ (default
    $H=5$, so 4 preceding tokens) and $m=30$ secret keys $K = (k_1, \dots, k_m)$,
    an $m$-layer single-elimination tournament draws $2^m$ candidate tokens i.i.d.
@@ -304,6 +317,18 @@ positives on ordinary text while recovering the exact embedded payload string.
 ---
 
 ## Empirical benchmark: perturbation survival vs. unwatermarked regeneration
+
+The separate [local-model validation](text-watermark-validation.md) runs actual
+prose generation and rewriting with known reference keys and frozen artifacts.
+
+**Historical synthetic-token simulation, not a prose-rewriter validation.** The
+tables below use sampled token distributions and replacement tokens. They do not
+run `remove_text_invisible` with a real language model, and the provider names
+identify related scheme families, not tested Claude/OpenAI production marks.
+The former BLAKE2-based `score_synthid_text` was a simulation and did not match
+the Hugging Face reference hashing or context-repetition mask. The implementation
+now uses that reference processor; these historical numbers were not recomputed
+with the corrected scorer and must not be used as its efficacy evidence.
 
 To measure what actually removes token-level watermarks across all four
 schemes, we ran a controlled vectorized benchmark (`BATCH = 64` sequences per
@@ -417,10 +442,19 @@ composable stages exposed through both the Python API and the
      final output, and checks numeral and NegEx negation-polarity preservation on
      rewritten passages via `verify_text_rewrite_facts` (retrying up to 3 seeds
      if a small local model drops a numeral or flips sentence negation).
+     Exhausted retries now raise rather than publishing the first failed
+     candidate, and an unchanged paragraph cannot count as regeneration.
+     List prefixes are structural locked spans; their numbering is not a fact
+     the model must copy. A comparative "one of the most" is not a count. The
+     prompt preserves source language and a dominant-script backstop rejects
+     obvious script switches without claiming complete language verification.
    - Provides deterministic keyed local statistical watermark scorers
      (`score_synthid_text`, `score_gumbel_text`, `score_textgrain_text`,
      `score_textseal2_text`, `score_kgw_text`, `score_unigram_text`) for local
      calibration and regression testing when the caller supplies the watermark key.
+     The SynthID scorer requires torch/transformers and the exact generation
+     sampling table configuration and device. It reports a mean-g diagnostic,
+     not the trained Bayesian detector or private Claude/Gemini production keys.
 
 ---
 
@@ -519,11 +553,11 @@ repositories across four domains:
 ### 4. Deep code audit of academic watermarking, stealing, spoofing, radioactivity, and segmentation frameworks
 
 1. **`krllagent/text-watermark-roundtrip` (`unmark.py`, `text_contract.py`, `analyze_synthid_ngram_retention.py`, `calibrate_synthid_threshold.py`, `dipper_smoke.py`)**:
-   - **Exact 5-gram retention decomposition (`analyze_synthid_ngram_retention.py`)**: Decomposes the `SynthID-Text` score `meanG` on any rewritten text $y$ relative to the marked source $x$ into reused 5-token tuples ($R_t = 1$) vs novel 5-token tuples ($R_t = 0$):
+   - **Exact 5-gram retention decomposition (`analyze_synthid_ngram_retention.py`)**: The external study partitions its local mean-g diagnostic into reused and novel token windows:
      $$\text{meanG}(y) = f_{\text{reuse}} \cdot \text{meanG}_{\text{reused}}(y) + (1 - f_{\text{reuse}}) \cdot \text{meanG}_{\text{novel}}(y)$$
-     Across all transformations, $\text{meanG}_{\text{novel}}(y) \approx 0.500$ (indistinguishable from unwatermarked null), and the Pearson correlation between `exactNgramReuseFraction` ($f_{\text{reuse}}$) and `meanG` is **$r = 0.988$**. This proves `SynthID-Text` has zero semantic invariance: any rewrite that breaks 5-token windows eliminates the signal completely.
-   - **Processor ordering discovery (`reviews/revalidation-2026-09-08/findings.md`)**: In Hugging Face `transformers`, passing `SynthIDTextWatermarkLogitsProcessor` via `logits_processor` runs SynthID *before* `Temperature`/`TopK`/`TopP` (perturbing the full 152k vocabulary, `meanG` $\approx 0.566$), whereas native `watermarking_config=SynthIDTextWatermarkingConfig(...)` runs SynthID *after* `TopK`/`TopP` (`meanG` $\approx 0.542$).
-   - **Span-protected paraphrase vs `DIPPER-11B`**: Masking numbers, currencies, percentages, dates, quotes, code, and URLs as `⟦T1⟧..⟦Tk⟧` during single-pass LLM paraphrasing removes SynthID on **10/10** documents (`99.4%` signal removal) while preserving **97%–98%** of priority factual claims, whereas unmasked `DIPPER-11B` hallucinates or drops numbers/dates, preserving only **53%–74%** of factual claims.
+     The reported correlation motivates measuring window reuse. It does not prove that every paraphrase removes a watermark, establish universal semantic invariance properties, or verify private-provider detection.
+   - **Processor ordering (`reviews/revalidation-2026-09-08/findings.md`)**: The authors corrected their original pre-sampling-transform placement to the standard Transformers ordering. Treat those generator configurations as distinct experiments; the [current README](https://github.com/krllagent/text-watermark-roundtrip#method-notes-and-limitations) and retained artifacts describe the correction and conditional-null threshold scope.
+   - **Protected paraphrase vs DIPPER**: The external comparison evaluates selected claims and different input-protection workflows. Its later unblinded adjudication revises the original panel results. This is not an isolated model ranking, complete meaning-preservation guarantee or evaluation of our library. Use the source/candidate records and current adjudications rather than copying historical percentages into a product claim.
 
 2. **`doccstat/llm-watermark-cpd` (NeurIPS 2024, *Segmenting Watermarked Texts From Language Models*)**:
    - **3-stage change-point boundary detection (`3-detect.py`, `4.1-seedbs.py`, `5-not.R`)**:

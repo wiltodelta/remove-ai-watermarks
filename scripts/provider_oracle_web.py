@@ -83,6 +83,7 @@ _RESULT_MARKERS = {
     ),
     "synthid-web": (
         "Watermark detected",
+        "SynthID was detected",
         "Watermark not detected",
         "SynthID was not detected",
     ),
@@ -153,7 +154,7 @@ def parse_provider_result(surface: str, page_text: str) -> WebVerdict:
         # The exact labels are the verdict. A page that shows both, or that
         # asks for a sign-in, has no single watermark result. The sign-in
         # sentence is kept; the skill then continues in the user's existing Chrome.
-        detected = "Watermark detected" in response
+        detected = "Watermark detected" in response or "SynthID was detected" in response
         not_detected = "Watermark not detected" in response or "SynthID was not detected" in response
         if not_detected and not detected:
             return WebVerdict("not_detected", "unavailable", response)
@@ -271,7 +272,15 @@ def _set_upload_file(page: Page, surface: str, upload: Path, timeout_seconds: fl
         # OpenAI keeps background requests alive, so network-idle is
         # unreachable. Its visible input becomes handler-ready at page load.
         page.wait_for_load_state("load", timeout=timeout_ms)
-    elif surface in {"meta-web", "microsoft-web", "synthid-web"}:
+    elif surface == "meta-web":
+        # Meta keeps background /monitoring telemetry open, preventing
+        # network-idle; wait for page load and the hydrated upload dropzone.
+        page.wait_for_load_state("load", timeout=timeout_ms)
+        page.get_by_text("Upload or drag an image, video, or audio file").first.wait_for(
+            state="visible",
+            timeout=timeout_ms,
+        )
+    elif surface in {"microsoft-web", "synthid-web"}:
         # These pages mount hidden inputs before their selection handlers are
         # active. Network-idle is the observable handler-readiness seam.
         page.wait_for_load_state("networkidle", timeout=timeout_ms)
@@ -354,7 +363,7 @@ def run_web_batch(
     env_file: Path | None = None,
     environ: Mapping[str, str] = os.environ,
 ) -> dict[str, object]:
-    """Run all unrecorded rows through their isolated public Web oracle."""
+    """Run unrecorded rows until a refusal, incomplete result, or transport failure."""
     if not acknowledge_uploads:
         raise ValueError("acknowledge_uploads=True is required before transmitting batch files")
     manifest_path = manifest_path.resolve()
@@ -385,14 +394,21 @@ def run_web_batch(
         headed=headed,
         timeout_seconds=timeout_seconds,
     )
-    for (manifest_row, _result), verdict in zip(pending, verdicts, strict=True):
-        checked_at = datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
-        oracles.record_result(
-            manifest_path,
-            artifact_id=manifest_row["artifact_id"],
-            watermark_result=verdict.watermark_result,
-            provenance_result=verdict.provenance_result,
-            raw_response=verdict.raw_response,
-            checked_at=checked_at,
-        )
-    return oracles.verify_batch(manifest_path, require_complete=True)
+    try:
+        for (manifest_row, _result), verdict in zip(pending, verdicts, strict=True):
+            checked_at = datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+            oracles.record_result(
+                manifest_path,
+                artifact_id=manifest_row["artifact_id"],
+                watermark_result=verdict.watermark_result,
+                provenance_result=verdict.provenance_result,
+                raw_response=verdict.raw_response,
+                checked_at=checked_at,
+            )
+            if verdict.watermark_result not in {"detected", "not_detected"}:
+                break
+    finally:
+        close = getattr(verdicts, "close", None)
+        if callable(close):
+            close()
+    return oracles.verify_batch(manifest_path)

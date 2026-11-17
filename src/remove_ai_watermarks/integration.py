@@ -190,6 +190,13 @@ def plan_operation(operation: dict[str, Any], arguments: dict[str, Any]) -> tupl
             if key == "output_dir"
             else source.with_stem(source.stem + "_clean")
         )
+        media_suffix = {
+            ("audio", "invisible"): "_processed.wav",
+            ("video", "audio"): "_audio_processed.mkv",
+            ("video", "message", "remove"): "_message_processed.mp4",
+        }.get(tuple(operation["command"]))
+        if media_suffix is not None:
+            default = source.with_name(source.stem + media_suffix)
         output = values.get(key) or str(default)
         if Path(output).resolve() == source:
             raise ValueError("Output must differ from the source; integrations never overwrite an input")

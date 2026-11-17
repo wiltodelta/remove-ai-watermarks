@@ -26,7 +26,7 @@ from pathlib import Path
 _FLAG_PREFIX = "-"
 # The only command groups; every other first word is already a leaf command, so the
 # word after it is the SOURCE argument and must not join the command path.
-_GROUPS = frozenset({"text", "video"})
+_GROUPS = frozenset({"text", "video", "audio"})
 
 
 def _subcommand(argv: list[str]) -> str:

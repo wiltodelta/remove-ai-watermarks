@@ -1,0 +1,431 @@
+{
+  "schema_version": 1,
+  "scope": "Reviewed sources, not an exhaustive enumeration of every published watermark. Open-reference tests never establish private provider removal.",
+  "sources": {
+    "anthropic": "https://support.claude.com/en/articles/16266773-how-claude-marks-ai-generated-content",
+    "openai": "https://help.openai.com/en/articles/8912793-provenance-signals-in-openai-generated-content",
+    "google": "https://deepmind.google/models/synthid/",
+    "markllm": "https://github.com/THU-BPM/MarkLLM/tree/0a4fe8c642b31b8a8c4993615b1c70a0c300d918",
+    "textseal": "https://github.com/facebookresearch/textseal",
+    "alimark": "https://github.com/imethanlee/AliMark",
+    "postmark": "https://github.com/lilakk/PostMark",
+    "automark": "https://github.com/eth-sri/automark",
+    "hf_transformers": "https://github.com/huggingface/transformers",
+    "microsoft": "https://learn.microsoft.com/en-us/windows/ai/apis/text-watermarking",
+    "dipper": "https://github.com/martiansideofthemoon/ai-detection-paraphrases/tree/95f3e2cb5e239929a1fc4bed26bf93f2c368da31"
+  },
+  "provider_cases": [
+    {
+      "provider": "anthropic",
+      "model": "Claude Fable 5.2",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Fable 5.1",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Fable 5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Mythos 5.2",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Mythos 5.1",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Mythos 5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Opus 5.5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Opus 5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Opus 4.8",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Opus 4.7",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Sonnet 5.5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Sonnet 5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Sonnet 4.6",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Default sampling parameters required for reliable Sonnet 4.6 marking.",
+      "api_model_id": null
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Haiku 5.5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "conditions": "Supported first-party and cloud output; private detector required.",
+      "api_model_id": null
+    },
+    {
+      "provider": "openai",
+      "model": null,
+      "product_scope": "Eligible EU ChatGPT/Codex text; API opt-in for eligible models",
+      "scheme": "textGrain",
+      "test_status": "blocked_unverified_text_entitlement",
+      "source": "openai",
+      "conditions": "The cited source does not enumerate every eligible model ID. Confirm actual project settings before generation. Ordinary image/audio API credentials do not establish text-detector entitlement.",
+      "api_model_id": null
+    },
+    {
+      "provider": "google",
+      "model": null,
+      "product_scope": "Gemini app and web experience",
+      "scheme": "SynthID-Text",
+      "test_status": "blocked_production_text_detector_not_configured",
+      "source": "google",
+      "conditions": "The cited source does not enumerate per-model text coverage or expose a public text verifier. Image/audio verification is not a substitute.",
+      "api_model_id": null
+    },
+    {
+      "provider": "microsoft",
+      "model": "Phi Silica",
+      "api_model_id": null,
+      "product_scope": "Windows AI text generation, rewriting and summarization APIs",
+      "scheme": "Windows AI invisible Unicode sequence",
+      "test_status": "blocked_windows_runtime_not_configured",
+      "source": "microsoft",
+      "conditions": "Published-format synthetic fixtures are tested separately. No Windows runtime generation was performed; pattern presence is forgeable and does not establish attribution."
+    }
+  ],
+  "reference_cases": [
+    {
+      "scheme": "KGW",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.kgw.KGW",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "Unigram",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.unigram.Unigram",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "SWEET",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.sweet.SWEET",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "UPV",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.upv.UPV",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "SIR",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.sir.SIR",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "XSIR",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.xsir.XSIR",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "Unbiased",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.unbiased.UnbiasedWatermark",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "DIP",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.dip.DIP",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "EWD",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.ewd.EWD",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "EXP",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.exp.EXP",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "EXPGumbel",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.exp_gumbel.EXPGumbel",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "EXPEdit",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.exp_edit.EXPEdit",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "ITSEdit",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.its_edit.ITSEdit",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "SynthID",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.synthid.SynthID",
+      "status": "see_retained_reference_run_reports",
+      "additional_adapters": [
+        "hf_synthid"
+      ]
+    },
+    {
+      "scheme": "TS",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.ts.TS",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "PF",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.pf.PF",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "MorphMark",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.morphmark.MorphMark",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "Adaptive",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.adaptive.Adaptive",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "KSEMSTAMP",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.k_semstamp.KSemStamp",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "SEMSTAMP",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.semstamp.SemStamp",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "IE",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.ie.IE",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "TextSeal",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.textseal.TextSeal",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "E2E",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.e2e.E2E",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "DEW",
+      "adapter": "markllm_logits_cpu",
+      "source": "markllm",
+      "module": "watermark.dew.DEW",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "TextSeal2",
+      "adapter": "textseal_reference",
+      "source": "textseal",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "AutoMark copula",
+      "adapter": "textseal_reference",
+      "source": "textseal",
+      "status": "see_retained_reference_run_reports"
+    },
+    {
+      "scheme": "AutoMark discovered schemes",
+      "adapter": "automark_submission_reference",
+      "source": "automark",
+      "status": "partial_submission_reference_coverage",
+      "reason": "Exact candidates 001 through 025 have author generator/detector source-control evidence through declared smaller local HF bridges. The inventory records latest strict-library refusals and earlier below-threshold outputs with meaning changes, including separate frequency and indefinite-duration follow-ups. Other source states have not been rerun on each guard revision. Shared controls and duplicate source texts are not independent trials. Remaining source states are unexecuted. This is neither verified faithful removal, native vLLM/paper-model parity, calibrated FPR nor complete AutoMark/provider coverage.",
+      "inventory": "data/evaluations/text-watermark/automark-variants.json"
+    },
+    {
+      "scheme": "AliMark",
+      "adapter": "alimark_reference_replay",
+      "source": "alimark",
+      "status": "author_detector_replay_available_with_local_control_study",
+      "reason": "Author detector replay over frozen synthetic source/control/output is available. A follow-up HF bridge used the author-size candidate budget and a preregistered local control threshold. Default rewriting refused the full source; experimental sentence rewriting retained the signal and changed meaning. The local length-conditioned controls do not calibrate human-text, native-provider or production FPR, and native vLLM generation is not covered.",
+      "script": "scripts/benchmark_alimark_reference.py"
+    },
+    {
+      "scheme": "PostMark",
+      "adapter": "postmark_reference_replay",
+      "source": "postmark",
+      "status": "author_detector_replay_available_with_local_positive_control",
+      "reason": "Author Nomic response-dependent word selection and Paragram presence replay are available with pinned local assets and a declared CPU nonfused bridge. Initial small-model insertion failed its local contrast; a stronger local MLX insertion follow-up exceeded a predeclared diagnostic threshold on a frozen synthetic source. A default rewrite fell below that threshold but changed facts. A corrected-guard MLX rewrite retained the mark and did not establish complete fidelity. This is local research-owned-key evidence, with no calibrated production FPR, native paid-API generation or provider-removal claim.",
+      "script": "scripts/benchmark_postmark_reference.py"
+    },
+    {
+      "scheme": "textGrain published reference",
+      "adapter": "textseal_reference",
+      "source": "textseal",
+      "status": "see_retained_reference_run_reports",
+      "reason": "Research-owned keys only; not OpenAI production verification."
+    },
+    {
+      "scheme": "AutoMark selected RotationFirst",
+      "adapter": "automark_selected_reference",
+      "source": "automark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Pinned selected-package author generator and detector ran on local synthetic text with research-owned keys. HF MPS float32 model logits feed unchanged CPU author processors; stochastic sampling is retained after passthrough steps. Text vocabulary compatibility was checked against the author-pinned tokenizer, with unsupported IDs forbidden. Independent detection confirmed the marked source and negative control; default strict library rewriting refused full output. This is not native vLLM/paper-model parity, production FPR calibration, provider-model watermark coverage or successful removal. Differently packaged submission candidates remain unexecuted. A pinned Qwen3.5-9B MLX follow-up returned full outputs, but both remained detected by fresh unchanged author detectors; returned output did not establish complete fidelity. This adds a remover-model experiment, not provider or differently packaged submission coverage.",
+      "script": "scripts/benchmark_automark_reference.py"
+    },
+    {
+      "scheme": "AutoMark selected ConcordMark",
+      "adapter": "automark_selected_reference",
+      "source": "automark",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Pinned selected-package author generator and detector ran on local synthetic text with research-owned keys. HF MPS float32 model logits feed unchanged CPU author processors; stochastic sampling is retained after passthrough steps. Text vocabulary compatibility was checked against the author-pinned tokenizer, with unsupported IDs forbidden. Independent detection confirmed the marked source and negative control; default strict library rewriting refused full output. This is not native vLLM/paper-model parity, production FPR calibration, provider-model watermark coverage or successful removal. Differently packaged submission candidates remain unexecuted. A pinned Qwen3.5-9B MLX follow-up returned full outputs, but both remained detected by fresh unchanged author detectors; returned output did not establish complete fidelity. This adds a remover-model experiment, not provider or differently packaged submission coverage.",
+      "script": "scripts/benchmark_automark_reference.py"
+    },
+    {
+      "scheme": "DIPPER-paper KGW NumPy variant",
+      "adapter": "dipper_reference_replay",
+      "source": "dipper",
+      "status": "published_source_control_replay_and_library_refusal",
+      "reason": "Pinned author numerical functions replay public author-declared GPT-2 XL completions and saved DIPPER outputs, with original prefix and exact GPT-2 tokenization checks. Matched-window and full-text diagnostics are recorded separately. Selected saved DIPPER outputs retain the diagnostic signal or change facts; fresh strict library runs refused the preselected source texts. This does not reproduce the original generation checkpoints, run DIPPER inference, calibrate production FPR, or establish private-provider removal.",
+      "script": "scripts/benchmark_dipper_reference.py"
+    }
+  ],
+  "observed_on": "2026-11-14",
+  "format_cases": [
+    {
+      "scheme": "Windows AI invisible Unicode sequence",
+      "source": "microsoft",
+      "codepoints": [
+        "U+200B",
+        "U+034F",
+        "U+2060",
+        "U+200B"
+      ],
+      "fixture_type": "synthetic_published_format",
+      "test_file": "tests/test_windows_text_watermark.py",
+      "live_provider_output_tested": false
+    }
+  ]
+}

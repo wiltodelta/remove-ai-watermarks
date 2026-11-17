@@ -397,17 +397,21 @@ def test_builtin_adapters_name_their_exact_source_files() -> None:
         "dwt-dct",
         "trustmark",
         "pixelseal",
+        "pixelseal-video",
         "videoseal-image",
         "audioseal",
         "perth",
+        "wavmark",
         "videoseal",
     }
     assert adapters["dwt-dct"].source_file.name == "invisible_watermark.py"
     assert adapters["trustmark"].source_file.name == "trustmark_detector.py"
     assert adapters["pixelseal"].source_file.name == "pixelseal_oracle.py"
+    assert adapters["pixelseal-video"].source_file.name == "pixelseal_oracle.py"
     assert adapters["videoseal-image"].source_file.name == "videoseal_oracle.py"
-    assert adapters["audioseal"].source_file.name == "audioseal_oracle.py"
-    assert adapters["perth"].source_file.name == "perth_oracle.py"
+    assert adapters["audioseal"].source_file.name == "audioseal.py"
+    assert adapters["perth"].source_file.name == "perth.py"
+    assert adapters["wavmark"].source_file.name == "wavmark.py"
     assert adapters["videoseal"].source_file.name == "videoseal_oracle.py"
 
 
@@ -731,6 +735,36 @@ def test_run_benchmark_evaluates_video_rows_end_to_end(tmp_path: Path, monkeypat
     assert record["media_type"] == "video"
     assert record["detection"]["label"] == "a1b2"
     assert record["fidelity"]["status"] == "not_measured"
+
+
+def test_pixelseal_video_adapter_keeps_temporal_message_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    import pixelseal_oracle
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("video rows decode through the system ffmpeg")
+    artifact = _video(tmp_path / "marked.mp4", frames=3)
+    row = _video_row(artifact, adapter="pixelseal-video")
+    manifest = _write_manifest(tmp_path / "manifest.jsonl", [row])
+    monkeypatch.setattr(pixelseal_oracle, "available", lambda: True)
+    monkeypatch.setattr(MODULE, "_oracle_model", lambda _name: object())
+
+    def read_video(_model, frames):
+        assert frames.shape == (3, 48, 64, 3)
+        return SimpleNamespace(
+            detected=True, label="abcd", bit_accuracy=0.9375, per_frame_bit_accuracy=(1.0, 0.875, 0.9375)
+        )
+
+    monkeypatch.setattr(pixelseal_oracle, "read_video", read_video)
+    output = tmp_path / "results.jsonl"
+    assert MODULE.run_benchmark(manifest, output) == {"detected": 1}
+    result = json.loads(output.read_text())
+    assert result["detection"]["message_bit_accuracy"] == 0.9375
+    assert result["detection"]["temporal"]["per_frame_bit_accuracy"] == [1.0, 0.875, 0.9375]
+    assert result["detection"]["label"] == "abcd"
 
 
 def test_detection_record_carries_temporal_evidence_when_present() -> None:

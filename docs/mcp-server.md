@@ -2,7 +2,7 @@
 
 `remove-ai-watermarks mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io/)
 server on stdin and stdout, so an agent client can identify and clean the
-user's own images and video without a shell. It is a thin wrapper: each tool
+user's own images, video, and audio without a shell. It is a thin wrapper: each tool
 runs one command of this CLI in a child process and returns that command's exit
 code, output path and text.
 
@@ -66,9 +66,50 @@ when an optional backend is absent.
 
 | Tool | Runs | Writes |
 | --- | --- | --- |
-| `identify` | `identify --json`, or `video identify --json` for a video suffix; `check_visible: false` adds `--no-visible` | Nothing |
-| `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video | One output file, `<name>_clean` beside the source unless `output` is given |
-| `batch` | `batch --mode` for images or `video batch --mode` for video | A separate output directory, `<dir>_clean` unless `output_dir` is given |
+| `identify` | `identify --json` for an image, `video identify --json` for a video suffix, or `audio identify --json` for an audio suffix; `check_visible: false` adds `--no-visible` (or `--no-invisible` for audio) | Nothing |
+| `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all` for audio | One output file, `<name>_clean` beside the source unless `output` is given |
+| `batch` | `batch --mode` for images, `video batch --mode` for video (`media: "video"`), or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
+| `audio_identify` | `audio identify --json`; `check_invisible: false` skips models | Nothing |
+| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
+| `video_message_identify` | `video message identify --json`, required `reference`, optional `scheme` | Nothing |
+| `video_message_remove` | `video message remove --json`, same reference and scheme, profile and verification options | MP4, MOV, or M4V, `<name>_message_processed.mp4` by default |
+| `video_audio` | `video audio --json`, with the same audio options plus `all_streams` | MKV/MOV with PCM or MP4 with AAC, `<name>_audio_processed.mkv` by default |
+
+Audio tools ship since 0.63.0. `stream` is a nonnegative audio-track ordinal (`video_audio` also accepts `all_streams: true` to inspect all tracks and clean every detected watermarked track while stream-copying unmarked tracks).
+`audio_invisible` and `video_audio` accept `method: "auto"` (default), `"spectral"`, `"encodec"`,
+or `"combined"`, and integer
+`bandwidth` (`6`, `12`, or `24`, default `24`) for the optional codec backend.
+`audio_invisible` requires `audio-detect` for default source-positive and
+saved-output-negative verification. `force: true, verify: false` permits
+unverified processing with the `audio` extra. Audio tools require ffmpeg and
+ffprobe. `scheme: "audioseal"` (default), `"auto"` (scans installed non-experimental decoders `audioseal`, `wavmark`, `perth` without failing on missing optional extras), `"wavmark"`, `"perth"`, `"silentcipher"`, `"silentcipher16"`, or `"all"` selects
+compatible public-model checks. WavMark needs `audio-wavmark`, Perth v1 needs `audio-perth`, and both experimental SilentCipher receivers need
+`audio-silentcipher`; `all` needs every decoder extra. Auto tries spectral then combined for AudioSeal and Perth v1, neural then
+combined for WavMark and both experimental SilentCipher receivers, and combined for `all`. Neural profiles need `audio-codec`.
+Explicit `method: "bigvgan"` instead needs `audio-vocoder`; `vocoder_device`
+accepts `"cpu"` (default), `"mps"`, or `"cuda"`. This experimental full-track
+mono/stereo profile is limited to 30 seconds and 16 million sample values.
+It is excluded from auto selection; codec bandwidth does not apply. The shared
+catalog exposes the same options on CLI-derived MCP, Space and ComfyUI routes.
+Local decoder negatives do not certify SynthID.
+Explicit `method: "mimi"` instead uses the separate CPU FP32 Mimi backend from
+`audio-codec`, with fixed 32 quantizers and the same bounded full-track and
+saved-output gates. Explicit `method: "focalcodec"` uses the separate CPU FP32
+FocalCodec continuous WavLM-to-Vocos backend from `audio-codec`, operating on an
+internal 16 kHz grid with symmetric `(40, 40)` WavLM boundary context, single-pass
+resynthesis up to 30 seconds, raised-cosine overlap-window streaming on longer
+audio, and the same saved-output gates. Explicit `method: "dac"` uses the
+separate CPU FP32 44.1 kHz 3-codebook DAC backend from `audio-codec` with raw
+mid/side stereo, stem RMS preservation, and the same single-pass / overlap-window
+streaming path. Keep `vocoder_device: "cpu"`;
+bandwidth applies only to EnCodec. All three methods are experimental, excluded
+from auto selection, have no built-in provider verifier, and are exposed by
+legacy tools and the shared operation catalog.
+`silentcipher16` covers only a terminated eight-symbol pattern. Its
+readings label `framing="terminated8"`; `payload_symbols` are seven ternary
+symbols, not bytes. Its decoder clock is
+16000 regardless of the source rate. The SDK byte API and general 32-bit
+profile remain unqualified. `all` requests both SilentCipher receivers.
 
 `mode` is `metadata` (the default), `visible` or `all`. For an image, `all`
 adds the invisible-watermark scrub where the installed extras and a CUDA GPU
@@ -130,3 +171,8 @@ can only verify a release whose README carries that marker.
 [`glama.json`](../glama.json) names the maintainer for Glama. Each release is
 published automatically; the workflow is described in
 [release and distribution](release-and-distribution.md#mcp-registry).
+
+The video-message tools require an independent 64-digit hexadecimal encoder message.
+They compare known targets under public VideoSeal/PixelSeal weights, without
+classifying AI origin or unknown marks. See the [CLI contract](cli.md#public-model-video-messages-experimental)
+for fixed profiles, optional extras, timeline limits, quality reports, and force semantics.

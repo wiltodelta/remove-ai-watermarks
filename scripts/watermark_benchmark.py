@@ -73,9 +73,11 @@ ADAPTER_MEDIA: dict[str, Media] = {
     "dwt-dct": "image",
     "trustmark": "image",
     "pixelseal": "image",
+    "pixelseal-video": "video",
     "videoseal-image": "image",
     "audioseal": "audio",
     "perth": "audio",
+    "wavmark": "audio",
     "videoseal": "video",
 }
 _FIELDS = {
@@ -168,6 +170,16 @@ class FunctionAdapter:
         return DetectorOutcome(status="detected" if label is not None else "not_detected", label=label)
 
 
+def _detect_message_video_oracle(frames: NDArray[Any], *, module_name: str, read_fn: Any) -> DetectorOutcome:
+    reading = read_fn(_oracle_model(module_name), frames)
+    return DetectorOutcome(
+        status="detected" if reading.detected else "not_detected",
+        label=reading.label if reading.detected else None,
+        temporal=reading.per_frame_bit_accuracy,
+        message_bit_accuracy=reading.bit_accuracy,
+    )
+
+
 @dataclass(frozen=True)
 class VideoSealAdapter:
     """Adapter whose outcome also carries per-frame temporal evidence."""
@@ -179,13 +191,7 @@ class VideoSealAdapter:
     def detect(self, path: Path, frames: NDArray[Any]) -> DetectorOutcome:
         from videoseal_oracle import read
 
-        reading = read(_oracle_model("videoseal_oracle"), frames)
-        return DetectorOutcome(
-            status="detected" if reading.detected else "not_detected",
-            label=reading.label if reading.detected else None,
-            temporal=reading.per_frame_bit_accuracy,
-            message_bit_accuracy=reading.bit_accuracy,
-        )
+        return _detect_message_video_oracle(frames, module_name="videoseal_oracle", read_fn=read)
 
 
 @dataclass(frozen=True)
@@ -210,6 +216,29 @@ class PerthAdapter:
             status="detected" if reading.detected else "not_detected",
             label="perth-v1" if reading.detected else None,
             score=reading.confidence,
+        )
+
+
+@dataclass(frozen=True)
+class WavMarkAdapter:
+    """Public-model presence, independent of the expected message value."""
+
+    name: str
+    source_file: Path
+
+    @property
+    def available(self) -> bool:
+        from wavmark_oracle import available
+
+        return available()
+
+    def detect(self, path: Path, samples: NDArray[Any]) -> DetectorOutcome:
+        from wavmark_oracle import read
+
+        reading = read(_oracle_model("wavmark_oracle"), samples)
+        return DetectorOutcome(
+            status="detected" if reading.detected else "not_detected",
+            label="".join(str(bit) for bit in reading.payload) if reading.payload is not None else None,
         )
 
 
@@ -250,6 +279,16 @@ class PixelSealAdapter:
         from pixelseal_oracle import read
 
         return _detect_message_image_oracle(image, module_name="pixelseal_oracle", read_fn=read)
+
+
+@dataclass(frozen=True)
+class PixelSealVideoAdapter(PixelSealAdapter):
+    """PixelSeal temporal decoding with the image adapter's lazy availability gate."""
+
+    def detect(self, path: Path, frames: NDArray[Any]) -> DetectorOutcome:
+        from pixelseal_oracle import read_video
+
+        return _detect_message_video_oracle(frames, module_name="pixelseal_oracle", read_fn=read_video)
 
 
 @dataclass(frozen=True)
@@ -493,23 +532,26 @@ def _detect_trustmark(path: Path, image: NDArray[Any]) -> str | None:
 
 
 def default_adapters() -> dict[str, DetectorAdapter]:
-    """Return the local, open watermark adapters for both media types."""
+    """Return the local, open watermark adapters for supported media types."""
     from remove_ai_watermarks import invisible_watermark, trustmark_detector
+    from remove_ai_watermarks._internal import audioseal as audioseal_runtime
+    from remove_ai_watermarks._internal import perth as perth_runtime
+    from remove_ai_watermarks._internal import wavmark as wavmark_runtime
 
     scripts_dir = Path(__file__).resolve().parent
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     import audioseal_oracle
-    import perth_oracle
     import pixelseal_oracle
     import videoseal_oracle
 
     dwt_source = Path(invisible_watermark.__file__).resolve()
     trustmark_source = Path(trustmark_detector.__file__).resolve()
-    audio_oracle_source = Path(audioseal_oracle.__file__).resolve()
-    perth_oracle_source = Path(perth_oracle.__file__).resolve()
+    audio_oracle_source = Path(audioseal_runtime.__file__).resolve()
+    perth_oracle_source = Path(perth_runtime.__file__).resolve()
     pixel_oracle_source = Path(pixelseal_oracle.__file__).resolve()
     video_oracle_source = Path(videoseal_oracle.__file__).resolve()
+    wavmark_oracle_source = Path(wavmark_runtime.__file__).resolve()
     return {
         "dwt-dct": FunctionAdapter(
             name="dwt-dct",
@@ -527,6 +569,10 @@ def default_adapters() -> dict[str, DetectorAdapter]:
             name="pixelseal",
             source_file=pixel_oracle_source,
         ),
+        "pixelseal-video": PixelSealVideoAdapter(
+            name="pixelseal-video",
+            source_file=pixel_oracle_source,
+        ),
         "videoseal-image": VideoSealImageAdapter(
             name="videoseal-image",
             source_file=video_oracle_source,
@@ -541,6 +587,7 @@ def default_adapters() -> dict[str, DetectorAdapter]:
             name="perth",
             source_file=perth_oracle_source,
         ),
+        "wavmark": WavMarkAdapter(name="wavmark", source_file=wavmark_oracle_source),
         "videoseal": VideoSealAdapter(
             name="videoseal",
             source_file=video_oracle_source,

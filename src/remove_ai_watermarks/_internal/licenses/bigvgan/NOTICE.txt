@@ -1,0 +1,31 @@
+BigVGAN inference adaptation
+
+Source: https://github.com/NVIDIA/BigVGAN
+Source revision: 7d2b454564a6c7d014227f635b7423881f14bdac
+Model: nvidia/bigvgan_v2_44khz_128band_512x
+Model revision: 95a9d1dcb12906c03edd938d77b9333d6ded7dfb
+
+Copyright (c) 2024 NVIDIA CORPORATION.
+BigVGAN generator and mel frontend: MIT (NVIDIA-MIT.txt).
+HiFi-GAN generator ancestry: Copyright (c) 2020 Jungil Kong,
+MIT (HiFiGAN-MIT.txt).
+Snake activation ancestry: Copyright (c) 2020 Edward Dixon,
+MIT (Snake-MIT.txt), https://github.com/EdwardDixon/snake.
+Alias-free activation/filter/resampling: Apache License 2.0
+(Alias-free-Apache-2.0.txt), https://github.com/junjun3518/alias-free-torch.
+Julius low-pass filter design included in the alias-free code:
+Copyright 2020 Alexandre Defossez, MIT (Julius-MIT.txt),
+https://github.com/adefossez/julius.
+
+Modified files: _bigvgan_network.py adapts portions of bigvgan.py,
+activations.py, meldataset.py and alias_free_activation/torch/{act,filter,resample}.py.
+Changes: lazy imports and nested builders, fixed inference-only AMPBlock1,
+log-scale SnakeBeta and fixed ratio-two alias-free filters; training-only
+initialization, unused architectures, old sinc fallback, plotting, Hub mixin,
+CUDA extensions and console output removed. Parameter/buffer names and
+inference calculations are retained. Mel calculations run in FP32 on CPU.
+Audio clock handling and raw mid/side composition are package additions.
+
+The Apache-licensed portions remain Apache-2.0, not MIT. License files are
+copied verbatim from the pinned upstream LICENSE and incl_licenses files.
+No separate upstream NOTICE file was present in the retained source tree.

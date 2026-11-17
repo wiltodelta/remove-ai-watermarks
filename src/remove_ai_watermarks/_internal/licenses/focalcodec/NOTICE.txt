@@ -1,0 +1,151 @@
+FocalCodec inference adaptation
+
+Source: https://github.com/lucadellalib/focalcodec
+Source revision: cad8bf81d70875f756770449c34909d8b0951642 (v0.0.1)
+Model: https://huggingface.co/lucadellalib/focalcodec_50hz
+Model revision: d6d6d9524e52155c85193c2c3b8da1cf8842f019
+
+Copyright 2025 Luca Della Libera.
+Source and checkpoint license: Apache License 2.0 (Apache-2.0.txt).
+The checkpoint is downloaded separately on demand, not bundled in this package.
+Model availability does not establish watermark removal or voice preservation.
+
+Modified files: _focalcodec_network.py adapts portions of focalcodec/{codec,
+wavlm,focalnet,bsq,vocos}.py from v0.0.1 so the pinned separate-QKV checkpoint
+loads strictly without remapping or remote code execution.
+Changes: lazy Torch imports and nested inference builders, fixed continuous
+feature resynthesis (WavLM 6-layer encoder to Vocos ISTFT decoder) alongside
+strict 355-key state verification across all five checkpoint submodules; JIT
+exports, Hub download helpers, demo/test harnesses, and the unused kNN voice
+conversion matcher (upstream NOTICE item 2, bshall/knn-vc) are omitted.
+Symmetric (40, 40) WavLM receptive-field context, rational half-open clocks,
+and raw mid/side stereo composition are package additions in audio_focalcodec.py.
+
+Applicable upstream third-party attribution notices from v0.0.1 NOTICE:
+
+-------------------------------------------------------------------------------
+1. Code in focalcodec/bsq.py adapted from:
+   https://github.com/lucidrains/vector-quantize-pytorch/blob/3e4ce165774d3f5944f12ffb5ccd02848bb38df6/vector_quantize_pytorch/lookup_free_quantization.py
+
+MIT License
+
+Copyright (c) 2020 Phil Wang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+2. Code in {focalcodec/focalnet.py, focalcodec/wavlm.py} adapted from:
+   https://github.com/huggingface/transformers/blob/v4.46.2/src/transformers/models/focalnet/modeling_focalnet.py
+   https://github.com/huggingface/transformers/blob/v4.46.2/src/transformers/models/wavlm/modeling_wavlm.py
+
+Copyright 2018- The Hugging Face team. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or  implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+-------------------------------------------------------------------------------
+3. Code in focalcodec/focalnet.py adapted from:
+   https://github.com/microsoft/FocalNet/blob/v1.0.1/classification/focalnet.py
+
+MIT License
+
+Copyright (c) Microsoft Corporation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE
+
+-------------------------------------------------------------------------------
+4. Code in focalcodec/vocos.py adapted from:
+   https://github.com/gemelo-ai/vocos/tree/v0.1.0/vocos/heads.py
+   https://github.com/gemelo-ai/vocos/tree/v0.1.0/vocos/models.py
+   https://github.com/gemelo-ai/vocos/tree/v0.1.0/vocos/modules.py
+   https://github.com/gemelo-ai/vocos/tree/v0.1.0/vocos/spectral_ops.py
+
+MIT License
+
+Copyright (c) 2023 Charactr Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+5. Code in focalcodec/wavlm.py adapted from:
+   https://github.com/microsoft/unilm/blob/2d5b25f7cecc4ab4ad44f65de5899ef6aa8c53f5/wavlm/WavLM.py
+   https://github.com/microsoft/unilm/blob/2d5b25f7cecc4ab4ad44f65de5899ef6aa8c53f5/wavlm/modules.py
+
+The MIT License (MIT)
+
+Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

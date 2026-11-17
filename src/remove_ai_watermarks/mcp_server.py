@@ -16,15 +16,27 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
 from collections.abc import Callable
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import IO, Any, cast
 
 from remove_ai_watermarks import __version__
+from remove_ai_watermarks._internal.constants import (
+    AUDIO_BANDWIDTHS_KBPS,
+    AUDIO_EXTENSIONS,
+    AUDIO_METHODS,
+    AUDIO_SCHEMES,
+    AUDIO_VOCODER_DEVICES,
+    DEFAULT_VIDEO_MESSAGE_LONG_SIDE,
+    VIDEO_MESSAGE_DEVICES,
+    VIDEO_MESSAGE_METHODS,
+    VIDEO_MESSAGE_SCHEMES,
+)
 from remove_ai_watermarks.integration import input_schema, plan_operation, run_operation
 from remove_ai_watermarks.text import TEXT_EXTENSIONS
 from remove_ai_watermarks.video import VIDEO_EXTENSIONS
@@ -36,7 +48,7 @@ log = logging.getLogger(__name__)
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 INSTRUCTIONS = (
-    "Identify and remove AI provenance marks from images, video, and text the user generated "
+    "Identify and remove AI provenance marks from images, video, audio, and text the user generated "
     "or edited themselves: C2PA, IPTC, EXIF and TC260 metadata, visible AI-generator "
     "labels, and supported invisible watermarks. Do not use it on stock, agency, "
     "marketplace or other third-party marks that protect someone else's asset. A "
@@ -105,7 +117,7 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "directory": {"type": "string", "description": "Directory of input files."},
                 "mode": {"type": "string", "enum": list(_MODES), "default": "metadata"},
-                "media": {"type": "string", "enum": ["image", "video"], "default": "image"},
+                "media": {"type": "string", "enum": ["image", "video", "audio"], "default": "image"},
                 "output_dir": {"type": "string", "description": "Output directory. Must differ from the input."},
             },
             "required": ["directory"],
@@ -114,6 +126,139 @@ TOOLS: list[dict[str, Any]] = [
         "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
     },
 ]
+
+for _name, _description, _options in (
+    (
+        "audio_identify",
+        "Inspect audio metadata and named compatible public-model evidence. Read-only.",
+        {"check_invisible": {"type": "boolean", "default": True}},
+    ),
+    (
+        "audio_invisible",
+        "Process one audio track to WAV, FLAC, MP3, M4A, OGG, or Opus. Default publication requires "
+        "a compatible source positive under the requested models and a fully negative saved output. "
+        "Force permits explicitly unverified results.",
+        {},
+    ),
+    (
+        "video_audio",
+        "Process one selected audio track (or all source-positive tracks with all_streams=true) inside a video, "
+        "copying other encoded streams. Outputs MKV/MOV with float PCM or MP4 with selected-track AAC "
+        "(target 192 kbps). "
+        "Visual marks and untouched audio tracks remain unchanged. "
+        "Default publication requires compatible source-positive and final-mux-negative checks "
+        "for the requested models.",
+        {"all_streams": {"type": "boolean", "default": False}},
+    ),
+):
+    _options = {
+        **_options,
+        "scheme": {
+            "type": "string",
+            "enum": list(AUDIO_SCHEMES),
+            "default": AUDIO_SCHEMES[0],
+        },
+    }
+    if _name != "audio_identify":
+        _options = {
+            **_options,
+            "output": {"type": "string"},
+            "force": {"type": "boolean", "default": False},
+            "verify": {"type": "boolean", "default": True},
+            "method": {
+                "type": "string",
+                "enum": list(AUDIO_METHODS),
+                "default": AUDIO_METHODS[0],
+                "description": (
+                    "Mimi, FocalCodec, DAC, and BigVGAN are explicit experimental full-track profiles, "
+                    "not SynthID decoders."
+                ),
+            },
+            "vocoder_device": {
+                "type": "string",
+                "enum": list(AUDIO_VOCODER_DEVICES),
+                "default": AUDIO_VOCODER_DEVICES[0],
+            },
+            "bandwidth": {
+                "type": "integer",
+                "enum": list(AUDIO_BANDWIDTHS_KBPS),
+                "default": AUDIO_BANDWIDTHS_KBPS[-1],
+            },
+        }
+    TOOLS.append(
+        {
+            "name": _name,
+            "description": _description,
+            "inputSchema": {
+                "type": "object",
+                "required": ["path"],
+                "additionalProperties": False,
+                "properties": {
+                    "path": {"type": "string"},
+                    "stream": {"type": "integer", "minimum": 0, "default": 0},
+                    **_options,
+                },
+            },
+            "annotations": {
+                "readOnlyHint": _name == "audio_identify",
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+        }
+    )
+
+for _action in ("identify", "remove"):
+    _properties: dict[str, Any] = {
+        "path": {"type": "string"},
+        "reference": {
+            "type": "string",
+            "description": "Independent encoder message, 64 hex digits. Never derive it from this input.",
+        },
+        "scheme": {
+            "type": "string",
+            "enum": list(VIDEO_MESSAGE_SCHEMES),
+            "default": VIDEO_MESSAGE_SCHEMES[0],
+        },
+    }
+    if _action == "remove":
+        _properties.update(
+            {
+                "output": {"type": "string"},
+                "method": {
+                    "type": "string",
+                    "enum": list(VIDEO_MESSAGE_METHODS),
+                    "default": VIDEO_MESSAGE_METHODS[0],
+                },
+                "noise_std": {"type": "number", "minimum": 0, "maximum": 1},
+                "long_side": {"type": "integer", "minimum": 8, "default": DEFAULT_VIDEO_MESSAGE_LONG_SIDE},
+                "device": {
+                    "type": "string",
+                    "enum": list(VIDEO_MESSAGE_DEVICES),
+                    "default": VIDEO_MESSAGE_DEVICES[0],
+                },
+                "force": {"type": "boolean", "default": False},
+                "verify": {"type": "boolean", "default": True},
+            }
+        )
+    TOOLS.append(
+        {
+            "name": f"video_message_{_action}",
+            "description": "Experimental known-message correlation under pinned public VideoSeal or PixelSeal models. "
+            "Requires an independently known encoder message. Does not identify AI origin or unknown marks. "
+            + (
+                "Read-only, checks every decoded frame."
+                if _action == "identify"
+                else "Writes a processed video after saved-file checks; copies audio and reports delivered quality."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": _properties,
+                "required": ["path", "reference"],
+                "additionalProperties": False,
+            },
+            "annotations": {"readOnlyHint": _action == "identify", "destructiveHint": False, "openWorldHint": False},
+        }
+    )
 
 _TOOL_SCHEMAS = {tool["name"]: tool["inputSchema"] for tool in TOOLS}
 
@@ -159,16 +304,28 @@ def _validated(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         value = arguments[key]
         if spec["type"] == "boolean" and not isinstance(value, bool):
             raise ToolInputError(f"'{key}' must be a boolean")
+        if spec["type"] == "integer" and (type(value) is not int or value < spec.get("minimum", 0)):
+            raise ToolInputError(f"'{key}' must be a nonnegative integer")
+        if spec["type"] == "number" and (
+            type(value) not in (int, float)
+            or not spec.get("minimum", -math.inf) <= value <= spec.get("maximum", math.inf)
+            or not math.isfinite(value)
+        ):
+            raise ToolInputError(f"'{key}' must be a finite number within its declared bounds")
         if spec["type"] == "string" and (not isinstance(value, str) or not value.strip()):
             raise ToolInputError(f"'{key}' must be a non-empty string")
         if "enum" in spec and value not in spec["enum"]:
-            raise ToolInputError(f"'{key}' must be one of {', '.join(spec['enum'])}")
+            raise ToolInputError(f"'{key}' must be one of {', '.join(str(item) for item in spec['enum'])}")
         values[key] = value
     return values
 
 
 def _is_video(path: str) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXTENSIONS
+
+
+def _is_audio(path: str) -> bool:
+    return Path(path).suffix.lower() in AUDIO_EXTENSIONS
 
 
 def _is_text(path: str) -> bool:
@@ -179,18 +336,35 @@ def _identify_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     path = values["path"]
     if _is_text(path):
         return ["text", "identify", "--json", "--", path], None
+    if _is_audio(path):
+        flags = [] if values["check_visible"] else ["--no-invisible"]
+        return ["audio", "identify", "--json", *flags, "--", path], None
     prefix = ["video", "identify"] if _is_video(path) else ["identify"]
     return [*prefix, "--json", *([] if values["check_visible"] else ["--no-visible"]), "--", path], None
+
+
+def _require_distinct_output(source: Path, output: str, *, message: str) -> None:
+    out_path = Path(output)
+    if out_path.resolve() == source.resolve() or (out_path.exists() and source.exists() and out_path.samefile(source)):
+        raise ToolInputError(message)
 
 
 def _remove_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     path, mode = values["path"], values["mode"]
     source = Path(path)
     output = values.get("output") or str(source.with_stem(source.stem + "_clean"))
-    if Path(output).resolve() == source.resolve():
-        raise ToolInputError("'output' must differ from the source; the server never overwrites an input")
+    _require_distinct_output(
+        source,
+        output,
+        message="'output' must differ from the source; the server never overwrites an input",
+    )
     if _is_text(path) and mode == "visible":
         raise ToolInputError("text files do not have a visible pixel mode; use mode=metadata or mode=all")
+    if _is_audio(path):
+        if mode == "visible":
+            raise ToolInputError("audio files do not have a visible pixel mode; use mode=metadata or mode=all")
+        audio_cmd = ["audio", "metadata", "--remove"] if mode == "metadata" else ["audio", "all", "--invisible"]
+        return [*audio_cmd, "-o", output, "--", path], output
     prefix = ["text"] if _is_text(path) else ["video"] if _is_video(path) else []
     command = ["metadata", "--remove"] if mode == "metadata" else [mode]
     return [*prefix, *command, "-o", output, "--", path], output
@@ -202,14 +376,95 @@ def _batch_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     output_dir = values.get("output_dir") or str(resolved.with_name(resolved.name + "_clean"))
     if Path(output_dir).resolve() == resolved:
         raise ToolInputError("'output_dir' must differ from the input directory")
+    if values["media"] == "audio":
+        if values["mode"] == "visible":
+            raise ToolInputError("audio batch does not have a visible pixel mode; use mode=metadata or mode=all")
+        extra = ["--invisible"] if values["mode"] == "all" else []
+        return ["audio", "batch", "--mode", values["mode"], *extra, "-o", output_dir, "--", directory], output_dir
     command = ["video", "batch"] if values["media"] == "video" else ["batch"]
     return [*command, "--mode", values["mode"], "-o", output_dir, "--", directory], output_dir
+
+
+def _validate_output_and_verify_flags(source: Path, output: str, values: dict[str, Any]) -> list[str]:
+    _require_distinct_output(source, output, message="'output' must differ from the source")
+    if not values["verify"] and not values["force"]:
+        raise ToolInputError("Disabling verification requires force=true")
+    flags = ["-o", output]
+    if values["force"]:
+        flags.append("--force")
+    if not values["verify"]:
+        flags.append("--no-verify")
+    return flags
+
+
+def _audio_command(values: dict[str, Any], *, video: bool = False) -> tuple[list[str], str | None]:
+    source = Path(values["path"])
+    identify = "check_invisible" in values
+    prefix = ["video", "audio"] if video else ["audio", "identify" if identify else "invisible"]
+    command = [*prefix, "--json", "--stream", str(values["stream"])]
+    output = None
+    if identify:
+        if not values["check_invisible"]:
+            command.append("--no-invisible")
+    else:
+        suffix = "_audio_processed.mkv" if video else "_processed.wav"
+        output = values.get("output") or str(source.with_name(source.stem + suffix))
+        command.extend(_validate_output_and_verify_flags(source, output, values))
+        if values["method"] != AUDIO_METHODS[0]:
+            command.extend(["--method", values["method"]])
+        if values["bandwidth"] != AUDIO_BANDWIDTHS_KBPS[-1]:
+            command.extend(["--bandwidth", str(values["bandwidth"])])
+        if values["vocoder_device"] != AUDIO_VOCODER_DEVICES[0]:
+            command.extend(["--vocoder-device", values["vocoder_device"]])
+    if values.get("all_streams"):
+        command.append("--all-streams")
+    if values["scheme"] != AUDIO_SCHEMES[0]:
+        command.extend(["--scheme", values["scheme"]])
+    return [*command, "--", values["path"]], output
+
+
+def _video_message_command(values: dict[str, Any], *, remove: bool = False) -> tuple[list[str], str | None]:
+    command = [
+        "video",
+        "message",
+        "remove" if remove else "identify",
+        "--json",
+        "--reference",
+        values["reference"],
+        "--scheme",
+        values["scheme"],
+    ]
+    output = None
+    if remove:
+        source = Path(values["path"])
+        output = values.get("output") or str(source.with_name(source.stem + "_message_processed.mp4"))
+        if "noise_std" in values and values["method"] != "vae":
+            raise ToolInputError("noise_std requires method=vae")
+        command.extend(_validate_output_and_verify_flags(source, output, values))
+        command.extend(
+            [
+                "--method",
+                values["method"],
+                "--long-side",
+                str(values["long_side"]),
+                "--device",
+                values["device"],
+            ]
+        )
+        if "noise_std" in values:
+            command.extend(["--noise-std", str(values["noise_std"])])
+    return [*command, "--", values["path"]], output
 
 
 _COMMANDS: dict[str, Callable[[dict[str, Any]], tuple[list[str], str | None]]] = {
     "identify": _identify_command,
     "remove": _remove_command,
     "batch": _batch_command,
+    "audio_identify": _audio_command,
+    "audio_invisible": _audio_command,
+    "video_audio": partial(_audio_command, video=True),
+    "video_message_identify": _video_message_command,
+    "video_message_remove": partial(_video_message_command, remove=True),
 }
 
 
@@ -284,9 +539,11 @@ def _tool_result(completed: subprocess.CompletedProcess[str], args: list[str], o
     text = completed.stdout.strip()
     stderr = completed.stderr.strip()[-4000:]
     structured: dict[str, Any] = {"command": ["remove-ai-watermarks", *args], "exit_code": code, "output": output}
-    if ("--json" in args or not args) and code == 0:
+    if ("--json" in args or not args) and text:
         with contextlib.suppress(json.JSONDecodeError):
             structured["report"] = json.loads(text)
+            if isinstance(structured["report"], dict) and "output" in structured["report"]:
+                structured["output"] = structured["report"]["output"]
     if "report" not in structured:
         structured["stdout"] = text
     if stderr:

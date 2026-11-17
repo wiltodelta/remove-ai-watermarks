@@ -520,6 +520,172 @@ video or audio container raises `ValueError` before anything is written;
 undecodable input through unchanged, so its return alone must not be presented
 as proof that metadata was removed.
 
+Native Suno and Suno Studio audio creation comments appear as
+`get_ai_metadata(path)["audio_generator"]` when ffprobe is available and the
+container has audio without an actual video stream. This is an unsigned
+creation declaration. Metadata removal preserves the encoded streams. The
+ffmpeg route drops all container tags and chapters, including ordinary ones;
+ISOBMFF uses targeted patches. This does
+not remove a waveform watermark or a fingerprint stored elsewhere.
+
+## Identify and process audio
+
+```python
+import remove_ai_watermarks as raiw
+
+report = raiw.identify_audio("input.wav", scheme="auto")
+meta = raiw.inspect_audio_metadata("input.mp3")
+meta_clean = raiw.remove_audio_metadata("input.mp3", "clean.mp3")
+result = raiw.remove_audio_invisible("input.wav", "processed.flac", scheme="auto")
+complete = raiw.remove_audio_all("input.m4a", "clean.m4a", include_invisible=True)
+batch = raiw.remove_audio_batch("tracks", "tracks_clean", mode="all", include_invisible=True)
+```
+
+Install `audio-detect` for compatible open AudioSeal checks, or `audio` for
+explicit processing without verification. Both need ffmpeg and ffprobe.
+`identify_audio(source, check_invisible=True, stream=0, scheme="audioseal")` selects a zero-based
+audio-track ordinal. `AudioProvenanceReport` includes `sha256`, stream geometry,
+`metadata_markers`, per-channel `detections`, `watermark_status`, and `caveats`.
+Each `AudioDetection` holds whole-clip and native-frame-bounded window readings;
+multichannel inputs also get a mono-downmix check. For validated 24 and 48 kHz
+sources, AudioSeal checks both 16 kHz and the original sample clock, with
+`AudioDetection.decoder_sample_rate` identifying each receiver. This field is
+also set for the native OpenVoice default-signature receiver and is 44100 for
+`scheme="silentcipher"` and 16000 for `scheme="silentcipher16"`, regardless
+of the source rate; it is `None` for standard
+synchronized WavMark and Perth. Other AudioSeal native
+clocks are outside calibrated coverage
+and are not added automatically. A complete negative requires every requested channel
+and clock to be negative. Short trailing windows reuse preceding context,
+including AudioSeal windows. Status is `detected`,
+`not_detected`, or `unverified`, scoped to the pinned open model. Missing
+explicitly requested decoders, failed checks, and bounded whole-clip checks never become negatives.
+Pass `scheme="auto"` to scan every *installed* non-experimental compatible public decoder (`audioseal`, `wavmark`, `perth`) without failing when an optional decoder extra is absent or a clip is shorter than WavMark's 1-second minimum window, `scheme="wavmark"` for the pinned public WavMark model, `scheme="perth"` for public Perth v1, `scheme="silentcipher"` for the experimental
+SilentCipher-44k receiver, `scheme="silentcipher16"` for the experimental
+terminated eight-symbol 16k pattern, or `scheme="all"`
+for all named packaged decoders (including both experimental SilentCipher receivers). The default on `identify_audio` and `remove_audio_invisible` is `"audioseal"`; `remove_audio_all` and `remove_audio_batch` default to `scheme="auto"`. WavMark also
+checks the published OpenVoice default message at fixed native offsets. Those
+readings have `framing="openvoice-default"`, fragment matches, and adjusted
+binomial-tail diagnostics; they do not identify a provider or cover custom
+messages and shifted/resampled framing. Missing requested
+models keep a combined result unverified. WavMark windows include valid
+endpoints and exactly one second; a shorter source stays unverified. Its
+readings hold recovered payload bits and start offsets at the model sample rate.
+SilentCipher-44k reads native-rate input through its own resampler and checks
+three-second windows. A 16 kHz source still uses the 44.1 kHz model; the
+incompatible published 16 kHz model is outside this check. Its reading includes the accepted five-byte payload, symbol
+consistency, phase offset, phase count, and actual device. The project receiver
+requires consistency at least 0.9 and checks all phases before a negative. A
+source shorter than three seconds stays unverified. Symbol consistency is
+agreement, not watermark probability; on a negative it includes invalid framing
+hypotheses and can still be high.
+
+`silentcipher16` reports `SilentCipher16Reading.payload_symbols`, a tuple of
+seven ternary symbols rather than bytes, with `framing="terminated8"`.
+This receiver pins the released 16 kHz
+model but qualifies only the terminated eight-symbol pattern, with three-second
+windows, at least three repetitions, agreement at least 0.9, and all 103 phase-grid
+positions before a negative. It resamples inputs to 16 kHz internally. Source
+rate, channels, and frame bounds remain independent of this decoder clock.
+The incompatible SDK byte API, general 32-bit profile, and deployed-provider
+compatibility remain unqualified. `all` requests both SilentCipher receivers.
+
+`remove_audio_invisible(source, output, force=False, verify=True, stream=0)`
+selects an adaptive minimal-distortion processing sequence. By default it skips without a compatible
+positive source signal and publishes only a fully checked negative saved output.
+`AudioVerificationIncomplete` exposes `before` and `after` on rejection and
+preserves an existing output. `force=True` permits unverified or still-positive
+results. `verify=False` requires force. Outputs accept `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, and `.opus` (`libopus` 192 kbps); AI metadata is
+discarded. The source must stay unchanged during processing.
+
+`inspect_audio_metadata(source)` returns `AudioMetadataReport`, and `remove_audio_metadata(source, output=None, *, keep_standard=True)` strips AI creation tags and C2PA manifests without re-encoding audio frames (`AudioMetadataResult`). `remove_audio_all(source, output=None, *, include_invisible=False, scheme="auto", method="auto", ...)` returns `AudioAllResult`, always writing a metadata-cleaned output (`<source>_clean<ext>` by default) and optionally cleaning compatible waveform watermarks when `include_invisible=True`. `remove_audio_batch(input_dir, output_dir=None, *, mode="all", include_invisible=False, ...)` runs sequentially over a directory and returns `AudioBatchSummary` of `AudioBatchItem` rows.
+
+`AudioRemovalResult` includes `before`, `after`, `frames_processed`,
+`verified_removed`, `skipped`, `removed_markers`, `method`, `verification_scope`,
+delivered-file `fidelity`, and `quality_passed`. `verified_removed=None` means unverified, not
+success. Fidelity includes RMS and maximum error, SNR, peak amplitude, clipping
+count, and frame count against the decoded marked source. Native channels,
+sample rate, and decoded sample-frame count must survive processing. Long audio
+tracks (`> 30 s`) are verified across bounded `<= 30 s` `whole_segments` passes
+alongside sliding windows, and missing requested decoders include install hints.
+`AudioStreamInfo.channel_layout` records the known spatial layout; encoding and
+saved-output fidelity also reject changes to a known layout.
+These APIs do not certify SynthID, Perth v2, or production-provider compatibility.
+See [audio coverage](audio-video-removal.md).
+
+Both audio removal functions accept `scheme` with the same semantics, and
+`method="auto"` (default), `method="spectral"`, `method="encodec"`, or `method="combined"`
+(spectral filtering followed by the codec), with `bandwidth_kbps=24.0`. Supported codec
+bandwidths are defined in `_internal/audio_codec.py`. Install `audio-codec`
+for this optional CPU backend. Result `method` and `bandwidth_kbps` identify
+the applied profile. Neural resynthesis can alter speech timbre and music;
+it retains the same strict saved-file verification policy, and 2-channel EnCodec passes operate in Mid/Side (`M/S`) space to preserve stereo phantom-center coherence. Auto tries spectral
+then combined for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, and adapts to positively detected schemes under `scheme="auto"` or `"all"` before falling back to `combined`. A missing required neural fallback raises without publishing output.
+
+Both functions also accept explicit `method="bigvgan"` with the `audio-vocoder`
+extra and `vocoder_device="cpu"`, `"mps"`, or `"cuda"`. This experimental pinned
+full-track mel-vocoder accepts mono/stereo tracks up to 30 seconds and 16 million
+sample values. It retains the native rational sample grid and uses raw mid/side
+for stereo, without normalization, extra clipping, chunking, or device fallback.
+The CPU default is required for other methods; a non-CPU `vocoder_device` with
+another method is rejected. EnCodec bandwidth does not apply. `auto` does not
+select BigVGAN. Local source/saved-output decoder gates remain mandatory unless
+explicitly forced; they cannot certify SynthID or transfer a provider verdict
+from another file. CUDA and short-signal perceptual quality remain unqualified.
+BigVGAN WAV outputs use bitexact short-RIFF serialization without an encoder tag
+or RF64 reserve padding. This enables reproducible file hashes for unchanged
+PCM and encoding, not a built-in provider verifier. FLAC and CPU/MPS differences
+remain separate exact-file scopes.
+
+Explicit `method="mimi"` uses the `audio-codec` extra and fixed CPU FP32 default
+32-quantizer Mimi. It shares the full-track duration/sample-value bounds and
+known mono/stereo layout checks, uses raw mid/side for stereo, and preserves the
+native half-open sample grid around an internal 24 kHz codec. The model owns
+its right-end excess and documented input-length prefix selection; no external
+padding, alignment or normalization is added. Its WAV serialization is bitexact.
+EnCodec bandwidth is ignored and `vocoder_device` must remain `"cpu"`. `auto`
+does not select it. Results still cover only the requested local decoders,
+with quality measured separately; native-provider candidates are not certified.
+
+Explicit `method="focalcodec"` uses the `audio-codec` extra and fixed CPU FP32
+continuous 6-layer WavLM feature-to-Vocos resynthesis (`lucadellalib/focalcodec_50hz`
+at revision `d6d6d9524e52155c85193c2c3b8da1cf8842f019`, bypassing binary
+spherical quantization). It shares the full-track duration/sample-value bounds,
+known mono/stereo layout checks, raw mid/side stereo, exact rational resampling
+around an internal 16 kHz grid (`8 kHz` ceiling) with symmetric `(40, 40)`
+WavLM context, smooth source-activity pause conditioning (`resynthesize_conditioned`,
+`-42 dBFS` active speech / `-50 dBFS` quiet intervals), and bitexact WAV
+serialization. EnCodec bandwidth is ignored, `vocoder_device` must remain `"cpu"`,
+and `auto` never selects it. Saved-output local decoder checks remain mandatory
+unless explicitly forced; native-provider candidates remain unverified.
+
+Explicit `method="dac"` uses the `audio-codec` extra and fixed CPU FP32
+3-codebook 44.1 kHz Descript Audio Codec (`descript/dac_44khz` at revision
+`c1bc521685adf9cfe247bc39a5ca58917eda1ac4`, MIT weights). It shares the 30-second
+and 16-million-value bounds, mono/stereo layout checks, raw mid/side stereo with
+stem RMS preservation, rational half-open resampling around 44.1 kHz (preserving
+full 22.05 kHz bandwidth), and bitexact WAV serialization. EnCodec bandwidth is
+ignored, `vocoder_device` must remain `"cpu"`, and `auto` never selects it.
+
+`remove_video_audio(source, output, stream=0, force=False, verify=True)` processes
+one selected audio track into MKV/MOV with float PCM, or MP4 with lossy AAC
+(target 192 kbps), while copying other encoded streams. `remove_video_audio_all_streams(source, output=None, ...)` inspects every audio track in the container, stream-copying unmarked tracks and cleaning all positively detected audio tracks into one atomic mux (`VideoAudioMultiStreamResult`).
+It returns `VideoAudioRemovalResult` with the same source/output decoder reports,
+delivered fidelity, `quality_passed`, `frames_processed`, `verified_removed`, and `skipped`, plus
+`unchanged_streams`, `source_audio_start`, `output_audio_start`, and caveats.
+Under `method="auto"`, candidate selection runs across the final container mux so
+an AAC-recompressed relapse on `spectral` automatically retries `combined` before
+failing.
+It checks all unchanged packet payloads and their timing, copied-audio priming
+and tail trimming, stream languages and dispositions, selected-track frame
+count and offset, and repeats verification on the final mux. Discontinuous
+audio timelines and unsupported container/codec combinations are rejected.
+Output format is selected by suffix; no samples are padded or truncated to repair
+AAC count/timing failures, including nonzero-offset timelines the mux cannot
+represent exactly. Fidelity and decoder checks cover the actual final
+output. Other marks and metadata remain outside this operation's verification scope. It needs the audio extras, not the video
+pixel runtime. Default verification failures preserve the existing output.
+
 ## Identify and clean video
 
 The high level video API supports MP4, MOV, M4V, WebM, MKV, AVI, and FLV:
@@ -534,13 +700,21 @@ print(report.is_ai_generated)
 print(report.platform)
 print(report.visible_mark)
 print(report.metadata_markers)
+print(report.invisible_watermark_hints)
 ```
 
 `identify_video` uses the same full-clip temporal arbiter as visible removal.
-It reports a recurring registered mark and supported AI metadata as positive
+It reports a recurring registered mark and supported AI-origin metadata as positive
 signals. When neither is present, `is_ai_generated` is `None`, never `False`.
 The absence of a public local video SynthID decoder is included in `caveats`.
 Pass `check_visible=False` for a bounded metadata-only inspection.
+`invisible_watermark_hints` names registered watermark algorithms declared by
+C2PA, supported SynthID metadata, and Amazon Nova Reel inferred from Bedrock
+video provenance. Fingerprint algorithms are excluded. These are metadata or
+provider-policy hints, not pixel detections or per-file removal verification.
+C2PA soft-binding names and payloads alone do not set `is_ai_generated`.
+An independent AI-origin signal is required; a declaration-only video remains
+unknown while retaining the metadata and any watermark hints.
 For metadata-only platform attribution, a recognized C2PA claim generator
 takes precedence over certificate issuers when a manifest names both.
 
@@ -558,17 +732,20 @@ when neither signal is found. This gives callers one predictable output path.
 It does not run lossy invisible regeneration by default.
 
 `include_invisible=True` explicitly adds VAE regeneration for MP4, MOV, or M4V
-with the default `invisible_profile="synthid"`. Select
-`invisible_profile="seedance-experimental"` for the experimental MP4 recipe and
-`invisible_quality="delivery"` (default) or `"master"` for its output encode.
+with the default `invisible_profile="synthid"`, motion-compensated `temporal_stabilize=True`, and `invisible_fps=DEFAULT_VIDEO_SYNTHID_FPS` (pass `invisible_fps=None` to preserve native source frame rate). Select
+`invisible_profile="seedance-experimental"` for the experimental MP4 texture-transfer
+recipe, or `invisible_profile="wan21-synthid-experimental"` / `"wan21-seedance-experimental"`
+on NVIDIA CUDA GPUs for full native-resolution 3D `Wan 2.1` video diffusion, and
+`invisible_quality="delivery"` (default) or `"master"` for their output encode.
+Pass `include_audio_invisible=True` (with `audio_scheme="auto"`, `audio_method="auto"`, `audio_force=False`) to also inspect and clean all compatible watermarked audio tracks in the same atomic pipeline.
 These options also apply to `remove_video_batch(..., mode="all")`.
 `VideoAllResult.invisible_profile` records the selected stage, or `None` when
 it did not run.
 `VideoAllResult.invisible_removed` remains the compatibility boolean for whether
 the visual regeneration stage ran; it is an action record, not a per-file
 watermark verdict. `visual_invisible_action` exposes the same distinction as
-`not_run` or `regenerated`. `audio.stream_action` is `copied_if_present`, while
-`audio.watermark_status` remains `unverified` because no audio decoder runs.
+`not_run` or `regenerated`. By default `audio.stream_action` is `copied_if_present` while
+`audio.watermark_status` remains `unverified`; when `include_audio_invisible=True` processes detected audio tracks, `audio.stream_action` is `processed` and `audio.watermark_status` reflects the verified saved-mux outcome (`not_detected`, `detected`, or `unverified`).
 
 Process a top-level directory sequentially:
 
@@ -641,7 +818,7 @@ if result.remaining_metadata:
 
 `remove_video_invisible` supports MP4, MOV, and M4V. It regenerates the complete
 video through a VAE in bounded batches, shares one seeded latent-noise field
-across all frames, streams pixels to ffmpeg, copies complete audio, strips
+across all frames, applies default motion-compensated optical-flow blending (`temporal_stabilize=True`) to suppress VAE inter-frame flicker (`fps=None` preserves native source FPS), streams pixels to ffmpeg, copies complete audio, strips
 source metadata, and publishes atomically. The default output is
 `input_clean.mp4`; a distinct same-container output is required.
 
@@ -729,6 +906,22 @@ it for their supported marks. `remove_video_all` runs the existing visible
 stage before the selected pixel stage. The CLI exposes the same choice through
 `--profile seedance-experimental`; all/batch mode also requires `--invisible`.
 SynthID remains the default.
+
+On hosts with an NVIDIA CUDA GPU, `remove_video_wan_experimental` (and
+`profile="auto"`, `"wan21-synthid-experimental"`, or `"wan21-seedance-experimental"` in
+`remove_video_invisible`, `remove_video_all`, and `remove_video_batch`) runs
+pinned Apache-2.0 3D `Wan 2.1` (`Wan-AI/Wan2.1-T2V-1.3B-Diffusers` at
+`0fad780a534b6463e45facd96134c9f345acfa5b`) at native resolution and exact frame
+timestamps on SDR 8-bit MP4 clips of any length (blending clips exceeding
+`chunk_frames=193` across `overlap_frames=17` raised-cosine 3D causal windows),
+returning `VideoWanExperimentalResult`. `profile="auto"` selects
+`wan21-seedance-experimental` on CUDA (`seedance-experimental` on CPU/MPS) when
+ByteDance/Seedance metadata or visible marks are present, and
+`wan21-synthid-experimental` on CUDA (`synthid` on CPU/MPS) otherwise.
+`wan21-synthid-experimental` uses `strength=0.38`
+and `wan21-seedance-experimental` uses `strength=0.12`. Both accept
+`quality="delivery"` or `"master"` and `seed`, reuse one loaded pipeline across
+batch items, and perform no runtime oracle verification.
 
 ## Remove a supported visible video mark
 
@@ -946,6 +1139,42 @@ the CLI guide for the concepts.
 Defaults can differ between the Python method and CLI profile resolution, so
 pass values explicitly when reproducibility matters.
 
+## Public-model known video messages
+
+```python
+report = raiw.identify_video_message("input.mp4", reference_hex=encoder_message_hex, scheme="videoseal")
+result = raiw.remove_video_message(
+    "input.mp4", "processed.mp4", reference_hex=encoder_message_hex, scheme="pixelseal"
+)
+```
+
+The reference is an independently known 256-bit encoder message, represented
+by 64 hex digits. Never infer it from the file being checked. The API compares
+that target under pinned public weights; it does not detect unknown messages,
+classify AI origin, or certify provider deployments or complete erasure.
+`VideoMessageReport` binds `source`, `sha256`, `scheme`, `reference_hex`, and
+`matched|not_matched|unverified` status to a reading over every decoded frame,
+four aggregations, and stride-1 12-frame sliding windows with a context-completed
+tail, verified against `ffprobe` packet timestamps.
+`check_message=False` and missing optional models stay unverified. Decode and
+model errors propagate, including incomplete declared streams and invalid logits.
+
+`remove_video_message` accepts `method="auto"|"codec"|"vae"`, `noise_std=None`,
+`long_side=512`, `device="auto"`, `force=False`, `verify=True`, and
+`temporal_stabilize=False`.
+An explicit noise level requires `method="vae"`. Auto tries codec, VAE with
+zero noise, then fixed noise levels 0.15 and 0.25. `VideoMessageRemovalResult`
+includes the selected profile, before/after reports, `verified_removed`,
+`skipped`, delivered `quality`, `quality_passed`, and `copied_audio_streams`. A source that is
+not matched skips by default. Failed saved-file checks raise
+`VideoMessageVerificationIncomplete` with before/after evidence and preserve
+an existing output. Disabling checks requires force. A verified result requires
+both a source match and a complete saved-output negative.
+
+The processing geometry, supported timelines and containers, audio guarantees,
+and quality tradeoffs follow the [CLI contract](cli.md#public-model-video-messages-experimental).
+Install `video-detect`, plus `diffusion` for VAE profiles. Imports remain lazy.
+
 ## Identify and clean text provenance and token watermarks
 
 The high-level text API in [`text.py`](../src/remove_ai_watermarks/text.py) is
@@ -953,36 +1182,226 @@ re-exported on the top-level `remove_ai_watermarks` package:
 
 ```python
 import remove_ai_watermarks as raiw
+from pathlib import Path
 
-report = raiw.identify_text("article.md")
+source = Path("article.md")  # str inputs are literal text, not filenames.
+report = raiw.identify_text(source)
 print(report.is_ai_generated, report.confidence, report.signals)
 print(report.vsrmark_payload, report.unicode_tags_payload)
 
-meta = raiw.remove_text_metadata("article.md", "article_clean.md")
+meta = raiw.remove_text_metadata(source, "article_clean.md")
 print(meta.removed_signals, meta.removed_codepoints)
 
 # Span-protected prose regeneration for token-level LLM watermarks:
-inv = raiw.remove_text_invisible("article.md", "article_regenerated.md", seed=0)
+inv = raiw.remove_text_invisible(source, "article_regenerated.md", seed=0)
 print(inv.rewritten_spans, inv.locked_spans, inv.token_watermark_action)
 
 # Combined pipeline (metadata strip + optional prose regeneration):
 combined = raiw.remove_text_all(
-    "article.md",
+    source,
     "article_all.md",
     include_invisible=True,
 )
 ```
 
+File input/output preserves UTF-8 line-ending bytes (LF, CRLF and CR). Segmentation
+recognizes the same protected structures across those endings; rewritten prose
+can still change its own internal layout.
+
+`rewriter_backend="mlx"` selects optional local MLX generation on Apple silicon;
+install `remove-ai-watermarks[text-mlx]` and pass a compatible `rewriter_model`
+checkpoint path or Hugging Face ID. `device="auto"` uses the MLX default stream;
+`device="mps"` selects a GPU stream. Other devices are rejected for this backend.
+`is_text_invisible_available("mlx")` in the `text` module checks Apple silicon,
+the concrete `mlx.core` module, `mlx_lm` and `py3langid`. The namespace-only `mlx` parent does
+not make an installed runtime unavailable in a fresh process.
+The default remains `rewriter_backend="transformers"`. Both backends share the
+same factual/placeholder acceptance checks and three-attempt policy. MLX requires
+an explicit `stop` finish reason; a length limit or unknown completion is refused.
+The combined API requires `include_invisible=True` for a nondefault backend, and
+a custom `rewriter` cannot also select MLX. No semantic judge is enabled by this
+choice, and larger models can still change qualifiers or facts.
+
 For local calibration or testing when the deployment's watermark key is known,
 [`remove_ai_watermarks.text`](../src/remove_ai_watermarks/text.py) also provides
 keyed statistical scorers (`score_synthid_text`, `score_gumbel_text`,
 `score_textgrain_text`, `score_textseal2_text`, `score_kgw_text`,
-`score_unigram_text`), factual numeral/entity/polarity verification
+`score_unigram_text`), selected numeral/entity/polarity/season/frequency verification
 (`verify_text_rewrite_facts`), covert steganography payload decoding
 (`decode_stego_payloads`), and deterministic wrapper encoders
 (`encode_c2patxt`, `encode_c2pa_ascii_armor`, `encode_vsrmark`,
 `encode_unicode_tags`, `encode_innamark`). See
 [text watermark and provenance research](text-watermark-research.md).
+
+The deterministic cleaner recognizes the [published Windows AI text sequence](https://learn.microsoft.com/en-us/windows/ai/apis/text-watermarking)
+`U+200B U+034F U+2060 U+200B` as `windows_ai_text_watermark`. It removes complete
+occurrences before classifying neighboring Unicode controls, preserving valid
+emoji and joining-script context. The sequence is forgeable, so this signal does
+not attribute the source to Microsoft. Tests cover synthetic published-format
+fixtures; actual Windows AI output has not been generated in this environment.
+
+The local rewriter raises `RuntimeError` after three attempts if every candidate
+hits the token budget without an EOS stop, severely collapses or expands a long
+passage, fails selected numeral/entity/polarity/season/frequency checks, changes service placeholders, switches the
+dominant writing script, or
+repeats the original verbatim. Install `remove-ai-watermarks[text]` for the
+default Transformers backend. Its configured chat template supplies native special
+tokens once; a tokenizer without a template uses a plain prompt with automatic
+special tokens. Both local backends additionally use a packaged
+`py3langid==0.4.0` model to reject confident language changes, including those
+within one script. After removing service placeholders and normalizing the
+classification sample to NFC, both samples need at least 40 alphabetic characters.
+A known source label needs a normalized score of at least 0.95; a different
+candidate label needs at least 0.8. Short samples, uncertain labels and unknown
+source labels abstain. These model scores are not calibrated accuracy estimates.
+Only the model is cached, not classified user text. The script check remains an
+independent backstop. For sufficiently long, predominantly Latin or Cyrillic sources,
+it also rejects newly introduced letters of the other alphabet when that alphabet
+was absent from the source. Existing mixed-script sources remain a limitation.
+List prefixes are protected structural spans. A custom
+rewriter returning an entire prose paragraph unchanged is also refused. A failed
+rewrite does not replace the destination file. These deterministic checks do not
+prove semantic equivalence; review the result. All-caps terms, including
+sentence-initial acronyms, are treated as protected factual tokens. This is a
+conservative lexical heuristic, not general named-entity recognition.
+Numerical checks retain normalized occurrence counts, not only unique values.
+An extra `two` is rejected even if `two` already occurs in the source. Whole
+cardinals and selected measurements/durations contribute one amount per mention;
+recurrence counts and service-marker indices are excluded from bare quantities.
+This is conservative about mention multiplicity and can reject a valid
+compression of repeated quantities. Equal occurrence multisets still do not
+establish which actor or object a number belongs to.
+Selected indefinite English durations (`an hour`, `a day`, `a week`, `a month`,
+`a year`) bind amount one to the complete unit phrase, including recognized
+numeric bounds. They may match `one day`/`1 day`, but cannot disappear or change
+unit. Local backends mask the whole phrase. Recurrence phrases such as `once a
+day` remain frequency facts rather than an additional duration measurement.
+Ambiguous `a second`/`a minute`, hyphenated compounds and compound-unit ratios are
+not interpreted by this indefinite-duration extension. It does not verify which
+event a duration modifies or preserve arbitrary conditional meaning.
+Selected English and Russian season mentions are also checked. Bare `spring`
+and `fall` remain ambiguous; they may match explicit seasonal counterparts but
+do not independently establish a season. A spring-to-autumn interval contributes
+both seasons. This backstop does not establish temporal equivalence, dates,
+frequency or which event a season modifies.
+Selected explicit English recurrence phrases are checked separately. Hourly,
+daily, weekly, monthly and yearly/annual phrases, selected `every N` intervals,
+`every other`/`every second`/`on alternate` forms, and once/twice/thrice or numeric
+repeat counts retain their occurrence count, period and unit. For example,
+`every other day` may match `once every two days`, but cannot become `periodically`
+or `every day`. Whole recognized phrases are masked for both local backends;
+their internal numerals/units do not become unrelated quantity constraints.
+The check preserves mention multiplicity conservatively. It does not convert
+calendar units, interpret arbitrary or bounded schedules, bind intervals to
+specific actors/events, or certify semantic equivalence.
+Consecutive recognized name words are masked as one span, so a name such as
+`Willow Creek` cannot be split by moving its component markers. The fact checker
+also requires those runs to remain contiguous, allowing case/whitespace changes.
+This preserves recognized text, not the name's role or complete entity coverage.
+Selected `Mr.`, `Mrs.`, `Ms.`, `Dr.` and `Prof.` phrases include capitalized
+name words and initials even at sentence start. Native masking keeps the full
+honorific/name phrase in one marker for each occurrence, so the honorific period
+cannot leave the surname unprotected. The fact checker requires each recognized
+full phrase to remain contiguous, allowing case/whitespace changes; it does not
+require repeated mentions to survive a valid pronoun paraphrase or bind names
+to actions.
+Selected English/Russian approval, permission, responsibility, restriction and
+requirement cues must also survive. For example, available funding does not
+retain an explicit approval condition, and not performing repairs is different
+from having no repair responsibility or being forbidden to repair. These are
+selected literal categories, without actor, event or scope binding; unrecognized
+synonyms can cause conservative refusals. Additive idioms such as
+"not only" are excluded, and the checked Russian necessity construction accepts
+"registration is required" versus "access without registration is impossible".
+These checks do not establish qualifier scope or complete claim coverage. Curly
+apostrophes are normalized for English negation checks, including `mustn't`.
+Selected English/Russian numeric bounds and approximations must retain their
+kind and value: for example, `at least 20` can become `no fewer than 20`, but not
+`20`, `at most 20` or `more than 20`. Quantified `no fewer/more than` is a bound,
+not predicate negation; other negation still matters. This remains a lexical
+heuristic. It does not cover all range/number expressions or bind each quantity
+to its participant, and ambiguous words such as `around` can cause refusals.
+Reciprocal/superlative `one` idioms are excluded from approximation matching;
+explicit bounds such as `at least one` remain checked.
+Selected Russian cardinal forms and descending thousand/million/billion scales
+are normalized as whole values: `двадцать пять` and `25` agree, while changing
+the value or its supported bound is refused. The local writer masks those
+sequences and selected duration adjectives such as `пятилетняя` as complete spans.
+Superlative `один из лучших` is not a quantity; `двадцать один из лучших` still
+contains `21`. Ambiguous `сорока` is not parsed as forty. Unparsed recognized
+sequences and indefinite bare plural scales retain literal signatures.
+This does not cover every inflection, ordinal or fractional number word or
+quantity-to-unit/participant relationship beyond the selected adjacent-unit checks below.
+Selected English compounds also share whole values with digits: `twenty-five`
+and `25`, or `one hundred and five` and `105`. Internal `and` differs from a
+conjunction list such as `one and two`. English `minus`/`plus` and Russian
+`минус`/`плюс` bind to the entire cardinal. Recognized numeric literals support
+ASCII and Unicode minus, leading-point decimals and scientific notation without
+float or decimal-context rounding. Ambiguous comma syntax and dotted numeric
+identifiers retain literal signatures. The local writer freezes complete
+recognized word-number spans. At a shared start, the longest phrase is frozen,
+keeping full recognized names intact without splitting a larger cardinal on
+name words seen elsewhere. Superlative `one` is excluded at a full-number boundary,
+so `twenty-one of the best` retains `21`. This remains a selective lexical gate,
+not a general quantity, range-order, arithmetic or semantic verifier.
+An explicit English zero multiplier remains zero; a bare scale's implicit one
+does not turn `zero thousand` into `1000`.
+
+Explicit partial mode (`allow_partial=True`) keeps a rejected paragraph cluster
+unchanged and continues with other prose. Results expose `retained_prose_spans`
+and `token_watermark_action="partial_regeneration"`. If every prose cluster is
+rejected, the call still raises without replacing the destination. This mode
+catches rewrite `RuntimeError` only; unexpected exceptions still abort. It is not
+a complete removal result. `remove_text_all` requires `include_invisible=True`
+when requesting partial mode. Score retained segments separately: a lower whole-
+document score can hide a marked passage.
+
+An optional `rewrite_validator(source, candidate)` callback can reject a candidate
+before publication. It receives visible text with protected inline content
+restored, with outer whitespace stripped. It must return a literal `bool`, not a
+dictionary, a truthy string or a confidence value. `False` retries up to three
+candidate attempts, then raises `RuntimeError`; an invalid return type raises
+`TypeError`. Exceptions propagate under the partial-mode rules above. The local
+model's existing hard guards still run first. Caller-supplied rewriters retain
+responsibility for their factual acceptance policy. Empty or unchanged custom
+prose cannot be published; with a validator those candidates consume an attempt
+without calling the validator. Protected-span fallback may call the rewriter and
+validator on individual prose fragments. `remove_text_all` accepts the callback
+only with `include_invisible=True`. No semantic judge is enabled by default.
+
+Service placeholder allocation avoids literal marker strings already in the
+source, including inside locked code. User marker IDs are never parsed as
+integers. This preserves literal marker-shaped content without namespace collisions.
+
+
+Compatibility boundary: the legacy `score_gumbel_text`, `score_textgrain_text`,
+`score_textseal2_text`, `score_kgw_text` and `score_unigram_text` helpers use this
+module's BLAKE2 research PRF. They are simulations, not compatible reference
+implementations of a vendor, MarkLLM or Meta deployment. A matching integer key
+alone does not make their scores valid provider evidence. The independent
+benchmark scripts use the external implementation's own detector instead.
+
+`score_synthid_text` uses the optional torch/transformers reference processor,
+including its context-repetition mask. Supply the generation's tokenizer, keys,
+`ngram_len`, `sampling_table_seed`, `sampling_table_size`, `context_history_size`
+and `device`. The default device is `cpu`; a table seeded on MPS or CUDA differs
+from a CPU table with the same seed. The returned mean-g diagnostic z-score is
+not the trained Bayesian detector or a provider's production detector. Thresholds
+require calibration on matched marked and unmarked controls. Other named scorers
+are local keyed simulations, not evidence of compatibility with private provider
+implementations.
+
+Selected adjacent physical measurements are checked as a multiset of normalized
+amount/unit pairs and masked as whole phrases by the local rewriters. This covers
+selected English/Russian units, case-sensitive symbols (`mW` differs from `MW`),
+registered square-unit forms, slash compounds whose atoms are all recognized,
+and the existing Russian duration adjectives. Numeric bounds include the unit
+when recognized. Symbol/word aliases can compare equal; arithmetic conversion
+such as `1000 m` to `1 km` is not implemented. Prefix currencies, unknown units,
+unregistered products/powers, ambiguous unit words and source-to-role binding
+remain outside this check. Short unit symbols can be ambiguous; English `in`
+and Russian `г`/`с` are deliberately excluded. Quantity checks still do not
+prove semantic equivalence or protect every measurement expression.
 
 ## Integration operation catalog
 

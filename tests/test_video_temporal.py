@@ -5,7 +5,13 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from remove_ai_watermarks.video_temporal import stabilize_filled_frame
+from remove_ai_watermarks.video_temporal import (
+    build_temporal_reference,
+    iter_stabilized_regenerated_frames,
+    stabilize_filled_frame,
+    stabilize_regenerated_frames,
+    temporal_residual_ratio,
+)
 
 
 def _translated_pair() -> tuple[np.ndarray, np.ndarray]:
@@ -110,3 +116,78 @@ def test_disjoint_prior_mask_cannot_reintroduce_old_mark() -> None:
     )
 
     assert np.array_equal(stabilized, current_fill)
+
+
+def test_stabilize_regenerated_frames_reduces_flicker_without_source_pixel_leakage() -> None:
+    rng = np.random.default_rng(23)
+    base = cv2.GaussianBlur(rng.integers(32, 224, (96, 128, 3), dtype=np.uint8), (7, 7), 0)
+    source_frames = [
+        cv2.warpAffine(
+            base,
+            np.float32(((1, 0, idx * 1.5), (0, 1, idx * 0.75))),
+            (128, 96),
+            borderMode=cv2.BORDER_REFLECT,
+        )
+        for idx in range(6)
+    ]
+    noisy_regen = [
+        np.clip(frame.astype(np.float32) + rng.normal(0.0, 14.0, frame.shape), 0, 255).astype(np.uint8)
+        for frame in source_frames
+    ]
+
+    maps, baseline = build_temporal_reference(source_frames)
+    raw_ratio = temporal_residual_ratio(noisy_regen, maps, baseline)
+    stabilized = stabilize_regenerated_frames(source_frames, noisy_regen)
+    stab_ratio = temporal_residual_ratio(stabilized, maps, baseline)
+
+    def _frame_mse(seq_a: list[np.ndarray], seq_b: list[np.ndarray]) -> float:
+        return float(
+            np.mean([(a.astype(np.float32) - b.astype(np.float32)) ** 2 for a, b in zip(seq_a, seq_b, strict=True)])
+        )
+
+    raw_mse = _frame_mse(noisy_regen, source_frames)
+    stab_mse = _frame_mse(stabilized, source_frames)
+    assert stab_ratio < raw_ratio * 0.75
+    assert stab_mse < raw_mse * 0.75
+
+    # Zero raw-source pixel leakage: constant regenerated frames stay constant
+    # even when source frames are bright/textured.
+    constant_regen = [np.full_like(frame, 42) for frame in source_frames]
+    no_leak = stabilize_regenerated_frames(source_frames, constant_regen)
+    for out_frame in no_leak:
+        assert np.array_equal(out_frame, np.full_like(out_frame, 42))
+
+
+def test_stabilize_regenerated_frames_resets_across_scene_cut() -> None:
+    rng = np.random.default_rng(41)
+    shot_a = cv2.GaussianBlur(rng.integers(10, 80, (96, 128, 3), dtype=np.uint8), (5, 5), 0)
+    shot_b = cv2.GaussianBlur(rng.integers(180, 250, (96, 128, 3), dtype=np.uint8), (5, 5), 0)
+    sources = [shot_a, shot_a.copy(), shot_b, shot_b.copy()]
+    regens = [
+        np.full_like(shot_a, 20),
+        np.full_like(shot_a, 30),
+        np.full_like(shot_b, 210),
+        np.full_like(shot_b, 220),
+    ]
+
+    stabilized = stabilize_regenerated_frames(sources, regens, neighbor_weight=0.30)
+    # Across the hard cut between index 1 and index 2, shot B (210) must never bleed into index 1 (<= 30).
+    assert int(stabilized[1].max()) <= 30
+    assert int(stabilized[2].min()) >= 210
+
+
+def test_iter_stabilized_regenerated_frames_streams_with_one_frame_lookahead() -> None:
+    rng = np.random.default_rng(51)
+    frames = [rng.integers(20, 200, (32, 48, 3), dtype=np.uint8) for _ in range(5)]
+    consumed: list[int] = []
+
+    def producer():
+        for idx, frame in enumerate(frames):
+            consumed.append(idx)
+            yield frame, frame
+
+    stream = iter_stabilized_regenerated_frames(producer())
+    first_src, first_stab = next(stream)
+    assert consumed == [0, 1]
+    assert np.array_equal(first_src, frames[0])
+    assert first_stab.shape == frames[0].shape

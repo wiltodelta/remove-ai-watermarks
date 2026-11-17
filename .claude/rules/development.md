@@ -29,7 +29,7 @@ Exit-code and no-signal behavior is a public contract; read the command-line sec
 
 Do not add an option whose only outcome is an error. Model id, step count and CFG are fixed by the profile, so none is a parameter of the CLI, `InvisibleEngine`, or `WatermarkRemover`; if a value cannot vary, delete the knob rather than validating it.
 
-`device` is the deliberate exception: a library parameter (`None`/`"auto"` detect, `"cuda"` pins without detecting, anything else raises at construction), absent from the image-path CLI, and a `--device` flag (cuda, mps, cpu) on `video invisible`, `video all` and `video batch`. `test_device_exists_exactly_where_the_skill_says_it_does` pins that split; do not delete the video flag.
+`device` is the deliberate exception: a library parameter (`None`/`"auto"` detect, `"cuda"` pins without detecting, anything else raises at construction), absent from the image-path CLI, and a `--device` flag (cuda, mps, cpu) on `video invisible`, `video all`, `video batch`, and `video message remove`. `test_device_exists_exactly_where_the_skill_says_it_does` pins that split; do not delete the video flag.
 
 Install hints name the extra that actually makes the command work (`qwen-zimage`, not `diffusion`) and print the command shell-quoted.
 
@@ -39,8 +39,8 @@ Provider verification services and provenance APIs are development-only oracles.
 
 The entry point is `scripts/provider_oracles.py`; workflow, slot schema, surface order and per-surface behavior live in [`docs/provider-oracles.md`](../../docs/provider-oracles.md). Read it before running or changing a provider check.
 
-- Select each named slot explicitly from the gitignored `.oracle-slots.json` and snapshot it into a separate immutable batch manifest. Never commit the slot file.
-- `check-openai` and `check-microsoft` make one submission per call; `run-web` submits each unrecorded row of one prepared manifest once. After a refusal, quota response, transport error, or indeterminate verdict, record the exact response and continue with the next slot or surface as its own command.
+- Select each named slot explicitly from the gitignored `.oracle-slots.json` and snapshot it into a separate immutable batch manifest (`run-web` requires an explicit `ExecutionSlot` on every Playwright surface, anonymous surfaces included). Never commit the slot file.
+- `check-openai` and `check-microsoft` make one submission per call; `run-web` submits each unrecorded row of one prepared manifest once. After a refusal, quota response, transport error, or indeterminate verdict, record the exact response and continue with the next slot or surface as its own command, except when `gemini-web` reports an explicit modality-level video/audio quota refusal or an active modality quota-hold file (`status: "active"`) is on record: stop same-modality `gemini-web` account rotation while the hold remains active, keep frozen batches unsubmitted, and reuse exact prior upload-hash verdicts. Pass `--require-clean-media` when preparing clean-control or processed audio/video batches so residual AI metadata and visible marks are rejected and `stream_hashes` are recorded.
 - Deviation from the global rules: do not ask for confirmation before the switch, because anyone doing the task holds standing permission to run the configured checks.
 - Do not add new logins, unbounded retries, or address rotation inside one call; do not walk a prepared route list, and do not merge results from different sessions into one response.
 - Bind every manual result to the exact sanitized upload hash and preserve the provider response verbatim. Keep each surface's verdict separate.
@@ -111,7 +111,7 @@ In `dwt_dct.py`, the bit test `peak % 36 > 18.0` lands exactly on the threshold 
 
 `test_shipped_defaults_match_a_certified_manifest_row` derives the video SynthID default from `data/evaluations/video-synthid-oracle.csv`; never restate its literals. Anything that produces oracle evidence loads through `load_video_vae_runtime`, which gates the latent scaling factor and carries it on `VideoVaeRuntime` into encode and decode.
 
-Prove a video-path refactor by building a clip from a tracked fixture with ffmpeg and requiring an identical output sha256 before and after. Keep the generated media outside the repository, and run both arms in one synced environment: a full-extras `uv sync` alone changes re-encoded H.264 packet bytes.
+Prove a video-path refactor by building a clip from a tracked fixture with ffmpeg and requiring an identical output sha256 before and after. Keep the generated media outside the repository, and run both arms in one synced environment: a full-extras `uv sync` alone changes re-encoded H.264 packet bytes. When changing audio or video watermark removal, quality gates, or final-container muxing, run `uv run python scripts/media_removal_benchmark.py --builtin-suite --strict` with `--work-dir` and `--output` outside the repository.
 
 Frame sampling compares `timestamp + 1e-9 >= next_sample_time`, so a `>=`-to-`>` mutant survives; mutate the phase or the period instead, which `test_pairing_follows_the_engine_sampling_rule_not_just_the_frame_count` catches.
 

@@ -9,7 +9,7 @@ optional TrustMark package can fetch its official Adobe model weights when its
 local package cache is incomplete, the audioseal adapter fetches its pinned
 checkpoints the same way, and the PixelSeal and VideoSeal adapters download
 pinned weights into a user cache; prepare those dependencies before an offline
-run. Perth's checkpoint is bundled in its pinned source revision.
+run. Perth's checkpoint is bundled in its pinned public package.
 
 The kernel answers three different questions and never merges their answers:
 
@@ -41,7 +41,7 @@ The fixed fields are:
 | `case_id` | Unique case identity. |
 | `pair_id` | Groups related clean, marked, attacked, and removed cases. |
 | `media_type` | `image`, `audio`, or `video` in schema v1. |
-| `adapter` | `dwt-dct`, `trustmark`, `trustmark-q`, `trustmark-c`, `pixelseal`, `videoseal-image`, `perth`, or `treering` for `image`; `audioseal` or `perth` for `audio`; `videoseal` for `video`. The loader rejects a known adapter named against the wrong media type. |
+| `adapter` | `dwt-dct`, `trustmark`, `trustmark-q`, `trustmark-c`, `pixelseal`, `videoseal-image`, `perth`, or `treering` for `image`; `audioseal`, `wavmark`, or `perth` for `audio`; `videoseal` or `pixelseal-video` for `video`. The loader rejects a known adapter named against the wrong media type. |
 | `arm` | `positive`, `matched_negative`, `wrong_key`, or `hard_negative`. |
 | `state` | `clean`, `marked`, `attacked`, `removed`, or `forged`. `forged` names an artifact carrying a watermark with a message different from the adapter oracle's fixed one. Expected detection depends on the adapter: PixelSeal and VideoSeal check the fixed message, while AudioSeal's presence rule can still report `detected` for a foreign message. Perth has an implicit fixed mark and no message payload, so it has no meaningful forged arm. The study records message accuracy separately where the scheme exposes a message. |
 | `path`, `sha256` | Artifact path and pinned content digest. |
@@ -106,8 +106,9 @@ image path where decoding also stays outside the detector interval. Audio rows
 therefore require `ffmpeg` on `PATH`; a missing or failing decode is the same
 explicit `error` status as an undecodable image.
 
-The `audioseal` adapter reads the shared revision-pinned oracle in
-`scripts/audioseal_oracle.py` (Meta AudioSeal, MIT license, Hugging Face
+The `audioseal` adapter reads and source-hashes the shared revision-pinned oracle in
+`src/remove_ai_watermarks/_internal/audioseal.py` (with
+`scripts/audioseal_oracle.py` as a research compatibility facade; Meta AudioSeal, MIT license, Hugging Face
 revision and checkpoint SHA-256 pinned and verified at load). Its `detected`
 status is the detector's own documented rule: the fraction of per-sample
 probabilities above 0.5 reaching 0.5. The `label` is the decoded 16-bit message
@@ -115,20 +116,38 @@ as a binary string, so a case whose payload differs from the embedded one is
 still `detected` with a different label, never `not_detected`. A `wrong_key`
 arm for this adapter is therefore a different-message row, not a clean row.
 
-The `perth` adapter reads `scripts/perth_oracle.py`, which pins Resemble AI's
-[Perth source](https://github.com/resemble-ai/Perth/tree/ff1c8ac55a976971245cdd53c18d6131ca00d993)
-at commit `ff1c8ac` and verifies the bundled
-`perth_net_250000.pth.tar` checkpoint as
-`sha256:a15bce457ebc53ce5e6c9c3f11df78cf7ee2bf9cdab0a798902135b4c4027670`.
-The upstream package name is `resemble-perth`, the pinned source declares
-version 1.1.0, and its [license is MIT](https://github.com/resemble-ai/Perth/blob/ff1c8ac55a976971245cdd53c18d6131ca00d993/LICENSE).
-That permits a public, development-only oracle. The published 1.0.1 wheel
-pins an obsolete Torch stack, so the benchmark installs the exact source
-revision without adding it to project or runtime dependencies. Perth v1 is an
-implicit presence mark: the detector exposes one confidence and upstream's
-strictly-above-0.5 decision rule, but no user message. The kernel therefore
-records `score`, uses `label: perth-v1` only above threshold, and leaves
-message accuracy not applicable.
+The `wavmark` adapter source-hashes `_internal/wavmark.py`, with
+`scripts/wavmark_oracle.py` retaining the research import interface. It pins the public
+[WavMark source](https://github.com/wavmark/wavmark) and
+[checkpoint](https://huggingface.co/M4869/WavMark), checking the source-install
+source-tree hash and checkpoint SHA-256 before loading. Pin values live in that implementation.
+It uses the upstream exact synchronization-pattern check, returning a recovered
+payload as the label. A different payload remains detected. Inputs too short
+for a full model window and malformed decoder results are errors, never
+negative readings. The scanner includes final valid positions that the upstream
+wrapper omitted. `audio-wavmark` installs the compatible public package; the
+verified PyPI Python files match the pinned source revision. These checks do
+not establish production `com.microsoft.wavmark.1` compatibility or complete
+payload erasure.
+
+The `perth` adapter source-hashes `src/remove_ai_watermarks/_internal/perth.py`.
+`scripts/perth_oracle.py` is the development compatibility facade for that same
+loader, decoder, and fixture generator. It validates the `resemble-perth` 1.0.1
+wheel's complete Python source tree, model config, and bundled checkpoint.
+The checkpoint SHA-256 remains
+`a15bce457ebc53ce5e6c9c3f11df78cf7ee2bf9cdab0a798902135b4c4027670`.
+The private loader avoids the legacy package initializer and requires no old
+setuptools. `audio-perth` installs the explicit neural dependencies omitted by
+the upstream wheel. New study manifests record package version and source-tree
+SHA-256, rather than attributing the wheel to a different Git revision.
+Historical source-revision studies remain historical evidence; all 84 retained
+readings matched this runtime exactly. Fixture generation matched the published
+wheel method on all six retained carriers; historical saved waveforms have small
+measured differences and are preserved rather than replaced. New runs use recipe
+`perth-pixelseal-study-v3`. The public package's license is MIT.
+Perth v1 exposes one presence confidence and the strictly-above-0.5 rule, with
+no user message. The kernel records `score`, uses `label: perth-v1` only above
+threshold, and leaves message accuracy not applicable.
 
 Audio fidelity compares the decoded sample arrays against the explicit
 reference: identical decoded samples produce `snr_db: null` with
@@ -621,6 +640,16 @@ argument of `detect_video_and_aggregate`. The aggregation matrix itself
 (avg versus norm-weighted) is evaluated in
 [VideoSeal temporal evaluation](videoseal-temporal-evaluation.md), not in the
 kernel, which keeps plain avg as its canonical rule.
+`pixelseal-video` uses the same message-logit aggregation and temporal evidence
+with the pinned PixelSeal research model's video mode. Its availability check
+is lazy, so unrelated benchmark rows do not require the optional PixelSeal
+source package. The ordinary `pixelseal` adapter remains image-only.
+Research video mode does not certify any deployed PixelSeal or Content Seal
+format. See [non-SynthID video coverage](non-synthid-video.md) for the provider
+and oracle boundaries.
+The same study's `--regenerate` mode compares the shipped video VAE profile,
+a zero-noise round trip, matched codec controls, and regenerated clean
+negatives using saved-artifact message readings and delivered-file fidelity.
 
 ## Video cohort v1
 

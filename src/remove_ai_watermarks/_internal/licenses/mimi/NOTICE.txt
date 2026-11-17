@@ -1,0 +1,18 @@
+Mimi optional model attribution
+
+Mimi was developed by Kyutai. Model card authors: Alexandre Defossez,
+Laurent Mazare, Manu Orsini, Amelie Royer, Patrick Perez, Herve Jegou,
+Edouard Grave, Neil Zeghidour, and Yoach Lacombe.
+Model: https://huggingface.co/kyutai/mimi
+Revision: 89091b3e466eb6a9d11e537bf26b144f194978f7
+Weights license: Creative Commons Attribution 4.0 International (CC-BY-4.0).
+https://creativecommons.org/licenses/by/4.0/
+The checkpoint is downloaded separately, not bundled or modified here.
+Retain this attribution and the license link when redistributing the weights.
+No endorsement by Kyutai is implied.
+
+Runtime implementation: Hugging Face Transformers MimiModel, Apache-2.0.
+https://github.com/huggingface/transformers/tree/main/src/transformers/models/mimi
+This wrapper uses the built-in implementation, fixed default 32 quantizers,
+CPU float32, rational native clocks, and optional raw mid/side mapping.
+Model availability does not establish watermark removal or voice preservation.

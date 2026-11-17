@@ -260,3 +260,27 @@ def test_the_command_writes_one_json_row_per_argument_in_order(probe: ModuleType
     rows = json.loads(report.read_text(encoding="utf-8"))
     assert [row["file"] for row in rows] == ["small.mp4", "smaller.mp4"]
     assert all(row["source"] == "source.mp4" for row in rows)
+
+
+def test_fidelity_preserves_timestamps_when_native_opencv_cannot_decode(probe, tmp_path, monkeypatch):
+    import cv2
+
+    pytest.importorskip("av")
+    source = tmp_path / "fallback.mp4"
+    _write_clip(source, _distinct_frames(6), fps=12.0, ffmpeg=_ffmpeg())
+
+    class ClosedCapture:
+        def isOpened(self):
+            return False
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(cv2, "VideoCapture", lambda *_args: ClosedCapture())
+    geometry = probe._delivered_geometry(source)
+    assert geometry == (64, 48, 12.0)
+    row = probe._measure(source, source, source_geometry=geometry, duration=None, preserve_timestamps=True)
+    assert row["frames"] == 6
+    assert row["source_ssim"] == pytest.approx(1.0)
+    assert row["max_timestamp_error_seconds"] == 0
+    assert row["video_duration_error_seconds"] == 0

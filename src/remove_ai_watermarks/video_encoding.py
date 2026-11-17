@@ -298,6 +298,22 @@ def probe_video_encode_profile(source: Path) -> VideoEncodeProfile:
     )
 
 
+def probe_video_duration(path: Path) -> float:
+    """Read the first video stream duration without changing its time origin."""
+    value = _run_ffprobe(
+        path,
+        ("-select_streams", "v:0", "-show_entries", "stream=duration"),
+        purpose="video duration",
+        output_format="csv=p=0",
+    )
+    if value is None:
+        raise ValueError(f"Could not read video duration: {path}")
+    duration = float(value.strip())
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError(f"Invalid video duration: {path}")
+    return duration
+
+
 def probe_video_timestamps(source: Path) -> tuple[float, ...]:
     """Read authoritative display timestamps for the first video stream."""
     raw_timestamps = _run_ffprobe(

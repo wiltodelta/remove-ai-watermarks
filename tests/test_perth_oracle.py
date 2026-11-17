@@ -19,7 +19,7 @@ def test_detection_rule_is_upstream_round_at_one_half() -> None:
 
 
 def test_checkpoint_and_source_are_immutable_pins() -> None:
-    assert len(perth_oracle.SOURCE_COMMIT) == 40
+    assert len(perth_oracle.SOURCE_TREE_SHA256) == 64
     assert len(perth_oracle.CHECKPOINT_SHA256) == 64
     assert all(char in "0123456789abcdef" for char in perth_oracle.CHECKPOINT_SHA256)
 
@@ -29,3 +29,11 @@ def test_perth_has_no_message_payload_contract() -> None:
 
     assert not hasattr(reading, "decoded_bits")
     assert not hasattr(perth_oracle, "message_bits")
+
+
+def test_facade_uses_the_shipped_decoder():
+    from remove_ai_watermarks._internal import perth
+
+    assert perth_oracle.read is perth.read
+    assert perth_oracle.load_model is perth.load_model
+    assert perth_oracle.embed is perth.embed

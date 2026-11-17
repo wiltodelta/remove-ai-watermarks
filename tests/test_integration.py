@@ -184,3 +184,35 @@ def test_failed_operation_never_returns_a_stale_existing_output(tmp_path, monkey
     )
     assert result["output"] is None
     assert output.read_bytes() == b"previous result"
+
+
+@pytest.mark.parametrize(
+    ("name", "filename", "expected", "extra"),
+    [
+        ("cli_audio_invisible", "source.mp3", "source_processed.wav", {}),
+        ("cli_video_audio", "source.mp4", "source_audio_processed.mkv", {}),
+        ("cli_video_message_remove", "source.mkv", "source_message_processed.mp4", {"reference": "ab" * 32}),
+    ],
+)
+def test_media_catalog_output_defaults(tmp_path, name, filename, expected, extra):
+    source = tmp_path / filename
+    args, output = integration.plan_operation(operation(name), {"source": str(source), **extra})
+    assert output == str(tmp_path / expected)
+    output_flag = "-o" if "-o" in args else "--output"
+    assert args[args.index(output_flag) + 1] == output
+    assert args[-1] == str(source)
+
+
+def test_audio_catalog_keeps_structured_unverified_evidence(monkeypatch):
+    item = operation("cli_audio_identify")
+    evidence = {"invisible_status": "unverified", "caveats": ["No complete decoder result"]}
+    monkeypatch.setattr(mcp_server, "_operations", lambda: {item["id"]: item})
+    monkeypatch.setattr(
+        mcp_server,
+        "run_operation",
+        lambda *_: {"exit_code": 2, "stdout": json.dumps(evidence), "stderr": "", "output": None},
+    )
+    result = mcp_server.call_tool(item["id"], {"source": "short.wav", "as_json": True})
+    assert result["structuredContent"]["report"] == evidence
+    assert result["structuredContent"]["output"] is None
+    assert result["structuredContent"]["exit_code"] == 2

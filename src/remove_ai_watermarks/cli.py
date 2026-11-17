@@ -21,7 +21,21 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn
 import click
 
 from remove_ai_watermarks import __version__, image_io, watermark_registry
-from remove_ai_watermarks._internal.constants import SUPPORTED_FORMATS
+from remove_ai_watermarks._internal.constants import (
+    AUDIO_BANDWIDTHS_KBPS,
+    AUDIO_METHODS,
+    AUDIO_SCHEMES,
+    AUDIO_VOCODER_DEVICES,
+    DEFAULT_VIDEO_MESSAGE_LONG_SIDE,
+    SUPPORTED_FORMATS,
+    VIDEO_INVISIBLE_PROFILES,
+    VIDEO_MESSAGE_DEVICES,
+    VIDEO_MESSAGE_METHODS,
+    VIDEO_MESSAGE_SCHEMES,
+    AudioMethod,
+    AudioScheme,
+    VideoInvisibleProfile,
+)
 from remove_ai_watermarks._internal.utils import is_supported_format
 from remove_ai_watermarks._internal.watermark_profiles import (
     DEFAULT_PROFILE,
@@ -607,7 +621,9 @@ def _should_skip_invisible_scrub(force: bool, image_path: Path) -> bool:
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging.")
 @click.pass_context
 def main(ctx: click.Context, verbose: bool) -> None:
-    """Remove visible and invisible AI watermarks, plus metadata provenance marks, from images, video, and text."""
+    """Remove visible and invisible AI watermarks, plus metadata provenance marks,
+    from images, video, audio, and text.
+    """
     from dotenv import load_dotenv
 
     load_dotenv()  # Load .env (e.g. HF_TOKEN)
@@ -1106,6 +1122,446 @@ def cmd_metadata(
 
 
 # ── Video pipeline ──
+def _verification_error(exc: Exception, *, as_json: bool) -> NoReturn:
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.audio import AudioVerificationIncomplete
+    from remove_ai_watermarks.video_messages import VideoMessageVerificationIncomplete
+
+    if as_json:
+        report: dict[str, Any] = {"error": str(exc), "output": None}
+        if isinstance(exc, (AudioVerificationIncomplete, VideoMessageVerificationIncomplete)):
+            report["before"] = asdict(exc.before)
+            report["after"] = asdict(exc.after)
+        click.echo(json.dumps(report, indent=2, default=str))
+        raise SystemExit(1)
+    raise click.ClickException(str(exc)) from exc
+
+
+@main.group("audio")
+def cmd_audio() -> None:
+    """Inspect audio watermarks and process supported research marks."""
+
+
+def _audio_method_options(func: Any) -> Any:
+    func = click.option(
+        "--vocoder-device",
+        type=click.Choice(list(AUDIO_VOCODER_DEVICES)),
+        default=AUDIO_VOCODER_DEVICES[0],
+        show_default=True,
+        help="BigVGAN inference device; other methods require the CPU default.",
+    )(func)
+    func = click.option(
+        "--bandwidth",
+        type=click.Choice([str(bw) for bw in AUDIO_BANDWIDTHS_KBPS]),
+        default=str(AUDIO_BANDWIDTHS_KBPS[-1]),
+        show_default=True,
+        help="EnCodec bandwidth in kbps; applies to encodec and combined methods.",
+    )(func)
+    return click.option(
+        "--method",
+        type=click.Choice(list(AUDIO_METHODS)),
+        default=AUDIO_METHODS[0],
+        show_default=True,
+        help=(
+            "Select automatically, or choose spectral, EnCodec, combined, or experimental full-track "
+            "BigVGAN, CPU Mimi, CPU FocalCodec, or CPU 44.1 kHz DAC (no SynthID decoder)."
+        ),
+    )(func)
+
+
+def _audio_scheme_option(func: Any = None, *, default: AudioScheme = AUDIO_SCHEMES[0]) -> Any:
+    opt = click.option(
+        "--scheme",
+        type=click.Choice(list(AUDIO_SCHEMES)),
+        default=default,
+        show_default=True,
+        help="Compatible public models to check; all requests every named model, auto checks installed models.",
+    )
+    return opt if func is None else opt(func)
+
+
+def _audio_check_label(scheme: str) -> str:
+    return {
+        "audioseal": "open AudioSeal",
+        "wavmark": "public WavMark",
+        "perth": "public Perth v1",
+        "silentcipher": "public SilentCipher-44k experimental receiver",
+        "silentcipher16": "public SilentCipher-16k experimental terminated pattern",
+        "all": "AudioSeal, WavMark, Perth v1, SilentCipher-44k, and the SilentCipher-16k terminated pattern",
+        "auto": "installed compatible public audio watermark",
+    }[scheme]
+
+
+@cmd_audio.command("identify")
+@_audio_scheme_option
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--no-invisible", is_flag=True, help="Inspect metadata and stream geometry without audio watermark models."
+)
+@click.option(
+    "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
+def cmd_audio_identify(
+    source: Path,
+    no_invisible: bool,
+    stream: int,
+    as_json: bool,
+    scheme: AudioScheme,
+) -> None:
+    """Inspect a selected audio track with compatible optional decoders."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.audio import identify_audio
+
+    try:
+        report = identify_audio(source, check_invisible=not no_invisible, stream=stream, scheme=scheme)
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+    if as_json:
+        click.echo(json.dumps(asdict(report), indent=2, default=str))
+        return
+    _banner()
+    console.print(f"  Audio: {report.stream.sample_rate} Hz, {report.stream.channels} channel(s)")
+    console.print(f"  Compatible watermark checks: {report.watermark_status.upper()}")
+    console.print(f"  Metadata markers: {', '.join(report.metadata_markers) or 'none found'}")
+    for caveat in report.caveats:
+        console.print(f"  - {caveat}")
+
+
+@cmd_audio.command("metadata")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--check", is_flag=True, help="Check for AI metadata (don't modify).")
+@click.option("--remove", is_flag=True, help="Remove AI metadata.")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Output audio path (default: <source_stem>_clean<suffix>).",
+)
+@click.option("--keep-standard/--remove-all", default=True, help="Keep standard metadata.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the report or result as JSON.")
+def cmd_audio_metadata(
+    source: Path,
+    check: bool,
+    remove: bool,
+    output: Path | None,
+    keep_standard: bool,
+    as_json: bool,
+) -> None:
+    """Check or remove AI metadata without re-encoding audio samples."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.audio import inspect_audio_metadata, remove_audio_metadata
+
+    try:
+        report = inspect_audio_metadata(source)
+    except (OSError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+
+    if check or not remove:
+        if as_json:
+            click.echo(json.dumps(asdict(report), indent=2, default=str))
+            return
+        _banner()
+        _print_metadata_report(source, report.has_ai_metadata, report.markers)
+        if not remove:
+            return
+
+    try:
+        result = remove_audio_metadata(source, output, keep_standard=keep_standard, _detected_metadata=report.markers)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if result.remaining:
+            raise SystemExit(1)
+        return
+    _banner()
+    if result.remaining:
+        console.print(f"  FAILED: {len(result.remaining)} AI metadata marker(s) survived in {result.output}")
+        console.print(f"    still present: {', '.join(sorted(result.remaining))}")
+        raise SystemExit(1)
+    console.print(f"  AI metadata stripped -> {result.output}")
+    _print_metadata_not_a_clean_verdict()
+
+
+@cmd_audio.command("invisible")
+@_audio_method_options
+@_audio_scheme_option
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Output WAV, FLAC, MP3, M4A, OGG, or Opus, default SOURCE_processed.wav.",
+)
+@click.option("--force", is_flag=True, help="Allow an unverified or still-positive candidate to be written.")
+@click.option(
+    "--verify/--no-verify",
+    default=True,
+    show_default=True,
+    help="Check selected compatible models before and after; disabling requires --force.",
+)
+@click.option(
+    "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the result as JSON.")
+def cmd_audio_invisible(
+    source: Path,
+    output: Path | None,
+    force: bool,
+    verify: bool,
+    stream: int,
+    as_json: bool,
+    method: AudioMethod,
+    bandwidth: str,
+    vocoder_device: Literal["cpu", "mps", "cuda"],
+    scheme: AudioScheme,
+) -> None:
+    """Apply an audio processing profile, keeping verification explicit."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.audio import remove_audio_invisible
+
+    target = output if output is not None else source.with_name(f"{source.stem}_processed.wav")
+    try:
+        result = remove_audio_invisible(
+            source,
+            target,
+            force=force,
+            verify=verify,
+            stream=stream,
+            method=method,
+            bandwidth_kbps=float(bandwidth),
+            vocoder_device=vocoder_device,
+            scheme=scheme,
+        )
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+    else:
+        _banner()
+        if result.skipped:
+            console.print("  No compatible source-positive audio check was found; no output was written.")
+            console.print("  Use --force for unverified processing.")
+        else:
+            console.print(f"  Audio: {result.frames_processed} frames -> {result.output}")
+            console.print(f"  Processing method: {result.method}")
+            if result.verified_removed is True:
+                console.print(
+                    f"  Compatible {_audio_check_label(scheme)} signals: NOT DETECTED in saved output "
+                    "(source-positive check)"
+                )
+            elif result.verified_removed is False:
+                console.print(
+                    f"  Compatible {_audio_check_label(scheme)} signals: STILL DETECTED; failed removal candidate"
+                )
+            else:
+                console.print("  Audio watermark removal: UNVERIFIED")
+            if result.fidelity is not None:
+                console.print(f"  Delivered RMS error against decoded source: {result.fidelity.rms_error:.6g}")
+                if result.fidelity.snr_db is not None:
+                    console.print(f"  Delivered SNR against decoded source: {result.fidelity.snr_db:.2f} dB")
+        caveats = result.before.caveats + (() if result.after is None else result.after.caveats)
+        for caveat in dict.fromkeys(caveats):
+            console.print(f"  - {caveat}")
+    if result.skipped:
+        raise SystemExit(EXIT_NO_INVISIBLE_SIGNAL)
+    if result.verified_removed is False:
+        raise SystemExit(1)
+
+
+@cmd_audio.command("all")
+@_audio_method_options
+@_audio_scheme_option(default="auto")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Output audio path (default: <source_stem>_clean<suffix>).",
+)
+@click.option(
+    "--invisible/--no-invisible",
+    default=False,
+    help="Opt into compatible audio-watermark inspection and removal.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Allow unverified or still-positive audio processing when --invisible is set.",
+)
+@click.option(
+    "--verify/--no-verify",
+    default=True,
+    show_default=True,
+    help="Check selected compatible models before and after when --invisible is set.",
+)
+@click.option(
+    "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
+)
+@click.option("--keep-standard/--remove-all", default=True, help="Keep standard metadata.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the result as JSON.")
+def cmd_audio_all(
+    source: Path,
+    output: Path | None,
+    invisible: bool,
+    force: bool,
+    verify: bool,
+    stream: int,
+    keep_standard: bool,
+    as_json: bool,
+    method: AudioMethod,
+    bandwidth: str,
+    vocoder_device: Literal["cpu", "mps", "cuda"],
+    scheme: AudioScheme,
+) -> None:
+    """Remove AI metadata and optionally clean compatible audio watermarks."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.audio import remove_audio_all
+
+    try:
+        result = remove_audio_all(
+            source,
+            output,
+            include_invisible=invisible,
+            force=force,
+            verify=verify,
+            stream=stream,
+            method=method,
+            bandwidth_kbps=float(bandwidth),
+            scheme=scheme,
+            vocoder_device=vocoder_device,
+            keep_standard=keep_standard,
+        )
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if result.remaining_metadata:
+            raise SystemExit(1)
+        return
+
+    _banner()
+    if result.remaining_metadata:
+        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
+        raise SystemExit(1)
+    console.print(f"  AI metadata: stripped -> {result.output}")
+    if result.invisible_applied and result.invisible_result is not None:
+        console.print(f"  Audio watermark: processed ({result.invisible_result.method})")
+    elif invisible:
+        console.print("  Audio watermark: no compatible source-positive signal found; audio preserved")
+    else:
+        _print_metadata_not_a_clean_verdict()
+
+
+@cmd_audio.command("batch")
+@_audio_method_options
+@_audio_scheme_option(default="auto")
+@click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option(
+    "-o",
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output directory (default: <directory>_clean).",
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["all", "metadata"]),
+    default="all",
+    show_default=True,
+    help="Audio batch processing mode.",
+)
+@click.option(
+    "--invisible/--no-invisible",
+    default=False,
+    help="Opt into compatible audio-watermark inspection and removal in all mode.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Allow unverified or still-positive audio processing when --invisible is set.",
+)
+@click.option(
+    "--verify/--no-verify",
+    default=True,
+    show_default=True,
+    help="Check selected compatible models before and after when --invisible is set.",
+)
+@click.option("--keep-standard/--remove-all", default=True, help="Keep standard metadata.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the batch summary as JSON.")
+def cmd_audio_batch(
+    directory: Path,
+    output_dir: Path | None,
+    mode: Literal["all", "metadata"],
+    invisible: bool,
+    force: bool,
+    verify: bool,
+    keep_standard: bool,
+    as_json: bool,
+    method: AudioMethod,
+    bandwidth: str,
+    vocoder_device: Literal["cpu", "mps", "cuda"],
+    scheme: AudioScheme,
+) -> None:
+    """Process every supported audio file in a directory."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.audio import remove_audio_batch
+
+    try:
+        result = remove_audio_batch(
+            directory,
+            output_dir,
+            mode=mode,
+            include_invisible=invisible,
+            force=force,
+            verify=verify,
+            method=method,
+            bandwidth_kbps=float(bandwidth),
+            scheme=scheme,
+            vocoder_device=vocoder_device,
+            keep_standard=keep_standard,
+        )
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if not result.items:
+            raise SystemExit(EXIT_NOTHING_PROCESSED)
+        if result.failed:
+            raise SystemExit(1)
+        return
+
+    _banner()
+    if not result.items:
+        console.print(f"  No supported audio files found in {directory}; nothing was processed")
+        raise SystemExit(EXIT_NOTHING_PROCESSED)
+    for item in result.items:
+        if item.error is not None:
+            console.print(f"  FAILED {item.source.name}: {item.error}")
+        elif item.changed:
+            detail = " (audio watermark processed)" if item.invisible_applied else ""
+            console.print(f"  Processed {item.source.name}{detail} -> {item.output}")
+        else:
+            console.print(f"  Completed {item.source.name}; no supported signal found -> {item.output}")
+    console.print(
+        f"  Batch complete: {result.processed} processed, {result.failed} failed -> {result.output_directory}"
+    )
+    if result.failed:
+        raise SystemExit(1)
+
+
 def _video_visible_options(f: Any) -> Any:
     """Apply the shared visible-video detector and fill options."""
     f = click.option(
@@ -1130,18 +1586,29 @@ def _video_visible_options(f: Any) -> Any:
 def _video_invisible_options(f: Any) -> Any:
     """Apply the shared invisible-video removal options."""
     f = click.option(
+        "--temporal-stabilize/--no-temporal-stabilize",
+        default=True,
+        show_default=True,
+        help="Motion-compensated optical-flow stabilization across VAE-regenerated frames.",
+    )(f)
+    f = click.option(
+        "--keep-fps",
+        is_flag=True,
+        help="Preserve the source video's native frame rate instead of capping at --fps.",
+    )(f)
+    f = click.option(
         "--profile",
-        type=click.Choice(["synthid", "seedance-experimental"]),
+        type=click.Choice(list(VIDEO_INVISIBLE_PROFILES)),
         default="synthid",
         show_default=True,
-        help="Video-pixel profile. Seedance is experimental and uses a fixed recipe.",
+        help="Video-pixel profile. Seedance and CUDA Wan 2.1 profiles are experimental.",
     )(f)
     f = click.option(
         "--quality",
         type=click.Choice(["delivery", "master"]),
         default="delivery",
         show_default=True,
-        help="Seedance output quality; master requires --profile seedance-experimental.",
+        help="Output quality; master requires seedance-experimental or a wan21-*-experimental profile.",
     )(f)
     f = click.option(
         "--device",
@@ -1181,9 +1648,252 @@ def _video_invisible_options(f: Any) -> Any:
     )(f)
 
 
+def _video_audio_invisible_options(f: Any) -> Any:
+    """Apply optional multi-stream audio-watermark options to video all / video batch."""
+    f = click.option(
+        "--audio-force",
+        is_flag=True,
+        help="Force audio processing even when no compatible source-positive audio signal is detected.",
+    )(f)
+    f = click.option(
+        "--audio-method",
+        type=click.Choice(list(AUDIO_METHODS)),
+        default=AUDIO_METHODS[0],
+        show_default=True,
+        help="Audio watermark removal method when --audio-invisible is enabled.",
+    )(f)
+    f = click.option(
+        "--audio-scheme",
+        type=click.Choice(list(AUDIO_SCHEMES)),
+        default="auto",
+        show_default=True,
+        help="Compatible public audio models to check when --audio-invisible is enabled.",
+    )(f)
+    return click.option(
+        "--audio-invisible/--no-audio-invisible",
+        default=False,
+        help="Inspect and clean compatible audio watermarks across all audio streams.",
+    )(f)
+
+
 @main.group("video")
 def cmd_video() -> None:
     """Process AI watermarks in video files."""
+
+
+@cmd_video.group("message")
+def cmd_video_message() -> None:
+    """Inspect or disrupt an independently known public-model watermark message."""
+
+
+def _video_message_options(func: Any) -> Any:
+    func = click.option(
+        "--reference", required=True, help="64 hex digits known independently from the encoder, not this file's decode."
+    )(func)
+    return click.option(
+        "--scheme", type=click.Choice(list(VIDEO_MESSAGE_SCHEMES)), default=VIDEO_MESSAGE_SCHEMES[0], show_default=True
+    )(func)
+
+
+@cmd_video_message.command("identify")
+@_video_message_options
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Emit hash-bound known-message evidence as JSON.")
+def cmd_video_message_identify(
+    source: Path, reference: str, scheme: Literal["videoseal", "pixelseal"], as_json: bool
+) -> None:
+    """Compare all video frames with an independently known encoder message."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.video_messages import identify_video_message
+
+    try:
+        report = identify_video_message(source, reference_hex=reference, scheme=scheme)
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+    if as_json:
+        click.echo(json.dumps(asdict(report), indent=2, default=str))
+    else:
+        console.print(f"  Public {scheme} known message: {report.status}")
+        for caveat in report.caveats:
+            console.print(f"  - {caveat}")
+
+
+@cmd_video_message.command("remove")
+@_video_message_options
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("-o", "--output", type=click.Path(dir_okay=False, path_type=Path), help="Output MP4, MOV, or M4V.")
+@click.option(
+    "--method",
+    type=click.Choice(list(VIDEO_MESSAGE_METHODS)),
+    default=VIDEO_MESSAGE_METHODS[0],
+    show_default=True,
+)
+@click.option("--noise-std", type=click.FloatRange(0, 1), help="Explicit VAE noise; requires --method vae.")
+@click.option("--long-side", type=click.IntRange(min=8), default=DEFAULT_VIDEO_MESSAGE_LONG_SIDE, show_default=True)
+@click.option(
+    "--device",
+    type=click.Choice(list(VIDEO_MESSAGE_DEVICES)),
+    default=VIDEO_MESSAGE_DEVICES[0],
+    show_default=True,
+)
+@click.option("--force", is_flag=True, help="Permit a final unverified or still-matching candidate.")
+@click.option(
+    "--verify/--no-verify", default=True, show_default=True, help="Saved-file checks; disabling requires --force."
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the result and delivered-file quality as JSON.")
+def cmd_video_message_remove(
+    source: Path,
+    output: Path | None,
+    reference: str,
+    scheme: Literal["videoseal", "pixelseal"],
+    method: Literal["auto", "codec", "vae"],
+    noise_std: float | None,
+    long_side: int,
+    device: str,
+    force: bool,
+    verify: bool,
+    as_json: bool,
+) -> None:
+    """Process a known target, verifying the delivered file before publication."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.video_messages import remove_video_message
+
+    target = output or source.with_name(source.stem + "_message_processed.mp4")
+    try:
+        result = remove_video_message(
+            source,
+            target,
+            reference_hex=reference,
+            scheme=scheme,
+            method=method,
+            noise_std=noise_std,
+            long_side=long_side,
+            device=device,
+            force=force,
+            verify=verify,
+        )
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str, allow_nan=False))
+    else:
+        console.print(f"  Known-message processing: {'skipped' if result.skipped else result.output}")
+        console.print(f"  Verified known-target disruption: {result.verified_removed}")
+        if result.quality:
+            console.print(f"  Delivered SSIM: {result.quality['source_ssim']}; method: {result.method}")
+        console.print("  Scope covers the known public-model message. Other watermarks remain unverified.")
+    if result.skipped:
+        raise SystemExit(EXIT_NO_INVISIBLE_SIGNAL)
+    if result.after and result.after.status == "matched":
+        raise SystemExit(1)
+
+
+@cmd_video.command("audio")
+@_audio_method_options
+@_audio_scheme_option
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Output MKV/MOV with PCM or MP4 with AAC, default SOURCE_audio_processed.mkv.",
+)
+@click.option(
+    "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
+)
+@click.option(
+    "--all-streams",
+    is_flag=True,
+    help="Inspect and process every source-positive audio track instead of one --stream ordinal.",
+)
+@click.option("--force", is_flag=True, help="Permit an unverified or still-positive candidate.")
+@click.option(
+    "--verify/--no-verify",
+    default=True,
+    show_default=True,
+    help="Verify selected compatible models; disabling requires --force.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the delivered-video report as JSON.")
+def cmd_video_audio(
+    source: Path,
+    output: Path | None,
+    stream: int,
+    all_streams: bool,
+    force: bool,
+    verify: bool,
+    as_json: bool,
+    method: AudioMethod,
+    bandwidth: str,
+    vocoder_device: Literal["cpu", "mps", "cuda"],
+    scheme: AudioScheme,
+) -> None:
+    """Process one or all audio tracks while preserving encoded video and untouched tracks."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.video_audio import remove_video_audio, remove_video_audio_all_streams
+
+    target = output if output is not None else source.with_name(f"{source.stem}_audio_processed.mkv")
+    try:
+        outcome: Any = (
+            remove_video_audio_all_streams(
+                source,
+                target,
+                force=force,
+                verify=verify,
+                method=method,
+                bandwidth_kbps=float(bandwidth),
+                vocoder_device=vocoder_device,
+                scheme=scheme,
+            )
+            if all_streams
+            else remove_video_audio(
+                source,
+                target,
+                stream=stream,
+                force=force,
+                verify=verify,
+                method=method,
+                bandwidth_kbps=float(bandwidth),
+                vocoder_device=vocoder_device,
+                scheme=scheme,
+            )
+        )
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+    if as_json:
+        click.echo(json.dumps(asdict(outcome), indent=2, default=str))
+    else:
+        status = (
+            "NOT DETECTED in saved output"
+            if outcome.verified_removed is True
+            else ("STILL DETECTED" if outcome.verified_removed is False else "UNVERIFIED")
+        )
+        if all_streams:
+            if outcome.skipped:
+                console.print("No compatible source-positive audio signal across streams; no output written.")
+            else:
+                tracks = ", ".join(map(str, outcome.processed_ordinals))
+                console.print(f"Processed audio track(s) {tracks}: {outcome.output}")
+                console.print(f"Compatible {_audio_check_label(scheme)} checks: {status}")
+            caveats: tuple[str, ...] = tuple(outcome.caveats)
+        else:
+            console.print(
+                "No compatible source-positive audio signal; no output written."
+                if outcome.skipped
+                else f"Processed audio track {stream}: {outcome.output}"
+            )
+            console.print(f"Compatible {_audio_check_label(scheme)} checks: {status}")
+            console.print(f"Processing method: {outcome.method}")
+            extra_caveats = outcome.before.caveats + (() if outcome.after is None else outcome.after.caveats)
+            caveats = tuple(dict.fromkeys((*outcome.caveats, *extra_caveats)))
+        for caveat in caveats:
+            console.print(f"  - {caveat}")
+    if outcome.skipped:
+        raise SystemExit(EXIT_NO_INVISIBLE_SIGNAL)
+    if outcome.verified_removed is False:
+        raise SystemExit(1)
 
 
 @cmd_video.command("identify")
@@ -1220,6 +1930,8 @@ def cmd_video_identify(source: Path, no_visible: bool, as_json: bool) -> None:
         console.print(f"  AI metadata markers: {', '.join(sorted(report.metadata_markers))}")
     else:
         console.print("  AI metadata markers: none found")
+    if report.invisible_watermark_hints:
+        console.print(f"  Invisible watermark hints: {', '.join(report.invisible_watermark_hints)}")
     if report.caveats:
         console.print("  Caveats:")
         for caveat in report.caveats:
@@ -1269,16 +1981,33 @@ def cmd_video_metadata(
 
 def _video_profile_label(profile: str) -> str:
     """Name the selected recipe without implying a runtime detector verdict."""
-    return (
-        "the experimental Seedance profile"
-        if profile == "seedance-experimental"
-        else "the calibrated SynthID-removal profile"
-    )
+    from remove_ai_watermarks.video_seedance import SEEDANCE_EXPERIMENTAL_PROFILE
+
+    labels = {
+        "seedance-experimental": "the experimental Seedance profile",
+        SEEDANCE_EXPERIMENTAL_PROFILE: "the experimental Seedance profile",
+        "wan21-synthid-experimental": "the experimental CUDA 3D Wan 2.1 SynthID profile",
+        "wan21-seedance-experimental": "the experimental CUDA 3D Wan 2.1 Seedance profile",
+    }
+    return labels.get(profile, "the calibrated SynthID-removal profile")
 
 
 def _print_video_audio_unverified() -> None:
     """Report the copied-audio boundary without claiming a watermark verdict."""
     console.print("  Audio watermark: UNVERIFIED; source audio copied unchanged if present")
+
+
+def _print_video_audio_status(audio_status: Any, processed_streams: tuple[int, ...] = ()) -> None:
+    """Report the audio disposition on video all / video batch outputs."""
+    if audio_status.stream_action == "processed":
+        tracks = ", ".join(map(str, processed_streams))
+        console.print(f"  Audio watermark: {audio_status.watermark_status.upper()}; processed audio stream(s) {tracks}")
+    elif audio_status.watermark_status == "not_detected":
+        console.print(
+            "  Audio watermark: NOT DETECTED under compatible checks; source audio copied unchanged if present"
+        )
+    else:
+        _print_video_audio_unverified()
 
 
 @cmd_video.command("invisible")
@@ -1288,11 +2017,13 @@ def _print_video_audio_unverified() -> None:
 def cmd_video_invisible(
     source: Path,
     output: Path | None,
-    profile: str,
-    quality: str,
+    profile: VideoInvisibleProfile,
+    quality: Literal["delivery", "master"],
     noise_std: float,
     long_side: int,
     fps: float,
+    keep_fps: bool,
+    temporal_stabilize: bool,
     batch_size: int,
     seed: int,
     device: str,
@@ -1306,14 +2037,15 @@ def cmd_video_invisible(
         result = remove_video_invisible(
             source,
             output,
-            profile=profile,  # type: ignore[arg-type]
-            quality=quality,  # type: ignore[arg-type]
+            profile=profile,
+            quality=quality,
             noise_std=noise_std,
             long_side=long_side,
-            fps=fps,
+            fps=None if keep_fps else fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
+            temporal_stabilize=temporal_stabilize,
         )
     except (OSError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -1322,7 +2054,7 @@ def cmd_video_invisible(
         console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
         raise SystemExit(1)
     console.print(
-        f"  Video pixels: regenerated with {_video_profile_label(profile)} "
+        f"  Video pixels: regenerated with {_video_profile_label(result.profile)} "
         f"(not a per-file verification): {result.width}x{result.height}, "
         f"{result.total_frames} frames at {result.fps:.4g} fps -> {result.output}"
     )
@@ -1382,6 +2114,7 @@ def cmd_video_visible(
     help="Opt into lossy video-pixel regeneration with the selected profile.",
 )
 @_video_invisible_options
+@_video_audio_invisible_options
 def cmd_video_all(
     source: Path,
     output: Path | None,
@@ -1389,22 +2122,32 @@ def cmd_video_all(
     backend: str,
     temporal_consistency: bool,
     invisible: bool,
-    profile: str,
-    quality: str,
+    profile: VideoInvisibleProfile,
+    quality: Literal["delivery", "master"],
     noise_std: float,
     long_side: int,
     fps: float,
+    keep_fps: bool,
+    temporal_stabilize: bool,
     batch_size: int,
     seed: int,
     device: str,
+    audio_invisible: bool,
+    audio_scheme: AudioScheme,
+    audio_method: AudioMethod,
+    audio_force: bool,
 ) -> None:
-    """Remove stable visible marks and AI metadata from video."""
+    """Remove stable visible marks, AI metadata, and optional pixel/audio marks from video."""
     from remove_ai_watermarks.video import remove_video_all
 
     _banner()
-    stages = (
-        f"visible marks + {profile} + verified AI metadata" if invisible else "visible marks + verified AI metadata"
-    )
+    stage_parts = ["visible marks"]
+    if invisible:
+        stage_parts.append(profile)
+    if audio_invisible:
+        stage_parts.append(f"audio ({audio_scheme})")
+    stage_parts.append("verified AI metadata")
+    stages = " + ".join(stage_parts)
     console.print(f"  Cleaning {source.name}: {stages}...")
     try:
         result = remove_video_all(
@@ -1414,16 +2157,21 @@ def cmd_video_all(
             backend=backend,
             temporal_consistency=temporal_consistency,
             include_invisible=invisible,
-            invisible_profile=profile,  # type: ignore[arg-type]
-            invisible_quality=quality,  # type: ignore[arg-type]
+            invisible_profile=profile,
+            invisible_quality=quality,
             noise_std=noise_std,
             long_side=long_side,
-            fps=fps,
+            fps=None if keep_fps else fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
+            temporal_stabilize=temporal_stabilize,
+            include_audio_invisible=audio_invisible,
+            audio_scheme=audio_scheme,
+            audio_method=audio_method,
+            audio_force=audio_force,
         )
-    except (OSError, RuntimeError, ValueError) as e:
+    except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
     if result.remaining_metadata:
@@ -1439,8 +2187,11 @@ def cmd_video_all(
         )
     console.print(f"  AI metadata: stripped -> {result.output}")
     if result.invisible_removed:
-        console.print(f"  Video pixels: regenerated with {_video_profile_label(profile)} (not a per-file verification)")
-    _print_video_audio_unverified()
+        resolved_profile = result.invisible_profile or profile
+        console.print(
+            f"  Video pixels: regenerated with {_video_profile_label(resolved_profile)} (not a per-file verification)"
+        )
+    _print_video_audio_status(result.audio, result.audio_processed_streams)
 
 
 @cmd_video.command("batch")
@@ -1466,22 +2217,29 @@ def cmd_video_all(
     help="Opt into lossy video-pixel regeneration with the selected profile in all mode.",
 )
 @_video_invisible_options
+@_video_audio_invisible_options
 def cmd_video_batch(
     directory: Path,
     output_dir: Path | None,
-    mode: str,
+    mode: Literal["all", "visible", "metadata"],
     mark: str,
     backend: str,
     temporal_consistency: bool,
     invisible: bool,
-    profile: str,
-    quality: str,
+    profile: VideoInvisibleProfile,
+    quality: Literal["delivery", "master"],
     noise_std: float,
     long_side: int,
     fps: float,
+    keep_fps: bool,
+    temporal_stabilize: bool,
     batch_size: int,
     seed: int,
     device: str,
+    audio_invisible: bool,
+    audio_scheme: AudioScheme,
+    audio_method: AudioMethod,
+    audio_force: bool,
 ) -> None:
     """Process every supported video in a directory."""
     from remove_ai_watermarks.video import remove_video_batch
@@ -1492,21 +2250,26 @@ def cmd_video_batch(
         result = remove_video_batch(
             directory,
             output_dir,
-            mode=mode,  # type: ignore[arg-type]
+            mode=mode,
             mark=mark,
             backend=backend,
             temporal_consistency=temporal_consistency,
             include_invisible=invisible,
-            invisible_profile=profile,  # type: ignore[arg-type]
-            invisible_quality=quality,  # type: ignore[arg-type]
+            invisible_profile=profile,
+            invisible_quality=quality,
             noise_std=noise_std,
             long_side=long_side,
-            fps=fps,
+            fps=None if keep_fps else fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
+            temporal_stabilize=temporal_stabilize,
+            include_audio_invisible=audio_invisible,
+            audio_scheme=audio_scheme,
+            audio_method=audio_method,
+            audio_force=audio_force,
         )
-    except (OSError, RuntimeError, ValueError) as e:
+    except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
     if not result.items:
@@ -1527,7 +2290,7 @@ def cmd_video_batch(
     )
     if result.invisible_removed:
         console.print(f"  Video pixel regeneration: applied to {result.invisible_removed} file(s)")
-    if result.processed:
+    if result.processed and not audio_invisible:
         _print_video_audio_unverified()
     if result.failed:
         raise SystemExit(1)
@@ -1630,18 +2393,33 @@ def cmd_text_metadata(
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_output_option
 @click.option("--seed", type=int, default=0, show_default=True)
+@click.option("--allow-partial", is_flag=True, help="Keep rejected prose unchanged and report partial regeneration.")
+@click.option(
+    "--rewriter-backend", type=click.Choice(["transformers", "mlx"]), default="transformers", show_default=True
+)
+@click.option("--rewriter-model", help="Local checkpoint path or Hugging Face model ID for prose rewriting.")
 def cmd_text_invisible(
     source: Path,
     output: Path | None,
     seed: int,
+    allow_partial: bool,
+    rewriter_backend: Literal["transformers", "mlx"],
+    rewriter_model: str | None,
 ) -> None:
     """Remove statistical token watermarks by regenerating unlocked prose spans."""
-    from remove_ai_watermarks.text import remove_text_invisible
+    from remove_ai_watermarks.text import DEFAULT_TEXT_REWRITER_MODEL, remove_text_invisible
 
     _banner()
     console.print(f"  Regenerating unlocked prose spans in {source.name} while locking code, math, and URLs...")
     try:
-        result = remove_text_invisible(source, output, seed=seed)
+        result = remove_text_invisible(
+            source,
+            output,
+            seed=seed,
+            allow_partial=allow_partial,
+            rewriter_backend=rewriter_backend,
+            rewriter_model=rewriter_model if rewriter_model is not None else DEFAULT_TEXT_REWRITER_MODEL,
+        )
     except (OSError, RuntimeError, UnicodeDecodeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
@@ -1649,6 +2427,11 @@ def cmd_text_invisible(
         f"  Prose spans regenerated: {result.rewritten_spans} rewritten, "
         f"{result.locked_spans} locked verbatim ({result.locked_characters} chars) -> {result.output}"
     )
+    if result.retained_prose_spans:
+        console.print(
+            f"  PARTIAL: {result.retained_prose_spans} prose span(s) retained unchanged; "
+            "statistical watermark removal is unverified."
+        )
 
 
 @cmd_text.command("all")
@@ -1660,15 +2443,27 @@ def cmd_text_invisible(
     help="Opt into span-protected local prose regeneration for statistical token watermarks.",
 )
 @click.option("--seed", type=int, default=0, show_default=True)
+@click.option("--allow-partial", is_flag=True, help="Keep rejected prose unchanged and report partial regeneration.")
+@click.option(
+    "--rewriter-backend", type=click.Choice(["transformers", "mlx"]), default="transformers", show_default=True
+)
+@click.option("--rewriter-model", help="Local checkpoint path or Hugging Face model ID for prose rewriting.")
 def cmd_text_all(
     source: Path,
     output: Path | None,
     invisible: bool,
     seed: int,
+    allow_partial: bool,
+    rewriter_backend: Literal["transformers", "mlx"],
+    rewriter_model: str | None,
 ) -> None:
     """Strip deterministic text provenance and optionally regenerate prose spans."""
-    from remove_ai_watermarks.text import remove_text_all
+    from remove_ai_watermarks.text import DEFAULT_TEXT_REWRITER_MODEL, remove_text_all
 
+    if allow_partial and not invisible:
+        raise click.UsageError("--allow-partial requires --invisible")
+    if not invisible and (rewriter_backend != "transformers" or rewriter_model is not None):
+        raise click.UsageError("Rewriter backend/model options require --invisible")
     _banner()
     stages = (
         "character provenance + span-protected prose regeneration"
@@ -1677,7 +2472,15 @@ def cmd_text_all(
     )
     console.print(f"  Cleaning {source.name}: {stages}...")
     try:
-        result = remove_text_all(source, output, include_invisible=invisible, seed=seed)
+        result = remove_text_all(
+            source,
+            output,
+            include_invisible=invisible,
+            seed=seed,
+            allow_partial=allow_partial,
+            rewriter_backend=rewriter_backend,
+            rewriter_model=rewriter_model if rewriter_model is not None else DEFAULT_TEXT_REWRITER_MODEL,
+        )
     except (OSError, RuntimeError, UnicodeDecodeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
@@ -1693,6 +2496,11 @@ def cmd_text_all(
             f"  Prose regeneration: {result.rewritten_spans} span(s) rewritten, "
             f"{result.locked_spans} technical span(s) locked verbatim"
         )
+        if result.retained_prose_spans:
+            console.print(
+                f"  PARTIAL: {result.retained_prose_spans} prose span(s) retained unchanged; "
+                "statistical watermark removal is unverified."
+            )
 
 
 # ── Provenance identification ──

@@ -21,31 +21,19 @@ from __future__ import annotations
 
 import csv
 import logging
+import sys
 from pathlib import Path
 
 import click
 import cv2
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from remove_ai_watermarks import image_io
+from remove_ai_watermarks._internal.image_quality import structural_similarity_gray as _ssim
 
 log = logging.getLogger(__name__)
-
-
-def _ssim(a: np.ndarray, b: np.ndarray) -> float:
-    """Grayscale SSIM (single-window Gaussian, the Wang et al. formulation)."""
-    a = a.astype(np.float64)
-    b = b.astype(np.float64)
-    c1, c2 = (0.01 * 255) ** 2, (0.03 * 255) ** 2
-    k = (11, 11)
-    mu_a = cv2.GaussianBlur(a, k, 1.5)
-    mu_b = cv2.GaussianBlur(b, k, 1.5)
-    mu_a2, mu_b2, mu_ab = mu_a * mu_a, mu_b * mu_b, mu_a * mu_b
-    sa = cv2.GaussianBlur(a * a, k, 1.5) - mu_a2
-    sb = cv2.GaussianBlur(b * b, k, 1.5) - mu_b2
-    sab = cv2.GaussianBlur(a * b, k, 1.5) - mu_ab
-    ssim_map = ((2 * mu_ab + c1) * (2 * sab + c2)) / ((mu_a2 + mu_b2 + c1) * (sa + sb + c2))
-    return float(ssim_map.mean())
 
 
 def _stem(name: str) -> str:

@@ -14,7 +14,14 @@ High-level API (lazy, so ``import remove_ai_watermarks`` stays cheap)::
     raiw.remove_video_metadata("in.mp4", "out.mp4")     # verified metadata strip
     raiw.remove_video_invisible("in.mp4", "out.mp4")    # calibrated video-pixel regeneration
     raiw.remove_video_seedance_experimental("in.mp4", "out.mp4")  # opt-in Seedance experiment
+    raiw.remove_video_wan_experimental("in.mp4", "out.mp4")       # opt-in CUDA 3D Wan 2.1 experiment
     raiw.remove_video_visible("in.mp4", "out.mp4")      # stable visible video-mark removal
+    raiw.identify_audio("in.wav", scheme="auto")        # -> AudioProvenanceReport
+    raiw.inspect_audio_metadata("in.mp3")               # -> AudioMetadataReport
+    raiw.remove_audio_metadata("in.mp3", "out.mp3")     # verified lossless metadata strip
+    raiw.remove_audio_invisible("in.wav", "out.m4a", scheme="auto")  # verified audio-watermark removal
+    raiw.remove_audio_all("in.mp3", "out.mp3")          # metadata + optional audio-watermark processing
+    raiw.remove_audio_batch("tracks", "tracks_clean")   # complete per-file audio batch results
     raiw.identify_text("in.md")                         # -> TextProvenanceReport
     raiw.remove_text_metadata("in.md", "out.md")        # C2PATXT, C2PA HTML/ASCII armor, VSRMark, stego
     raiw.remove_text_invisible("in.md", "out.md")       # span-protected local prose regeneration
@@ -39,9 +46,20 @@ _os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 _warnings.filterwarnings("ignore", message=r".*ImageProcessorFast.*")
 
 
-__version__ = "0.62.1"
+__version__ = "0.63.0"
 
 __all__ = [
+    "AudioAllResult",
+    "AudioBatchItem",
+    "AudioBatchSummary",
+    "AudioDetection",
+    "AudioFidelity",
+    "AudioMetadataReport",
+    "AudioMetadataResult",
+    "AudioProvenanceReport",
+    "AudioRemovalResult",
+    "AudioVerificationIncomplete",
+    "AudioWindowReading",
     "BatchItemResult",
     "BatchSummary",
     "InvisibleOptions",
@@ -54,25 +72,42 @@ __all__ = [
     "TextProvenanceReport",
     "TextSpan",
     "TextWatermarkScore",
+    "VideoAudioMultiStreamResult",
+    "VideoAudioRemovalResult",
+    "VideoMessageRemovalResult",
+    "VideoMessageReport",
+    "VideoMessageVerificationIncomplete",
+    "VideoWanExperimentalResult",
     "VisibleRemovalResult",
     "__version__",
     "classify_source",
     "decode_stego_payloads",
     "encode_innamark",
+    "identify_audio",
     "identify_text",
     "identify_video",
+    "identify_video_message",
+    "inspect_audio_metadata",
     "inspect_video_metadata",
     "remove_all",
+    "remove_audio_all",
+    "remove_audio_batch",
+    "remove_audio_invisible",
+    "remove_audio_metadata",
     "remove_batch",
     "remove_text_all",
     "remove_text_invisible",
     "remove_text_metadata",
     "remove_video_all",
+    "remove_video_audio",
+    "remove_video_audio_all_streams",
     "remove_video_batch",
     "remove_video_invisible",
+    "remove_video_message",
     "remove_video_metadata",
     "remove_video_seedance_experimental",
     "remove_video_visible",
+    "remove_video_wan_experimental",
     "remove_visible",
     "remove_visible_detailed",
     "score_gumbel_text",
@@ -100,6 +135,25 @@ if TYPE_CHECKING:
         remove_visible_detailed,
         visible_provenance,
     )
+    from remove_ai_watermarks.audio import (
+        AudioAllResult,
+        AudioBatchItem,
+        AudioBatchSummary,
+        AudioDetection,
+        AudioFidelity,
+        AudioMetadataReport,
+        AudioMetadataResult,
+        AudioProvenanceReport,
+        AudioRemovalResult,
+        AudioVerificationIncomplete,
+        AudioWindowReading,
+        identify_audio,
+        inspect_audio_metadata,
+        remove_audio_all,
+        remove_audio_batch,
+        remove_audio_invisible,
+        remove_audio_metadata,
+    )
     from remove_ai_watermarks.source_classify import SourceClassification, classify_source
     from remove_ai_watermarks.text import (
         TextAllResult,
@@ -124,6 +178,7 @@ if TYPE_CHECKING:
         verify_text_rewrite_facts,
     )
     from remove_ai_watermarks.video import (
+        VideoWanExperimentalResult,
         identify_video,
         inspect_video_metadata,
         remove_video_all,
@@ -132,12 +187,35 @@ if TYPE_CHECKING:
         remove_video_metadata,
         remove_video_seedance_experimental,
         remove_video_visible,
+        remove_video_wan_experimental,
+    )
+    from remove_ai_watermarks.video_audio import (
+        VideoAudioMultiStreamResult,
+        VideoAudioRemovalResult,
+        remove_video_audio,
+        remove_video_audio_all_streams,
+    )
+    from remove_ai_watermarks.video_messages import (
+        VideoMessageRemovalResult,
+        VideoMessageReport,
+        VideoMessageVerificationIncomplete,
+        identify_video_message,
+        remove_video_message,
     )
 
 
 def __getattr__(name: str) -> object:
     """Lazily resolve the high-level API (PEP 562), so the heavy imports (cv2, the
     metadata/identify stack) load only when a caller actually reaches for them."""
+    if name in (
+        "VideoAudioMultiStreamResult",
+        "VideoAudioRemovalResult",
+        "remove_video_audio",
+        "remove_video_audio_all_streams",
+    ):
+        from remove_ai_watermarks import video_audio
+
+        return getattr(video_audio, name)
     if name in (
         "BatchItemResult",
         "BatchSummary",
@@ -154,6 +232,38 @@ def __getattr__(name: str) -> object:
         from remove_ai_watermarks import api
 
         return getattr(api, name)
+    if name in (
+        "AudioAllResult",
+        "AudioBatchItem",
+        "AudioBatchSummary",
+        "AudioDetection",
+        "AudioFidelity",
+        "AudioMetadataReport",
+        "AudioMetadataResult",
+        "AudioProvenanceReport",
+        "AudioRemovalResult",
+        "AudioVerificationIncomplete",
+        "AudioWindowReading",
+        "identify_audio",
+        "inspect_audio_metadata",
+        "remove_audio_all",
+        "remove_audio_batch",
+        "remove_audio_invisible",
+        "remove_audio_metadata",
+    ):
+        from remove_ai_watermarks import audio
+
+        return getattr(audio, name)
+    if name in (
+        "VideoMessageReport",
+        "VideoMessageRemovalResult",
+        "VideoMessageVerificationIncomplete",
+        "identify_video_message",
+        "remove_video_message",
+    ):
+        from remove_ai_watermarks import video_messages
+
+        return getattr(video_messages, name)
     if name in ("SourceClassification", "classify_source"):
         from remove_ai_watermarks import source_classify
 
@@ -184,6 +294,7 @@ def __getattr__(name: str) -> object:
 
         return getattr(text, name)
     if name in (
+        "VideoWanExperimentalResult",
         "identify_video",
         "inspect_video_metadata",
         "remove_video_all",
@@ -192,6 +303,7 @@ def __getattr__(name: str) -> object:
         "remove_video_metadata",
         "remove_video_seedance_experimental",
         "remove_video_visible",
+        "remove_video_wan_experimental",
     ):
         from remove_ai_watermarks import video
 

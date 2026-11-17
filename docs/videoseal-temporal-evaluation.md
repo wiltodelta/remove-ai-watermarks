@@ -6,6 +6,86 @@
 > observations measured before encoding rather than on the hashed artifact
 > (R12). The table remains an archive, not validated delivered-file evidence.
 
+## VAE regeneration evaluation (2026-11-08)
+
+Run the shipped video-pixel regeneration engine against the same standardized
+synthetic and real-content carriers, with a matched codec control:
+
+```bash
+uv run --extra dev --extra diffusion python scripts/videoseal_temporal_study.py \
+  --regenerate --output-dir /outside/repo/videoseal-regeneration
+```
+
+The same control protocol supports the pinned PixelSeal video model through
+`--adapter pixelseal-video`. Its model and source pins are recorded independently;
+the dated VideoSeal measurements below remain specific to VideoSeal. See
+[non-SynthID video coverage](non-synthid-video.md) for the PixelSeal protocol.
+
+This mode replaces the H.264 attack sweep. It retains the clean and marked
+controls and adds four saved-artifact arms per carrier: the engine's sampling,
+resize, and encoder without VAE; a zero-noise VAE round trip; the shipped
+default VAE profile; and the same default applied to the clean negative.
+Each positive carries a locally embedded fixed VideoSeal message from the
+pinned research checkpoint. Veo and Sora name the content carriers. The real
+clips are standardized square prefixes through `real_carrier_frames`; this
+experiment does not establish native-resolution, full-clip population rates.
+The control uses the same engine helpers and encoding profile as regeneration.
+The VAE runtime loads through `load_video_vae_runtime`, including its latent
+scaling-factor gate. `cases.jsonl` records the model revision and checkpoint
+hashes, engine hash, profile parameters, artifact hashes, average-aggregation
+message accuracy, and per-frame readings. `matrix.md` summarizes the run.
+
+Delivered fidelity is measured after decoding and muxing against the decoded
+marked source, or the clean source for the negative arm, using
+`video_fidelity_probe`. Unlike the engine's in-loop PSNR, it includes resize and
+codec effects. A source-positive, output-negative reading establishes loss of
+the fixed message under this oracle's rule; only a positive codec control can
+separate the VAE contribution from ordinary transcoding. These local VideoSeal
+results do not certify proprietary video watermarks or the copied audio track.
+
+### Saved-artifact results
+
+The local MPS run used the shipped profile from `video_synthid.py`, the pinned
+VAE revision `31f26fdeee1355a5c34592e401dd41e45d25a493`, and seed 0.
+Each carrier had 64 frames at 256x256 and 12 fps; the shipped geometry produced
+512x512 outputs. All four clean controls were negative and all four embedded
+marked controls positive under the unchanged average-aggregation threshold of
+0.9. Every retained artifact's SHA-256 matched its recorded measurement.
+
+| Carrier | Codec control accuracy | Zero-noise VAE accuracy | Default VAE accuracy | Default detected | Delivered PSNR (dB) | SSIM | Temporal residual ratio |
+| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| moving_gradient | 0.9961 | 0.9844 | 0.8203 | No | 33.92 | 0.9701 | 1.0120 |
+| moving_texture | 0.9961 | 0.8438 | 0.7578 | No | 24.86 | 0.8423 | 1.0096 |
+| real_veo | 1.0000 | 1.0000 | 0.9023 | Yes | 32.96 | 0.9657 | 1.7452 |
+| real_sora | 1.0000 | 0.9727 | 0.8203 | No | 27.01 | 0.8073 | 1.8593 |
+
+All codec controls remained positive, so the default profile's three negative
+results have a matched positive transcode control. The regenerated clean
+negatives remained negative on all four carriers, with accuracy 0.5117-0.5430.
+The zero-noise VAE round trip crossed below threshold only on moving_texture.
+
+The shipped profile therefore **does not consistently suppress VideoSeal below
+the benchmark threshold**: the real_veo carrier remains positive. Even the
+negative candidates retain 0.7578-0.8203 message accuracy, so a negative at 0.9
+does not establish erasure of all watermark information. Fidelity and temporal
+costs also vary by carrier. This run is a bounded comparison of the existing
+profile, not a new VideoSeal removal certification or a change to the shipped
+defaults. No stronger-noise profile was calibrated in this run.
+
+The retained run is
+`~/.cache/remove-ai-watermarks-dev/evaluations/videoseal-regeneration-2026-11-08-codex-CNRJ1FLC-v2/`.
+Its `cases.jsonl` SHA-256 is
+`393119c3abec8e5afa91f75027eab19b1e34f47872f11387572714459214fffd`.
+Measurement source SHA-256:
+`c60afb3dfc6dc593c482b0c8ee8736c8c651b3e6239164d707fce548c82229d4`;
+engine SHA-256:
+`b0bedbf2f8f04bec66533d403e7aa1c18bd4e14e13dba00ba07f55f7bab3e853`.
+The archived measurement source precedes the report-only addition that renders
+the regeneration table; the regenerated `matrix.md` uses report source SHA-256
+`df706c57d3abda935ae298b518a99b03e919ba56474a1e7f11a17854564fbd93`.
+An earlier interrupted attack-sweep attempt is retained separately and does
+not contribute to these readings.
+
 ## Corrected artifact measurements (2026-09-08)
 
 The corrected run measured 32 saved artifacts: four clean controls, four

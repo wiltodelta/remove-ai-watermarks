@@ -3,8 +3,53 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from remove_ai_watermarks._internal._generated_c2pa_soft_bindings import C2PA_SOFT_BINDING_ROWS
+
+AudioScheme = Literal["audioseal", "wavmark", "perth", "silentcipher", "silentcipher16", "all", "auto"]
+AudioProfile = Literal["spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac"]
+AudioMethod = Literal["auto", "spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac"]
+AUDIO_SCHEMES: tuple[AudioScheme, ...] = (
+    "audioseal",
+    "wavmark",
+    "perth",
+    "silentcipher",
+    "silentcipher16",
+    "all",
+    "auto",
+)
+AUDIO_PROFILES: tuple[AudioProfile, ...] = ("spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac")
+AUDIO_METHODS: tuple[AudioMethod, ...] = ("auto", *AUDIO_PROFILES)
+AUDIO_VOCODER_DEVICES: tuple[Literal["cpu", "mps", "cuda"], ...] = ("cpu", "mps", "cuda")
+AUDIO_BANDWIDTHS_KBPS: tuple[int, ...] = (6, 12, 24)
+AUDIO_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".aac", ".mka")
+AUDIO_OUTPUT_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".opus")
+AUDIO_LOSSY_OUTPUT_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".m4a", ".ogg", ".opus"})
+
+WanExperimentalProfile = Literal["wan21-synthid-experimental", "wan21-seedance-experimental"]
+WAN_EXPERIMENTAL_PROFILES: tuple[WanExperimentalProfile, ...] = (
+    "wan21-synthid-experimental",
+    "wan21-seedance-experimental",
+)
+VideoInvisibleProfile = Literal[
+    "auto",
+    "synthid",
+    "seedance-experimental",
+    "wan21-synthid-experimental",
+    "wan21-seedance-experimental",
+]
+VIDEO_INVISIBLE_PROFILES: tuple[VideoInvisibleProfile, ...] = (
+    "auto",
+    "synthid",
+    "seedance-experimental",
+    *WAN_EXPERIMENTAL_PROFILES,
+)
+
+DEFAULT_VIDEO_MESSAGE_LONG_SIDE = 512
+VIDEO_MESSAGE_SCHEMES: tuple[Literal["videoseal", "pixelseal"], ...] = ("videoseal", "pixelseal")
+VIDEO_MESSAGE_METHODS: tuple[Literal["auto", "codec", "vae"], ...] = ("auto", "codec", "vae")
+VIDEO_MESSAGE_DEVICES: tuple[Literal["auto", "cpu", "cuda", "mps"], ...] = ("auto", "cpu", "cuda", "mps")
 
 
 def _tokens(value: str) -> tuple[str, ...]:

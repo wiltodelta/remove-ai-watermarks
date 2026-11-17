@@ -1,9 +1,10 @@
 # Remove AI Watermarks
 
-Remove AI provenance marks from images and video you generated yourself:
+Remove AI provenance marks from images, video, and audio you generated yourself:
 
 - known visible labels such as the Google Gemini sparkle watermark and vendor text marks;
 - invisible pixel watermarks through direct local-format disruption or diffusion regeneration;
+- compatible public audio watermarks, with source and saved-output decoder checks;
 - C2PA, EXIF, XMP, IPTC, and related AI metadata.
 
 | Before | After |
@@ -51,18 +52,37 @@ removal.
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
 | Identify supported video provenance | `video identify` | No |
-| Remove visible marks and AI metadata from video | `video all` | No |
+| Inspect audio metadata and compatible public-model evidence | `audio identify` (`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`, `silentcipher16`, or `all`) | No |
+| Strip AI metadata from audio | `audio metadata` | No |
+| Process a detected compatible audio watermark and verify the saved file (`.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.opus`) | `audio invisible` | No |
+| Strip AI metadata and optionally clean compatible audio watermarks | `audio all` / `audio batch` | No |
+| Process one or all audio tracks (`--all-streams`) while copying encoded video | `video audio` | No |
+| Remove visible marks, AI metadata, and opt-in video/audio invisible marks | `video all` | Depends on `--invisible` |
 | Strip AI metadata from video | `video metadata` | No |
 | Remove a registered visible AI mark from video | `video visible` | No |
 | Process a directory of videos | `video batch` | Depends on mode |
-| Apply the calibrated video-pixel SynthID-removal profile | `video invisible` | Recommended |
+| Inspect and disrupt a known public VideoSeal/PixelSeal message (experimental) | `video message` | Optional |
+| Regenerate video pixels (`--profile auto`, calibrated SynthID, Seedance, or native CUDA `Wan 2.1`) | `video invisible` | Recommended |
 | Identify C2PA text/HTML wrappers, `VSRMark`, and Unicode steganography | `text identify` | No |
 | Strip C2PA text/HTML wrappers, `VSRMark`, and Unicode steganography | `text metadata` | No |
-| Regenerate unlocked prose spans to remove token-level LLM watermarks | `text invisible` | Recommended |
+| Regenerate unlocked prose for best-effort token-watermark removal | `text invisible` | Recommended |
 | Strip text provenance and optionally regenerate prose spans | `text all` | Depends on `--invisible` |
 | Regenerate an image to disrupt invisible watermarks | `invisible` | Required (CUDA) |
 | Run visible, invisible, and metadata removal | `all` | Recommended |
 | Process a directory | `batch` | Depends on mode |
+
+Install `remove-ai-watermarks[text]` for the default local Transformers text
+rewriter and its packaged language checker. Local text regeneration also supports
+optional Apple silicon MLX models through
+`remove-ai-watermarks[text-mlx]` and
+`--rewriter-backend mlx --rewriter-model /path/to/checkpoint`.
+Both backends share the same acceptance guards; model output still needs factual
+review. See the [text CLI](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md#identify-and-clean-text).
+
+Experimental public VideoSeal and PixelSeal known-message video checks and processing
+use [`video message`](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md#public-model-video-messages-experimental).
+They require an independently known encoder message and do not certify arbitrary
+unknown marks or provider deployments.
 
 Microsoft Paint and Photos InvisMark declarations are routed automatically to
 pixel regeneration. The `all` command removes both the hidden pixel watermark and
@@ -78,7 +98,11 @@ specialized Python API can inspect and disrupt the validated local
 | 10-provider source-export & model-version classification | `remove-ai-watermarks[source-classify]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
+| Public known-message VideoSeal/PixelSeal checks | `remove-ai-watermarks[video-detect]`, add `diffusion` for VAE |
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
+| Audio sample processing and spectral disruption | `remove-ai-watermarks[audio]` |
+| Compatible public audio watermark detection (AudioSeal) | `remove-ai-watermarks[audio-detect]` |
+| Neural audio codec resynthesis (EnCodec / FocalCodec / DAC) | `remove-ai-watermarks[audio-codec]` |
 | Torch-free DWT-DCT detection | `remove-ai-watermarks[detect]` |
 | Direct local Paint InvisMark disruption | `remove-ai-watermarks[pixels]` |
 | Invisible image removal (needs CUDA) | `remove-ai-watermarks[qwen-zimage]` |
@@ -86,7 +110,8 @@ specialized Python API can inspect and disrupt the validated local
 | Optional OCR proposals for operator verification | `remove-ai-watermarks[text-draft]` |
 
 Lower-level and specialized extras include `pixels`, `heif`, `trustmark`,
-`migan`, `lama`, `diffusion`, and `source-classify`. The
+`migan`, `lama`, `diffusion`, `source-classify`, `audio-vocoder`,
+`audio-wavmark`, `audio-perth`, and `audio-silentcipher`. The
 [installation guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/installation.md#feature-extras) documents their exact
 dependency composition, Python compatibility, and model requirements.
 
@@ -178,11 +203,14 @@ remove-ai-watermarks video identify input.mp4
 remove-ai-watermarks video all input.mp4 -o clean.mp4
 ```
 
+`video identify` also names invisible watermark hints from metadata and provider
+policy. These are separate from pixel detection and per-file removal verification.
+
 `video all` removes a stable registered visible mark when present and always
 strips verified AI metadata. If neither signal is found, it still writes a
 same-container passthrough, so application callers get one predictable output
-contract. Proprietary invisible-video removal is excluded by default.
-`--invisible` opts into the lossy, oracle-certified video SynthID profile.
+contract. Proprietary invisible-video removal is excluded by default:
+`--invisible` opts into the lossy, oracle-certified video SynthID profile (with motion-compensated temporal stabilization enabled by default and `--keep-fps` to retain native frame rate), and `--audio-invisible` inspects and cleans compatible watermarked audio tracks in the same atomic pipeline.
 
 Process a directory with the same contract:
 
@@ -459,6 +487,9 @@ print(complete.visual_invisible_action, complete.audio.watermark_status)
 batch = raiw.remove_video_batch("videos", "videos_clean")
 cleaned = raiw.remove_video_metadata("input.mp4")
 synthid_cleaned = raiw.remove_video_invisible("input.mp4", "synthid_clean.mp4")
+auto_cleaned = raiw.remove_video_invisible(
+    "input.mp4", "auto_clean.mp4", profile="auto"
+)  # routes ByteDance/Seedance vs SynthID and prefers CUDA Wan 2.1 when available
 seedance_experiment = raiw.remove_video_seedance_experimental(
     "owned-label-cleaned.mp4", "seedance_clean.mp4", quality="delivery"
 )  # experimental pixel reconstruction; handle visible labels first
@@ -466,6 +497,9 @@ seedance_complete = raiw.remove_video_all(
     "input.mp4", "seedance-clean.mp4",
     include_invisible=True, invisible_profile="seedance-experimental",
 )  # supported visible removal, then experimental reconstruction
+wan_synthid = raiw.remove_video_wan_experimental(
+    "owned-veo.mp4", "veo_wan_clean.mp4", profile="wan21-synthid-experimental"
+)  # optional CUDA 3D Wan 2.1 video diffusion at native resolution (multi-window >193 frames)
 print(synthid_cleaned.visual_invisible_action, synthid_cleaned.audio.watermark_status)
 visible = raiw.remove_video_visible("input.mp4", "clean.mp4")
 print(visible.mark)

@@ -13,25 +13,34 @@ Nothing here ships in the installed CLI or public Python API.
 
 from __future__ import annotations
 
+# ruff: noqa: E402 - Bootstrap the source layout before sharing model assets.
 import hashlib
 import importlib.metadata
 import logging
 import os
+import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+_REPO_SRC = Path(__file__).resolve().parents[1] / "src"
+if str(_REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(_REPO_SRC))
+
+from remove_ai_watermarks._internal.video_message_models import ASSETS
+from remove_ai_watermarks._internal.video_message_models import SOURCE_COMMIT as SOURCE_COMMIT
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from videoseal_oracle import VideoSealReading
+
 log = logging.getLogger(__name__)
 
-SOURCE_COMMIT = "870ca7fb33578b90f14c602016b6c2788096226e"
 PACKAGE_NAME = "videoseal"
 PACKAGE_VERSION = "1.0"
-CHECKPOINT_URL = "https://dl.fbaipublicfiles.com/videoseal/pixelseal/checkpoint.pth"
-CHECKPOINT_SHA256 = "0c5665cff20eb6ce1b5aaa7d91c19dafb418bfee32d02dd3344e4ed60d9d75bd"
+CHECKPOINT_URL, CHECKPOINT_SHA256 = ASSETS["pixelseal"]
 MODEL_CARD_SHA256 = "96c4a448f7d81810780e5bde5a51b039db544b7ec2baf65a605302c1b17362c9"
 N_BITS = 256
 MESSAGE_SEED = 7
@@ -212,3 +221,35 @@ def read(model: object, image: object, *, message: Sequence[int] | None = None) 
     decoded = tuple(int(bit) for bit in (predictions[0, 1:] > 0).to(torch.int64).tolist())
     accuracy = sum(int(bit == want) for bit, want in zip(decoded, expected, strict=True)) / N_BITS
     return PixelSealReading(bit_accuracy=accuracy, decoded_bits=decoded)
+
+
+def _video_frames_f32(frames: object) -> object:
+    """Validate and normalize a nonempty RGB video without changing its geometry."""
+    import numpy as np
+
+    array = np.asarray(frames)
+    if array.ndim != 4 or array.shape[3] != 3 or any(size == 0 for size in array.shape[:3]):
+        raise ValueError(f"PixelSeal video expects nonempty TxHxWx3 RGB pixels, got {array.shape}")
+    values = array.astype(np.float32) / 255.0 if array.dtype == np.uint8 else np.asarray(array, dtype=np.float32)
+    if not np.isfinite(values).all() or float(values.min()) < 0.0 or float(values.max()) > 1.0:
+        raise ValueError("PixelSeal video RGB pixels must be finite and in [0, 1]")
+    return np.ascontiguousarray(values)
+
+
+def embed_video(model: object, frames: object, message: Sequence[int]) -> object:
+    """Use the pinned model's temporal propagation, returning float RGB frames."""
+    import torch
+
+    tensor = torch.from_numpy(_video_frames_f32(frames)).permute(0, 3, 1, 2)
+    msg = torch.tensor([list(message)], dtype=torch.float32)
+    with torch.inference_mode():
+        marked = model.embed(tensor, msgs=msg, is_video=True)["imgs_w"]
+    return marked.permute(0, 2, 3, 1).numpy()
+
+
+def read_video(model: object, frames: object, *, message: Sequence[int] | None = None) -> VideoSealReading:
+    """Decode PixelSeal video through the same pinned-family logit aggregation."""
+    from videoseal_oracle import read as read_video_message
+
+    expected = message_bits() if message is None else message
+    return read_video_message(model, _video_frames_f32(frames), message=expected)

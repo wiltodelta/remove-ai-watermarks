@@ -54,7 +54,7 @@ from remove_ai_watermarks.video import remove_video_visible  # noqa: E402
 
 log = logging.getLogger("perth_pixelseal_study")
 
-RECIPE_VERSION = "perth-pixelseal-study-v2"
+RECIPE_VERSION = "perth-pixelseal-study-v3"
 IMAGE_SIZE = 512
 REMOVAL_PROFILES: tuple[str, ...] = ("qwen-zimage", "sdxl-zimage", "chroma-zimage")
 IMAGE_CARRIERS: tuple[Path, ...] = (
@@ -364,7 +364,8 @@ def _build_perth_rows(
         raise SystemExit(f"Perth development stack is unavailable: {failure}")
     model = perth_oracle.load_model()
     pins = {
-        "source_commit": perth_oracle.SOURCE_COMMIT,
+        "source_tree_sha256": perth_oracle.SOURCE_TREE_SHA256,
+        "package_version": perth_oracle.PACKAGE_VERSION,
         "checkpoint_sha256": perth_oracle.CHECKPOINT_SHA256,
         "implicit_payload": True,
     }
@@ -409,7 +410,7 @@ def _build_perth_rows(
                     path=marked_path,
                     reference=clean_path,
                     transform_name="perth-embed",
-                    transform_revision=f"resemble-ai/Perth@{perth_oracle.SOURCE_COMMIT}",
+                    transform_revision=f"resemble-perth=={perth_oracle.PACKAGE_VERSION}@sha256:{perth_oracle.SOURCE_TREE_SHA256}",
                     parameters=pins,
                     seed=None,
                     # Perth is speech-trained; these deliberately out-of-domain
@@ -463,7 +464,7 @@ def _build_perth_rows(
                     path=marked_path,
                     reference=clean_path,
                     transform_name="perth-embed",
-                    transform_revision=f"resemble-ai/Perth@{perth_oracle.SOURCE_COMMIT}",
+                    transform_revision=f"resemble-perth=={perth_oracle.PACKAGE_VERSION}@sha256:{perth_oracle.SOURCE_TREE_SHA256}",
                     parameters={**pins, "tts": provenance},
                     seed=None,
                     expected="detected",
@@ -585,7 +586,8 @@ def build_and_run(output_dir: Path) -> Path:
             "removal_profiles": videoseal_removal,
         },
         "perth": {
-            "source_commit": perth_oracle.SOURCE_COMMIT,
+            "source_tree_sha256": perth_oracle.SOURCE_TREE_SHA256,
+            "package_version": perth_oracle.PACKAGE_VERSION,
             "checkpoint_sha256": perth_oracle.CHECKPOINT_SHA256,
             "message": "not_applicable_fixed_implicit_mark",
             "video_visible_path": pass_through,

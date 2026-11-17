@@ -1,0 +1,95 @@
+# Video and audio provider verifiers
+
+Research snapshot: 2026-11-11. This matrix records documentation and readable
+interfaces, not successful submissions to every service. Current size, duration,
+rate, plan, and retention limits belong to the linked official sources and the
+dated private evidence ledger, not hardcoded runtime assumptions.
+
+Types: **W** is a provider watermark check; **M** is metadata/signature
+verification; **F** is fingerprint or generation-record matching; **C** is a
+generic or vendor-origin classifier; **R** is a particular research decoder.
+These results are never interchangeable.
+
+Google's [verification help](https://support.google.com/gemini/answer/16722517?hl=en)
+currently limits Gemini SynthID recognition to Google AI content. Adoption of
+SynthID by another producer does not establish Gemini receiver coverage for
+that producer. The same source documents separate rolling quotas by media
+modality. An audio-quota refusal stops audio checks; a genuinely silent video
+can be checked only as video under its own available quota, never as a disguised
+audio request or evidence that the removed audio is unmarked. Keep refusals and
+unknown producer coverage separate from negative watermark verdicts.
+
+## Published provider surfaces
+
+| Provider and surface | Type and media | Access and evidence checked | Interpretation and remaining gate |
+| --- | --- | --- | --- |
+| [Cartesia public detector](https://www.cartesia.ai/watermark-detector), [specification](https://docs.cartesia.ai/build-with-cartesia/capability-guides/watermarking) | W: supported Sonic audio | Official docs name always-on marking for Sonic-3.6/sonic-preview across Bytes and streaming; public detector needs no account; API requires a paid plan | Statistical Cartesia-only result. UI and docs currently disagree on minimum duration, so use the live surface's limit. No file submitted; native positives and clean controls remain required. |
+| [Amazon Nova Sonic](https://docs.aws.amazon.com/us_en/bedrock/latest/userguide/watermarking.html) | W: named Nova speech models | Officially always-on inaudible mark; detection requested through AWS account team | Not a self-service public receiver. Do not infer ordinary Polly output uses the same scheme; correspondence needs separate authorization. |
+| [xAI voice provenance](https://docs.x.ai/developers/advanced-api-usage/watermarking) | W: AudioSeal declared for TTS and speech-to-speech | Marking depends on region, team configuration or request; generation response header records application | A generation header is not a saved-file detector. Public AudioSeal is a calibration lead, not proven deployed-checkpoint compatibility. Do not transfer voice marking to Imagine video. |
+| [Stable Audio API provenance](https://stability.ai/explainers/is-ai-generated-music-copyright-safe) | M: C2PA audio credentials | Explicit official declaration of model/version certificate in API-generated audio | Verify the actual container. No proprietary waveform receiver established; hosted/API and self-hosted outputs remain distinct. |
+| [LTX open marking stack](https://github.com/Lightricks/LTX-2/blob/main/packages/ltx-pipelines/docs/marking.md) | R: opt-in PixelSeal/VideoSeal video and AudioSeal audio | Official Python detect helpers and local marking pack; project already has pinned model/native-clock compatibility work | Not a hosted-Studio certification. Marking flag is optional; HDR skips video marking and A2Vid preserves source audio. Audio inspection must retain the validated native clocks, not resample away evidence. |
+| [Google Gemini verification](https://support.google.com/gemini/answer/16722517?hl=en) | W: SynthID; M can be reported separately; video/audio | Signed-in route exercised on native Google audio and video: matched controls stayed positive; plain BigVGAN M/S cleared Flow Veo audio but retained SynthID on Veo Lite and a second retained generation, conditioned FocalCodec cleared the initial 3-track cohort (`5/5`) but leaked on held-out 10 s `omni-flash-api` audio (`detected`), whereas 44.1 kHz 3-codebook DAC M/S (`--method dac`) returned explicit negatives across all `4/4` source-positive audio tracks plus AAC-192k MP4 muxes; CUDA 3D Wan 2.1 (`strength=0.38`) returned `6/6` silent video negatives and `2/2` full-AV (`Wan 2.1` + `DAC`) MP4 negatives across Flow Veo, Veo Lite, 2-window 240-frame `omni-flash-api`, and `veo-3-1` at native `1280x720 @ 24 fps` | Exact-file observations, not general qualification. Generic origin replies, quota refusals, tool stalls (`indeterminate`), contradictory responses and explicit no-tool statements remain separate from negatives. |
+| [SynthID Detector](https://synthid.com/) and [DeepMind coverage](https://deepmind.google/models/synthid/) | W: supported image/video/audio and named partners | Current UI and additional Terms read on 2026-11-12; no agreement or media submission in this research pass | Additional Terms restrict using feedback for black-box adversarial attacks or optimizing transformations against watermark detection, automated API/bulk queries, and quota evasion. This development pass did not accept those Terms. Eligibility and acceptance must be settled before a future verification; shared branding does not prove partner/model coverage. |
+| [CapCut family checker](https://ai-generated-detect.capcut.com/) | W/M: supported family signals in image/video/audio | Public upload interface; video and audio checks exercised across `forest`, held-out `bottle`, `face`, Dreamina, and BytePlus API exports, with offline-verified receipt bindings | Zero-noise CogVideoX and zero-noise 3D Wan VAE round trips retained positives with matched CRF18 controls on pixel-marked CapCut exports (`forest`, `bottle`), whereas `seedance-experimental` and CUDA 3D Wan 2.1 (`strength=0.12`, `wan21-seedance-experimental`) returned offline-verified negative receipts (`34.42 dB` vs `31.85 dB` PSNR on `bottle`); Dreamina and BytePlus API exports cleared after C2PA metadata stripping alone. Family names do not identify an algorithm or certify every model/export. |
+| [ElevenLabs Audio Detector](https://elevenlabs.io/docs/eleven-creative/audio-tools/audio-detector) | W first, then C fallback; audio | Official documentation; distinct from the legacy [AI Speech Classifier](https://elevenlabs.io/ai-speech-classifier) | A positive UI answer can come from either mechanism. Preserve mechanism-specific evidence; do not treat classifier probability as decoded watermark evidence. |
+| [ElevenLabs Content Provenance API beta](https://elevenlabs.io/docs/eleven-api/concepts/content-provenance) | W, optionally F generation details; audio | Complete official specification read in browser; multipart file, watermark-authorized API key, no OAuth | `is_detected` is the watermark result. Nullable generation details do not negate a positive. Account access and a live check remain untested. This is preferable to a mixed UI verdict. |
+| [Resemble Watermark API](https://docs.resemble.ai/detect/watermark/detect) | W: audio Perth v1/v2, image/video Perth v2; auxiliary SynthID separately | Official versioned response contract inspected; bearer token and accessible HTTPS media URL | Both audio versions must succeed for a complete negative. Missing auxiliary SynthID is unavailable, not false. Image/video message matching matters. Pricing/account access is a separate gate; see [pricing](https://www.resemble.ai/pricing). |
+| [Resemble Detect](https://docs.resemble.ai/detect) | C plus optional distinct watermark checks | Published service, not tested here | The deepfake verdict and watermark metrics are separate. Public [Perth code](https://github.com/resemble-ai/Perth) is R, not automatic certification of deployed v2. |
+| [OpenAI Content Provenance API](https://developers.openai.com/api/docs/guides/content-provenance) and [Verify](https://openai.com/research/verify/) | W for supported image/audio; image M separately | Official API contract and existing project adapter; provider key required | Video is not in the documented API media contract. Coverage is model/export dependent; no-signal is not proof of human authorship. Preserve API and web evidence separately. |
+| [Microsoft provenance detection](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/concepts/provenance-detection), [API](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection), [web](https://ai.azure.com/nextgen/validate) | W and M reported separately; image/audio/video inputs | Documented web/API, Azure resource and Entra authentication; existing project routes | Input support is not model coverage. Consult the [current coverage matrix](https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/content-safety/provenance-disclosure). Do not extrapolate MAI/Azure coverage to Muse or VibeVoice. |
+| [Meta identification](https://www.meta.ai/identification/) | Provider identification; image/video/audio uploader | Owned browser tab confirmed all three media types in text and file accept list; no submission | Production model/export coverage and verdict semantics still need source-positive calibration. Public AudioSeal/VideoSeal weights are not interchangeable with this surface. |
+| [Kling detector](https://kling.ai/detection), [description](https://kling.ai/docs/ai-content-detection) | W/M claims; image/video | Domain confirmed by redirects from established Kling domains. Browser showed detector UI, file list, content hash and producer/result columns; no submission | A sign-in control is visible, but an authenticated submission was not attempted. Formats, actual access, response separation and tested model coverage remain open. |
+| [Suno Credentials](https://suno.com/suno-credentials) | M: C2PA | Published upload/URL API and typed provenance outcomes | This is not a waveform-watermark detector. `no_suno_provenance` cannot qualify waveform removal. Suno's watermark/fingerprinting announcements require a separate compatible verifier. |
+| [Runway verifier](https://runway.com/safety/verify) | M: C2PA in image/video/audio | Browser explicitly confirmed C2PA-only description and upload interface | Its negative result says nothing about invisible signal suppression. Do not infer every asset in Runway Assets was generated by Runway. |
+| [Adobe Inspect](https://contentauthenticity.adobe.com/inspect), [guide](https://helpx.adobe.com/creative-cloud/apps/adobe-content-authenticity/inspect/inspect-tool.html), [CAI tools](https://opensource.contentauthenticity.org/docs/getting-started/inspect) | M; possible F/source matches separately | Published provenance tools | [TrustMark](https://github.com/adobe/trustmark) is a particular image-watermark implementation. It does not supply a verified Firefly audio/video receiver. Search results and credentials do not certify an invisible watermark negative. |
+
+The ElevenLabs beta endpoint was absent from one model's search report but was
+confirmed by reading its official specification. Meta's multimodal input was
+also confirmed directly rather than inferred from older image-only reporting.
+Model agreement alone is not evidence; preserve source-level corrections.
+
+## Producer cells with unresolved public signal verification
+
+| Cell | Official source checked | Status and consequence |
+| --- | --- | --- |
+| Historical Sora | [Discontinuation](https://help.openai.com/en/articles/20001152-what-to-know-about-the-sora-discontinuation), [deprecations](https://developers.openai.com/api/docs/deprecations), [provenance description](https://openai.com/index/launching-sora-responsibly/) | Product/API availability changed. Use retained originals. Internal reverse-image/audio search is not a public waveform/video-watermark oracle. |
+| VibeVoice / Muse | [VibeVoice](https://github.com/microsoft/VibeVoice), [model card](https://huggingface.co/microsoft/VibeVoice-1.5B), Microsoft matrix above | Watermark declarations or research naming do not establish compatibility with Microsoft's public detector or public WavMark. Keep unresolved. |
+| Udio | [Official service changes](https://help.udio.com/en/articles/12683565-changes-associated-with-the-universal-music-group-umg-partnership) | No public waveform verifier was located in checked official sources. Neither absence of a public verifier nor disabled downloads proves absence of a signal. |
+| Luma | [Terms](https://lumalabs.ai/legal/terms-of-service), [export guide](https://lumalabs.ai/learning-hub/web-quick-start) | Public proprietary signal verifier not located in this pass. Contractual watermark language does not establish a specific implementation. |
+| Pika | [FAQ](https://pika.art/faq) | Export/visible-branding information is not an invisible-signal verifier. Underlying third-party models need separate cells. |
+| HeyGen / Synthesia | [HeyGen export](https://help.heygen.com/en/articles/9834825-how-to-download-or-export-a-video), [Synthesia credentials](https://www.synthesia.io/updates/stay-compliant-with-content-credentials-and-ai-labels) | Visible-logo controls and credentials can be checked; an own public waveform/video-pixel receiver was not established. |
+| MiniMax / Hailuo / Vidu | [MiniMax video API](https://platform.minimax.io/docs/guides/video-generation), [Vidu docs](https://platform.vidu.com/docs) | Native-download and labeling evidence does not establish a public hidden-signal detector. Do not transfer MiniMax Code rules to every media product. |
+| Hosted Wan / local Wan and Ovi | [Wan](https://github.com/Wan-Video/Wan2.2), [Ovi](https://github.com/character-ai/Ovi) | Hosted outputs, local open-weight runs, and supplied external audio are different provenance paths. No compatible deployed receiver was established by these sources. |
+| Fish Audio / Mureka / Murf / PlayHT | [Fish capabilities](https://docs.fish.audio/overview/capabilities), [Mureka FAQ](https://platform.mureka.ai/docs/en/faq.html), [Murf](https://murf.ai/api/docs/introduction/overview), [PlayHT models](https://docs.play.ht/reference/models) | No compatible public waveform verifier established in checked docs. Voice previews are not current-model exports. Murf Dub branding and Mureka lyrics-video watermark claims do not establish a TTS/music waveform scheme. PlayHT live availability remains unresolved. |
+| Polly | [SynthesizeSpeech](https://docs.aws.amazon.com/polly/latest/APIReference/API_SynthesizeSpeech.html), [SENTINEL example](https://aws.amazon.com/blogs/media/building-audio-provenance-for-ai-generated-content-at-the-source-with-aws/) | Example adds AudioSeal after Polly synthesis; it does not establish default Polly marking. No Polly-specific public receiver established. |
+| PixVerse / Tencent Hunyuan | [PixVerse catalog](https://pixverse.ai/en/ai-info-page), [Tencent API](https://cloud.tencent.com/document/api/1616/126160) | Visible export labels and third-party model catalogs need distinct cells. No compatible public proprietary waveform/video receiver established in this pass. |
+| Higgsfield / Krea / Magnific | [Higgsfield](https://higgsfield.ai/creator-hub/help-center/credits/watermark-and-how-to-remove), [Krea](https://www.krea.ai/apps/video-to-video), [Magnific lineage](https://www.magnific.com/ai/docs/metadata-export-lineage) | Exporter, underlying generator and editing mode differ. Higgsfield explicitly says invisible markers/metadata may remain on paid output; Magnific sidecar lineage export is not embedded C2PA proof. |
+| Grok Imagine / hosted LTX Studio | [Imagine API](https://docs.x.ai/developers/model-capabilities/video/generation), [LTX Studio](https://help.ltx.io/hc/en-us/p/ltx-studio) | No compatible hosted video-signal verifier established by these sources. LTX's open marking/detection stack above is real but does not prove Studio's deployed configuration. Paid watermark-free wording alone does not establish absence of every hidden mark. |
+
+Current [Flow Music](https://www.flowmusic.app/) and legacy Riffusion/Producer
+exports need separate model/time cohorts. The [Google announcement](https://blog.google/innovation-and-ai/models-and-research/google-labs/producerai/)
+declares SynthID for the Google-era ProducerAI path; it does not retrospectively
+prove that historical Fuzz exports carry that signal.
+
+"Not located" is a bounded search outcome. It is never an assertion that a
+producer has no watermark, private detector, fingerprinting, or later release.
+
+## Verification methods and negative-result rules
+
+| Method | Useful evidence | What a negative cannot establish |
+| --- | --- | --- |
+| Visible-label scan plus full-clip visual review | Known overlays and residuals | Absence of invisible or audio signals |
+| Local C2PA/metadata inventory, signature and trust evaluation | Present/absent, integrity, signer and declared provenance | Absence of waveform/pixel marks; trust in an unknown signer |
+| Named public decoder with pinned weights/key/payload/framing | Specific compatible signal and whole-track/window coverage | Absence of an unknown deployed scheme |
+| Matching provider watermark verifier | A hash/surface/model-scoped provenance result | Universal removal, all-provider coverage, or human origin |
+| Fingerprint or recovered generation record | Matching source identity when available | Absence of another mark or unmatched database record |
+| Generic AI-origin classifier | A separately calibrated origin-estimation score | Removal of a named watermark |
+| Structural residual probes with real clean twins | Experimental information about a compatible embedding | Blind identification of an arbitrary intercepted product output |
+| Final-container re-extraction and measurement | Which stream was actually delivered and tested | Signal removal without a compatible positive-control verifier |
+
+Provider adapters remain development-only. New ElevenLabs/Resemble/Kling
+routes must preserve raw typed responses, explicit unavailable states,
+source/upload hashes and final-surface scope. A public-URL API must not turn
+private media into public storage implicitly. Do not activate paid checks,
+create accounts, accept new terms or submit new media as a side effect of
+documentation discovery.

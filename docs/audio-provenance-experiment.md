@@ -8,8 +8,8 @@ local matched oracle: the same package embeds the watermark and reads it back,
 so no provider API is contacted and no external upload happens.
 
 This page records the design, the pinned inputs, and the measured outcome. It
-is not a detector-quality claim: carriers are synthetic non-speech signals,
-and AudioSeal is not any provider's production audio watermark.
+is not a detector-quality claim: carriers are synthetic non-speech signals.
+It does not establish compatibility with any provider's production audio watermark.
 
 ## Design
 
@@ -46,7 +46,9 @@ Stages:
 Weights are pinned to Hugging Face revision
 `3c19eba53390776cf2cc9ed5f6c9ac67ce72ecba` and verified against pinned SHA-256
 digests before loading; the loader mirrors `AudioSeal.parse_model` with the
-checkpoint bytes pinned and now lives in the shared `scripts/audioseal_oracle.py`.
+checkpoint bytes pinned. The shared implementation now lives in
+`src/remove_ai_watermarks/_internal/audioseal.py`, with
+`scripts/audioseal_oracle.py` retaining the research import interface.
 Dependency versions at run time: audioseal 0.2.0, torch 2.13.0, Python
 3.12.13, ffmpeg 9.0.1, macOS 26.6.2 for the system voices. The executed code is
 bound by hash: experiment script

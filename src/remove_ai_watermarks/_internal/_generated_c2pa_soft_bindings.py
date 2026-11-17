@@ -1,7 +1,7 @@
 """Generated C2PA soft-binding registry; do not edit by hand.
 
 Source: https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json
-Revision: 172efd828087b021ff2f1f79aa5bbe03936ee99d
+Revision: 529093be86d6b6dad6f0fb912a138740f2b5d2b4
 Source license: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
 Changes: validated, ordered, and reduced to fields used at runtime; descriptions
 are shortened to their first sentence for display.
@@ -12,7 +12,7 @@ from __future__ import annotations
 C2PA_SOFT_BINDING_SOURCE_URL = (
     "https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json"
 )
-C2PA_SOFT_BINDING_SOURCE_REVISION = "172efd828087b021ff2f1f79aa5bbe03936ee99d"
+C2PA_SOFT_BINDING_SOURCE_REVISION = "529093be86d6b6dad6f0fb912a138740f2b5d2b4"
 C2PA_SOFT_BINDING_SOURCE_LICENSE = "CC BY 4.0"
 
 C2PA_SOFT_BINDING_ROWS: tuple[
@@ -710,6 +710,262 @@ C2PA_SOFT_BINDING_ROWS: tuple[
         "Etchv invisible image watermark carrying a 256-bit per-file identifier, embedded before C2PA signing",
         "2026-10-28T20:00:00.000Z",
         ("https://api.etchv.com/c2pa/v1",),
+        False,
+    ),
+    (
+        62,
+        "com.ottxp.koltheia.photonote.1",
+        "fingerprint",
+        ("image",),
+        (),
+        (
+            "KolTheia photo note: spread ORB keypoints plus secret-pattern colour squares, matched "
+            "with turn-and-resize or perspective fits, to recover the C2PA Manifest of a sealed "
+            "photo from a recompressed, cropped, slanted or partly drawn-over copy"
+        ),
+        "2026-10-31T00:00:00.000Z",
+        ("https://koltheia.ottxp.com/api/softbinding/v1",),
+        False,
+    ),
+    (
+        63,
+        "ai.label4.watermark.walrus",
+        "watermark",
+        ("image", "video"),
+        ("image/jpeg", "image/png", "image/webp", "video/mp4", "video/x-matroska"),
+        "Label4.ai invisible image/video watermark carrying a secret-keyed content identifier for C2PA soft binding",
+        "2026-11-04T00:00:00.000Z",
+        (),
+        False,
+    ),
+    (
+        64,
+        "ai.label4.watermark.phaseal",
+        "watermark",
+        ("audio",),
+        ("audio/x-wav", "audio/mpeg", "audio/mp4", "audio/flac"),
+        "Label4.ai imperceptible audio watermark carrying a secret-keyed content identifier for C2PA soft binding",
+        "2026-11-04T00:00:00.000Z",
+        (),
+        False,
+    ),
+    (
+        65,
+        "ai.label4.watermark.fastermax",
+        "watermark",
+        ("text",),
+        (),
+        "Label4.ai text watermark detector identifying watermarks used for C2PA soft binding",
+        "2026-11-04T00:00:00.000Z",
+        (),
+        False,
+    ),
+    (
+        66,
+        "com.dreamartfields.signature.2",
+        "watermark",
+        ("image", "video"),
+        (),
+        "Dream Art Fields invisible signature, version 2 (tile), by YambaCode AB",
+        "2026-11-08T00:00:00.000Z",
+        (),
+        False,
+    ),
+    (
+        67,
+        "com.art-koffee.phash.1",
+        "fingerprint",
+        ("image",),
+        (),
+        (
+            "ArtKoffee perceptual fingerprint: 64-bit DCT pHash of artwork images (EXIF-oriented, "
+            "alpha over white, ITU-R 601 grayscale, 32x32 Lanczos, unnormalized 8x8 low-frequency "
+            "DCT-II vs"
+        ),
+        "2026-11-10T00:00:00.000Z",
+        ("https://www.art-koffee.com/c2pa/v1",),
+        False,
+    ),
+    (
+        68,
+        "com.originalpictures.pixelseal.1",
+        "watermark",
+        ("image",),
+        ("image/jpeg", "image/png", "image/webp", "image/tiff", "image/avif"),
+        (
+            "Original Pictures' invisible image watermark built on Meta FAIR's PixelSeal model "
+            "(facebookresearch/videoseal at 870ca7fb, pixelseal.pth)"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        69,
+        "com.originalpictures.pixelseal-video.1",
+        "watermark",
+        ("video",),
+        ("video/mp4",),
+        (
+            "Original Pictures' invisible video watermark built on Meta FAIR's PixelSeal model "
+            "(facebookresearch/videoseal at 870ca7fb, pixelseal.pth) applied in video mode"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        70,
+        "com.originalpictures.audioseal.1",
+        "watermark",
+        ("audio",),
+        ("audio/wav", "audio/mpeg"),
+        (
+            "Original Pictures' invisible audio watermark built on Meta FAIR's AudioSeal 0.2.0 "
+            "streaming generator and detector (Hugging Face facebook/audioseal at 3c19eba)"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        71,
+        "com.originalpictures.videoseal.1",
+        "watermark",
+        ("video",),
+        ("video/mp4",),
+        (
+            "Original Pictures' invisible video watermark built on Meta FAIR's VideoSeal 1.0 "
+            "(videoseal 1.0.1, TorchScript model y_256b_img.jit)"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        72,
+        "com.originalpictures.videoseal-image.1",
+        "watermark",
+        ("image",),
+        ("image/jpeg", "image/png", "image/webp", "image/tiff", "image/avif"),
+        (
+            "Original Pictures' invisible image watermark built on Meta FAIR's VideoSeal 1.0 model "
+            "in image mode (facebookresearch/videoseal at 870ca7fb, y_256b_img.pth)"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        73,
+        "com.originalpictures.dinov2.1",
+        "fingerprint",
+        ("image",),
+        ("image/avif", "image/jpeg", "image/png", "image/tiff", "image/webp"),
+        (
+            "Original Pictures' image descriptor built on Meta FAIR's DINOv2 ViT-S/14 model (Hugging "
+            "Face facebook/dinov2-small at ed25f3a3; Apache-2.0 code and weights)"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        74,
+        "com.originalpictures.pdq.1",
+        "fingerprint",
+        ("image",),
+        ("image/avif", "image/jpeg", "image/png", "image/tiff", "image/webp"),
+        (
+            "Original Pictures' deployment of Meta's PDQ perceptual image hash "
+            "(facebook/ThreatExchange at baefb4ed, BSD), computed on luma by a float32 port of "
+            "ThreatExchange pdq/cpp checked against the pdqhash 0.2.8 reference"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        75,
+        "com.originalpictures.dinov2-lsh256.1",
+        "fingerprint",
+        ("image",),
+        ("image/avif", "image/jpeg", "image/png", "image/tiff", "image/webp"),
+        (
+            "Original Pictures' keyed 256-bit hash of Meta FAIR's DINOv2 ViT-S/14 image descriptor "
+            "(Hugging Face facebook/dinov2-small at ed25f3a3; Apache-2.0)"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        76,
+        "com.originalpictures.chromaprint.1",
+        "fingerprint",
+        ("audio",),
+        ("audio/mp4", "audio/mpeg", "audio/wav"),
+        (
+            "Original Pictures' deployment of Chromaprint 1.6.1 (AcoustID; fpcalc, fingerprint "
+            "algorithm 2; MIT core, the shipped fpcalc binary LGPL-2.1)"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        77,
+        "com.originalpictures.audfprint.1",
+        "fingerprint",
+        ("audio",),
+        ("audio/mp4", "audio/mpeg", "audio/wav"),
+        "Original Pictures' deployment of Dan Ellis' audfprint landmark fingerprint (dpwe/audfprint at cb03ba99, MIT)",
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        78,
+        "com.originalpictures.tmk-pdqf.1",
+        "fingerprint",
+        ("video",),
+        ("video/mp4",),
+        (
+            "Original Pictures' deployment of TMK+PDQF from Meta's ThreatExchange "
+            "(facebook/ThreatExchange tmk at baefb4ed, BSD), with ThreatExchange's default "
+            "configuration: PDQF frame features of frames sampled at 15 fps and 64x64 pixels, "
+            "combined by the Temporal Match Kernel into a whole-clip descriptor with a 256-dimension "
+            "level-1 vector"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        79,
+        "com.originalpictures.vpdq.1",
+        "fingerprint",
+        ("video",),
+        ("video/mp4",),
+        (
+            "Original Pictures' deployment of vPDQ from Meta's ThreatExchange "
+            "(facebook/ThreatExchange at baefb4ed, BSD), run on the same PDQ port as "
+            "com.originalpictures.pdq.1: the 256-bit PDQ hash, with its 0-100 quality, of one "
+            "decoded frame per second of video at full resolution"
+        ),
+        "2026-11-09T08:37:03.355Z",
+        (),
+        False,
+    ),
+    (
+        80,
+        "castLabs.watermark.1.session-v1",
+        "watermark",
+        ("video",),
+        (),
+        "castLabs forensic watermarking session-v1 variant for video manifest recovery",
+        "2026-11-10T00:00:00.000Z",
+        (),
         False,
     ),
 )

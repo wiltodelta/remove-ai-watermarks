@@ -133,3 +133,6 @@ jobs:
           tests/test_video_fidelity_probe.py
           tests/test_video_seedance.py
           tests/test_seedance_video_study.py
+          tests/test_video_audio.py
+          tests/test_video_messages.py
+          tests/test_media_removal_benchmark.py

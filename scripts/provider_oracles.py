@@ -71,25 +71,6 @@ class OracleSurface:
         return asdict(self)
 
 
-class BatchRow(TypedDict):
-    """One immutable media identity in a prepared batch."""
-
-    artifact_id: str
-    index: int
-    source_path: str
-    source_sha256: str
-    upload_path: str
-    upload_sha256: str
-    media_type: str
-    metadata_stripped: bool
-    pixels_preserved: bool | None
-    bytes_preserved: bool
-    pixel_sha256: str | None
-    width: int | None
-    height: int | None
-    format: str
-
-
 class Preparation(TypedDict):
     """Integrity facts created while preparing one upload."""
 
@@ -100,6 +81,20 @@ class Preparation(TypedDict):
     width: int | None
     height: int | None
     format: str
+    hygiene_verified: NotRequired[bool]
+    stream_hashes: NotRequired[dict[str, str]]
+
+
+class BatchRow(Preparation):
+    """One immutable media identity in a prepared batch."""
+
+    artifact_id: str
+    index: int
+    source_path: str
+    source_sha256: str
+    upload_path: str
+    upload_sha256: str
+    media_type: str
 
 
 class ResultRow(TypedDict):
@@ -589,10 +584,91 @@ def _prepare_image(source: Path, upload: Path) -> Preparation:
     }
 
 
-def _prepare_binary(source: Path, upload: Path) -> Preparation:
-    """Copy video or audio bytes exactly without making a metadata claim."""
+def _compute_audio_stream_sha256(path: Path, ordinal: int) -> str:
+    from contextlib import closing
+
+    from remove_ai_watermarks._internal import audio_io
+
+    info = audio_io.probe_audio(path, stream=ordinal)
+    digest = hashlib.sha256()
+    with closing(audio_io.read_audio(path, info)) as chunks:
+        for chunk in chunks:
+            digest.update(memoryview(chunk) if chunk.flags.c_contiguous else chunk.tobytes())
+    return digest.hexdigest()
+
+
+def _verify_clean_non_image_upload(upload: Path, *, media_type: str) -> dict[str, str]:
+    """Assert zero residual AI metadata or visible marks and hash decoded streams."""
+    if media_type == "video":
+        from remove_ai_watermarks.video import identify_video
+        from remove_ai_watermarks.video_audio import stream_inventory
+        from remove_ai_watermarks.video_decode import open_video_capture
+
+        report = identify_video(upload, check_visible=True)
+        residuals: list[str] = []
+        if report.has_ai_metadata or report.metadata_markers:
+            residuals.append(f"metadata={sorted(report.metadata_markers)}")
+        if report.invisible_watermark_hints:
+            residuals.append(f"hints={list(report.invisible_watermark_hints)}")
+        if report.visible_mark is not None or report.visible_detected_frames > 0:
+            residuals.append(f"visible_mark={report.visible_mark!r} ({report.visible_detected_frames} frames)")
+        if residuals:
+            detail = "; ".join(residuals)
+            raise RuntimeError(f"refusing oracle batch because video upload retained AI signals: {detail}")
+
+        video_digest = hashlib.sha256()
+        cap = open_video_capture(upload)
+        if not cap.isOpened():
+            raise RuntimeError(f"could not decode video upload for stream hashing: {upload}")
+        frame_count = 0
+        try:
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                video_digest.update(memoryview(frame) if frame.flags.c_contiguous else frame.tobytes())
+                frame_count += 1
+        finally:
+            cap.release()
+        if frame_count == 0:
+            raise RuntimeError(f"video upload decoded zero frames: {upload}")
+        hashes: dict[str, str] = {"video:0": video_digest.hexdigest()}
+        audio_streams = [s for s in stream_inventory(upload) if s.get("codec_type") == "audio"]
+        for ordinal in range(len(audio_streams)):
+            hashes[f"audio:{ordinal}"] = _compute_audio_stream_sha256(upload, ordinal)
+        return hashes
+
+    if media_type == "audio":
+        from remove_ai_watermarks.audio import identify_audio
+
+        report_a = identify_audio(upload, check_invisible=False)
+        if report_a.metadata_markers:
+            fields = ", ".join(sorted(report_a.metadata_markers))
+            raise RuntimeError(f"refusing oracle batch because audio upload retained AI metadata: {fields}")
+        return {"audio:0": _compute_audio_stream_sha256(upload, 0)}
+
+    raise ValueError(f"unsupported non-image media_type: {media_type}")
+
+
+def assert_no_active_quota_hold(quota_hold_path: Path | None) -> None:
+    """Refuse live submission when a recorded modality quota-hold document is active."""
+    if quota_hold_path is None:
+        return
+    resolved = quota_hold_path.expanduser().resolve()
+    if not resolved.is_file():
+        raise ValueError(f"quota hold file does not exist: {resolved}")
+    raw = json.loads(resolved.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"quota hold file must contain a JSON object: {resolved}")
+    if raw.get("status") == "active":
+        scope = raw.get("scope", "unspecified scope")
+        raise RuntimeError(f"refusing oracle submission while quota hold is active ({scope}): {resolved}")
+
+
+def _prepare_binary(source: Path, upload: Path, *, media_type: str, require_clean_media: bool = False) -> Preparation:
+    """Copy video or audio bytes exactly, optionally enforcing clean-upload hygiene."""
     shutil.copyfile(source, upload)
-    return {
+    prep: Preparation = {
         "metadata_stripped": False,
         "pixels_preserved": None,
         "bytes_preserved": True,
@@ -601,6 +677,10 @@ def _prepare_binary(source: Path, upload: Path) -> Preparation:
         "height": None,
         "format": source.suffix.lower().removeprefix("."),
     }
+    if require_clean_media:
+        prep["stream_hashes"] = _verify_clean_non_image_upload(upload, media_type=media_type)
+        prep["hygiene_verified"] = True
+    return prep
 
 
 def prepare_batch(
@@ -610,6 +690,7 @@ def prepare_batch(
     output_dir: Path,
     repository_root: Path = REPOSITORY_ROOT,
     slot: ExecutionSlot | None = None,
+    require_clean_media: bool = False,
 ) -> Path:
     """Create a hash-bound, unsubmitted oracle batch outside the repository."""
     if surface not in SURFACES:
@@ -641,7 +722,11 @@ def prepare_batch(
             raise ValueError(f"duplicate source bytes: {source}")
         source_hashes.add(source_sha256)
         upload = uploads_dir / f"{index:03d}-{source_sha256[:16]}{source.suffix.lower()}"
-        preparation = _prepare_image(source, upload) if media_type == "image" else _prepare_binary(source, upload)
+        preparation = (
+            _prepare_image(source, upload)
+            if media_type == "image"
+            else _prepare_binary(source, upload, media_type=media_type, require_clean_media=require_clean_media)
+        )
         upload_sha256 = _sha256(upload)
         row: BatchRow = {
             "artifact_id": f"{index:03d}-{upload_sha256[:16]}",
@@ -967,16 +1052,28 @@ def slots(config: Path, as_json: bool) -> None:
 @click.option("--output", required=True, type=click.Path(file_okay=False, path_type=Path))
 @click.option("--slots", "slots_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--slot", "slot_name")
+@click.option(
+    "--require-clean-media",
+    is_flag=True,
+    help="Refuse audio/video uploads carrying AI metadata or visible marks and record stream hashes.",
+)
 def prepare(
     surface: str,
     sources: tuple[Path, ...],
     output: Path,
     slots_path: Path | None,
     slot_name: str | None,
+    require_clean_media: bool,
 ) -> None:
     """Prepare an immutable provider-oracle batch outside the repository."""
     slot = resolve_slot(surface, slots_path=slots_path, slot_name=slot_name)
-    manifest = prepare_batch(surface, list(sources), output_dir=output, slot=slot)
+    manifest = prepare_batch(
+        surface,
+        list(sources),
+        output_dir=output,
+        slot=slot,
+        require_clean_media=require_clean_media,
+    )
     click.echo(str(manifest))
 
 
@@ -1031,14 +1128,22 @@ def verify(manifest: Path, require_complete: bool) -> None:
     show_default=True,
     help="Read the selected proxy URL variable from this dotenv file.",
 )
+@click.option(
+    "--quota-hold",
+    "quota_hold_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Refuse submission when this modality quota-hold JSON file is active.",
+)
 def run_web(
     manifest: Path,
     acknowledge_uploads: bool,
     headed: bool,
     timeout_seconds: float,
     env_file: Path,
+    quota_hold_path: Path | None,
 ) -> None:
     """Submit a prepared anonymous Web batch through isolated Playwright."""
+    assert_no_active_quota_hold(quota_hold_path)
     from provider_oracle_web import run_web_batch
 
     report = run_web_batch(

@@ -617,3 +617,84 @@ assessment, texture, and importability checks remain active without them. CI's
 mandatory `video full-clip end-to-end` job activates the packaged offline
 FFmpeg/ffprobe pair and runs both the
 study and experimental library suites alongside the existing video checks.
+
+## Continuous temporal bottleneck follow-up (2026-11-12)
+
+A separate full native-geometry CogVideoX VAE posterior-mode trial preserved
+the forest source's frame clock and copied audio. The authorized six-file
+CapCut pass detected the metadata-only source, delivery-codec controls, and
+both the audiovisual and silent-video VAE candidates. The silent control and
+silent candidate have complete request/file-hash/response bindings, so copied
+audio cannot solely explain this candidate's positive result. This particular
+zero-noise temporal bottleneck does not meet the agreed removal criterion.
+
+Source audio extracted without re-encoding into M4A was negative on the same
+surface. It is an unprocessed source check, not audio-removal qualification or
+proof of absence of other audio marks. The first source and AV-codec responses
+have incomplete request capture and remain explicitly separate from fully
+bound receipts; no file was reuploaded. The existing texture-transfer profile
+retains its earlier, separately hash-bound evidence.
+
+The [current video tranche](media-removal-roadmap.md#video-tranche) records
+resource qualification, full-delivery diagnostics, this provider outcome and
+the priority of a discrete temporal-tokenizer comparison. Private frozen
+manifests, raw replies, UI snapshots and receipt replay checks stay outside
+the repository.
+
+## CUDA 3D Wan 2.1 video diffusion follow-up (2026-11-14)
+
+A subsequent frozen seven-file experiment on an NVIDIA H100 CUDA GPU tested
+pinned Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` (`0fad780a534b6463e45facd96134c9f345acfa5b`)
+on the same label-cleaned 121-frame `854x480 @ 24 fps` Seedance forest source,
+comparing a matched H.264 CRF 18 codec control, zero-noise 3D `AutoencoderKLWan`
+round-trip (`s=0.0`), noisy 3D `AutoencoderKLWan` (`s=0.25`), 3D `Wan 2.1`
+video-to-video regeneration at `strength=0.12`, `0.25`, and `0.45`, and a hybrid
+guide/restore arm. All seven files preserved all 121 video PTS timestamps, terminal
+duration, and stream-copied audio, and were verified against the CapCut
+supported-signal checker with offline-verified receipts:
+
+- The matched H.264 CRF 18 control (`PSNR 35.85 dB`, `gray SSIM 0.9733`) and
+  zero-noise 3D `AutoencoderKLWan` round-trip (`PSNR 31.53 dB`, `gray SSIM 0.9361`)
+  remained **detected**, confirming that unperturbed 3D causal VAE encoding
+  alone retains the Seedance watermark just as zero-noise CogVideoX did.
+- Adding mild 3D `Wan 2.1` flow-matching diffusion at `strength=0.12` produced a
+  verified CapCut **not_detected** receipt while improving delivered visual
+  quality over the CPU/MPS `seedance-experimental` sigma-1 texture-transfer
+  recipe across every primary metric (`PSNR 28.06 dB` vs `26.88 dB`, `RGB SSIM
+  0.8389` vs `0.8294`, `temporal_residual_ratio 0.9342` vs `1.1531`, `SIFT
+  matches 361` vs `174`, and `edge p95 displacement 3.89 px` vs `8.05 px`).
+  Stronger `Wan 2.1` arms (`0.25`, `0.45`), noisy `AutoencoderKLWan` (`s=0.25`),
+  and the hybrid arm were also **not_detected** at lower PSNR (`22.83-25.45 dB`).
+
+This operating point is exposed on CUDA hosts as `remove_video_wan_experimental(...,
+profile="wan21-seedance-experimental")` and `--profile wan21-seedance-experimental`,
+while `seedance-experimental` remains available for CPU and Apple Silicon hosts.
+Passing `profile="auto"` (`--profile auto`) inspects pre-strip container metadata
+and visible-mark signals to select the Seedance family automatically (preferring
+CUDA `wan21-seedance-experimental` when available and falling back to
+`seedance-experimental`), and clips longer than `193` frames are processed via
+`4k+1` 3D causal windows (`chunk_frames=193`, `overlap_frames=17`) with
+raised-cosine temporal crossfades.
+
+## Held-out scene and export-surface replication (2026-11-16)
+
+A held-out Stage 5 pass tested five additional ByteDance/Seedance exports with
+offline-verified CapCut receipts:
+
+- **Consumer CapCut `bottle` (`121` frames)**: Both the stream-copy
+  metadata-stripped control and the matched H.264 CRF 18 control (`PSNR 38.12 dB`)
+  remained **detected** (`CapCut AI`), establishing a second positive pixel-marked
+  scene independent of `forest`. CUDA 3D `Wan 2.1` (`wan21-seedance-experimental`,
+  `strength=0.12`) returned **not_detected** at `PSNR 34.42 dB` and
+  `temporal_residual_ratio 1.0682`, outperforming `seedance-experimental`
+  (**not_detected** at `PSNR 31.85 dB`, `temporal_residual_ratio 1.3854`) by
+  `+2.57 dB` with `5.6x` smaller temporal residual drift (`+0.068` vs `+0.385`).
+- **Metadata-only surfaces and uniform-background control**: Stream-copy C2PA
+  metadata stripping alone (`remove_video_metadata`) produced **not_detected**
+  receipts on `dreamina/seedance-2-5` and BytePlus enterprise API exports
+  (`seedance-2-0`, `seedance-2-5`), showing that those export routes rely on
+  container credentials rather than CapCut's pixel watermark. A held-out portrait
+  `face` clip (`85%` flat uniform background) also returned **not_detected** on
+  both metadata-stripped and CRF 18 controls and is retained strictly as a
+  high-PSNR (`36.97 dB`) face-fidelity check rather than a pixel-suppression
+  claim.

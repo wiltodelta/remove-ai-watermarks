@@ -1,6 +1,7 @@
 """Shared configuration for the calibrated video-pixel SynthID-removal profile."""
 
 DEFAULT_VIDEO_SYNTHID_VAE = "stabilityai/sd-vae-ft-mse"
+DEFAULT_VIDEO_SYNTHID_VAE_REVISION = "31f26fdeee1355a5c34592e401dd41e45d25a493"
 # The certified profile is a perturbation-to-signal ratio, so it is pinned against
 # this latent scaling factor as much as against noise_std. Rationale and the drift
 # it guards against: docs/module-internals.md.

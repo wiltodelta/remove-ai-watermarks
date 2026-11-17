@@ -4,7 +4,7 @@
 # on it, including the ComfyUI node package. The console script below carries
 # the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.62.1"
+version = "0.63.0"
 description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -64,6 +64,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+text = [
+    "torch>=2.0.0",
+    "transformers>=5,<5.16",
+    "tokenizers>=0.22,<0.23",
+    # Thresholds are evaluated against this packaged language model.
+    "py3langid==0.4.0",
+]
+# Optional Apple silicon text generation; the shared text guards also cover MLX.
+text-mlx = [
+    "mlx-lm>=0.32.2; platform_system == 'Darwin' and platform_machine == 'arm64'",
+    "py3langid==0.4.0; platform_system == 'Darwin' and platform_machine == 'arm64'",
+]
 pixels = [
     "numpy>=1.24.0; python_version < '3.13'",
     # NumPy 1.x has no CPython 3.13+ wheels. Requiring 2.x prevents installers
@@ -86,6 +98,59 @@ video = [
     "portable-ffmpeg-full==0.5.0",
     "filelock>=3.20",
 ]
+# Known-message decoding for the pinned public VideoSeal and PixelSeal models.
+video-detect = ["remove-ai-watermarks[video]", "torch>=2.6"]
+# Audio sample processing stays independent of OpenCV and the ML stack.
+audio = [
+    "numpy>=1.24.0; python_version < '3.13'",
+    "numpy>=2; python_version >= '3.13'",
+    "scipy>=1.13.0",
+]
+# The open AudioSeal model verifies compatible audio marks locally. This is
+# separate from proprietary provider audio-watermark verification.
+audio-detect = [
+    "remove-ai-watermarks[audio]",
+    "audioseal==0.2.0",
+    "huggingface-hub>=0.20.0,<2",
+]
+# Compatible public WavMark decoding, separate from production provider claims.
+audio-wavmark = [
+    "remove-ai-watermarks[audio]",
+    "wavmark==0.0.3",
+    "huggingface-hub>=0.20.0,<2",
+]
+# Public Perth v1; validated model modules load without the legacy package initializer.
+audio-perth = [
+    "remove-ai-watermarks[audio]",
+    "resemble-perth==1.0.1",
+    "torch>=2.0.0",
+    "librosa>=0.10",
+    "soundfile>=0.12.1",
+    "PyYAML>=6",
+    "torchaudio>=2.11",
+]
+# Pinned Sony decoder, without the obsolete SDK Torch upper bound.
+audio-silentcipher = [
+    "remove-ai-watermarks[audio]",
+    "torch>=2.6",
+    "librosa>=0.10",
+    "huggingface-hub>=0.20.0,<2",
+]
+# Optional neural codec resynthesis, separate from compatible watermark decoders.
+audio-codec = [
+    "remove-ai-watermarks[audio]",
+    "torch>=2.0.0",
+    "transformers>=5,<5.16",
+    "safetensors",
+    "huggingface-hub>=0.20.0,<2",
+]
+# Optional pinned full-track mel-vocoder, independent of watermark decoders.
+audio-vocoder = [
+    "remove-ai-watermarks[audio]",
+    "torch>=2.6",
+    "librosa>=0.10",
+    "huggingface-hub>=0.20.0,<2",
+]
 # Open DWT-DCT watermarks used by Stable Diffusion / SDXL / FLUX. The in-tree
 # decoder avoids the upstream invisible-watermark package's mandatory torch and
 # non-headless OpenCV dependencies.
@@ -95,6 +160,8 @@ detect = [
 ]
 diffusion = [
     "remove-ai-watermarks[pixels]",
+    # Preserve the historical text runtime installed through this extra.
+    "py3langid==0.4.0",
     # Image regeneration requires NVIDIA CUDA. Video VAE profiles also support
     # CPU and MPS when the selected Torch stack supports the host platform.
     "torch>=2.0.0",
@@ -114,6 +181,9 @@ diffusion = [
     "tokenizers>=0.22,<0.23",
     "accelerate>=0.25.0",
     "safetensors",
+    # Wan 2.1 3D video diffusion uses UMT5 (SentencePiece) and ftfy normalization.
+    "sentencepiece>=0.2.2,<0.3",
+    "ftfy>=6.3.1",
 ]
 # Full two-stage high-fidelity profile: Qwen-Image-2512 Lightning + DiffSynth
 # Canny ControlNet for the frame, then SAM-masked Z-Image Turbo face repair.
@@ -188,10 +258,9 @@ dev = [
     # Development-only OpenAI Content Provenance oracle. It is not exposed by
     # the installed CLI or the public Python API.
     "openai>=2.52.0",
-    # Development-only local AudioSeal audio watermark oracle for the
-    # scripts/audioseal_experiment.py provenance study. Not part of the
-    # installed CLI, the public Python API, or any runtime pipeline.
-    "audioseal>=0.2.0",
+    # Runtime detector and controlled AudioSeal fixture generation share the
+    # same pinned model seam. The generator remains a development helper.
+    "remove-ai-watermarks[audio-detect]",
     "huggingface-hub>=0.20.0,<2",
     # Direct Microsoft Content Provenance API transport. The adapter uses an
     # Azure CLI Entra token and ignores process proxy settings.
@@ -211,7 +280,7 @@ dev = [
 ]
 # ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
 # independently sufficient for a removal, which it is not.
-all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,source-classify]"]
+all = ["remove-ai-watermarks[video,video-detect,heif,detect,trustmark,text-restoration,migan,source-classify,audio-detect,audio-codec,audio-vocoder,audio-wavmark,audio-perth,audio-silentcipher,text,text-mlx]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"

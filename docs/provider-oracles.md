@@ -295,8 +295,15 @@ Anyone doing the task may run those checks. Identify the finite set of
 configured slots before starting and prepare one immutable batch per slot.
 Record quota refusals as `refused` and service failures according to their
 actual response, leave remaining rows in that slot unsubmitted, and continue
-with the next slot, surface, or configured route. Do not ask for confirmation
-before that switch.
+with the next slot, surface, or configured route. Exception: when `gemini-web`
+returns an explicit modality-level quota refusal (such as `the video modality
+quota has been exceeded`) or an active modality quota-hold file (`status:
+"active"`) is on record for video or audio, stop same-modality `gemini-web`
+account rotation instead of switching Google `/u/N/` accounts to evade the
+hold; keep prepared Gemini batches frozen and unsubmitted until the hold clears
+and reuse exact prior upload-hash verdicts. Pass `--quota-hold PATH` to
+`run-web` (or call `assert_no_active_quota_hold`) to enforce active holds
+mechanically. Do not ask for confirmation before an allowed surface switch.
 
 Submit each frozen artifact at most once per slot in one pass. Keep every
 verbatim refusal, inconclusive reply, and disagreement between accounts. Stop
@@ -355,8 +362,11 @@ For PNG, JPEG, and WebP, preparation strips AI provenance metadata and proves
 that the decoded RGBA pixels and format did not change. This prevents a C2PA
 result from masquerading as a pixel-watermark result. Video and audio are copied
 byte for byte; the manifest explicitly records that their metadata was not
-stripped. Use the matched-control protocols in [`synthid.md`](synthid.md) for
-video claims.
+stripped. Pass `--require-clean-media` when preparing clean-control or
+processed audio/video uploads so `prepare` verifies zero residual AI metadata,
+invisible watermark hints, or visible provider logos and records decoded
+per-stream SHA-256 digests (`stream_hashes`). Use the matched-control protocols
+in [`synthid.md`](synthid.md) for video claims.
 
 Before preparing any image for a SynthID oracle, visually inspect it and remove
 every visible AI-provider logo or label with the project's visible-mark remover.
@@ -405,14 +415,17 @@ uv sync --extra dev
 uv run playwright install chromium
 ```
 
-Gemini is the only surface excluded from the standalone runner, because it is
-the only one that requires a signed-in account. Invoke the project
-`provider-oracles` skill to drive that existing Chrome profile at the named
-`/u/N/` account. `synthid-web` is an anonymous page: `run-web` opens
-`https://synthid.com/` in isolated Playwright, attaches one prepared upload
-through the page's file input, and reads the explicit `Watermark detected`,
-`Watermark not detected`, or `SynthID was not detected` label. The portal has
-no `/u/N/` index. If the page says `Please sign in before detection.` and
+Gemini is excluded from the standalone runner because its checks use the
+user's signed-in Chrome account. Invoke the project `provider-oracles` skill
+to drive that existing profile at the named `/u/N/` account. For `synthid-web`,
+`run-web` first opens `https://synthid.com/` in isolated anonymous Playwright,
+attaches one prepared upload through the page's file input, and reads the
+explicit `Watermark detected`, `SynthID was detected`, `Watermark not detected`,
+or `SynthID was not detected` label. Conflicting labels remain indeterminate.
+The runner closes its isolated session after the first refused, indeterminate,
+or unreachable result, leaving the remaining manifest rows unsubmitted. Its
+summary reports `complete: false` for that partial pass. The portal has no
+`/u/N/` index. If the page says `Please sign in before detection.` and
 returns no watermark label, keep that row and continue the same prepared upload
 in the user's existing real Chrome. That session is direct: no proxy, no new
 login, and no cookie copy into the isolated browser. If that Chrome also asks
@@ -476,9 +489,12 @@ quota refusal is `refused`, a transport failure is `unreachable`, and unknown or
 changed page wording is `indeterminate`.
 
 Each provider mounts its file input before the upload handler is necessarily
-ready. Microsoft, Meta, and SynthID Detector reach a usable handler at network idle. OpenAI keeps
+ready. Microsoft and SynthID Detector reach a usable handler at network idle. OpenAI keeps
 background requests alive and never reaches network idle, so its observable
-readiness seam is the page `load` state instead. The adapter waits for the
+readiness seam is the page `load` state instead. Meta keeps background
+`/monitoring` requests open and never reaches network idle either, so its
+readiness seam is `load` plus visibility of the hydrated `Upload or drag an
+image, video, or audio file` dropzone. The adapter waits for the
 surface-specific state before assigning the file. OpenAI's static FAQ contains
 the lowercase phrase `generated with OpenAI tools`; only the exact title-cased
 result label may settle a positive result. Its generic `Something went wrong`

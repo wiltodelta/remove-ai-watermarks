@@ -12,8 +12,11 @@ API: a standard way of retrieving manifest stores from a resolution endpoint
 given **a soft binding value, a manifest identifier, or an asset** - three
 input modes that are exactly three privacy exposure levels. The algorithm
 registry (`c2pa-org/softbinding-algorithm-list`) carries the endpoint URIs in
-`softBindingResolutionApis`. The current packaged revision and its endpoint
-entries are recorded in the [generated registry snapshot](../src/remove_ai_watermarks/_internal/_generated_c2pa_soft_bindings.py).
+`softBindingResolutionApis`. The current declarations and endpoint URIs live
+in the [packaged registry snapshot](../src/remove_ai_watermarks/_internal/_generated_c2pa_soft_bindings.py).
+The measured contracts below are a historical research snapshot, not an
+exhaustive live endpoint inventory. Registry membership does not verify an
+endpoint contract or supply a compatible waveform/pixel decoder.
 
 ## Measured contracts
 
@@ -26,10 +29,16 @@ entries are recorded in the [generated registry snapshot](../src/remove_ai_water
 | `ai.trufo.pawprint.watermark` / `.fingerprint` | both | `c2pa.trufo.ai/v1` | not published publicly | ? | ? |
 | `io.blockfact.audio.watermark.32` | watermark | `api.blockfact.io/api/soft-binding/v1` | not published publicly | ? | ? |
 | `com.etchv.watermark.1` | watermark | `api.etchv.com/c2pa/v1` | request contract unverified | ? | ? |
+| `com.ottxp.koltheia.photonote.1` | fingerprint | `koltheia.ottxp.com/api/softbinding/v1` | request contract unverified | ? | ? |
+| `com.art-koffee.phash.1` | fingerprint | `www.art-koffee.com/c2pa/v1` | request contract unverified | ? | ? |
 
-The Etchv endpoint is declared in the [packaged upstream registry revision](https://github.com/c2pa-org/softbinding-algorithm-list/blob/172efd828087b021ff2f1f79aa5bbe03936ee99d/softbinding-algorithm-list.json).
-This refresh records its URL; the provider's request and privacy contract has not
-been verified. The library does not call it.
+The Etchv, KolTheia, and ArtKoffee endpoints are declared in the [packaged upstream registry revision](https://github.com/c2pa-org/softbinding-algorithm-list/blob/529093be86d6b6dad6f0fb912a138740f2b5d2b4/softbinding-algorithm-list.json).
+This refresh records their URLs; the providers' request and privacy contracts have not
+been verified. The library does not call them.
+
+The registry preserves `io.blockfact.audio.watermark.32` as its exact name,
+while its decoded-media declaration is image-only. The identifier does not
+establish audio or video compatibility.
 
 Sources, verified 2026-09-07 against the vendors' own pages: the Monolith
 soft-binding documentation (lookup endpoints public by design, "a verifier is
@@ -40,6 +49,18 @@ Deepmark product description ("the signal is detected and its payload
 resolved"), the Trufo developer documentation and `trufo-py` repository
 (signing-side only), and the BlockFact API reference (its public verify
 endpoint takes a Starknet transaction hash, not a soft binding).
+
+## Unmeasured newer declarations
+
+The [registered upstream declarations](https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/529093be86d6b6dad6f0fb912a138740f2b5d2b4/softbinding-algorithm-list.json)
+add `com.etchv.watermark.1` (`https://api.etchv.com/c2pa/v1`),
+`com.ottxp.koltheia.photonote.1` (`https://koltheia.ottxp.com/api/softbinding/v1`),
+and `com.art-koffee.phash.1` (`https://www.art-koffee.com/c2pa/v1`) for images.
+These are registry declarations, not measured
+resolution contracts. No endpoint request was made; their required inputs and
+content/digest exposure remain unknown. No decoder or resolver is integrated.
+The text-only Encypher watermark and fingerprint entries likewise remain
+catalog declarations, outside this project's LLM-text scope.
 
 The privacy gradient, concretely:
 

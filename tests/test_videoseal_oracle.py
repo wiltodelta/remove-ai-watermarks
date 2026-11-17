@@ -143,3 +143,33 @@ class TestImageMode:
 
         with pytest.raises(ValueError, match="does not match expected 4"):
             videoseal_oracle.read_image(Model(), uint8_pixels, message=(1, 0, 1, 0))
+
+
+@pytest.mark.parametrize("reader", [videoseal_oracle.read, videoseal_oracle.read_aggregation_matrix])
+@pytest.mark.parametrize("fault", ["nan", "inf", "frame_count", "bit_count", "rank", "empty", "empty_clip"])
+def test_invalid_video_logits_cannot_become_a_negative(reader, fault):
+    torch = pytest.importorskip("torch")
+    values = torch.zeros(2, 257)
+    frames = np.zeros((2, 2, 4, 3), dtype=np.float32)
+    if fault == "nan":
+        values[0, 1] = float("nan")
+    elif fault == "inf":
+        values[0, 1] = float("inf")
+    elif fault == "frame_count":
+        values = values[:1]
+    elif fault == "bit_count":
+        values = values[:, :-1]
+    elif fault == "rank":
+        values = values[:, None]
+    else:
+        values = values[:0]
+        if fault == "empty_clip":
+            frames = frames[:0]
+
+    class Model:
+        def detect(self, tensor, *, is_video):
+            assert is_video is True
+            return {"preds": values}
+
+    with pytest.raises(RuntimeError, match="invalid video logits"):
+        reader(Model(), frames)

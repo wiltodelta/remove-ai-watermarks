@@ -13,6 +13,10 @@ It installs Pillow, piexif, and c2pa-python for reading metadata directly from
 files. It does not install NumPy, OpenCV, pillow-heif, Torch, diffusion models,
 or invisible-watermark decoders.
 
+Native Suno audio creation-comment inspection additionally requires ffprobe
+on `PATH`; audio stream-copy metadata removal requires ffmpeg. These tools
+are not bundled. Neither is needed for ordinary image metadata inspection.
+
 Install it as an isolated command with uv:
 
 ```bash
@@ -88,6 +92,87 @@ Add `heif` only when the pixel path must decode HEIC, HEIF, or AVIF:
 ```bash
 uv tool install --force "remove-ai-watermarks[visible,heif]"
 ```
+
+## Audio processing
+
+Audio inspection and processing require both ffmpeg and ffprobe on PATH.
+`audio identify --no-invisible` uses the default package. Install the CPU
+spectral processor separately from the compatible AudioSeal decoder:
+
+```bash
+uv tool install --force "remove-ai-watermarks[audio]"
+uv tool install --force "remove-ai-watermarks[audio-detect]"
+```
+
+`audio` installs NumPy and SciPy, without OpenCV or Torch. `audio-detect` adds
+the pinned open AudioSeal runtime and downloads hash-checked detector weights
+on first use. It needs no CUDA. Default removal requires that decoder; explicit
+`--method spectral --force --no-verify` processing only requires `audio`. Outputs are WAV or FLAC.
+See [audio coverage and limitations](audio-video-removal.md).
+
+Add `audio-codec` for EnCodec resynthesis with `--method encodec`, `combined`,
+or an automatic neural profile. The default AudioSeal sequence starts with
+spectral filtering and requires this extra if its neural fallback is needed.
+Combine it with `audio-detect` for default compatible-source verification:
+
+```bash
+uv tool install --force "remove-ai-watermarks[audio-detect,audio-codec]"
+```
+
+This backend uses Torch and Transformers on CPU and downloads pinned,
+hash-checked model/configuration artifacts on first use. It is a distinct
+processing method, with its own quality and watermark-verification results.
+The same extra also supplies explicit experimental `--method mimi`, a pinned
+CPU FP32 codec with 32 default quantizers, explicit experimental
+`--method focalcodec`, a pinned CPU FP32 continuous 6-layer WavLM feature-to-Vocos
+resynthesizer (`lucadellalib/focalcodec_50hz` at revision
+`d6d6d9524e52155c85193c2c3b8da1cf8842f019`), and explicit experimental
+`--method dac`, a pinned CPU FP32 44.1 kHz 3-codebook Descript Audio Codec
+(`descript/dac_44khz` at revision `c1bc521685adf9cfe247bc39a5ca58917eda1ac4`).
+Each downloads separate safetensors and configuration artifacts.
+[Mimi weights](https://huggingface.co/kyutai/mimi) are CC-BY-4.0 with
+attribution recorded in `licenses/mimi/NOTICE.txt`,
+[FocalCodec code and weights](https://huggingface.co/lucadellalib/focalcodec_50hz)
+are Apache-2.0 with attribution and third-party notices in
+`licenses/focalcodec/`, and [DAC weights](https://huggingface.co/descript/dac_44khz)
+are MIT with attribution in `licenses/dac/NOTICE.txt`. Model licenses remain
+distinct from the library and Transformers code licenses. None of the three
+methods is selected automatically, and all require the requested decoder extra
+for checks.
+
+Add `audio-vocoder` for explicit experimental `--method bigvgan`. This installs
+Torch, librosa, and Hugging Face Hub alongside the numerical audio stack. The
+runtime downloads revision-pinned configuration and weights on first use,
+verifies both hashes, then loads weights strictly without remote Python.
+CPU is the default; `--vocoder-device mps` or `cuda` selects that device explicitly.
+Retain the chosen decoder extra for verification. See the [CLI limits](cli.md).
+
+The explicit `video audio` route uses these same extras. It copies video packets
+and does not require OpenCV, PyAV, or the `video` extra.
+
+Add `audio-wavmark` for `--scheme wavmark`, the pinned public WavMark model.
+`--scheme all` requests all named packaged decoders, so install `audio-detect`,
+`audio-wavmark`, `audio-perth`, and `audio-silentcipher` together for complete checks. The public WavMark package and
+checkpoint are hash-checked. This does not establish compatibility with a
+production provider's WavMark deployment. The decoder includes the final valid
+search position and exactly one-second inputs; shorter inputs remain unverified.
+`audio-wavmark` also installs the public model's Torch, torchaudio, and librosa
+dependencies. It is separate from metadata-only and CPU spectral processing.
+
+Public Perth v1 uses `audio-perth` and `--scheme perth`. The loader bypasses the public package's legacy
+initializer by loading validated model modules in a private namespace. It
+requires no deprecated setuptools compatibility dependency. Source code, model
+config, and weights are hash-checked
+before loading. Missing or incompatible installations remain unverified.
+
+Public SilentCipher-44k uses `audio-silentcipher` and `--scheme silentcipher`.
+The same extra supports `--scheme silentcipher16`, an experimental terminated
+eight-symbol pattern with seven ternary payload symbols. It does not qualify
+the SDK byte API or general 32-bit profile. `all` includes both receivers.
+It installs modern Torch, librosa, and Hugging Face Hub, without the legacy SDK
+and its Torch upper bound. Pinned config and weights are checked before loading.
+The experimental receiver requires at least three seconds and checks every
+phase before a negative; CPU checks can be slow. See [receiver scope](audio-video-removal.md#experimental-silentcipher-44k-receiver).
 
 ## Video processing
 
@@ -176,6 +261,14 @@ application actually uses:
 | `pixels` | Shared BGR image runtime and direct local Paint InvisMark disruption | NumPy, headless OpenCV | No |
 | `heif` | HEIC, HEIF, and AVIF pixel decoding | pillow-heif | No |
 | `visible` | Visible mark detection, OpenCV inpainting, and manual erasing | `pixels` | No |
+| `audio` | Native-geometry WAV/FLAC processing and spectral filtering | NumPy, SciPy; ffmpeg required | No |
+| `audio-detect` | Public AudioSeal checks | `audio`, AudioSeal, Hugging Face Hub | Yes |
+| `audio-wavmark` | Public WavMark checks | `audio`, WavMark | Yes |
+| `audio-perth` | Public Perth v1 checks | `audio`, validated Perth model modules | Yes |
+| `audio-silentcipher` | Experimental SilentCipher-44k and terminated 16k receivers | `audio`, Torch, librosa, Hugging Face Hub | Yes |
+| `audio-codec` | Pinned EnCodec and experimental Mimi / FocalCodec resynthesis | `audio`, Torch, Transformers, safetensors | Yes |
+| `audio-vocoder` | Experimental pinned full-track BigVGAN | `audio`, Torch, librosa, Hugging Face Hub | Yes |
+| `video-detect` | Public VideoSeal/PixelSeal known-message checks | `video`, Torch | Yes |
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV, FFmpeg/ffprobe bundle | No |
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |
 | `trustmark` | Adobe TrustMark detection | trustmark | Yes |
@@ -186,8 +279,16 @@ application actually uses:
 | `qwen-zimage` | Invisible image-watermark removal, all CUDA-only profiles | `diffusion`, DiffSynth, SentencePiece | Yes |
 | `text-restoration` | Opt-in verified profile-VAE glyph restoration | `qwen-zimage`, `lama` | Yes |
 | `text-draft` | Draft OCR proposals for operator verification | PaddleOCR, PaddlePaddle | Model download, no Torch |
+| `text` | Local text regeneration with the default Transformers backend | Torch, Transformers, packaged py3langid language model | Yes |
+| `text-mlx` | Optional local text regeneration on Apple silicon | MLX LM, Transformers tokenizer, packaged py3langid language model | Yes, on Apple silicon |
 | `all` | Production removal and default classifier backends | All runtime branches except proposal-only OCR | Yes |
 | `dev` | Tests, linting, typing, upstream parity checks, and development oracles | `video`, `detect`, OpenAI SDK, upstream invisible-watermark | Yes, for parity tests |
+
+The `text` extra does not install Diffusers or image runtimes. The historical
+`diffusion` extra continues to include the Transformers text runtime and language
+checker for compatibility. The language model ships inside `py3langid`; loading
+it needs no service or model download. Generation checkpoints are downloaded
+separately unless already cached.
 
 Dependency composition:
 
@@ -353,3 +454,20 @@ If the CLI reports that the removal dependencies are unavailable, install the
 `qwen-zimage` extra. `diffusion` alone covers Torch and Diffusers but not the
 DiffSynth face stage that all profiles run. Video SynthID removal is a separate
 path and needs `video` and `diffusion`.
+
+## Public-model video message checks
+
+`video-detect` adds Torch to the `video` stack for pinned public VideoSeal and
+PixelSeal known-message decoders. Checkpoint downloads are checked against
+packaged SHA-256 values before loading; the PixelSeal checkpoint uses
+`weights_only=True`. The decoder does not install the upstream training SDK.
+
+```bash
+uv tool install --force "remove-ai-watermarks[video-detect]"
+uv tool install --force "remove-ai-watermarks[video-detect,diffusion]"
+```
+
+The first supports inspection and codec-only processing. The second adds the
+pinned float32 safetensors VAE. Processing needs ffmpeg and ffprobe. The caller
+must supply an independently known encoder message; these extras do not add a
+general AI-origin or unknown-message detector.

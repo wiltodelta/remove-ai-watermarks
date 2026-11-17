@@ -12,7 +12,9 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false
 import logging
 import math
+from contextlib import ExitStack
 from dataclasses import dataclass
+from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 import cv2
@@ -33,6 +35,7 @@ from remove_ai_watermarks.video_synthid import (
     DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
     DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     DEFAULT_VIDEO_SYNTHID_VAE,
+    DEFAULT_VIDEO_SYNTHID_VAE_REVISION,
     VIDEO_SYNTHID_LATENT_MULTIPLE,
     VIDEO_SYNTHID_VAE_SCALING_FACTOR,
 )
@@ -40,12 +43,15 @@ from remove_ai_watermarks.video_temporal import (
     _backward_map,
     _motion_residual,
     build_temporal_reference,
+    iter_stabilized_regenerated_frames,
     temporal_residual_ratio,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Generator, Iterable, Sequence
     from pathlib import Path
+
+    from numpy.typing import NDArray
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +108,7 @@ def _fit_size(width: int, height: int, long_side: int) -> tuple[int, int]:
     return fitted_width, fitted_height
 
 
-def _pick_device(requested: str) -> str:
+def pick_device(requested: str) -> str:
     import torch
 
     if requested == "auto":
@@ -132,10 +138,13 @@ def load_video_vae_runtime(
     import torch
     from diffusers import AutoencoderKL
 
-    resolved_device = _pick_device(device)
+    resolved_device = pick_device(device)
     dtype = torch.float16 if resolved_device == "cuda" else torch.float32
     log.info("Loading %s on %s", model, resolved_device)
-    vae = AutoencoderKL.from_pretrained(model, torch_dtype=dtype).to(resolved_device)
+    model_options: dict[str, Any] = {}
+    if model == DEFAULT_VIDEO_SYNTHID_VAE:
+        model_options.update(revision=DEFAULT_VIDEO_SYNTHID_VAE_REVISION, use_safetensors=True)
+    vae = AutoencoderKL.from_pretrained(model, torch_dtype=dtype, **model_options).to(resolved_device)
     vae.train(False)
     vae.enable_slicing()
     scaling_factor = float(vae.config.scaling_factor)
@@ -232,7 +241,7 @@ def _iter_sampled_frames(
     duration: float | None,
     effective_fps: float,
     size: tuple[int, int],
-) -> Iterable[np.ndarray]:
+) -> Generator[NDArray[Any], None, None]:
     """Yield uniformly sampled frames without retaining the full video."""
     capture = open_video_capture(source)
     if not capture.isOpened():
@@ -254,6 +263,12 @@ def _iter_sampled_frames(
             frame_index += 1
     finally:
         capture.release()
+
+
+# Shared sampling policy for delivered-file measurements and bounded writers.
+iter_sampled_frames = _iter_sampled_frames
+fit_video_size = _fit_size
+probe_video_geometry = _probe_video
 
 
 def _frame_batches(frames: Sequence[np.ndarray], batch_size: int) -> Iterable[Sequence[np.ndarray]]:
@@ -290,6 +305,8 @@ def _encode_frame_latents(
             tensor = torch.from_numpy(np.ascontiguousarray(rgb)).permute(0, 3, 1, 2)
             tensor = tensor.to(device=device, dtype=vae.dtype) / 127.5 - 1.0
             latents = vae.encode(tensor).latent_dist.mode() * scaling_factor
+            if not torch.isfinite(latents).all():
+                raise RuntimeError("Video VAE encoder returned nonfinite latents")
             latent_batches.append(latents)
     return latent_batches
 
@@ -310,6 +327,8 @@ def _decode_frame_latents(
         for latents in latent_batches:
             perturbed = latents + noise_std * shared_noise.expand(latents.shape[0], -1, -1, -1)
             decoded = vae.decode(perturbed / scaling_factor).sample
+            if not torch.isfinite(decoded).all():
+                raise RuntimeError("Video VAE decoder returned nonfinite pixels")
             decoded = ((decoded / 2.0 + 0.5).clamp(0.0, 1.0) * 255.0).round().to(torch.uint8)
             decoded = decoded.permute(0, 2, 3, 1).cpu().numpy()
             output.extend(np.ascontiguousarray(frame[:, :, ::-1]) for frame in decoded)
@@ -317,38 +336,44 @@ def _decode_frame_latents(
 
 
 def encode_video_frames(
-    frames: Sequence[np.ndarray],
+    frames: Iterable[np.ndarray],
     source: Path,
     output: Path,
     *,
     fps: float,
 ) -> None:
     """Encode regenerated frames, copy audio, and omit source metadata."""
-    if not frames:
-        raise ValueError("At least one frame is required for video encoding")
-    height, width = frames[0].shape[:2]
-    with staged_video_output(output) as (encoded_video, temporary_output):
-        process = start_raw_video_encoder(
-            raw_video_command(
-                encoded_video,
-                width=width,
-                height=height,
-                fps=fps,
-                crf=18,
-                profile=probe_video_encode_profile(source),
+    iterator = iter(frames)
+    with ExitStack() as lifetime:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            lifetime.callback(close)
+        first = next(iterator, None)
+        if first is None:
+            raise ValueError("At least one frame is required for video encoding")
+        height, width = first.shape[:2]
+        with staged_video_output(output) as (encoded_video, temporary_output):
+            process = start_raw_video_encoder(
+                raw_video_command(
+                    encoded_video,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    crf=18,
+                    profile=probe_video_encode_profile(source),
+                )
             )
-        )
-        frame_pipe = process.stdin
-        try:
-            for frame in frames:
-                if frame.shape[:2] != (height, width):
-                    raise ValueError("Video frames must have matching dimensions")
-                frame_pipe.write(frame.tobytes())
-            finish_raw_video_encoder(process, encoded_video, operation="SynthID removal encode")
-            mux_encoded_video(encoded_video, source, temporary_output, strip_metadata=True)
-        except Exception:
-            abort_raw_video_encoder(process)
-            raise
+            frame_pipe = process.stdin
+            try:
+                for frame in chain((first,), iterator):
+                    if frame.shape[:2] != (height, width):
+                        raise ValueError("Video frames must have matching dimensions")
+                    frame_pipe.write(frame.tobytes())
+                finish_raw_video_encoder(process, encoded_video, operation="SynthID removal encode")
+                mux_encoded_video(encoded_video, source, temporary_output, strip_metadata=True)
+            except Exception:
+                abort_raw_video_encoder(process)
+                raise
 
 
 def regenerate_video_candidate(
@@ -357,23 +382,24 @@ def regenerate_video_candidate(
     *,
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-    fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
+    fps: float | None = DEFAULT_VIDEO_SYNTHID_FPS,
     batch_size: int = 4,
     seed: int = 0,
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     device: str = "auto",
     duration: float | None = None,
     runtime: VideoVaeRuntime | None = None,
+    temporal_stabilize: bool = False,
 ) -> RegenerationMetrics:
     """Regenerate video pixels and return fidelity metrics.
 
     The default profile is certified against the provider oracle. This function
     does not perform a per-file SynthID decode because Google exposes no local
-    decoder.
+    decoder. When ``fps=None``, the source video's native frame rate is preserved.
     """
     if not 0.0 <= noise_std <= 1.0:
         raise ValueError("noise_std must be between 0 and 1")
-    if fps < 1.0:
+    if fps is not None and fps < 1.0:
         raise ValueError("fps must be at least 1")
     if batch_size < 1:
         raise ValueError("batch_size must be at least 1")
@@ -383,7 +409,7 @@ def regenerate_video_candidate(
         raise ValueError("device must be auto, cuda, mps, or cpu")
     width, height, source_fps = _probe_video(source)
     size = _fit_size(width, height, long_side)
-    effective_fps = min(fps, source_fps)
+    effective_fps = source_fps if fps is None else min(fps, source_fps)
 
     if runtime is None:
         runtime = load_video_vae_runtime(model=model, device=device)
@@ -421,57 +447,65 @@ def regenerate_video_candidate(
                 effective_fps=effective_fps,
                 size=size,
             )
-            for frames in _stream_batches(sampled_frames, batch_size):
-                latent_batches = _encode_frame_latents(
-                    frames,
-                    vae=vae,
-                    device=resolved_device,
-                    batch_size=batch_size,
-                    scaling_factor=runtime.scaling_factor,
-                )
-                latents = latent_batches[0]
-                if shared_noise is None:
-                    # Removal strength is the ratio of the perturbation to this spread,
-                    # not noise_std alone: it is the only local quantity that makes two
-                    # models' doses comparable.
-                    log.info(
-                        "First latent batch spread %.4f against noise_std %.4f",
-                        float(latents.float().std()),
-                        noise_std,
-                    )
-                    shared_noise = _shared_latent_noise(
-                        latents.shape[1:],
-                        seed=seed,
+
+            def _regenerated_pairs() -> Generator[tuple[NDArray[Any], NDArray[Any]], None, None]:
+                nonlocal shared_noise
+                for frames in _stream_batches(sampled_frames, batch_size):
+                    latent_batches = _encode_frame_latents(
+                        frames,
+                        vae=vae,
                         device=resolved_device,
-                        dtype=latents.dtype,
+                        batch_size=batch_size,
+                        scaling_factor=runtime.scaling_factor,
                     )
-                regenerated = _decode_frame_latents(
-                    latent_batches,
-                    vae=vae,
-                    noise_std=noise_std,
-                    shared_noise=shared_noise,
-                    scaling_factor=runtime.scaling_factor,
-                )
-                for reference, candidate in zip(frames, regenerated, strict=True):
-                    frame_pipe.write(candidate.tobytes())
-                    reference_f32 = reference.astype(np.float32)
-                    candidate_f32 = candidate.astype(np.float32)
-                    difference = reference_f32 - candidate_f32
-                    squared_error += float(np.sum(difference * difference, dtype=np.float64))
-                    pixel_count += reference.size
-                    current_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
-                    if (
-                        previous_gray is not None
-                        and previous_reference_f32 is not None
-                        and previous_candidate_f32 is not None
-                    ):
-                        frame_maps = _backward_map(current_gray, previous_gray)
-                        temporal_baseline += _motion_residual(reference_f32, previous_reference_f32, frame_maps)
-                        temporal_candidate += _motion_residual(candidate_f32, previous_candidate_f32, frame_maps)
-                    previous_gray = current_gray
-                    previous_reference_f32 = reference_f32
-                    previous_candidate_f32 = candidate_f32
-                    frame_count += 1
+                    latents = latent_batches[0]
+                    if shared_noise is None:
+                        # Removal strength is the ratio of the perturbation to this spread,
+                        # not noise_std alone: it is the only local quantity that makes two
+                        # models' doses comparable.
+                        log.info(
+                            "First latent batch spread %.4f against noise_std %.4f",
+                            float(latents.float().std()),
+                            noise_std,
+                        )
+                        shared_noise = _shared_latent_noise(
+                            latents.shape[1:],
+                            seed=seed,
+                            device=resolved_device,
+                            dtype=latents.dtype,
+                        )
+                    regenerated = _decode_frame_latents(
+                        latent_batches,
+                        vae=vae,
+                        noise_std=noise_std,
+                        shared_noise=shared_noise,
+                        scaling_factor=runtime.scaling_factor,
+                    )
+                    yield from zip(frames, regenerated, strict=True)
+
+            pair_stream: Iterable[tuple[NDArray[Any], NDArray[Any]]] = (
+                iter_stabilized_regenerated_frames(_regenerated_pairs()) if temporal_stabilize else _regenerated_pairs()
+            )
+            for reference, candidate in pair_stream:
+                frame_pipe.write(candidate.tobytes())
+                reference_f32 = reference.astype(np.float32)
+                candidate_f32 = candidate.astype(np.float32)
+                difference = reference_f32 - candidate_f32
+                squared_error += float(np.sum(difference * difference, dtype=np.float64))
+                pixel_count += reference.size
+                current_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+                if (
+                    previous_gray is not None
+                    and previous_reference_f32 is not None
+                    and previous_candidate_f32 is not None
+                ):
+                    frame_maps = _backward_map(current_gray, previous_gray)
+                    temporal_baseline += _motion_residual(reference_f32, previous_reference_f32, frame_maps)
+                    temporal_candidate += _motion_residual(candidate_f32, previous_candidate_f32, frame_maps)
+                previous_gray = current_gray
+                previous_reference_f32 = reference_f32
+                previous_candidate_f32 = candidate_f32
+                frame_count += 1
             if frame_count < 2:
                 raise ValueError("The selected clip produced fewer than two frames")
             finish_raw_video_encoder(

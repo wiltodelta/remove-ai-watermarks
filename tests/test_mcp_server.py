@@ -32,6 +32,121 @@ class _Recorder:
         return subprocess.CompletedProcess(args, returncode, stdout, stderr)
 
 
+def test_audio_tools_map_tracks_and_explicit_verification_options():
+    runner = _Recorder(stdout='{"verified_removed": null}')
+    result = mcp_server.call_tool(
+        "audio_invisible", {"path": "speech.wav", "stream": 1, "force": True, "verify": False}, runner
+    )
+    assert runner.calls == [
+        [
+            "audio",
+            "invisible",
+            "--json",
+            "--stream",
+            "1",
+            "-o",
+            "speech_processed.wav",
+            "--force",
+            "--no-verify",
+            "--",
+            "speech.wav",
+        ]
+    ]
+    assert result["structuredContent"]["report"]["verified_removed"] is None
+    runner = _Recorder(stdout="{}")
+    mcp_server.call_tool("audio_identify", {"path": "speech.wav", "check_invisible": False}, runner)
+    assert runner.calls == [["audio", "identify", "--json", "--stream", "0", "--no-invisible", "--", "speech.wav"]]
+
+
+@pytest.mark.parametrize("stream", [-1, True, "0", 0.5])
+def test_audio_tools_reject_invalid_track_ordinals(stream):
+    runner = _Recorder()
+    result = mcp_server.call_tool("audio_identify", {"path": "a.wav", "stream": stream}, runner)
+    assert result["isError"] is True
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize("tool", ["audio_identify", "audio_invisible", "video_audio"])
+def test_audio_tools_preserve_explicit_silentcipher16_scope(tool):
+    runner = _Recorder(stdout="{}")
+    arguments = {"path": "clip.mkv" if tool == "video_audio" else "speech.wav", "scheme": "silentcipher16"}
+    if tool != "audio_identify":
+        arguments["output"] = "processed.mkv" if tool == "video_audio" else "processed.wav"
+    result = mcp_server.call_tool(tool, arguments, runner)
+    assert result.get("isError") is not True
+    assert len(runner.calls) == 1
+    command = runner.calls[0]
+    assert command[command.index("--scheme") + 1] == "silentcipher16"
+
+
+def test_audio_tool_refuses_source_output():
+    runner = _Recorder()
+    result = mcp_server.call_tool("audio_invisible", {"path": "a.wav", "output": "a.wav"}, runner)
+    assert result["isError"] is True
+    assert runner.calls == []
+
+
+def test_audio_tool_skip_does_not_report_an_unwritten_output():
+    result = mcp_server.call_tool(
+        "audio_invisible", {"path": "a.wav"}, _Recorder(returncode=2, stdout='{"skipped": true, "output": null}')
+    )
+    assert result["isError"] is False
+    assert result["structuredContent"]["output"] is None
+    assert result["structuredContent"]["report"]["skipped"] is True
+
+
+def test_video_audio_tool_maps_to_the_mux_command():
+    runner = _Recorder(stdout="{}")
+    mcp_server.call_tool("video_audio", {"path": "input.mp4", "stream": 1}, runner)
+    assert runner.calls == [
+        ["video", "audio", "--json", "--stream", "1", "-o", "input_audio_processed.mkv", "--", "input.mp4"]
+    ]
+
+
+def test_video_audio_MP4_output_reaches_legacy_and_catalog_routes():
+    from remove_ai_watermarks.integration import operation_catalog, plan_operation
+
+    runner = _Recorder(stdout="{}")
+    mcp_server.call_tool("video_audio", {"path": "input.mov", "output": "processed.mp4", "stream": 1}, runner)
+    assert runner.calls == [["video", "audio", "--json", "--stream", "1", "-o", "processed.mp4", "--", "input.mov"]]
+    operation = next(item for item in operation_catalog() if item["id"] == "cli_video_audio")
+    args, output = plan_operation(operation, {"source": "input.mov", "output": "processed.mp4", "stream": 1})
+    assert output == "processed.mp4"
+    output_flag = "-o" if "-o" in args else "--output"
+    assert args[args.index(output_flag) + 1] == "processed.mp4"
+    parameter = next(item for item in operation["parameters"] if item["name"] == "output")
+    assert "MP4 with AAC" in parameter["schema"]["description"]
+
+
+def test_neural_audio_options_are_forwarded_to_the_cli():
+    runner = _Recorder(stdout="{}")
+    result = mcp_server.call_tool("audio_invisible", {"path": "input.wav", "method": "encodec", "bandwidth": 6}, runner)
+    assert result["isError"] is False
+    assert runner.calls[0][-6:] == ["--method", "encodec", "--bandwidth", "6", "--", "input.wav"]
+
+
+def test_bigvgan_audio_options_reach_legacy_and_catalog_mcp():
+    runner = _Recorder(stdout="{}")
+    result = mcp_server.call_tool(
+        "audio_invisible", {"path": "input.wav", "method": "bigvgan", "vocoder_device": "mps"}, runner
+    )
+    assert result["isError"] is False
+    assert runner.calls[0][-6:] == ["--method", "bigvgan", "--vocoder-device", "mps", "--", "input.wav"]
+    from remove_ai_watermarks.integration import operation_catalog, plan_operation
+
+    operation = next(item for item in operation_catalog() if item["id"] == "cli_video_audio")
+    args, _ = plan_operation(operation, {"source": "input.mp4", "method": "bigvgan", "vocoder_device": "mps"})
+    assert args[args.index("--method") + 1] == "bigvgan"
+    assert args[args.index("--vocoder-device") + 1] == "mps"
+
+
+def test_invalid_neural_audio_bandwidth_is_rejected_before_launch():
+    runner = _Recorder()
+    result = mcp_server.call_tool("audio_invisible", {"path": "input.wav", "bandwidth": 7}, runner)
+    assert result["isError"] is True
+    assert runner.calls == []
+
+
 def _request(method: str, params: dict | None = None, request_id: int = 1) -> dict:
     message: dict = {"jsonrpc": "2.0", "id": request_id, "method": method}
     if params is not None:
@@ -81,8 +196,9 @@ def test_tools_list_exposes_convenience_and_all_catalog_tools() -> None:
 
     assert response is not None
     tools = response["result"]["tools"]
-    assert [tool["name"] for tool in tools[:3]] == ["identify", "remove", "batch"]
-    assert {tool["name"] for tool in tools[3:]} == set(mcp_server._operations())
+    legacy = [tool["name"] for tool in mcp_server.TOOLS]
+    assert [tool["name"] for tool in tools[: len(legacy)]] == legacy
+    assert {tool["name"] for tool in tools[len(legacy) :]} == set(mcp_server._operations())
     assert tools[0]["annotations"]["readOnlyHint"] is True
     for tool in tools:
         assert tool["inputSchema"]["type"] == "object"
@@ -253,8 +369,9 @@ def test_the_official_sdk_client_connects_and_calls_a_tool() -> None:
 
     names, structured = anyio.run(session)
 
-    assert names[:3] == ["identify", "remove", "batch"]
-    assert set(names[3:]) == set(mcp_server._operations())
+    legacy = [tool["name"] for tool in mcp_server.TOOLS]
+    assert names[: len(legacy)] == legacy
+    assert set(names[len(legacy) :]) == set(mcp_server._operations())
     assert structured["report"]["platform"] == "Kuaishou Kling AI"
 
 
@@ -275,3 +392,160 @@ def test_registry_manifest_matches_the_package_and_the_readme_marker() -> None:
     assert re.search(rf"mcp-name: {re.escape(manifest['name'])}(?=\s|-->|<)", readme)
     args = [argument["value"] for argument in package["packageArguments"]]
     assert CliRunner().invoke(main, [*args, "--help"]).exit_code == 0
+
+
+def test_video_message_tools_preserve_known_reference_and_nonzero_reports():
+    runner = _Recorder(returncode=2, stdout='{"skipped":true,"output":null}')
+    result = mcp_server.call_tool("video_message_remove", {"path": "clip.mp4", "reference": "a5" * 32}, runner)
+    assert runner.calls[0][:3] == ["video", "message", "remove"]
+    assert runner.calls[0][-2:] == ["--", "clip.mp4"]
+    assert runner.calls[0][runner.calls[0].index("--reference") + 1] == "a5" * 32
+    assert result["structuredContent"]["output"] is None
+    assert result["structuredContent"]["report"]["skipped"] is True
+    assert result["isError"] is False
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"noise_std": float("nan"), "method": "vae"},
+        {"noise_std": float("inf"), "method": "vae"},
+        {"noise_std": True, "method": "vae"},
+        {"noise_std": -0.1, "method": "vae"},
+        {"noise_std": 1.1, "method": "vae"},
+        {"noise_std": 10**400, "method": "vae"},
+        {"noise_std": 0.1},
+        {"verify": False},
+        {"long_side": 7},
+        {"output": "clip.mp4"},
+    ],
+)
+def test_video_message_invalid_options_never_launch_a_child(options):
+    runner = _Recorder()
+    result = mcp_server.call_tool(
+        "video_message_remove", {"path": "clip.mp4", "reference": "a5" * 32, **options}, runner
+    )
+    assert result["isError"] is True
+    assert not runner.calls
+
+
+def test_legacy_audio_and_video_message_tools_stay_in_lockstep_with_cli_catalog_and_stdlib_only():
+    from remove_ai_watermarks import audio, integration, video_messages
+
+    assert tuple(audio.AUDIO_SCHEMES) == (
+        "audioseal",
+        "wavmark",
+        "perth",
+        "silentcipher",
+        "silentcipher16",
+        "all",
+        "auto",
+    )
+    assert tuple(audio.AUDIO_METHODS) == (
+        "auto",
+        "spectral",
+        "encodec",
+        "combined",
+        "bigvgan",
+        "mimi",
+        "focalcodec",
+        "dac",
+    )
+    assert tuple(video_messages.VIDEO_MESSAGE_SCHEMES) == ("videoseal", "pixelseal")
+    assert tuple(video_messages.VIDEO_MESSAGE_METHODS) == ("auto", "codec", "vae")
+
+    catalog = {op["id"]: op for op in integration.operation_catalog()}
+    pairs = [
+        ("audio_identify", "cli_audio_identify", [("scheme", "scheme")]),
+        (
+            "audio_invisible",
+            "cli_audio_invisible",
+            [
+                ("scheme", "scheme"),
+                ("method", "method"),
+                ("vocoder_device", "vocoder_device"),
+                ("bandwidth", "bandwidth"),
+            ],
+        ),
+        (
+            "video_audio",
+            "cli_video_audio",
+            [
+                ("scheme", "scheme"),
+                ("method", "method"),
+                ("vocoder_device", "vocoder_device"),
+                ("bandwidth", "bandwidth"),
+            ],
+        ),
+        ("video_message_identify", "cli_video_message_identify", [("scheme", "scheme")]),
+        (
+            "video_message_remove",
+            "cli_video_message_remove",
+            [("scheme", "scheme"), ("method", "method"), ("device", "device"), ("long_side", "long_side")],
+        ),
+    ]
+    legacy_tools = {tool["name"]: tool["inputSchema"]["properties"] for tool in mcp_server.TOOLS}
+    for legacy_name, catalog_id, param_pairs in pairs:
+        legacy_props = legacy_tools[legacy_name]
+        catalog_params = {param["name"]: param["schema"] for param in catalog[catalog_id]["parameters"]}
+        for legacy_key, catalog_key in param_pairs:
+            l_spec = legacy_props[legacy_key]
+            c_spec = catalog_params[catalog_key]
+            if "enum" in l_spec or "enum" in c_spec:
+                assert [str(v) for v in l_spec["enum"]] == [str(v) for v in c_spec["enum"]], (legacy_name, legacy_key)
+            if "default" in l_spec and "default" in c_spec:
+                assert str(l_spec["default"]) == str(c_spec["default"]), (legacy_name, legacy_key)
+
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            "for mod in ('numpy', 'scipy', 'torch', 'click', 'cv2', 'PIL', 'av', 'huggingface_hub'):\n"
+            "    sys.modules[mod] = None\n"
+            "import remove_ai_watermarks.mcp_server as m\n"
+            "assert len(m.TOOLS) >= 8\n",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert probe.returncode == 0, probe.stderr
+
+
+def test_mcp_convenience_tools_route_audio_and_video_audio_all_streams() -> None:
+    runner = _Recorder(stdout='{"watermark_status": "not_detected"}')
+    res_id = mcp_server.call_tool("identify", {"path": "song.mp3"}, runner)
+    assert res_id["isError"] is False
+    assert runner.calls[-1] == ["audio", "identify", "--json", "--", "song.mp3"]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_rem_meta = mcp_server.call_tool("remove", {"path": "song.mp3", "mode": "metadata"}, runner)
+    assert res_rem_meta["isError"] is False
+    assert runner.calls[-1] == ["audio", "metadata", "--remove", "-o", "song_clean.mp3", "--", "song.mp3"]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_rem_all = mcp_server.call_tool("remove", {"path": "song.m4a", "mode": "all"}, runner)
+    assert res_rem_all["isError"] is False
+    assert runner.calls[-1] == ["audio", "all", "--invisible", "-o", "song_clean.m4a", "--", "song.m4a"]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_rem_vis = mcp_server.call_tool("remove", {"path": "song.mp3", "mode": "visible"}, runner)
+    assert res_rem_vis["isError"] is True
+
+    res_batch = mcp_server.call_tool(
+        "batch", {"directory": "tracks", "media": "audio", "mode": "all", "output_dir": "tracks_out"}, runner
+    )
+    assert res_batch["isError"] is False
+    assert runner.calls[-1] == ["audio", "batch", "--mode", "all", "--invisible", "-o", "tracks_out", "--", "tracks"]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_va_all = mcp_server.call_tool(
+        "video_audio",
+        {"path": "clip.mov", "all_streams": True, "scheme": "auto"},
+        runner,
+    )
+    assert res_va_all["isError"] is False
+    assert "--all-streams" in runner.calls[-1]
+    assert runner.calls[-1][runner.calls[-1].index("--scheme") + 1] == "auto"
+    _assert_the_cli_accepts(runner.calls[-1])

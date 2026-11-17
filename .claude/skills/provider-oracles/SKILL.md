@@ -52,7 +52,18 @@ request.
 Before starting, identify the finite set of configured slots and prepare one
 immutable batch per slot. After a quota refusal or service failure, record the
 exact response, leave that slot's remaining rows unsubmitted, and continue
-through the remaining slots in the order above.
+through the remaining slots in the order above. Exception: when `gemini-web`
+returns an explicit modality-level quota refusal (such as `the video modality
+quota has been exceeded`) or an active modality quota-hold record (`status:
+"active"`) exists for that video or audio modality, halt same-modality
+`gemini-web` account rotation rather than switching `/u/N/` Google accounts to
+evade the hold; keep prepared Gemini batches frozen and reuse exact prior
+upload-hash verdicts.
+
+For clean-control or processed video and audio uploads, pass
+`--require-clean-media` to `prepare` so residual AI metadata, invisible hints,
+and visible provider marks are rejected up front and per-stream decoded SHA-256
+digests (`stream_hashes`) are bound into `manifest.json`.
 
 Submit each frozen artifact at most once per slot in that pass. Preserve
 inconclusive results and disagreements between accounts. Stop when the plan is
@@ -109,8 +120,9 @@ submits the prepared rows once and does not retry.
    way as for Gemini, and do not submit a file that still shows a provider logo.
 3. Run `run-web` with the upload acknowledgement. The runner attaches one
    prepared upload through the page's file input.
-4. Read the settled label. `Watermark detected` is `detected`. `Watermark not
-   detected` and `SynthID was not detected` are `not_detected`. Quota and
+4. Read the settled label. `Watermark detected` and `SynthID was detected`
+   are `detected`. `Watermark not detected` and `SynthID was not detected`
+   are `not_detected`. Conflicting labels stay `indeterminate`. Quota and
    unclear wording stay `refused` or `indeterminate`. Do not click a sign-in
    button.
 5. If the anonymous page says `Please sign in before detection.` and returns no

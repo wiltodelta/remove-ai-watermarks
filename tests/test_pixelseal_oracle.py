@@ -6,6 +6,7 @@ import importlib
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -62,3 +63,64 @@ def test_cache_dir_env_override_is_honored(monkeypatch: pytest.MonkeyPatch, tmp_
     finally:
         importlib.reload(pixelseal_oracle)
     assert original_cache == pixelseal_oracle.CACHE_DIR
+
+
+def test_video_embed_preserves_frame_order_and_uses_video_mode() -> None:
+    torch = pytest.importorskip("torch")
+    pixels = np.arange(3 * 4 * 5 * 3, dtype=np.uint8).reshape(3, 4, 5, 3)
+    message = pixelseal_oracle.message_bits()
+
+    class Model:
+        def embed(self, tensor, *, msgs, is_video):
+            assert is_video is True
+            assert tensor.shape == (3, 3, 4, 5)
+            assert tensor.dtype == torch.float32
+            assert msgs.tolist() == [list(message)]
+            return {"imgs_w": tensor + 0.01}
+
+    marked = pixelseal_oracle.embed_video(Model(), pixels, message)
+    np.testing.assert_allclose(marked, pixels.astype(np.float32) / 255.0 + 0.01, atol=1e-7)
+
+
+def test_video_read_averages_raw_logits_before_thresholding() -> None:
+    torch = pytest.importorskip("torch")
+    message = (0, 1, *pixelseal_oracle.message_bits()[2:])
+    logits = torch.tensor(message, dtype=torch.float32).mul(2).sub(1).repeat(3, 1)
+    logits[:, 0] = torch.tensor([-4.0, 1.0, 1.0])
+    logits[:, 1] = torch.tensor([4.0, -1.0, -1.0])
+
+    class Model:
+        def detect(self, tensor, *, is_video):
+            assert is_video is True
+            assert tensor.shape == (3, 3, 4, 5)
+            assert float(tensor.max()) == pytest.approx(128 / 255)
+            return {"preds": torch.cat((torch.zeros(3, 1), logits), dim=1)}
+
+    reading = pixelseal_oracle.read_video(Model(), np.full((3, 4, 5, 3), 128, dtype=np.uint8), message=message)
+    assert reading.decoded_bits == message
+    assert reading.bit_accuracy == 1.0
+    assert reading.detected is True
+    assert reading.per_frame_bit_accuracy == (1.0, 254 / 256, 254 / 256)
+    from videoseal_oracle import read_aggregation_matrix
+
+    matrix = read_aggregation_matrix(Model(), np.full((3, 4, 5, 3), 128 / 255, dtype=np.float32), message=message)
+    assert matrix["avg"] == 1.0
+
+
+@pytest.mark.parametrize(
+    "frames",
+    [
+        np.zeros((4, 5, 3)),
+        np.zeros((0, 4, 5, 3)),
+        np.zeros((2, 0, 5, 3)),
+        np.zeros((2, 4, 5, 1)),
+        np.full((2, 4, 5, 3), np.nan),
+        np.full((2, 4, 5, 3), 2.0),
+    ],
+)
+def test_video_oracle_rejects_invalid_frames(frames) -> None:
+    pytest.importorskip("torch")
+    with pytest.raises(ValueError, match="PixelSeal video"):
+        pixelseal_oracle.embed_video(object(), frames, pixelseal_oracle.message_bits())
+    with pytest.raises(ValueError, match="PixelSeal video"):
+        pixelseal_oracle.read_video(object(), frames)

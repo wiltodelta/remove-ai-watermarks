@@ -138,6 +138,32 @@ def test_load_runtime_rejects_invalid_device_and_missing_extra(monkeypatch: pyte
         video_invisible.load_video_vae_runtime()
 
 
+@pytest.mark.parametrize("model", ["stabilityai/sd-vae-ft-mse", "example/custom-vae"])
+def test_load_runtime_pins_only_the_calibrated_default_weights(monkeypatch: pytest.MonkeyPatch, model: str) -> None:
+    calls = []
+    vae = SimpleNamespace(
+        config=SimpleNamespace(scaling_factor=0.18215),
+        to=lambda _device: vae,
+        train=lambda _training: None,
+        enable_slicing=lambda: None,
+    )
+
+    def load(name: str, **kwargs: Any) -> SimpleNamespace:
+        calls.append((name, kwargs))
+        return vae
+
+    monkeypatch.setattr(video_invisible, "is_available", lambda: True)
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(float32="fp32", float16="fp16"))
+    monkeypatch.setitem(sys.modules, "diffusers", SimpleNamespace(AutoencoderKL=SimpleNamespace(from_pretrained=load)))
+
+    runtime = video_invisible.load_video_vae_runtime(model=model, device="cpu")
+    expected: dict[str, Any] = {"torch_dtype": "fp32"}
+    if model == "stabilityai/sd-vae-ft-mse":
+        expected.update(revision="31f26fdeee1355a5c34592e401dd41e45d25a493", use_safetensors=True)
+    assert calls == [(model, expected)]
+    assert runtime.vae is vae
+
+
 def test_encoder_and_mux_commands_separate_streaming_frames_from_source_audio(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -391,3 +417,160 @@ def test_stream_batches_consumes_only_one_batch_ahead() -> None:
 
     assert next(iter(batches)) == [0, 1]
     assert consumed == [0, 1]
+
+
+@pytest.mark.parametrize("stage", ["encode", "decode"])
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_vae_results_cannot_become_black_video_frames(stage, invalid):
+    torch = pytest.importorskip("torch")
+    latents = torch.zeros(1, 4, 1, 1)
+    if stage == "encode":
+        vae = SimpleNamespace(
+            dtype=torch.float32,
+            encode=lambda tensor: SimpleNamespace(
+                latent_dist=SimpleNamespace(mode=lambda: torch.full_like(latents, invalid))
+            ),
+        )
+        with pytest.raises(RuntimeError, match="nonfinite latents"):
+            video_invisible._encode_frame_latents(
+                [np.zeros((8, 8, 3), dtype=np.uint8)],
+                vae=vae,
+                device="cpu",
+                batch_size=1,
+                scaling_factor=0.18215,
+            )
+    else:
+        vae = SimpleNamespace(decode=lambda tensor: SimpleNamespace(sample=torch.full((1, 3, 8, 8), invalid)))
+        with pytest.raises(RuntimeError, match="nonfinite pixels"):
+            video_invisible._decode_frame_latents(
+                [latents], vae=vae, noise_std=0.15, shared_noise=torch.zeros_like(latents), scaling_factor=0.18215
+            )
+
+
+def test_streaming_codec_closes_its_producer_when_encoder_start_fails(tmp_path, monkeypatch):
+    closed = []
+
+    def frames():
+        try:
+            yield np.zeros((8, 8, 3), dtype=np.uint8)
+        finally:
+            closed.append(True)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("synthetic encoder start failure")
+
+    monkeypatch.setattr(video_invisible, "probe_video_encode_profile", lambda source: object())
+    monkeypatch.setattr(video_invisible, "raw_video_command", lambda *a, **kw: [])
+    monkeypatch.setattr(video_invisible, "start_raw_video_encoder", fail)
+    with pytest.raises(RuntimeError, match="synthetic encoder start failure") as caught:
+        video_invisible.encode_video_frames(frames(), tmp_path / "source.mp4", tmp_path / "out.mp4", fps=12)
+    assert caught.value is not None
+    assert closed == [True]
+    assert not (tmp_path / "out.mp4").exists()
+
+
+def test_regenerate_video_candidate_temporal_stabilize_reduces_temporal_residual(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import cv2
+
+    torch = pytest.importorskip("torch")
+    rng = np.random.default_rng(77)
+    base = cv2.GaussianBlur(rng.integers(40, 210, (64, 64, 3), dtype=np.uint8), (7, 7), 0)
+    src_frames = [
+        cv2.warpAffine(
+            base,
+            np.float32(((1, 0, idx * 1.0), (0, 1, idx * 0.5))),
+            (64, 64),
+            borderMode=cv2.BORDER_REFLECT,
+        )
+        for idx in range(5)
+    ]
+    jitter = [rng.normal(0.0, 12.0, (64, 64, 3)).astype(np.float32) for _ in range(5)]
+
+    monkeypatch.setattr(video_invisible, "_probe_video", lambda _source: (64, 64, 12.0))
+    monkeypatch.setattr(video_invisible, "_iter_sampled_frames", lambda *_a, **_kw: iter(src_frames))
+    monkeypatch.setattr(
+        video_invisible,
+        "_encode_frame_latents",
+        lambda frames, **_kw: [torch.ones((len(frames), 4, 8, 8), dtype=torch.float32)],
+    )
+
+    call_idx = {"pos": 0}
+
+    def fake_decode(latent_batches, **_kw):
+        n = int(latent_batches[0].shape[0])
+        out = []
+        for _ in range(n):
+            idx = call_idx["pos"] % len(src_frames)
+            call_idx["pos"] += 1
+            noisy = np.clip(src_frames[idx].astype(np.float32) + jitter[idx], 0, 255).astype(np.uint8)
+            out.append(noisy)
+        return out
+
+    monkeypatch.setattr(video_invisible, "_decode_frame_latents", fake_decode)
+    monkeypatch.setattr(video_invisible, "probe_video_encode_profile", lambda _s: object())
+    monkeypatch.setattr(video_invisible, "raw_video_command", lambda *_a, **_kw: ["fake"])
+
+    class _Sink:
+        def __init__(self) -> None:
+            self.payload = bytearray()
+
+        def write(self, data: bytes) -> int:
+            self.payload.extend(data)
+            return len(data)
+
+    written: list[bytes] = []
+
+    def fake_start(_cmd):
+        sink = _Sink()
+        return SimpleNamespace(stdin=sink, _sink=sink)
+
+    def fake_finish(proc, output, **_kw):
+        written.append(bytes(proc._sink.payload))
+        output.write_bytes(b"encoded")
+
+    monkeypatch.setattr(video_invisible, "start_raw_video_encoder", fake_start)
+    monkeypatch.setattr(video_invisible, "finish_raw_video_encoder", fake_finish)
+    monkeypatch.setattr(
+        video_invisible,
+        "mux_encoded_video",
+        lambda enc, _src, dst, **_kw: dst.write_bytes(enc.read_bytes()),
+    )
+
+    runtime = video_invisible.VideoVaeRuntime(
+        model="fake/vae",
+        requested_device="cpu",
+        resolved_device="cpu",
+        scaling_factor=0.18215,
+        vae=SimpleNamespace(dtype=torch.float32),
+    )
+    src = tmp_path / "src.mp4"
+    src.write_bytes(b"src")
+
+    call_idx["pos"] = 0
+    m_raw = video_invisible.regenerate_video_candidate(
+        src,
+        tmp_path / "raw.mp4",
+        model="fake/vae",
+        device="cpu",
+        batch_size=2,
+        runtime=runtime,
+        temporal_stabilize=False,
+    )
+    call_idx["pos"] = 0
+    m_stab = video_invisible.regenerate_video_candidate(
+        src,
+        tmp_path / "stab.mp4",
+        model="fake/vae",
+        device="cpu",
+        batch_size=2,
+        runtime=runtime,
+        temporal_stabilize=True,
+    )
+
+    assert m_stab.temporal_residual_ratio < m_raw.temporal_residual_ratio * 0.8
+    assert m_stab.psnr_db > m_raw.psnr_db
+    assert len(written) == 2
+    assert written[0] != written[1]

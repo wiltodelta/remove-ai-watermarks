@@ -320,7 +320,7 @@ def test_cli_text_commands_and_missing_runtime_hint(tmp_path: Path, monkeypatch:
     monkeypatch.setitem(sys.modules, "transformers", None)
     inv_res = runner.invoke(main, ["text", "invisible", str(meta_out), "-o", str(tmp_path / "inv.md")])
     assert inv_res.exit_code != 0
-    assert "remove-ai-watermarks[diffusion]" in inv_res.output
+    assert "remove-ai-watermarks[text]" in inv_res.output
 
     # Top-level raiw exports resolve lazily
     assert raiw.identify_text is identify_text

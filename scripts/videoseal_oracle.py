@@ -19,24 +19,35 @@ fixed message. The 0.9 threshold is this adapter's explicit rule, not an
 upstream constant; upstream reports accuracy curves rather than a verdict.
 
 Nothing here contacts a provenance oracle or provider API, and none of this
-ships in the installed CLI or the public Python API.
+ships in the installed CLI or the public Python API. Model pins and raw-output
+validation are shared with the optional library decoder.
 """
 
 from __future__ import annotations
 
+# ruff: noqa: E402 - Bootstrap the source layout before sharing model assets.
 import hashlib
 import os
+import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+_REPO_SRC = Path(__file__).resolve().parents[1] / "src"
+if str(_REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(_REPO_SRC))
+
+from remove_ai_watermarks._internal.video_message_models import (
+    ASSETS,
+    validate_logits,
+)
+from remove_ai_watermarks._internal.video_message_models import SOURCE_COMMIT as SOURCE_COMMIT
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-JIT_URL = "https://dl.fbaipublicfiles.com/videoseal/y_256b_img.jit"
-JIT_SHA256 = "5c7a4581c36fc6090aafdcfb3999123bae5172a4847f22e2da4e7fd1a39d1e1b"
-SOURCE_COMMIT = "870ca7fb33578b90f14c602016b6c2788096226e"
+JIT_URL, JIT_SHA256 = ASSETS["videoseal"]
 N_BITS = 256
 MESSAGE_SEED = 7
 DETECTION_BIT_ACCURACY_THRESHOLD = 0.9
@@ -233,11 +244,11 @@ def _aggregate_bit_preds(bit_preds: object, aggregation: str) -> object:
 
 
 def _raw_preds(model: object, tensor: object) -> object:
-    """One detector pass; the TorchScript build returns the tensor directly."""
+    """One validated detector pass; invalid logits never become absence."""
     preds = model.detect(tensor, is_video=True)
     if isinstance(preds, dict):
         preds = preds["preds"]
-    return preds
+    return validate_logits(preds, len(tensor))
 
 
 def read(
@@ -272,12 +283,12 @@ def read(
     )
 
 
-def read_aggregation_matrix(model: object, frames: object) -> dict[str, float]:
+def read_aggregation_matrix(model: object, frames: object, *, message: Sequence[int] | None = None) -> dict[str, float]:
     """Bit accuracy under every supported frame aggregation, one detect pass."""
     import numpy as np
     import torch
 
-    expected = message_bits()
+    expected = message_bits() if message is None else tuple(message)
     array = torch.from_numpy(np.ascontiguousarray(frames, dtype=np.float32))
     tensor = array.permute(0, 3, 1, 2)
     with torch.no_grad():

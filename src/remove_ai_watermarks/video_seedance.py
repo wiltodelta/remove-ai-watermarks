@@ -41,14 +41,14 @@ from remove_ai_watermarks.video_invisible import (
     _decode_frame_latents,
     _encode_frame_latents,
     _fit_size,
-    _probe_video,
     _stream_batches,
     is_available,
     load_video_vae_runtime,
+    probe_video_geometry,
 )
 from remove_ai_watermarks.video_temporal import _backward_map, _motion_residual
 from remove_ai_watermarks.video_tools import require_video_tool
-from remove_ai_watermarks.video_visible import _timestamp_time_base, _TimestampedNutWriter
+from remove_ai_watermarks.video_visible import _HDR_TRANSFERS, _timestamp_time_base, _TimestampedNutWriter
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -288,7 +288,7 @@ def _measure(source: Path, output: Path, fps: float, count: int) -> Regeneration
     previous = None
     previous_output = None
     frames = 0
-    width, height, _ = _probe_video(source)
+    width, height, _ = probe_video_geometry(source)
     for original, delivered in zip(_frames(source), _frames(output), strict=True):
         if original.shape != delivered.shape:
             raise RuntimeError("Experimental Seedance output geometry changed")
@@ -320,6 +320,53 @@ def _temporal_ratio(residual: float, baseline: float) -> float:
     return residual / baseline if baseline > 1e-12 else (1.0 if residual <= 1e-12 else math.inf)
 
 
+def validate_experimental_mp4_source(
+    source: Path,
+    *,
+    label: str,
+    encode_profile: Any = None,
+    geometry: tuple[int, int, float] | None = None,
+    timestamps: tuple[float, ...] | None = None,
+) -> tuple[int, int, float, tuple[float, ...]]:
+    """Validate SDR 8-bit, even-dimension, timestamped video input."""
+    active_profile = encode_profile if encode_profile is not None else probe_video_encode_profile(source)
+    if (active_profile.component_depth or 0) > 8 or active_profile.color_transfer in _HDR_TRANSFERS:
+        raise ValueError(f"{label} requires SDR 8-bit video")
+    width, height, fps = geometry if geometry is not None else probe_video_geometry(source)
+    if width % 2 or height % 2:
+        raise ValueError(f"{label} requires even video dimensions")
+    active_timestamps = timestamps if timestamps is not None else probe_video_timestamps(source)
+    if not active_timestamps:
+        raise ValueError(f"{label} requires source frame timestamps")
+    return width, height, fps, active_timestamps
+
+
+def _finalize_experimental_output(
+    frames: Iterable[NDArray[np.uint8]],
+    source: Path,
+    master: Path,
+    staged: Path,
+    *,
+    quality: SeedanceQuality,
+    fps: float,
+    timestamps: tuple[float, ...],
+    label: str,
+) -> RegenerationMetrics:
+    """Encode lossless master, write delivery/master output, verify clock, and score."""
+    _encode_frames(frames, source, master, fps, timestamps, crf=0)
+    if quality == "delivery":
+        _encode_delivery(master, source, staged)
+    else:
+        master.replace(staged)
+    if probe_video_timestamps(staged) != timestamps:
+        raise RuntimeError(f"{label} output timestamps changed")
+    staged_dur = float(_clock(staged)["streams"][0]["duration"])
+    source_dur = float(_clock(source)["streams"][0]["duration"])
+    if abs(staged_dur - source_dur) > 0.000002:
+        raise RuntimeError(f"{label} output duration changed")
+    return _measure(source, staged, fps, len(timestamps))
+
+
 def regenerate_seedance_experimental(
     source: Path,
     output: Path,
@@ -335,15 +382,7 @@ def regenerate_seedance_experimental(
         raise ValueError("device must be auto, cuda, mps, or cpu")
     if runtime is not None and (runtime.model != "stabilityai/sd-vae-ft-mse" or runtime.requested_device != device):
         raise ValueError("The supplied video VAE runtime does not match the Seedance model and device")
-    profile = probe_video_encode_profile(source)
-    if (profile.component_depth or 0) > 8 or profile.color_transfer in {"smpte2084", "arib-std-b67"}:
-        raise ValueError("Experimental Seedance processing requires SDR 8-bit video")
-    width, height, fps = _probe_video(source)
-    if width % 2 or height % 2:
-        raise ValueError("Experimental Seedance processing requires even video dimensions")
-    timestamps = probe_video_timestamps(source)
-    if not timestamps:
-        raise ValueError("Experimental Seedance processing requires source frame timestamps")
+    width, height, fps, timestamps = validate_experimental_mp4_source(source, label="Experimental Seedance processing")
     if not is_available():
         raise RuntimeError("Experimental Seedance processing requires 'remove-ai-watermarks[video,diffusion]'")
     log.warning(
@@ -362,16 +401,13 @@ def regenerate_seedance_experimental(
         )
         del runtime
         frames = (_restore_texture(a, b) for a, b in zip(_frames(source), _frames(guide), strict=True))
-        _encode_frames(frames, source, master, fps, timestamps, crf=0)
-        if quality == "delivery":
-            _encode_delivery(master, source, staged)
-        else:
-            master.replace(staged)
-        if probe_video_timestamps(staged) != timestamps:
-            raise RuntimeError("Experimental Seedance output timestamps changed")
-        if (
-            abs(float(_clock(staged)["streams"][0]["duration"]) - float(_clock(source)["streams"][0]["duration"]))
-            > 0.000002
-        ):
-            raise RuntimeError("Experimental Seedance output duration changed")
-        return _measure(source, staged, fps, len(timestamps))
+        return _finalize_experimental_output(
+            frames,
+            source,
+            master,
+            staged,
+            quality=quality,
+            fps=fps,
+            timestamps=timestamps,
+            label="Experimental Seedance",
+        )

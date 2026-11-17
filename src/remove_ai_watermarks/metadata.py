@@ -494,15 +494,20 @@ def _decoder_visible_text(image_path: Path, head: bytes) -> bytes:
 
 
 def has_ai_metadata(image_path: Path) -> bool:
-    """Check if an image contains AI-generation metadata.
+    """Check supported image, video, or audio containers for AI metadata.
 
     Args:
-        image_path: Path to the image.
+        image_path: Path to the media file.
 
     Returns:
         True if AI metadata is detected.
     """
     from PIL import Image
+
+    from remove_ai_watermarks._internal.audio_creation import audio_creation_tool
+
+    if audio_creation_tool(image_path) is not None:
+        return True
 
     # PIL may not handle AVIF/HEIF/JPEG-XL without the optional plugins, and a
     # third-party plugin autoload can raise a non-OSError (e.g. ModuleNotFoundError),
@@ -1398,10 +1403,10 @@ def _scrub_ai_exif(exif_dict: dict[str, Any]) -> list[str]:
 
 
 def get_ai_metadata(image_path: Path) -> dict[str, str]:
-    """Extract AI-related metadata from an image.
+    """Extract supported AI declarations from an image, video, or audio file.
 
     Args:
-        image_path: Path to the image.
+        image_path: Path to the media file.
 
     Returns:
         Dictionary of AI metadata key-value pairs.
@@ -1411,6 +1416,10 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     from remove_ai_watermarks._internal.c2pa import extract_c2pa_info, soft_binding_vendors_in, synthid_verdict
 
     result: dict[str, str] = {}
+    from remove_ai_watermarks._internal.audio_creation import audio_creation_tool
+
+    if tool := audio_creation_tool(image_path):
+        result["audio_generator"] = tool
 
     # PIL may not open AVIF/HEIF/JPEG-XL without optional plugins (and a
     # third-party plugin autoload can raise a non-OSError); fall through to the
@@ -2074,18 +2083,20 @@ def remove_ai_metadata(
     output_path: Path | None = None,
     keep_standard: bool = True,
 ) -> Path:
-    """Remove AI-generation metadata from an image.
+    """Remove supported AI metadata from an image, video, or audio file.
 
     Strips EXIF AI tags, PNG text chunks, and C2PA provenance manifests
-    while optionally preserving standard metadata (Author, Title, etc.).
+    while optionally preserving standard image metadata (Author, Title, etc.).
+    ISOBMFF uses targeted patches; the ffmpeg stream-copy route drops all
+    container tags and chapters, including ordinary ones.
 
     Args:
-        source_path: Path to the source image.
+        source_path: Path to the source media file.
         output_path: Output path (None = overwrite source).
-        keep_standard: If True, preserve standard metadata fields.
+        keep_standard: If True, preserve standard image metadata fields.
 
     Returns:
-        Path to the cleaned image.
+        Path to the cleaned media file.
     """
     import piexif
     from PIL import Image
@@ -2114,7 +2125,11 @@ def remove_ai_metadata(
     with open(source_path, "rb") as f:
         head = f.read(26)
     if source_path.suffix.lower() in _STREAMING_ISOBMFF_EXTS and is_isobmff(head):
-        stripped, native_ai_blanked = strip_isobmff_media_file(source_path, output_path)
+        from remove_ai_watermarks._internal.audio_creation import audio_creation_tool
+
+        stripped, native_ai_blanked = strip_isobmff_media_file(
+            source_path, output_path, strip_audio_comments=audio_creation_tool(source_path) is not None
+        )
         logger.info(
             "Stream-blanked %d AI-provenance box(es) and %d native AI metadata tag(s) → %s",
             stripped,

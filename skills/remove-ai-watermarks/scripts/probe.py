@@ -17,6 +17,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import wave
 import zlib
 from pathlib import Path
 from typing import Any
@@ -24,13 +25,15 @@ from typing import Any
 _GPU_MARKERS = ("GPU ", "gpu:")
 # Below this, the CLI predates flags and behavior this skill documents. Raise it in
 # the same change as any reference that names a flag the previous release lacked:
+# 0.63.0 adds audio commands, text --allow-partial/--rewriter-backend/--rewriter-model
+# (text-mlx), video message, --profile auto/wan21-*, and --method dac/focalcodec;
 # 0.48.0 added `classify-source`; 0.39.0 added the `liblib_pill` mark and `auto`
 # routing OpenAI provenance to qwen-zimage (`--pipeline auto` 0.36.0;
 # chroma-zimage and the doubao video mark 0.35.0; the `microsoft` mark 0.34.0;
 # `--vendor` 0.32.0), and a stale floor told an agent its CLI was current right
 # before it typed a value that build rejects. tests/test_agent_skill.py pins it
 # against the package version and against every "(since CLI X.Y.Z)" annotation.
-MIN_CLI_VERSION = (0, 58, 0)
+MIN_CLI_VERSION = (0, 63, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # legacy Homebrew installs can still contain such a build.
@@ -238,6 +241,42 @@ sys.stdout.write(json.dumps(result))
 """
 
 
+def _audio_stack(cli_path: str) -> str:
+    """Exercise CPU processing on a temporary WAV without loading neural weights."""
+    with tempfile.TemporaryDirectory(prefix="raiw-audio-probe-") as tmp:
+        source, output = Path(tmp) / "probe.wav", Path(tmp) / "processed.wav"
+        with wave.open(str(source), "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(16000)
+            stream.writeframes(b"\0" * 3200)
+        code, stdout, stderr = _run(
+            [
+                cli_path,
+                "audio",
+                "invisible",
+                str(source),
+                "-o",
+                str(output),
+                "--force",
+                "--no-verify",
+                "--method",
+                "spectral",
+                "--json",
+            ],
+            timeout=60.0,
+        )
+        if "Audio processing requires" in stdout + stderr:
+            return "missing"
+        try:
+            result = json.loads(stdout)
+            if code == 0 and result.get("frames_processed") == 1600 and output.read_bytes()[:4] == b"RIFF":
+                return "ok"
+        except (OSError, ValueError, AttributeError):
+            pass
+    return "unknown"
+
+
 def _has_cuda() -> bool:
     exe = _which("nvidia-smi")
     if exe is None:
@@ -366,7 +405,16 @@ def build_report() -> dict[str, Any]:
         if cli["found"]
         else {"pixels": "unknown", "invisible": "unknown", "tools": "unknown"}
     )
+    ffprobe = video.get("tools") == "installed" or (
+        video.get("tools", "unknown") == "unknown" and _which("ffprobe") is not None
+    )
     ffmpeg = video.get("tools") == "installed" or (video.get("tools", "unknown") == "unknown" and ffmpeg)
+    audio = _audio_stack(str(cli["path"])) if cli["found"] and ffmpeg and ffprobe else "unknown"
+    audio_advice = (
+        "needs_ffmpeg_and_ffprobe"
+        if not (ffmpeg and ffprobe)
+        else {"ok": "processor_ok_decoder_unverified", "missing": "needs_audio_extra", "unknown": "unverified"}[audio]
+    )
     return {
         "os": os.name,
         "platform": sys.platform,
@@ -374,21 +422,26 @@ def build_report() -> dict[str, Any]:
         "cli": cli,
         "cuda": cuda,
         "ffmpeg": ffmpeg,
+        "ffprobe": ffprobe,
+        "audio_stack": audio,
         "pixel_stack": pixels,
         "invisible_stack": invisible,
         "video_stacks": video,
         "installers": {name: path is not None for name, path in installers.items()},
         "preferred_installer": installer,
-        "advice": _advice(
-            cli_found=bool(cli["found"]),
-            pixels=pixels,
-            cuda=cuda,
-            ffmpeg=ffmpeg,
-            installer=installer,
-            outdated=cli["outdated"],
-            invisible=invisible,
-            video=video,
-        ),
+        "advice": {
+            "audio_invisible": audio_advice,
+            **_advice(
+                cli_found=bool(cli["found"]),
+                pixels=pixels,
+                cuda=cuda,
+                ffmpeg=ffmpeg,
+                installer=installer,
+                outdated=cli["outdated"],
+                invisible=invisible,
+                video=video,
+            ),
+        },
     }
 
 

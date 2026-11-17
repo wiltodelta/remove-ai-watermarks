@@ -768,3 +768,101 @@ def test_check_at_is_timezone_aware(tmp_path: Path, tmp_clean_png: Path) -> None
             raw_response="SynthID detected",
             checked_at="2026-09-07T18:30:00",
         )
+
+
+def test_prepare_require_clean_media_enforces_hygiene_and_stream_hashes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import numpy as np
+
+    from remove_ai_watermarks import audio, video, video_audio, video_decode
+
+    video_src = tmp_path / "clean.mp4"
+    video_src.write_bytes(b"mp4-bytes")
+    audio_src = tmp_path / "clean.wav"
+    audio_src.write_bytes(b"wav-bytes")
+
+    dirty_flag = {"video_visible": True}
+
+    def fake_identify_video(_path: Path, *, check_visible: bool = True) -> object:
+        assert check_visible is True
+        return SimpleNamespace(
+            has_ai_metadata=False,
+            metadata_markers={},
+            invisible_watermark_hints=(),
+            visible_mark="veo" if dirty_flag["video_visible"] else None,
+            visible_detected_frames=3 if dirty_flag["video_visible"] else 0,
+        )
+
+    class _FakeCap:
+        def __init__(self) -> None:
+            self._frames = [np.full((8, 8, 3), 12, dtype=np.uint8), np.full((8, 8, 3), 34, dtype=np.uint8)]
+
+        def isOpened(self) -> bool:
+            return True
+
+        def read(self) -> tuple[bool, object]:
+            if not self._frames:
+                return False, None
+            return True, self._frames.pop(0)
+
+        def release(self) -> None:
+            return None
+
+    monkeypatch.setattr(video, "identify_video", fake_identify_video)
+    monkeypatch.setattr(video_decode, "open_video_capture", lambda _p: _FakeCap())
+    monkeypatch.setattr(video_audio, "stream_inventory", lambda _p: [{"codec_type": "video"}, {"codec_type": "audio"}])
+    monkeypatch.setattr(
+        oracles,
+        "_compute_audio_stream_sha256",
+        lambda _p, ordinal: f"{ordinal:064x}",
+    )
+
+    def fake_identify_audio(_p: Path, *, check_invisible: bool = True) -> object:
+        assert check_invisible is False
+        return SimpleNamespace(metadata_markers={})
+
+    monkeypatch.setattr(
+        audio,
+        "identify_audio",
+        fake_identify_audio,
+    )
+
+    with pytest.raises(RuntimeError, match="retained AI signals"):
+        oracles.prepare_batch(
+            "gemini-web",
+            [video_src],
+            output_dir=tmp_path / "dirty-batch",
+            repository_root=oracles.REPOSITORY_ROOT,
+            require_clean_media=True,
+        )
+
+    dirty_flag["video_visible"] = False
+    manifest_path = oracles.prepare_batch(
+        "gemini-web",
+        [video_src, audio_src],
+        output_dir=tmp_path / "clean-batch",
+        repository_root=oracles.REPOSITORY_ROOT,
+        require_clean_media=True,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    v_row, a_row = manifest["rows"]
+    assert v_row["hygiene_verified"] is True
+    assert set(v_row["stream_hashes"]) == {"video:0", "audio:0"}
+    assert len(v_row["stream_hashes"]["video:0"]) == 64
+    assert a_row["hygiene_verified"] is True
+    assert a_row["stream_hashes"] == {"audio:0": "0" * 64}
+
+
+def test_quota_hold_blocks_active_submission_and_allows_cleared(tmp_path: Path) -> None:
+    hold = tmp_path / "video-quota-hold.json"
+    hold.write_text(
+        json.dumps({"status": "active", "scope": "All Gemini VIDEO account slots"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="quota hold is active"):
+        oracles.assert_no_active_quota_hold(hold)
+
+    hold.write_text(json.dumps({"status": "cleared"}), encoding="utf-8")
+    oracles.assert_no_active_quota_hold(hold)

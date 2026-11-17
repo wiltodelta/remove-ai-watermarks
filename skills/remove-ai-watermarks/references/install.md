@@ -80,11 +80,26 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Need | Extra |
 | --- | --- |
 | Image/video/text metadata inspect and strip | no extra |
-| Text token-watermark regeneration | `diffusion` |
+| Text token-watermark regeneration, default Transformers backend | `text` (`diffusion` also remains compatible) |
+| Text regeneration with an explicit MLX checkpoint on Apple silicon | `text-mlx` |
 | Image identify, `visible`, `erase` | `visible` |
 | HEIC / HEIF / AVIF pixels | add `heif` |
+| Public known-message VideoSeal/PixelSeal | `video-detect`, plus `diffusion` for VAE, ffmpeg and ffprobe |
+| Audio metadata inspection (`--no-invisible`) | no extra, plus ffmpeg and ffprobe |
+| CPU audio processing without verification | `audio`, plus ffmpeg and ffprobe |
+| Neural audio resynthesis (`--method encodec`, `combined`, or an automatic neural profile) | add `audio-codec`; retain the decoder extra for verification |
+| Experimental Mimi codec (`--method mimi`) | add `audio-codec`; fixed CPU FP32 and 32 quantizers; retain the decoder extra; model weights CC-BY-4.0 |
+| Experimental FocalCodec continuous features (`--method focalcodec`) | add `audio-codec`; fixed CPU FP32 50 Hz WavLM-to-Vocos profile; retain the decoder extra; model weights Apache-2.0 |
+| Experimental 44.1 kHz DAC codec (`--method dac`) | add `audio-codec`; fixed CPU FP32 and 3 codebooks; retain the decoder extra; model weights MIT |
+| Experimental full-track mel-vocoder (`--method bigvgan`) | add `audio-vocoder`; retain the decoder extra for verification; mono/stereo up to 30 seconds |
+| Compatible open AudioSeal checks and verified audio processing | `audio-detect`, plus ffmpeg and ffprobe |
+| Experimental SilentCipher-44k (`--scheme silentcipher`) and terminated 16k pattern (`--scheme silentcipher16`) | `audio-silentcipher`, plus ffmpeg and ffprobe; minimum three seconds, complete documented phase grid; neural removal also needs `audio-codec` |
+| Public Perth v1 checks (`--scheme perth`) | `audio-perth`, plus ffmpeg and ffprobe |
+| Public WavMark checks (`--scheme wavmark`) | `audio-wavmark`, plus ffmpeg and ffprobe; neural removal also needs `audio-codec` |
+| Audio-only processing inside video (`video audio`) | Same audio extras, no `video` extra |
 | Video identify / visible / all / batch | `video` (includes FFmpeg and ffprobe) |
 | Experimental Seedance video (`--profile seedance-experimental`) | `video,diffusion` (includes FFmpeg and ffprobe) |
+| Experimental CUDA Wan 2.1 video (`--profile wan21-synthid-experimental`, `--profile wan21-seedance-experimental`) | `video,diffusion`, plus NVIDIA CUDA (Apache-2.0 weights) |
 | Video SynthID (`video invisible`) | `video,diffusion` (includes FFmpeg and ffprobe) |
 | Invisible images | `qwen-zimage`, plus NVIDIA CUDA |
 | Learned image/video fill | add `migan` or `lama` |

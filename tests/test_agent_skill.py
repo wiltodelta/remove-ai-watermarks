@@ -202,7 +202,6 @@ INSTALL = ROOT / "skills" / "remove-ai-watermarks" / "references" / "install.md"
 PYPROJECT = ROOT / "pyproject.toml"
 
 _PINNED_ABSENT_FLAGS = ("--model", "--steps", "--guidance-scale")
-_DEVICE_COMMANDS = {("video", "invisible"), ("video", "all"), ("video", "batch")}
 
 
 def _cli_commands() -> dict[tuple[str, ...], object]:
@@ -271,7 +270,10 @@ def test_flags_the_skill_calls_absent_exist_on_no_command() -> None:
 
 def test_device_exists_exactly_where_the_skill_says_it_does() -> None:
     with_device = {path for path, command in _cli_commands().items() if "--device" in _long_options(command)}
-    assert with_device == _DEVICE_COMMANDS
+    documented = {
+        tuple(command.split()) for command in _documented(SKILL.read_text(encoding="utf-8"), "`--device` exists on")
+    }
+    assert with_device == documented
 
 
 def test_documented_exit_codes_match_the_constants() -> None:
@@ -770,7 +772,10 @@ def test_probe_accepts_bundled_tools_without_system_ffmpeg() -> None:
     probe._cli = lambda: {"found": True, "path": "/synthetic/cli", "outdated": False}
     probe._pixel_stack = lambda _cli: "ok"
     probe._invisible_stack = lambda _cli: "missing"
+    probe._audio_stack = lambda _cli: "ok"
     report = probe.build_report()
     assert report["ffmpeg"] is True
+    assert report["ffprobe"] is True
     assert report["advice"]["video_visible"] == "ok"
     assert report["advice"]["video_invisible"] == "ok_cpu_or_gpu"
+    assert report["advice"]["audio_invisible"] == "processor_ok_decoder_unverified"

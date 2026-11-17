@@ -1226,6 +1226,71 @@ class TestVideoMetadataCli:
 
 
 class TestVideoProvenanceCli:
+    @pytest.mark.parametrize(
+        "algorithm",
+        ["io.iscc.v0", "com.adobe.icn.dense", "com.microsoft.invismark.1", "com.adobe.flowmark.A"],
+    )
+    def test_soft_binding_declaration_alone_is_not_ai_origin(self, tmp_path: Path, algorithm: str):
+        from remove_ai_watermarks.video import identify_video
+
+        source = tmp_path / "binding.mp4"
+        source.write_bytes(_MP4_FTYP + _box(b"uuid", C2PA_UUID + algorithm.encode()))
+        report = identify_video(source, check_visible=False)
+        assert report.has_ai_metadata is True
+        assert report.is_ai_generated is None
+        assert report.confidence == "unknown"
+        assert report.platform is None
+
+    @pytest.mark.parametrize("key", ["soft_binding", "soft_binding_algorithm", "soft_binding_value"])
+    def test_soft_binding_fields_preserve_an_independent_ai_claim(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str
+    ):
+        from remove_ai_watermarks.video import identify_video
+
+        source = tmp_path / "binding.mp4"
+        source.write_bytes(_MP4_FTYP)
+        markers = {key: "opaque binding", "source_type": "trainedAlgorithmicMedia"}
+        monkeypatch.setattr("remove_ai_watermarks.metadata.get_ai_metadata", lambda _path: markers)
+        assert identify_video(source, check_visible=False).is_ai_generated is True
+        markers.pop("source_type")
+        report = identify_video(source, check_visible=False)
+        assert report.is_ai_generated is None
+        assert not any("signed by" in caveat for caveat in report.caveats)
+
+    def test_ambiguous_fingerprint_label_is_not_a_watermark_hint(self, tmp_path: Path):
+        from remove_ai_watermarks.video import identify_video
+
+        source = tmp_path / "fingerprint.mp4"
+        source.write_bytes(_MP4_FTYP + _box(b"uuid", C2PA_UUID + b"ai.trufo.pawprint.fingerprint"))
+        report = identify_video(source, check_visible=False)
+        assert report.invisible_watermark_hints == ()
+
+    def test_byte_scan_preserves_watermark_labels_with_commas(self, tmp_path: Path):
+        from remove_ai_watermarks.video import identify_video
+
+        source = tmp_path / "seal.mp4"
+        source.write_bytes(_MP4_FTYP + _box(b"uuid", C2PA_UUID + b"me.reconize.videoseal.1"))
+        report = identify_video(source, check_visible=False)
+        assert len(report.invisible_watermark_hints) == 1
+        assert "VideoSeal" in report.invisible_watermark_hints[0]
+
+    @pytest.mark.parametrize("as_json", [False, True])
+    def test_invisible_hints_are_explicit_without_a_pixel_verdict(self, tmp_path: Path, as_json: bool):
+        source = tmp_path / "seal.mp4"
+        source.write_bytes(_MP4_FTYP + _box(b"uuid", C2PA_UUID + b"com.microsoft.invismark.1"))
+        args = ["video", "identify", str(source), "--no-visible"]
+        if as_json:
+            args.append("--json")
+        result = CliRunner().invoke(main, args)
+        assert result.exit_code == 0, result.output
+        if as_json:
+            payload = json.loads(result.output)
+            assert payload["invisible_watermark_hints"] == ["Microsoft InvisMark"]
+            assert any("not a pixel detection" in caveat for caveat in payload["caveats"])
+        else:
+            assert "Invisible watermark hints: Microsoft InvisMark" in result.output
+            assert "not a pixel detection" in result.output
+
     def test_json_metadata_report(self, tmp_path: Path):
         source = _video_with_c2pa(tmp_path / "source.mp4")
 
@@ -3540,6 +3605,32 @@ class TestYouTubeReencodedSamples:
         report = identify_video(self._DIR / "amazon-bedrock-nova-reel.mp4", check_visible=False)
         assert report.is_ai_generated is True
         assert report.platform == "Amazon Bedrock (Nova)"
+        assert report.invisible_watermark_hints == ("Amazon Nova Reel",)
+
+    @pytest.mark.parametrize(
+        ("algorithm", "has_hint"),
+        [
+            ("me.reconize.videoseal.1", True),
+            ("com.aiwatermark.pixelseal.1", True),
+            ("com.microsoft.invismark.1", True),
+            ("com.microsoft.invismark.10", False),
+            ("io.iscc.v0", False),
+            ("unknown.algorithm.1", False),
+        ],
+    )
+    def test_only_registered_watermark_algorithms_become_hints(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, algorithm: str, has_hint: bool
+    ):
+        from remove_ai_watermarks.video import identify_video
+
+        source = tmp_path / "seal.mp4"
+        source.write_bytes(_MP4_FTYP)
+        monkeypatch.setattr(
+            "remove_ai_watermarks.metadata.get_ai_metadata",
+            lambda _path: {"soft_binding_algorithm": algorithm},
+        )
+        report = identify_video(source, check_visible=False)
+        assert bool(report.invisible_watermark_hints) is has_hint
 
     def test_original_grok_video_is_xai_without_synthid(self):
         from remove_ai_watermarks.video import identify_video
@@ -3850,3 +3941,125 @@ class TestSignalDiscovery20261027VideoGaps:
         assert b"Topaz Labs" not in cleaned
         if b"Vacation clip" in extra_vals:
             assert b"Vacation clip" in cleaned
+
+
+class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
+    def test_video_invisible_defaults_temporal_stabilize_and_supports_keep_fps(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from remove_ai_watermarks import video_invisible
+        from remove_ai_watermarks.video import remove_video_invisible
+
+        source = _video_with_c2pa(tmp_path / "source.mp4")
+        seen_kwargs: list[dict[str, object]] = []
+
+        def fake_regenerate(_src: Path, target: Path, **kwargs: object):
+            seen_kwargs.append(kwargs)
+            target.write_bytes(_MP4_FTYP + _box(b"mdat", _VIDEO_PAYLOAD))
+            return _regeneration_metrics(fps=30.0 if kwargs.get("fps") is None else 12.0)
+
+        monkeypatch.setattr(video_invisible, "regenerate_video_candidate", fake_regenerate)
+
+        res_default = remove_video_invisible(source, tmp_path / "default_out.mp4")
+        assert seen_kwargs[-1]["temporal_stabilize"] is True
+        assert seen_kwargs[-1]["fps"] == 12.0
+        assert res_default.fps == 12.0
+
+        res_keep = CliRunner().invoke(
+            main,
+            [
+                "video",
+                "invisible",
+                str(source),
+                "-o",
+                str(tmp_path / "keep_fps_out.mp4"),
+                "--keep-fps",
+                "--no-temporal-stabilize",
+            ],
+        )
+        assert res_keep.exit_code == 0, res_keep.output
+        assert seen_kwargs[-1]["fps"] is None
+        assert seen_kwargs[-1]["temporal_stabilize"] is False
+        assert "30 fps" in res_keep.output
+
+    def test_video_all_with_audio_invisible_updates_audio_status_and_processes_tracks(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from types import SimpleNamespace
+
+        from remove_ai_watermarks import audio, video, video_audio, video_invisible
+        from remove_ai_watermarks.video import VideoAudioStatus, remove_video_all
+
+        source = _video_with_c2pa(tmp_path / "source.mp4")
+        monkeypatch.setattr(audio, "resolve_audio_profiles", lambda **_kw: ("spectral",))
+        monkeypatch.setattr(
+            video,
+            "remove_video_visible",
+            lambda src, _out, **_kw: SimpleNamespace(
+                source=src,
+                output=None,
+                mark="auto",
+                total_frames=12,
+                detected_frames=0,
+                removed_frames=0,
+                remaining_metadata={},
+            ),
+        )
+        monkeypatch.setattr(
+            video_invisible,
+            "regenerate_video_candidate",
+            lambda _src, target, **_kw: (
+                target.write_bytes(_MP4_FTYP + _box(b"mdat", _VIDEO_PAYLOAD)),
+                _regeneration_metrics(),
+            )[1],
+        )
+        monkeypatch.setattr(
+            video_audio,
+            "stream_inventory",
+            lambda _p: [{"index": 0, "codec_type": "video"}, {"index": 1, "codec_type": "audio"}],
+        )
+
+        def fake_multi_clean(src: Path, dst: Path, **_kw: object) -> object:
+            dst.write_bytes(src.read_bytes())
+            return SimpleNamespace(
+                skipped=False,
+                output=dst,
+                processed_ordinals=(0,),
+                verified_removed=True,
+                streams=(SimpleNamespace(before=SimpleNamespace(watermark_status="detected")),),
+            )
+
+        monkeypatch.setattr(video_audio, "remove_video_audio_all_streams", fake_multi_clean)
+
+        out_clean = tmp_path / "four_layer_clean.mp4"
+        res = remove_video_all(
+            source,
+            out_clean,
+            include_invisible=True,
+            include_audio_invisible=True,
+        )
+        assert res.output == out_clean
+        assert res.invisible_removed is True
+        assert res.remaining_metadata == {}
+        assert res.audio == VideoAudioStatus(stream_action="processed", watermark_status="not_detected")
+        assert res.audio_processed_streams == (0,)
+
+        cli_out = tmp_path / "cli_four_layer.mp4"
+        cli_run = CliRunner().invoke(
+            main,
+            [
+                "video",
+                "all",
+                str(source),
+                "-o",
+                str(cli_out),
+                "--invisible",
+                "--audio-invisible",
+            ],
+        )
+        assert cli_run.exit_code == 0, cli_run.output
+        assert "processed audio stream(s) 0" in cli_run.output

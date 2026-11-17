@@ -12,8 +12,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
+from remove_ai_watermarks._internal.constants import (
+    VIDEO_INVISIBLE_PROFILES,
+    WAN_EXPERIMENTAL_PROFILES,
+    VideoInvisibleProfile,
+)
 from remove_ai_watermarks._internal.tc260_producers import TC260_PRODUCERS
 from remove_ai_watermarks.video_synthid import (
     DEFAULT_VIDEO_SYNTHID_FPS,
@@ -23,8 +28,12 @@ from remove_ai_watermarks.video_synthid import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from remove_ai_watermarks._internal.constants import AudioMethod, AudioScheme, WanExperimentalProfile
     from remove_ai_watermarks.video_invisible import RegenerationMetrics, VideoVaeRuntime
     from remove_ai_watermarks.video_visible import VideoScan
+    from remove_ai_watermarks.video_wan import VideoWanRuntime
 
 VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".flv"})
 VIDEO_VISIBLE_MARKS = ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
@@ -60,18 +69,21 @@ class VideoMetadataReport:
 
 @dataclass(frozen=True)
 class VideoAudioStatus:
-    """Audio disposition for a video output without an audio watermark check."""
+    """Audio disposition and watermark status for a video output."""
 
-    stream_action: Literal["copied_if_present", "not_written"] = "copied_if_present"
-    watermark_status: Literal["unverified"] = "unverified"
+    stream_action: Literal["copied_if_present", "not_written", "processed"] = "copied_if_present"
+    watermark_status: Literal["unverified", "not_detected", "detected"] = "unverified"
 
 
 class _VideoAudioBoundary:
-    """Derive the audio disposition from whether an output was written."""
+    """Derive the audio disposition from explicit audio processing or output presence."""
 
     @property
     def audio(self) -> VideoAudioStatus:
-        """Return the non-claiming audio status for this result."""
+        """Return the audio status for this result."""
+        explicit = getattr(self, "audio_status", None)
+        if isinstance(explicit, VideoAudioStatus):
+            return explicit
         action: Literal["copied_if_present", "not_written"] = (
             "copied_if_present" if getattr(self, "output", None) is not None else "not_written"
         )
@@ -102,6 +114,7 @@ class VideoProvenanceReport:
     has_ai_metadata: bool
     metadata_markers: dict[str, str]
     caveats: tuple[str, ...]
+    invisible_watermark_hints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -126,6 +139,7 @@ class VideoInvisibleResult(_VideoAudioBoundary):
     noise_std: float
     metrics: RegenerationMetrics
     remaining_metadata: dict[str, str]
+    profile: str = "synthid"
 
     @property
     def visual_invisible_action(self) -> Literal["regenerated"]:
@@ -167,6 +181,15 @@ class VideoSeedanceExperimentalResult(VideoInvisibleResult):
 
 
 @dataclass(frozen=True)
+class VideoWanExperimentalResult(VideoInvisibleResult):
+    """Experimental CUDA 3D Wan 2.1 reconstruction, without a per-file detector verdict."""
+
+    quality: Literal["delivery", "master"] = "delivery"
+    profile: WanExperimentalProfile = "wan21-synthid-experimental"
+    experimental: bool = True
+
+
+@dataclass(frozen=True)
 class VideoAllResult(_VideoAudioBoundary):
     """Result of visible, metadata, and optional video-pixel processing."""
 
@@ -179,7 +202,9 @@ class VideoAllResult(_VideoAudioBoundary):
     detected_metadata: dict[str, str]
     remaining_metadata: dict[str, str]
     invisible_removed: bool
-    invisible_profile: Literal["synthid", "seedance-experimental"] | None = None
+    invisible_profile: VideoInvisibleProfile | None = None
+    audio_status: VideoAudioStatus | None = None
+    audio_processed_streams: tuple[int, ...] = ()
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -198,6 +223,7 @@ class VideoBatchItem(_VideoAudioBoundary):
     visible_mark: str | None
     invisible_removed: bool
     error: str | None = None
+    audio_status: VideoAudioStatus | None = None
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -351,6 +377,9 @@ _C2PA_STRUCTURAL_MARKERS = frozenset(
         "c2pa_signature",
         "c2pa_signer_trust",
         "c2pa_signer_validity",
+        "soft_binding",
+        "soft_binding_algorithm",
+        "soft_binding_value",
     }
 )
 
@@ -449,6 +478,27 @@ def inspect_video_metadata(source: str | Path) -> VideoMetadataReport:
     )
 
 
+def _video_invisible_watermark_hints(markers: dict[str, str]) -> tuple[str, ...]:
+    """Name declared schemes and provider-policy hints, without decoding pixels."""
+    from remove_ai_watermarks._internal.c2pa import soft_binding_labels, soft_binding_registry_entries_in
+    from remove_ai_watermarks._internal.constants import C2PA_SOFT_BINDING_REGISTRY
+
+    entries = soft_binding_registry_entries_in(markers.get("soft_binding_algorithm", "").encode())
+    hints = set(soft_binding_labels(entries, kind="watermark"))
+    # The byte-scan fallback exposes labels without identifiers. A label shared
+    # with a fingerprint (Trufo PawPrint) cannot establish the algorithm kind.
+    if "soft_binding" in markers:
+        declared_labels = f", {markers['soft_binding']}, "
+        watermark_labels = set(soft_binding_labels(C2PA_SOFT_BINDING_REGISTRY, kind="watermark"))
+        fingerprint_labels = set(soft_binding_labels(C2PA_SOFT_BINDING_REGISTRY, kind="fingerprint"))
+        hints.update(label for label in watermark_labels - fingerprint_labels if f", {label}, " in declared_labels)
+    if "synthid_watermark" in markers:
+        hints.add("SynthID")
+    if _video_markers_claim_ai(markers) and _platform_from_video_metadata(markers) == "Amazon Bedrock (Nova)":
+        hints.add("Amazon Nova Reel")
+    return tuple(sorted(hints))
+
+
 def identify_video(
     source: str | Path,
     *,
@@ -484,15 +534,23 @@ def identify_video(
 
     claims_ai = _video_markers_claim_ai(markers)
     has_signal = claims_ai or selected_mark is not None
+    invisible_hints = _video_invisible_watermark_hints(markers)
     caveats = ["No public local decoder can verify proprietary pixel watermarks such as video SynthID."]
+    if invisible_hints:
+        caveats.append(
+            "Invisible watermark hints come from metadata declarations or provider policy, not a pixel detection. "
+            "They do not confirm a surviving watermark or verified removal on this file."
+        )
     if not check_visible:
         caveats.append("Visible video-mark detection was skipped.")
-    if not has_signal and markers:
+    if not has_signal and ("issuer" in markers or "actions" in markers):
         caveats.append(
             f"A C2PA manifest signed by {markers.get('issuer', 'an unregistered signer')} records "
             f"{markers.get('actions', 'no actions')} and no AI claim, as a platform re-encode does "
             "(YouTube re-signs every upload); that is unknown, not proof that the video is clean."
         )
+    elif not has_signal and markers:
+        caveats.append("Metadata does not establish AI origin; this is unknown, not proof that the video is clean.")
     elif not has_signal:
         caveats.append("No supported signal was found; absence is unknown, not proof that the video is clean.")
     return VideoProvenanceReport(
@@ -512,6 +570,7 @@ def identify_video(
         has_ai_metadata=bool(markers),
         metadata_markers=markers,
         caveats=tuple(caveats),
+        invisible_watermark_hints=invisible_hints,
     )
 
 
@@ -624,6 +683,116 @@ def remove_video_visible(
     )
 
 
+_BYTEDANCE_FALLBACK_TOKENS: tuple[str, ...] = (
+    "bytedance",
+    "byteplus",
+    "seedance",
+    "dreamina",
+    "capcut",
+    "doubao",
+    "jimeng",
+    "dola",
+    "pippit",
+    "volcengine",
+    "spring (sg)",
+)
+
+
+def _has_2d_vae_overrides(
+    *,
+    noise_std: float,
+    long_side: int,
+    fps: float | None,
+    batch_size: int,
+    model: str,
+    temporal_stabilize: bool,
+) -> bool:
+    return (
+        noise_std != DEFAULT_VIDEO_SYNTHID_NOISE_STD
+        or long_side != DEFAULT_VIDEO_SYNTHID_LONG_SIDE
+        or fps != DEFAULT_VIDEO_SYNTHID_FPS
+        or batch_size != 4
+        or model != DEFAULT_VIDEO_SYNTHID_VAE
+        or not temporal_stabilize
+    )
+
+
+def _is_bytedance_video_provenance(
+    metadata_markers: dict[str, str],
+    visible_mark: str | None = None,
+) -> bool:
+    if visible_mark in {"seedance", "doubao", "dola"}:
+        return True
+    if not metadata_markers:
+        return False
+    from remove_ai_watermarks._internal.tc260_producers import producer_for_code
+    from remove_ai_watermarks.video_visible import has_bytedance_video_provenance
+
+    if has_bytedance_video_provenance(metadata_markers):
+        return True
+    producer_row = producer_for_code(metadata_markers.get("aigc_producer", ""))
+    if producer_row is not None and producer_row.vendor == "ByteDance":
+        return True
+    platform = (_platform_from_video_metadata(metadata_markers) or "").lower()
+    if any(token in platform for token in _BYTEDANCE_FALLBACK_TOKENS):
+        return True
+    haystack = " ".join(f"{k} {v}" for k, v in metadata_markers.items()).lower()
+    return any(token in haystack for token in _BYTEDANCE_FALLBACK_TOKENS)
+
+
+def _resolve_video_invisible_profile(
+    profile: VideoInvisibleProfile,
+    source_path: Path,
+    *,
+    device: str,
+    quality: Literal["delivery", "master"],
+    noise_std: float,
+    long_side: int,
+    fps: float | None,
+    batch_size: int,
+    seed: int,
+    model: str,
+    temporal_stabilize: bool,
+    detected_metadata: dict[str, str] | None = None,
+    visible_mark: str | None = None,
+    runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
+) -> Literal["synthid", "seedance-experimental", "wan21-synthid-experimental", "wan21-seedance-experimental"]:
+    if profile != "auto":
+        return profile
+    has_overrides = _has_2d_vae_overrides(
+        noise_std=noise_std,
+        long_side=long_side,
+        fps=fps,
+        batch_size=batch_size,
+        model=model,
+        temporal_stabilize=temporal_stabilize,
+    )
+    resolved: Literal["synthid", "seedance-experimental", "wan21-synthid-experimental", "wan21-seedance-experimental"]
+    if has_overrides or source_path.suffix.lower() != ".mp4":
+        resolved = "synthid"
+    else:
+        from remove_ai_watermarks import video_wan
+
+        can_wan = video_wan.can_run_wan_on_source(source_path, device=device, runtime=runtime)
+        if not can_wan and seed != 0:
+            resolved = "synthid"
+        else:
+            if visible_mark in {"seedance", "doubao", "dola"}:
+                is_bytedance = True
+            else:
+                from remove_ai_watermarks.metadata import get_ai_metadata
+
+                markers = detected_metadata if detected_metadata is not None else get_ai_metadata(source_path)
+                is_bytedance = _is_bytedance_video_provenance(markers, visible_mark)
+            if is_bytedance:
+                resolved = "wan21-seedance-experimental" if can_wan else "seedance-experimental"
+            else:
+                resolved = "wan21-synthid-experimental" if can_wan else "synthid"
+    if quality != "delivery" and resolved == "synthid":
+        raise ValueError("quality=master requires the enabled seedance-experimental or wan21-*-experimental profile")
+    return resolved
+
+
 def _validate_video_profile(
     profile: str,
     quality: str,
@@ -631,29 +800,45 @@ def _validate_video_profile(
     enabled: bool = True,
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-    fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
+    fps: float | None = DEFAULT_VIDEO_SYNTHID_FPS,
     batch_size: int = 4,
     seed: int = 0,
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
+    temporal_stabilize: bool = True,
 ) -> None:
     """Reject incompatible profile options before processing any stage."""
-    if profile not in {"synthid", "seedance-experimental"}:
-        raise ValueError("profile must be synthid or seedance-experimental")
+    if profile not in VIDEO_INVISIBLE_PROFILES:
+        raise ValueError(
+            "profile must be auto, synthid, seedance-experimental, "
+            "wan21-synthid-experimental, or wan21-seedance-experimental"
+        )
     if quality not in {"delivery", "master"}:
         raise ValueError("quality must be delivery or master")
     if profile != "synthid" and not enabled:
         raise ValueError("Selecting an invisible profile requires include_invisible=True (--invisible)")
-    if quality != "delivery" and (not enabled or profile != "seedance-experimental"):
-        raise ValueError("quality=master requires the enabled seedance-experimental profile")
-    if profile == "seedance-experimental" and (
-        noise_std != DEFAULT_VIDEO_SYNTHID_NOISE_STD
-        or long_side != DEFAULT_VIDEO_SYNTHID_LONG_SIDE
-        or fps != DEFAULT_VIDEO_SYNTHID_FPS
-        or batch_size != 4
-        or seed != 0
-        or model != DEFAULT_VIDEO_SYNTHID_VAE
-    ):
+    fixed_quality_profiles = {
+        "auto",
+        "seedance-experimental",
+        "wan21-synthid-experimental",
+        "wan21-seedance-experimental",
+    }
+    if quality != "delivery" and (not enabled or profile not in fixed_quality_profiles):
+        raise ValueError("quality=master requires the enabled seedance-experimental or wan21-*-experimental profile")
+    has_overrides = _has_2d_vae_overrides(
+        noise_std=noise_std,
+        long_side=long_side,
+        fps=fps,
+        batch_size=batch_size,
+        model=model,
+        temporal_stabilize=temporal_stabilize,
+    )
+    if profile == "seedance-experimental" and (has_overrides or seed != 0):
         raise ValueError("Seedance uses a fixed recipe; SynthID tuning options must retain their defaults")
+    if profile in WAN_EXPERIMENTAL_PROFILES and has_overrides:
+        raise ValueError(
+            "Wan 2.1 profiles use fixed native geometry and frame timing; "
+            "2D VAE SynthID tuning options must retain their defaults"
+        )
 
 
 def remove_video_all(
@@ -664,27 +849,43 @@ def remove_video_all(
     backend: str = "cv2",
     temporal_consistency: bool = True,
     include_invisible: bool = False,
-    invisible_profile: Literal["synthid", "seedance-experimental"] = "synthid",
+    invisible_profile: VideoInvisibleProfile = "synthid",
     invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-    fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
+    fps: float | None = DEFAULT_VIDEO_SYNTHID_FPS,
     batch_size: int = 4,
     seed: int = 0,
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     device: str = "auto",
-    _invisible_runtime: VideoVaeRuntime | None = None,
+    temporal_stabilize: bool = True,
+    include_audio_invisible: bool = False,
+    audio_scheme: AudioScheme = "auto",
+    audio_method: AudioMethod = "auto",
+    audio_bandwidth_kbps: float = 24.0,
+    audio_vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    audio_force: bool = False,
+    audio_verify: bool = True,
+    _invisible_runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
+    _detected_metadata: dict[str, str] | None = None,
+    _runtime_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None,
 ) -> VideoAllResult:
-    """Run visible, metadata, and optional video-pixel processing.
+    """Run visible, metadata, and optional video-pixel and audio-watermark processing.
 
     The default path removes a stable visible provider mark when present and
     always strips verified AI metadata. It writes a same-container passthrough
     when neither signal is present, giving product callers one predictable
     output contract. ``include_invisible=True`` additionally runs lossy VAE
-    regeneration with the oracle-certified default SynthID profile or the
-    explicitly selected experimental Seedance profile.
+    regeneration with the oracle-certified default SynthID profile (with
+    motion-compensated temporal stabilization enabled by default) or the
+    explicitly selected experimental Seedance profile. ``include_audio_invisible=True``
+    additionally inspects all audio streams with compatible public decoders and
+    cleans any watermarked tracks while preserving clean audio tracks unchanged.
     """
+    import shutil
+
     from remove_ai_watermarks.metadata import get_ai_metadata
+    from remove_ai_watermarks.video_encoding import atomic_video_output
 
     _validate_video_profile(
         invisible_profile,
@@ -696,19 +897,38 @@ def remove_video_all(
         batch_size=batch_size,
         seed=seed,
         model=model,
+        temporal_stabilize=temporal_stabilize,
     )
     source_path = _video_source(source)
     output_path = _video_output(source_path, output, operation="complete cleaning")
     if include_invisible and invisible_profile == "seedance-experimental" and source_path.suffix.lower() != ".mp4":
         raise ValueError("Experimental Seedance processing requires MP4 input")
+    if include_invisible and invisible_profile in WAN_EXPERIMENTAL_PROFILES and source_path.suffix.lower() != ".mp4":
+        raise ValueError("Experimental Wan 2.1 processing requires MP4 input")
     if include_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
         raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
+    if include_audio_invisible:
+        if source_path.suffix.lower() not in {".mp4", ".mov", ".mkv"}:
+            raise ValueError("Video audio watermark processing requires MP4, MOV, or MKV input")
+        from remove_ai_watermarks import audio as _audio_mod
+
+        _audio_mod.resolve_audio_profiles(
+            method=audio_method,
+            scheme=audio_scheme,
+            verify=audio_verify,
+            force=audio_force,
+            bandwidth_kbps=audio_bandwidth_kbps,
+            vocoder_device=audio_vocoder_device,
+        )
     _require_video_runtime()
-    detected_metadata = get_ai_metadata(source_path)
+    detected_metadata = _detected_metadata if _detected_metadata is not None else get_ai_metadata(source_path)
+    audio_status: VideoAudioStatus | None = None
+    audio_processed_streams: tuple[int, ...] = ()
 
     with TemporaryDirectory(prefix=f".{source_path.stem}-video-all-", dir=source_path.parent) as temp_dir:
-        visible_output = Path(temp_dir) / f"visible{source_path.suffix}" if include_invisible else output_path
+        stage_target = Path(temp_dir) / f"visual-final{source_path.suffix}" if include_audio_invisible else output_path
+        visible_output = Path(temp_dir) / f"visible{source_path.suffix}" if include_invisible else stage_target
         visible_result = remove_video_visible(
             source_path,
             visible_output,
@@ -719,12 +939,34 @@ def remove_video_all(
             _metadata_markers=detected_metadata,
         )
         current_source = visible_result.output or source_path
+        resolved_invisible_profile: VideoInvisibleProfile | None = None
 
         if include_invisible:
+            resolved_invisible_profile = _resolve_video_invisible_profile(
+                invisible_profile,
+                current_source,
+                device=device,
+                quality=invisible_quality,
+                noise_std=noise_std,
+                long_side=long_side,
+                fps=fps,
+                batch_size=batch_size,
+                seed=seed,
+                model=model,
+                temporal_stabilize=temporal_stabilize,
+                detected_metadata=detected_metadata,
+                visible_mark=visible_result.mark if visible_result.output is not None else None,
+                runtime=_invisible_runtime,
+            )
+            active_runtime = _invisible_runtime
+            if active_runtime is None and _runtime_getter is not None:
+                active_runtime = _runtime_getter(
+                    "wan" if resolved_invisible_profile in WAN_EXPERIMENTAL_PROFILES else "vae"
+                )
             invisible_result = remove_video_invisible(
                 current_source,
-                output_path,
-                profile=invisible_profile,
+                stage_target,
+                profile=resolved_invisible_profile,
                 quality=invisible_quality,
                 noise_std=noise_std,
                 long_side=long_side,
@@ -733,18 +975,59 @@ def remove_video_all(
                 seed=seed,
                 model=model,
                 device=device,
-                _runtime=_invisible_runtime,
+                temporal_stabilize=temporal_stabilize,
+                _runtime=active_runtime,
             )
             remaining_metadata = invisible_result.remaining_metadata
         elif visible_result.output is None:
             metadata_result = remove_video_metadata(
                 source_path,
-                output_path,
+                stage_target,
                 _detected_metadata=detected_metadata,
             )
             remaining_metadata = metadata_result.remaining
         else:
             remaining_metadata = visible_result.remaining_metadata
+
+        if include_audio_invisible:
+            from remove_ai_watermarks import video_audio
+
+            streams = video_audio.stream_inventory(stage_target)
+            has_audio = any(s.get("codec_type") == "audio" for s in streams)
+            published_by_audio = False
+            wm_state: Literal["unverified", "not_detected", "detected"] = "not_detected"
+            if has_audio:
+                audio_res = video_audio.remove_video_audio_all_streams(
+                    stage_target,
+                    output_path,
+                    force=audio_force,
+                    verify=audio_verify,
+                    method=audio_method,
+                    bandwidth_kbps=audio_bandwidth_kbps,
+                    scheme=audio_scheme,
+                    vocoder_device=audio_vocoder_device,
+                )
+                if audio_res.skipped or audio_res.output is None:
+                    wm_state = (
+                        "not_detected"
+                        if all(s.before.watermark_status == "not_detected" for s in audio_res.streams)
+                        else "unverified"
+                    )
+                else:
+                    published_by_audio = True
+                    remaining_metadata = get_ai_metadata(output_path)
+                    if audio_res.verified_removed is True:
+                        wm_state = "not_detected"
+                    elif audio_res.verified_removed is False:
+                        wm_state = "detected"
+                    else:
+                        wm_state = "unverified"
+                    audio_status = VideoAudioStatus(stream_action="processed", watermark_status=wm_state)
+                    audio_processed_streams = audio_res.processed_ordinals
+            if not published_by_audio:
+                with atomic_video_output(output_path) as temporary_output:
+                    shutil.copyfile(stage_target, temporary_output)
+                audio_status = VideoAudioStatus(stream_action="copied_if_present", watermark_status=wm_state)
 
     return VideoAllResult(
         source=source_path,
@@ -756,7 +1039,9 @@ def remove_video_all(
         detected_metadata=detected_metadata,
         remaining_metadata=remaining_metadata,
         invisible_removed=include_invisible,
-        invisible_profile=invisible_profile if include_invisible else None,
+        invisible_profile=resolved_invisible_profile,
+        audio_status=audio_status,
+        audio_processed_streams=audio_processed_streams,
     )
 
 
@@ -769,15 +1054,23 @@ def remove_video_batch(
     backend: str = "cv2",
     temporal_consistency: bool = True,
     include_invisible: bool = False,
-    invisible_profile: Literal["synthid", "seedance-experimental"] = "synthid",
+    invisible_profile: VideoInvisibleProfile = "synthid",
     invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-    fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
+    fps: float | None = DEFAULT_VIDEO_SYNTHID_FPS,
     batch_size: int = 4,
     seed: int = 0,
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     device: str = "auto",
+    temporal_stabilize: bool = True,
+    include_audio_invisible: bool = False,
+    audio_scheme: AudioScheme = "auto",
+    audio_method: AudioMethod = "auto",
+    audio_bandwidth_kbps: float = 24.0,
+    audio_vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    audio_force: bool = False,
+    audio_verify: bool = True,
 ) -> VideoBatchResult:
     """Process every supported video in one directory.
 
@@ -800,6 +1093,7 @@ def remove_video_batch(
         batch_size=batch_size,
         seed=seed,
         model=model,
+        temporal_stabilize=temporal_stabilize,
     )
     directory_path = Path(directory)
     if not directory_path.exists():
@@ -814,6 +1108,19 @@ def remove_video_batch(
         raise ValueError("Unsupported fill backend; expected auto, cv2, migan, or lama")
     if include_invisible and mode != "all":
         raise ValueError("The invisible video stage is available only in all mode")
+    if include_audio_invisible and mode != "all":
+        raise ValueError("The audio watermark stage is available only in all mode")
+    if include_audio_invisible:
+        from remove_ai_watermarks import audio as _audio_mod
+
+        _audio_mod.resolve_audio_profiles(
+            method=audio_method,
+            scheme=audio_scheme,
+            verify=audio_verify,
+            force=audio_force,
+            bandwidth_kbps=audio_bandwidth_kbps,
+            vocoder_device=audio_vocoder_device,
+        )
     if mode != "metadata":
         _require_video_runtime()
 
@@ -832,30 +1139,48 @@ def remove_video_batch(
     if sources:
         output_path.mkdir(parents=True, exist_ok=True)
     items: list[VideoBatchItem] = []
-    invisible_runtime: VideoVaeRuntime | None = None
-    invisible_runtime_error: str | None = None
+    runtimes: dict[Literal["vae", "wan"], VideoVaeRuntime | VideoWanRuntime] = {}
+    runtime_errors: dict[Literal["vae", "wan"], str] = {}
+
+    def _get_batch_runtime(kind: Literal["vae", "wan"]) -> VideoVaeRuntime | VideoWanRuntime:
+        if kind in runtimes:
+            return runtimes[kind]
+        if kind in runtime_errors:
+            raise RuntimeError(runtime_errors[kind])
+        try:
+            if kind == "wan":
+                from remove_ai_watermarks.video_wan import load_video_wan_runtime
+
+                loaded: VideoVaeRuntime | VideoWanRuntime = load_video_wan_runtime(device=device)
+            else:
+                from remove_ai_watermarks.video_invisible import load_video_vae_runtime
+
+                loaded = load_video_vae_runtime(model=model, device=device)
+        except Exception as exc:
+            runtime_errors[kind] = str(exc)
+            raise
+        runtimes[kind] = loaded
+        return loaded
+
     for source_path in sources:
         item_output = output_path / source_path.name
         try:
             if mode == "all":
-                if (
-                    include_invisible
-                    and invisible_runtime is None
-                    and source_path.suffix.lower()
-                    in ({".mp4"} if invisible_profile == "seedance-experimental" else _REGENERATED_VIDEO_EXTENSIONS)
-                ):
-                    # Validate the container before paying the multi-GB model
-                    # load, then retain one runtime for the complete batch.
+                selected_runtime: VideoVaeRuntime | VideoWanRuntime | None = None
+                lazy_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None
+                if include_invisible:
                     _video_source(source_path)
-                    if invisible_runtime_error is not None:
-                        raise RuntimeError(invisible_runtime_error)
-                    from remove_ai_watermarks.video_invisible import load_video_vae_runtime
-
-                    try:
-                        invisible_runtime = load_video_vae_runtime(model=model, device=device)
-                    except Exception as exc:
-                        invisible_runtime_error = str(exc)
-                        raise
+                    if invisible_profile == "auto":
+                        if source_path.suffix.lower() in _REGENERATED_VIDEO_EXTENSIONS:
+                            lazy_getter = _get_batch_runtime
+                    else:
+                        needs_wan = invisible_profile in WAN_EXPERIMENTAL_PROFILES
+                        allowed_exts = {".mp4"} if invisible_profile != "synthid" else _REGENERATED_VIDEO_EXTENSIONS
+                        if source_path.suffix.lower() in allowed_exts:
+                            selected_runtime = _get_batch_runtime("wan" if needs_wan else "vae")
+                extra_all_kwargs: dict[str, object] = {}
+                if lazy_getter is not None:
+                    extra_all_kwargs["_runtime_getter"] = lazy_getter
                 all_result = remove_video_all(
                     source_path,
                     item_output,
@@ -872,7 +1197,16 @@ def remove_video_batch(
                     seed=seed,
                     model=model,
                     device=device,
-                    _invisible_runtime=invisible_runtime,
+                    temporal_stabilize=temporal_stabilize,
+                    include_audio_invisible=include_audio_invisible,
+                    audio_scheme=audio_scheme,
+                    audio_method=audio_method,
+                    audio_bandwidth_kbps=audio_bandwidth_kbps,
+                    audio_vocoder_device=audio_vocoder_device,
+                    audio_force=audio_force,
+                    audio_verify=audio_verify,
+                    _invisible_runtime=selected_runtime,
+                    **extra_all_kwargs,  # type: ignore[arg-type]
                 )
                 if all_result.remaining_metadata:
                     raise RuntimeError(
@@ -884,10 +1218,14 @@ def remove_video_batch(
                         output=all_result.output,
                         mode=mode,
                         changed=bool(
-                            all_result.visible_mark or all_result.detected_metadata or all_result.invisible_removed
+                            all_result.visible_mark
+                            or all_result.detected_metadata
+                            or all_result.invisible_removed
+                            or all_result.audio.stream_action == "processed"
                         ),
                         visible_mark=all_result.visible_mark,
                         invisible_removed=all_result.invisible_removed,
+                        audio_status=all_result.audio_status,
                     )
                 )
             elif mode == "visible":
@@ -952,23 +1290,26 @@ def remove_video_invisible(
     source: str | Path,
     output: str | Path | None = None,
     *,
-    profile: Literal["synthid", "seedance-experimental"] = "synthid",
+    profile: VideoInvisibleProfile = "synthid",
     quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-    fps: float = DEFAULT_VIDEO_SYNTHID_FPS,
+    fps: float | None = DEFAULT_VIDEO_SYNTHID_FPS,
     batch_size: int = 4,
     seed: int = 0,
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     device: str = "auto",
-    _runtime: VideoVaeRuntime | None = None,
+    temporal_stabilize: bool = True,
+    _runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
 ) -> VideoInvisibleResult:
-    """Regenerate video pixels through SynthID or experimental Seedance processing.
+    """Regenerate video pixels through SynthID, Seedance, or CUDA Wan 2.1 profiles.
 
     The function also strips source metadata during the transcode. The default
-    SynthID profile was calibrated against a provider oracle; Seedance is
-    experimental. This call performs no per-file verification. Source audio is
-    copied if present and its watermark status remains unverified.
+    SynthID profile was calibrated against a provider oracle and applies
+    motion-compensated temporal stabilization by default; Seedance and the
+    CUDA 3D Wan 2.1 profiles are experimental. This call performs no per-file
+    verification. Source audio is copied if present and its watermark status
+    remains unverified.
     """
     from remove_ai_watermarks.metadata import get_ai_metadata
 
@@ -981,19 +1322,49 @@ def remove_video_invisible(
         batch_size=batch_size,
         seed=seed,
         model=model,
+        temporal_stabilize=temporal_stabilize,
     )
-    if profile == "seedance-experimental":
-        source_path = Path(source)
-        target = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
-        return remove_video_seedance_experimental(source, target, device=device, quality=quality, _runtime=_runtime)
     source_path = _video_source(source)
+    clean_output = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
+    if profile == "auto":
+        profile = _resolve_video_invisible_profile(
+            "auto",
+            source_path,
+            device=device,
+            quality=quality,
+            noise_std=noise_std,
+            long_side=long_side,
+            fps=fps,
+            batch_size=batch_size,
+            seed=seed,
+            model=model,
+            temporal_stabilize=temporal_stabilize,
+            runtime=_runtime,
+        )
+    if profile == "seedance-experimental":
+        return remove_video_seedance_experimental(
+            source_path,
+            clean_output,
+            device=device,
+            quality=quality,
+            _runtime=cast("VideoVaeRuntime | None", _runtime),
+        )
+    if profile in WAN_EXPERIMENTAL_PROFILES:
+        return remove_video_wan_experimental(
+            source_path,
+            clean_output,
+            profile=profile,
+            device=device,
+            quality=quality,
+            seed=seed,
+            _runtime=cast("VideoWanRuntime | None", _runtime),
+        )
     if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
         raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
     _require_video_runtime()
     from remove_ai_watermarks.video_invisible import regenerate_video_candidate
 
-    clean_output = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
     output_path = _video_output(
         source_path,
         clean_output,
@@ -1009,7 +1380,8 @@ def remove_video_invisible(
         seed=seed,
         model=model,
         device=device,
-        runtime=_runtime,
+        runtime=cast("VideoVaeRuntime | None", _runtime),
+        temporal_stabilize=temporal_stabilize,
     )
     return VideoInvisibleResult(
         source=source_path,
@@ -1060,4 +1432,62 @@ def remove_video_seedance_experimental(
         metrics=metrics,
         remaining_metadata=get_ai_metadata(output_path),
         quality=quality,
+    )
+
+
+def remove_video_wan_experimental(
+    source: str | Path,
+    output: str | Path | None = None,
+    *,
+    profile: WanExperimentalProfile = "wan21-synthid-experimental",
+    device: str = "auto",
+    quality: Literal["delivery", "master"] = "delivery",
+    seed: int = 0,
+    chunk_frames: int = 193,
+    overlap_frames: int = 17,
+    _runtime: VideoWanRuntime | None = None,
+) -> VideoWanExperimentalResult:
+    """Apply an experimental CUDA 3D Wan 2.1 video-to-video profile to an owned MP4.
+
+    Preserves native resolution, exact frame timestamps, and source audio while
+    stripping AI metadata. Clips exceeding ``chunk_frames`` are processed through
+    overlapping 3D causal windows blended with a raised-cosine ramp. Requires an
+    NVIDIA CUDA GPU unless a preloaded test runtime is supplied. Performs no
+    runtime detector verification.
+    """
+    from remove_ai_watermarks.metadata import get_ai_metadata
+
+    source_path = _video_source(source)
+    if source_path.suffix.lower() != ".mp4":
+        raise ValueError("Experimental Wan 2.1 processing requires MP4 input")
+    if profile not in WAN_EXPERIMENTAL_PROFILES:
+        raise ValueError("profile must be wan21-synthid-experimental or wan21-seedance-experimental")
+    if quality not in {"delivery", "master"}:
+        raise ValueError("quality must be delivery or master")
+    _require_video_runtime()
+    from remove_ai_watermarks.video_wan import profile_strength, regenerate_wan_experimental
+
+    suffix = profile.replace("-", "_")
+    clean_output = Path(output) if output is not None else source_path.with_stem(f"{source_path.stem}_{suffix}")
+    output_path = _video_output(source_path, clean_output, operation="Experimental Wan 2.1 processing")
+    metrics = regenerate_wan_experimental(
+        source_path,
+        output_path,
+        profile=profile,
+        device=device,
+        quality=quality,
+        seed=seed,
+        chunk_frames=chunk_frames,
+        overlap_frames=overlap_frames,
+        runtime=_runtime,
+    )
+    strength = profile_strength(profile)
+    return VideoWanExperimentalResult(
+        source=source_path,
+        output=output_path,
+        noise_std=strength,
+        metrics=metrics,
+        remaining_metadata=get_ai_metadata(output_path),
+        quality=quality,
+        profile=profile,
     )

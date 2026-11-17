@@ -15,7 +15,7 @@ the remaining layers need their own check.
 | `visible`, `erase`, `video visible` | The selected label region, refilled. AI metadata too, unless `--keep-metadata` is given | Any invisible watermark across the rest of the frame. The fill can leave a visible patch on structured backgrounds | Look at the output. Use `identify` for metadata and the provider's verifier for invisible marks |
 | `invisible`, `all`, `video invisible` | Regenerates pixels to disrupt invisible watermarks. `all` also removes visible marks and metadata | No local decoder confirms that SynthID is gone from a given file, and the outcome depends on content and seed. `video invisible` copies the audio track unchanged, so an audio watermark survives | The provider's verifier, such as Google's SynthID Detector or OpenAI's provenance check. A pass there says nothing about AI-image classifiers |
 | `text metadata --remove`, `text all` | C2PA 2.3/2.4 text/HTML wrappers (`C2PATXT\0`, ASCII armor, HTML `<head>` C2PA), `VSRMark` (`VSR1`), Unicode Tags, and zero-width steganography | Token-level statistical LLM watermarks (Google `SynthID-Text`, Anthropic Claude Fable 5.1/5.2 and Mythos 5.1/5.2, OpenAI GPT-6 Astra `textGrain`, KGW, Unigram) live in token choices, not hidden characters | `text identify` re-reads character wrappers; `text invisible` or `text all --invisible` regenerates unlocked prose spans while locking code, math, and URLs |
-| `identify`, `video identify`, `text identify` | Nothing | Not applicable | `unknown` means no supported local signal was found. It is not a clean verdict |
+| `identify`, `video identify`, `text identify` | Nothing | Not applicable | `unknown` means no supported local signal was found. A declared video watermark algorithm may remain in `invisible_watermark_hints`; this is not a clean verdict |
 
 AI-image classifiers are a separate question from provenance. They score how
 the pixels look rather than read a mark, and none of these paths targets them.
@@ -275,19 +275,81 @@ measured 25.39 dB paired PSNR and a 1.058 motion-compensated temporal-residual
 ratio. This is one carrier, not a universal guarantee; hashes and exact verdicts
 are tracked in `data/evaluations/video-synthid-oracle.csv`.
 
-### The invisible video path does not touch the audio track
+### Native music provenance is not a compatible waveform decoder
+
+Native Suno/Studio creation comments are unsigned metadata declarations.
+C2PA credentials can additionally contain a fingerprint algorithm, but neither
+signal supplies a compatible waveform-watermark receiver. The
+[Suno Credentials service](https://suno.com/suno-credentials) checks C2PA;
+a negative there does not certify watermark removal. Metadata-only cleaning
+can preserve every decoded audio sample while removing these declarations.
+
+The public Perth v1 model has cross-reacted with synthetic musical negatives
+that never had a watermark embedded. Its response on music does not identify
+Suno's proprietary technology. Quiet sampled windows from AudioSeal, WavMark,
+or SilentCipher do not certify an entire song or an unsupported provider.
+
+### Standalone `video invisible` copies the audio track unchanged
+
+The `audio identify`, `audio metadata`, `audio invisible`, `audio all`, and `audio batch` commands provide named
+public AudioSeal/WavMark/Perth v1/SilentCipher-44k/16k checks (`--scheme auto` scans installed decoders) and spectral, neural-codec (with Mid/Side stereo EnCodec),
+combined, or explicit experimental BigVGAN/Mimi/FocalCodec processing
+into `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, while `video audio` (`--stream N` or `--all-streams`) and `video all --audio-invisible` clean compatible audio tracks inside video containers.
+The BigVGAN profile is full-track mono/stereo only, bounded in duration and
+memory, and excluded from automatic selection. Its local decoder checks do not
+verify SynthID. Fixed provider experiments have both a negative outcome on one
+native Veo source and retained SynthID on independent native and speech sources;
+see the [research roadmap](media-removal-roadmap.md). It is not a general solution.
+Mimi is a separate CPU FP32 explicit codec, excluded from auto selection. Its
+24 kHz internal grid cannot preserve higher source bandwidth. Local Perth checks
+passed independent speech examples, but a short example failed the frozen
+relative voice-consistency guard, and a held-out native speech example showed
+lexical regularization (`"wind"` to `"wooden"`) and crossed the Perth threshold
+after lossy AAC MP4 encoding.
+FocalCodec is a separate CPU FP32 explicit continuous WavLM-to-Vocos profile,
+excluded from auto selection, whose 16 kHz internal grid limits output bandwidth
+to 8 kHz. It passed complete paired WAV, MOV, and AAC MP4 gates on one long
+native speech generation and preserved exact words on the held-out generation,
+but Vocos STFT synthesis cross-reacted with Perth in a pause window on that
+held-out source (including on its unwatermarked twin). Native-provider
+candidates remain unverified across all three explicit experimental backends.
+Short-window speaker comparisons without a qualified context length remain
+exploratory, not proof that a person's identity changed.
+They write standalone `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus` outputs. They do not change standalone `video invisible`
+described below. The fixed spectral profile changes audible content and fails
+on the calibrated tone-stack carrier. Verification is limited to the pinned
+compatible decoders, and bounded whole-clip checks can remain unverified.
+WavMark also checks the published OpenVoice default message at fixed native
+offsets; custom messages and shifted/resampled framing remain outside that
+receiver. Its signature correlation does not identify a provider.
+`silentcipher` uses only the pinned 44.1 kHz model, including for 16 kHz input.
+The separate `silentcipher16` route covers only an experimental terminated
+eight-symbol pattern. Its seven ternary payload symbols are not bytes.
+The published 16 kHz SDK byte framing is incompatible, and the general 32-bit
+profile remains unqualified. Known-message recovery failed on exploratory
+tone and noise carriers. See the [artifact analysis](audio-video-removal.md#experimental-silentcipher-44k-receiver).
+Missing requested decoders cannot become negative results. A negative public
+model check does not certify a production provider or complete payload erasure.
+See [audio coverage](audio-video-removal.md) before interpreting a result.
 
 The `seedance-experimental` video profile is a fixed Seedance experiment,
 available through the common invisible/all/batch pipeline and the standalone
 `remove_video_seedance_experimental` API. It accepts SDR 8-bit MP4 with even dimensions and preserves
-the native frame clock and geometry. Its two encoding modes reproduce the
-label-free forest experiment in [the study](seedance-video-study.md), where
-CapCut detected matched controls and did not detect processed outputs.
+the native frame clock and geometry. Its two encoding modes reproduce the label-free `forest` and held-out `bottle`
+experiments in [the study](seedance-video-study.md), where CapCut detected
+matched controls and did not detect processed outputs (whereas Dreamina and
+BytePlus enterprise API exports cleared after C2PA metadata stripping alone).
 This result is scene-dependent; fine texture and color change visibly, and
 there is no runtime CapCut detector or external upload. Visible labels must
 be handled before this pixel stage. Temporary guide/master videos need disk
 space, although pixel processing uses bounded batches. It leaves the default
-video SynthID profile as the default; selecting Seedance is explicit.
+video SynthID profile as the default unless `--profile auto` (`profile="auto"`)
+or an explicit Seedance profile is chosen. The separate CUDA-only
+`wan21-synthid-experimental` and `wan21-seedance-experimental` 3D diffusion
+profiles (`remove_video_wan_experimental`) require an NVIDIA CUDA GPU and SDR
+8-bit MP4 input, blend clips longer than `193` frames across `4k+1` 3D causal
+windows (`chunk_frames=193`, `overlap_frames=17`) with raised-cosine temporal
+crossfades, and likewise perform no runtime detector verification.
 
 `remove_video_invisible` regenerates the video stream and copies the source audio
 verbatim: the extracted audio bitstream of input and output has an identical
@@ -297,10 +359,14 @@ an untouched generated audio track. Google's verifier scores audio and visual
 tracks separately, and a track this path never modifies is a track it cannot have
 cleaned.
 
-Whether a given carrier's audio actually holds a mark the verifier reads has not
-been established -- that needs a provider verdict, which has not been obtained.
-Treat a clean local report on a clip with generated audio as unproven, not as a
-guarantee, and check the audio separately when it matters. The question is no
+A frozen check of an extracted Veo audio carrier received positive SynthID
+responses in all four configured Gemini slots. Its PCM16 control also remained
+positive. The fixed combined-processing candidate remained positive in both
+slots with complete, explicit control results. The other slots and SynthID
+Detector returned incomplete or service-error evidence, preserved separately.
+This establishes one native carrier, not a verdict for every generated track.
+Treat a clean local report on a clip with generated audio as unproven, and check
+the audio separately when it matters. The question is no
 longer Google-only: since 2026 OpenAI (ChatGPT and API audio) and ElevenLabs
 also embed SynthID in generated audio, and Microsoft lists provenance for its
 Azure speech and GPT audio models, so voice-over or music from those services
@@ -403,7 +469,7 @@ established for that stage.
 - Meta Content Seal: `0.17` (above qwen's `0.1`);
 - unknown: `0.50`, following the strictest measured cohort.
 
-An explicit `--strength` overrides all three. The defaults are operating points,
+An explicit `--strength` overrides all named models. The defaults are operating points,
 not universal guarantees. Near a removal threshold, different content or a
 different random seed may change the verifier result, which is why the profiles
 are certified at a fixed seed. The live resolver is
@@ -754,3 +820,14 @@ Removing file-local signals does not remove:
 - legal disclosure duties.
 
 See [scope, safety, and legal notes](legal-and-safety.md).
+
+## Experimental public video messages
+
+`video message` requires the independently known encoder message. It does not
+detect arbitrary unknown watermarks or identify AI origin. A complete negative
+means that this target fell below the project receiver threshold under pinned
+public weights; it does not establish complete erasure or provider compatibility.
+The processing route accepts one zero-based CFR video stream with optional audio
+and MP4/MOV/M4V output. It downsamples and can alter texture and motion visibly.
+Read delivered-file quality and before/after evidence. Audio marks remain outside
+its checks. See the [command contract](cli.md#public-model-video-messages-experimental).
