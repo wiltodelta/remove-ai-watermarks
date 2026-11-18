@@ -189,6 +189,170 @@ def stabilize_filled_frame(
     return result
 
 
+def recover_unobscured_background(
+    current_source: NDArray[Any],
+    current_mask: NDArray[Any],
+    donors: Sequence[tuple[NDArray[Any], NDArray[Any] | None]],
+    *,
+    max_context_residual: float = 12.0,
+    fb_tolerance_px: float = 1.75,
+) -> tuple[NDArray[Any], NDArray[Any]]:
+    """Propagate real unobscured background pixels from motion-aligned neighbor frames.
+
+    Unlike ``stabilize_filled_frame`` (which blends two already-inpainted guesses
+    when masks overlap), this stage runs *before* single-frame inpainting: when a
+    moving or intermittent watermark uncovers background pixels in nearby frames
+    ``t +/- k``, forward-backward consistent optical flow warps those genuine
+    background pixels into ``current_mask`` and shrinks the remaining hole. Scene
+    cuts and occlusions are rejected via an unmasked context-ring residual gate.
+    """
+    if max_context_residual <= 0.0 or fb_tolerance_px <= 0.0:
+        raise ValueError("Context residual and flow consistency thresholds must be positive")
+    if current_mask.shape != current_source.shape[:2]:
+        raise ValueError("Current source and mask must share spatial geometry")
+    remaining = current_mask.copy()
+    if not donors:
+        return current_source, remaining
+    ys, xs = np.where(current_mask > 0)
+    if len(xs) == 0:
+        return current_source, remaining
+
+    height, width = current_mask.shape
+    mask_width = int(xs.max() - xs.min() + 1)
+    mask_height = int(ys.max() - ys.min() + 1)
+    padding = max(40, round(max(mask_width, mask_height) * 1.0))
+    x0 = max(0, int(xs.min()) - padding)
+    y0 = max(0, int(ys.min()) - padding)
+    x1 = min(width, int(xs.max()) + padding + 1)
+    y1 = min(height, int(ys.max()) + padding + 1)
+    crop_h, crop_w = y1 - y0, x1 - x0
+
+    curr_src_crop = current_source[y0:y1, x0:x1]
+    curr_src_f32 = curr_src_crop.astype(np.float32)
+    curr_mask_crop = current_mask[y0:y1, x0:x1]
+    curr_hole = curr_mask_crop > 0
+
+    guard_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    curr_guard = cv2.dilate(curr_hole.astype(np.uint8) * 255, guard_kernel)
+    curr_guard_mask = curr_guard > 0
+    curr_gray_raw = cv2.cvtColor(curr_src_crop, cv2.COLOR_BGR2GRAY)
+    # Pre-inpaint the watermark out of the flow-estimation grayscale image so
+    # Farneback tracks background motion rather than the moving overlay itself.
+    curr_gray_clean = cv2.inpaint(curr_gray_raw, curr_guard, 3.0, cv2.INPAINT_TELEA)
+
+    ring_dilation = max(9, round(max(mask_width, mask_height) * 0.30)) | 1
+    ring_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ring_dilation, ring_dilation))
+    outer_ring = cv2.dilate(curr_guard_mask.astype(np.uint8), ring_kernel).astype(bool)
+    grid_x = np.arange(crop_w, dtype=np.float32)[None, :]
+    grid_y = np.arange(crop_h, dtype=np.float32)[:, None]
+
+    def _project_donor_flow(
+        flow: NDArray[Any],
+        donor_guard_arr: NDArray[Any] | None,
+    ) -> tuple[tuple[NDArray[Any], NDArray[Any]], NDArray[Any], NDArray[Any], NDArray[Any]]:
+        maps_pair = _displacement_to_maps(flow)
+        bounds = (
+            (maps_pair[0] >= 0.0)
+            & (maps_pair[0] <= float(crop_w - 1))
+            & (maps_pair[1] >= 0.0)
+            & (maps_pair[1] <= float(crop_h - 1))
+        )
+        donor_masked = (
+            _backward_warp(donor_guard_arr, maps_pair, interpolation=cv2.INTER_NEAREST) > 0
+            if donor_guard_arr is not None
+            else np.zeros((crop_h, crop_w), dtype=bool)
+        )
+        ctx = outer_ring & ~(curr_guard_mask | donor_masked) & bounds
+        return maps_pair, bounds, donor_masked, ctx
+
+    accum_rgb = np.zeros((crop_h, crop_w, 3), dtype=np.float32)
+    accum_w = np.zeros((crop_h, crop_w), dtype=np.float32)
+
+    for rank, (donor_source, donor_mask) in enumerate(donors):
+        if donor_source.shape != current_source.shape:
+            raise ValueError("Donor frame must match current source geometry")
+        if donor_mask is not None and donor_mask.shape != current_mask.shape:
+            raise ValueError("Donor mask must match current mask geometry")
+
+        donor_src_crop = donor_source[y0:y1, x0:x1]
+        donor_gray_raw = cv2.cvtColor(donor_src_crop, cv2.COLOR_BGR2GRAY)
+        donor_gray_clean = donor_gray_raw
+        donor_guard: NDArray[Any] | None = None
+        if donor_mask is not None:
+            donor_mask_crop = donor_mask[y0:y1, x0:x1]
+            if np.any(donor_mask_crop > 0):
+                donor_guard = cv2.dilate((donor_mask_crop > 0).astype(np.uint8) * 255, guard_kernel)
+                donor_gray_clean = cv2.inpaint(donor_gray_raw, donor_guard, 3.0, cv2.INPAINT_TELEA)
+
+        flow_to_donor = _flow_field(curr_gray_clean, donor_gray_clean)
+        flow_from_donor = _flow_field(donor_gray_clean, curr_gray_clean)
+        raw_maps, _raw_bounds, _raw_donor_masked, raw_context = _project_donor_flow(flow_to_donor, donor_guard)
+        back_flow = _backward_warp(flow_from_donor, raw_maps)
+        fb_err = np.linalg.norm(flow_to_donor + back_flow, axis=2)
+
+        consistent_ctx = raw_context & (fb_err <= fb_tolerance_px)
+        if int(np.count_nonzero(consistent_ctx)) < 48:
+            continue
+
+        # Inside curr_guard the source background is hidden by the watermark, so
+        # dense optical flow has no true texture there. Fit a robust local affine
+        # motion model on the verified unmasked context ring and evaluate the
+        # context photometric gate on that propagated background motion field.
+        cy, cx = np.where(consistent_ctx)
+        u_vals = flow_to_donor[cy, cx, 0]
+        v_vals = flow_to_donor[cy, cx, 1]
+        med_u, med_v = float(np.median(u_vals)), float(np.median(v_vals))
+        inliers = (np.abs(u_vals - med_u) <= 3.0) & (np.abs(v_vals - med_v) <= 3.0)
+        cx_in = cx[inliers].astype(np.float32)
+        if len(cx_in) < 32:
+            continue
+        design = np.column_stack((cx_in, cy[inliers].astype(np.float32), np.ones_like(cx_in)))
+        coef_u, *_ = np.linalg.lstsq(design, u_vals[inliers], rcond=None)
+        coef_v, *_ = np.linalg.lstsq(design, v_vals[inliers], rcond=None)
+        prop_flow = np.empty((crop_h, crop_w, 2), dtype=np.float32)
+        prop_flow[..., 0] = coef_u[0] * grid_x + coef_u[1] * grid_y + coef_u[2]
+        prop_flow[..., 1] = coef_v[0] * grid_x + coef_v[1] * grid_y + coef_v[2]
+        # Keep direct cycle-consistent Farneback outside the occluded region
+        keep_direct = ~curr_guard_mask & (fb_err <= fb_tolerance_px)
+        prop_flow[keep_direct] = flow_to_donor[keep_direct]
+
+        maps, in_bounds, warped_donor_masked, context = _project_donor_flow(prop_flow, donor_guard)
+        eligible = curr_hole & ~warped_donor_masked & in_bounds
+        if not np.any(eligible) or int(np.count_nonzero(context)) < 48:
+            continue
+
+        warped_donor_src = _backward_warp(donor_src_crop.astype(np.float32), maps)
+        residual = np.mean(np.abs(curr_src_f32 - warped_donor_src), axis=2)
+        context_residual = float(np.mean(residual[context]))
+        if context_residual > max_context_residual:
+            continue
+
+        weight = max(0.05, (1.0 - context_residual / max_context_residual) / (1.0 + 0.25 * rank))
+        accum_rgb[eligible] += weight * warped_donor_src[eligible]
+        accum_w[eligible] += weight
+        if bool(np.all(accum_w[curr_hole] >= 1.1)):
+            break
+
+    recovered_px = curr_hole & (accum_w > 0.0)
+    if not np.any(recovered_px):
+        return current_source, remaining
+
+    result = current_source.copy()
+    result_crop = result[y0:y1, x0:x1]
+    result_crop[recovered_px] = np.clip(
+        np.rint(accum_rgb[recovered_px] / accum_w[recovered_px, None]),
+        0,
+        255,
+    ).astype(np.uint8)
+
+    rem_crop = remaining[y0:y1, x0:x1]
+    rem_crop[recovered_px] = 0
+    if np.any(rem_crop > 0):
+        seam_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        rem_crop[:] = cv2.dilate(rem_crop, seam_kernel) & curr_mask_crop
+    return result, remaining
+
+
 def _flow_field(
     from_gray: NDArray[Any],
     to_gray: NDArray[Any],

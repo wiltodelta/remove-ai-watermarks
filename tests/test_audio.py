@@ -1300,3 +1300,60 @@ def test_adaptive_auto_profiles_routes_elevenlabs_and_google_synthid_metadata(tm
     assert cleaned.skipped is False
     assert cleaned.method == "dac"
     assert len(dac_calls) == 1
+
+
+def test_google_synthid_auto_fails_closed_without_dac_or_on_multichannel(tmp_path, monkeypatch):
+    from remove_ai_watermarks import audio
+
+    src_wav = _source(tmp_path, frames=16000)
+    monkeypatch.setattr(audio.audioseal, "is_available", lambda: False)
+    monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
+    monkeypatch.setattr(audio.perth, "is_available", lambda: False)
+    google_markers = {
+        "issuer": "Google LLC",
+        "synthid_watermark": "present according to Google LLC provenance",
+    }
+    monkeypatch.setattr(audio.metadata, "get_ai_metadata", lambda _p: dict(google_markers))
+
+    rep_stereo = audio.identify_audio(src_wav, scheme="auto")
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: False)
+    assert audio.adaptive_auto_profiles("auto", rep_stereo) == ("dac",)
+
+    skipped = audio.remove_audio_invisible(src_wav, tmp_path / "skip.wav", scheme="auto", method="auto")
+    assert skipped.skipped is True
+
+    monkeypatch.setattr(
+        audio.audio_codec,
+        "resynthesize",
+        lambda *_a, **_k: pytest.fail("encodec must never run as a silent fallback for Google SynthID"),
+    )
+    with pytest.raises(ImportError, match="audio-codec"):
+        audio.remove_audio_invisible(
+            src_wav,
+            tmp_path / "fail_no_dac.wav",
+            scheme="auto",
+            method="auto",
+            allow_unverified=True,
+        )
+
+    six_ch = tmp_path / "six_ch.wav"
+    t = np.arange(8000) / 16000
+    tone = (0.15 * np.sin(2 * np.pi * 440 * t) * 32767).astype("<i2")
+    with wave.open(str(six_ch), "wb") as stream:
+        stream.setnchannels(6)
+        stream.setsampwidth(2)
+        stream.setframerate(16000)
+        stream.writeframes(np.column_stack([tone] * 6).tobytes())
+
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    rep_6ch = audio.identify_audio(six_ch, scheme="auto")
+    assert rep_6ch.recommended_recipe == "remove-ai-watermarks audio metadata input.wav --remove -o clean.wav"
+    assert audio.adaptive_auto_profiles("auto", rep_6ch) == ("dac",)
+    with pytest.raises(ValueError, match="mono or stereo"):
+        audio.remove_audio_invisible(
+            six_ch,
+            tmp_path / "fail_6ch.wav",
+            scheme="auto",
+            method="auto",
+            allow_unverified=True,
+        )

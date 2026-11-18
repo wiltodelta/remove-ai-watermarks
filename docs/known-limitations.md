@@ -295,7 +295,7 @@ or SilentCipher do not certify an entire song or an unsupported provider.
 ### Standalone `video invisible` copies the audio track unchanged
 
 The `audio identify`, `audio metadata`, `audio invisible`, `audio all`, and `audio batch` commands provide named
-public AudioSeal/WavMark/Perth v1/SilentCipher-44k/16k checks (`--scheme auto` scans installed decoders) and spectral, neural-codec (with Mid/Side stereo EnCodec),
+public AudioSeal/WavMark/Perth v1/SilentCipher-44k/16k checks (`--scheme auto` scans installed decoders) and spectral, neural-codec (with Mid/Side stereo EnCodec or 44.1 kHz DAC, which `auto` selects when pre-strip metadata identifies ElevenLabs or Google SynthID),
 combined, or explicit experimental BigVGAN/Mimi/FocalCodec processing
 into `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, while `video audio` (`--stream N` or `--all-streams`) and `video all --audio-invisible` clean compatible audio tracks inside video containers.
 The BigVGAN profile is full-track mono/stereo only, bounded in duration and

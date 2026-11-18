@@ -257,6 +257,16 @@ def test_evaluate_multistream_and_four_layer_surfaces(
 
     def fake_multistream(_src: Path, out: Path, **_kw: object) -> object:
         out.write_bytes(b"multi-cleaned")
+        fid = AudioFidelity(
+            frames=16000,
+            rms_error=0.002,
+            max_abs_error=0.02,
+            snr_db=31.0,
+            peak_amplitude=0.4,
+            samples_above_full_scale=0,
+            source_rms=0.2,
+            output_rms=0.2,
+        )
         return SimpleNamespace(
             output=out,
             skipped=False,
@@ -267,16 +277,15 @@ def test_evaluate_multistream_and_four_layer_surfaces(
             streams=(
                 SimpleNamespace(
                     method="spectral",
-                    fidelity=AudioFidelity(
-                        frames=16000,
-                        rms_error=0.002,
-                        max_abs_error=0.02,
-                        snr_db=31.0,
-                        peak_amplitude=0.4,
-                        samples_above_full_scale=0,
-                        source_rms=0.2,
-                        output_rms=0.2,
-                    ),
+                    quality_passed=True,
+                    before=SimpleNamespace(watermark_status="detected"),
+                    fidelity=fid,
+                ),
+                SimpleNamespace(
+                    method="encodec",
+                    quality_passed=True,
+                    before=SimpleNamespace(watermark_status="detected"),
+                    fidelity=fid,
                 ),
             ),
         )
@@ -313,6 +322,20 @@ def test_evaluate_multistream_and_four_layer_surfaces(
         bench.audio,
         "identify_audio",
         lambda _p, **_kw: SimpleNamespace(watermark_status="not_detected"),
+    )
+    monkeypatch.setattr(bench.video_quality, "delivered_geometry", lambda _p: (64, 48, 12.0))
+    monkeypatch.setattr(
+        bench.video_quality,
+        "measure_video_fidelity",
+        lambda *_a, **_kw: {
+            "source_psnr_db": 31.0,
+            "source_ssim": 0.96,
+            "source_color_ssim": 0.95,
+            "min_frame_psnr_db": 29.0,
+            "min_frame_ssim": 0.93,
+            "worst_window_ssim": 0.95,
+            "temporal_residual_ratio": 1.02,
+        },
     )
 
     # Clean-control predicate must reject unverified before_status
@@ -508,3 +531,213 @@ def test_perceptual_audio_metrics_phase_invariance_and_markdown_rendering(
     )
     assert "MR-STFT" in md
     assert "Mel" in md
+
+
+def test_schema_v2_gates_four_layer_video_quality_multistream_perceptual_and_external_comparator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import shutil
+    import wave
+    from pathlib import Path
+
+    np = pytest.importorskip("numpy")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg and ffprobe are required")
+
+    # 1. skipped_clean must reject before_status=None
+    assert (
+        bench._check_outcome(
+            "skipped_clean",
+            skipped=True,
+            verified_removed=None,
+            quality_passed=None,
+            before_status=None,
+        )
+        is False
+    )
+    assert (
+        bench._check_outcome(
+            "control_stays_positive",
+            skipped=True,
+            verified_removed=None,
+            quality_passed=None,
+            before_status="detected",
+        )
+        is True
+    )
+
+    # 2. video_all_4layer must fail when visual quality (e.g., color SSIM) collapses despite clean audio
+    src_v = tmp_path / "four_bad_color.mp4"
+    src_v.write_bytes(b"video-4l")
+    sha_v = sha256_file(src_v)
+
+    def fake_video_all(_src: Path, out: Path, **_kw: object) -> object:
+        out.write_bytes(b"four-layer-chroma-damaged")
+        return SimpleNamespace(
+            output=out,
+            invisible_profile="synthid",
+            detected_metadata={"audio_creation_tool": "Suno"},
+            remaining_metadata={},
+            visible_mark="kling",
+            visible_removed_frames=24,
+            audio=SimpleNamespace(stream_action="processed", watermark_status="not_detected"),
+            audio_quality_passed=True,
+        )
+
+    monkeypatch.setattr(bench.video, "remove_video_all", fake_video_all)
+    monkeypatch.setattr(
+        bench.video,
+        "identify_video",
+        lambda _p: SimpleNamespace(visible_mark=None, has_ai_metadata=False),
+    )
+    monkeypatch.setattr(
+        bench.video_messages,
+        "identify_video_message",
+        lambda p, **_kw: SimpleNamespace(status="matched" if str(p) == str(src_v) else "not_matched"),
+    )
+    monkeypatch.setattr(
+        bench.audio,
+        "identify_audio",
+        lambda _p, **_kw: SimpleNamespace(watermark_status="not_detected"),
+    )
+    monkeypatch.setattr(bench.video_quality, "delivered_geometry", lambda _p: (64, 48, 12.0))
+    monkeypatch.setattr(
+        bench.video_quality,
+        "measure_video_fidelity",
+        lambda *_a, **_kw: {
+            "source_psnr_db": 26.0,
+            "source_ssim": 0.92,
+            "source_color_ssim": 0.22,
+            "min_frame_psnr_db": 24.0,
+            "min_frame_ssim": 0.88,
+            "worst_window_ssim": 0.90,
+            "temporal_residual_ratio": 1.05,
+        },
+    )
+
+    case_4l = bench.RemovalBenchmarkCase(
+        case_id="four-layer-chroma-fail",
+        surface="video_all_4layer",
+        scheme="auto",
+        source_path=src_v,
+        source_sha256=sha_v,
+        output_suffix=".mp4",
+        expected_outcome="verified_removed",
+        reference_hex="ab" * 32,
+    )
+    out_dir = tmp_path / "deliv"
+    out_dir.mkdir()
+    row_4l = bench.evaluate_removal_case(case_4l, out_dir)
+    assert row_4l["status"] == "failed"
+    assert row_4l["video_quality"]["source_color_ssim"] == 0.22
+
+    # 3. video_audio_all_streams scores all processed ordinals and fails strict mode when track 1 errors
+    def fake_multistream(_src: Path, out: Path, **_kw: object) -> object:
+        out.write_bytes(b"multi")
+        fid = AudioFidelity(16000, 0.002, 0.02, 30.0, 0.4, 0, 0.2, 0.2)
+        return SimpleNamespace(
+            output=out,
+            skipped=False,
+            verified_removed=True,
+            quality_passed=True,
+            processed_ordinals=(0, 1),
+            unchanged_streams=(0,),
+            streams=(
+                SimpleNamespace(
+                    method="spectral",
+                    quality_passed=True,
+                    fidelity=fid,
+                    before=SimpleNamespace(watermark_status="detected", stream=None),
+                    after=SimpleNamespace(watermark_status="not_detected", stream=None),
+                ),
+                SimpleNamespace(
+                    method="spectral",
+                    quality_passed=True,
+                    fidelity=fid,
+                    before=SimpleNamespace(watermark_status="detected", stream=None),
+                    after=SimpleNamespace(watermark_status="not_detected", stream=None),
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(bench.video_audio, "remove_video_audio_all_streams", fake_multistream)
+    monkeypatch.setattr(
+        bench,
+        "_try_perceptual_metrics",
+        lambda _s, _o, *, stream=0, **_k: (
+            ({"mr_stft_loss": 0.1, "mel_distance_db": 0.5}, None)
+            if stream == 0
+            else (None, "corrupt second audio stream")
+        ),
+    )
+    case_ms = bench.RemovalBenchmarkCase(
+        case_id="multi-track1-perc-fail",
+        surface="video_audio_all_streams",
+        scheme="auto",
+        source_path=src_v,
+        source_sha256=sha_v,
+        output_suffix=".mp4",
+        expected_outcome="verified_removed",
+    )
+    row_ms_strict = bench.evaluate_removal_case(case_ms, out_dir, strict=True)
+    assert row_ms_strict["status"] == "failed"
+    assert "1" in row_ms_strict["perceptual_errors"]
+
+    # 4. External competitor output scoring (--external-outputs-dir) on real WAV
+    monkeypatch.undo()
+    sr = 16000
+    t = np.arange(sr * 2, dtype=np.float32) / sr
+    tone = (0.25 * np.sin(2 * np.pi * 440.0 * t)).astype(np.float32)
+    pcm = np.clip(np.rint(tone * 32767.0), -32768, 32767).astype("<i2")
+    src_wav = tmp_path / "ext_src.wav"
+    ext_dir = tmp_path / "external_tool"
+    ext_dir.mkdir()
+    ext_wav = ext_dir / "ext-competitor-case.wav"
+    for p in (src_wav, ext_wav):
+        with wave.open(str(p), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(pcm.tobytes())
+
+    monkeypatch.setattr(
+        bench.audio,
+        "remove_audio_invisible",
+        lambda *_a, **_kw: pytest.fail("remove_audio_invisible must not run in external_outputs_dir mode"),
+    )
+    monkeypatch.setattr(
+        bench.audio,
+        "identify_audio",
+        lambda p, **_kw: SimpleNamespace(
+            watermark_status="detected" if Path(p).resolve() == src_wav.resolve() else "not_detected",
+            stream=bench.audio_io.probe_audio(p),
+        ),
+    )
+    ext_manifest = _write_manifest(
+        tmp_path / "ext_manifest.jsonl",
+        [
+            {
+                "schema_version": 2,
+                "case_id": "ext-competitor-case",
+                "generation_id": "gen-001",
+                "role": "candidate",
+                "surface": "audio_invisible",
+                "scheme": "audioseal",
+                "source_path": str(src_wav),
+                "source_sha256": sha256_file(src_wav),
+                "output_suffix": ".wav",
+                "expected_outcome": "verified_removed",
+            }
+        ],
+    )
+    ext_report = bench.run_removal_benchmark(
+        ext_manifest,
+        work_dir=tmp_path / "ext_work",
+        output_json=tmp_path / "ext_report.json",
+        external_outputs_dir=ext_dir,
+        strict=True,
+    )
+    assert ext_report["counts"] == {"total": 1, "passed": 1, "failed": 0, "unavailable": 0}
+    assert ext_report["results"][0]["selected_method"] == "external"
+    assert ext_report["results"][0]["perceptual"]["mr_stft_loss"] == pytest.approx(0.0, abs=1e-5)

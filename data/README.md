@@ -27,8 +27,12 @@ data/
                   Prompt-matched, publication-cleared AI content matrix for
                   deterministic auto-engine and watermark benchmark research
     fidelity/     Evaluation instructions and hand-verified ground truth
+    audio-synthid-oracle.csv
+                  Reproducible Gemini SynthID audio verdicts for DAC / FocalCodec
     video-synthid-oracle.csv
-                  Reproducible full-clip Gemini SynthID verdicts
+                  Reproducible full-clip Gemini SynthID 2D VAE verdicts
+    video-wan-oracle.csv
+                  Reproducible native-resolution Wan 2.1 SynthID verdicts
 ```
 
 [`image-watermark-examples.csv`](image-watermark-examples.csv) and
@@ -109,3 +113,27 @@ comparable to each other only while that definition holds.
 
 The two 2026-07-31 rows predate this schema; their empty fields were never
 recorded and are not recoverable from the row.
+
+## Audio SynthID and Wan 2.1 video oracle manifests
+
+`evaluations/audio-synthid-oracle.csv` and `evaluations/video-wan-oracle.csv`
+record provider-oracle verdicts strictly over publication-cleared carriers
+stored in `data/` (`fixtures/` and `captures/`):
+
+- `tests/test_audio_dac.py` verifies that every `source_path` in
+  `audio-synthid-oracle.csv` matches its tracked `source_sha256` and that
+  `descript/dac_44khz` (`MODEL_REPOSITORY`, `MODEL_REVISION`,
+  `FIXED_QUANTIZERS=3`) has a certified `not_detected` row paired with a
+  matched `detected` control on the same carrier (alongside the held-out
+  `focalcodec` counterexample that remained `detected`).
+- `tests/test_video_wan.py` verifies that every `source_path` in
+  `video-wan-oracle.csv` matches its tracked `source_sha256` and that
+  `wan21-synthid-experimental` (`WAN21_MODEL_ID`, `WAN21_MODEL_REVISION`,
+  `WAN21_SYNTHID_STRENGTH=0.38`, `WAN21_INFERENCE_STEPS=20`,
+  `WAN21_FLOW_SHIFT=3.0`, `WAN21_GUIDANCE_SCALE=1.0`, and causal windowing
+  `193 / 17`) has certified `not_detected` rows paired with matched `detected`
+  controls. Pixel-marked CapCut Seedance captures (`WAN21_SEEDANCE_STRENGTH=0.12`)
+  remain untracked in private research storage and are documented in
+  [`docs/seedance-video-study.md`](../docs/seedance-video-study.md) until a
+  publication-cleared pixel-marked CapCut fixture is added.
+

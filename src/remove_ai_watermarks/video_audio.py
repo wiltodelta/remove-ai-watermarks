@@ -258,6 +258,7 @@ def remove_video_audio(
     allow_positive: bool = False,
     allow_quality_override: bool = False,
     _before: audio.AudioProvenanceReport | None = None,
+    _metadata_markers: dict[str, str] | None = None,
 ) -> VideoAudioRemovalResult:
     """Filter one audio track, copying every other stream without shortening tails.
 
@@ -302,6 +303,8 @@ def remove_video_audio(
         if _before is not None
         else audio.identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
     )
+    if _metadata_markers and not before.metadata_markers:
+        before = replace(before, metadata_markers=dict(_metadata_markers))
     if method == "auto":
         profiles = audio.adaptive_auto_profiles(scheme, before)
     eff_unverified = force or allow_unverified
@@ -488,11 +491,12 @@ def preflight_video_audio_workload(
     allow_positive: bool = False,
     allow_quality_override: bool = False,
     streams: Sequence[int] | None = None,
+    _metadata_markers: dict[str, str] | None = None,
 ) -> tuple[audio.AudioProvenanceReport, ...]:
     """Validate audio dependencies, layout, and bounded-track limits before visual processing."""
     _ = allow_quality_override
     source_path = Path(source).expanduser().resolve()
-    profiles = audio.validate_audio_arguments(
+    audio.validate_audio_arguments(
         method=method,
         scheme=scheme,
         verify=verify,
@@ -524,22 +528,43 @@ def preflight_video_audio_workload(
     eff_unverified = force or allow_unverified
     selected_set = set(selected_ordinals)
     inspected: list[audio.AudioProvenanceReport] = []
+    cached_markers: dict[str, str] | None = dict(_metadata_markers) if _metadata_markers is not None else None
+
+    def _preflight_markers() -> dict[str, str]:
+        nonlocal cached_markers
+        if cached_markers is None:
+            cached_markers = audio.metadata.get_ai_metadata(source_path)
+        return cached_markers
+
     if eff_unverified and not verify:
-        target_profile = profiles[0]
-        audio.require_audio_profile_runtime(target_profile)
+        markers = _preflight_markers()
         for ordinal in selected_ordinals:
             info = _preflight_stream_info(source_path, audio_streams, ordinal)
+            synth_rep = audio.AudioProvenanceReport(source_path, "", info, markers, "unverified", (), ())
+            target_profile = audio.adaptive_auto_profiles(scheme, synth_rep)[0] if method == "auto" else method
+            audio.require_audio_profile_runtime(target_profile)
             audio.validate_audio_stream_for_profile(info, target_profile)
         return ()
     for ordinal in range(len(audio_streams)):
         try:
-            rep = audio.identify_audio(source_path, check_invisible=verify, stream=ordinal, scheme=scheme)
+            rep = audio.identify_audio(
+                source_path,
+                check_invisible=verify,
+                stream=ordinal,
+                scheme=scheme,
+            )
+            if _metadata_markers and not rep.metadata_markers:
+                rep = replace(rep, metadata_markers=dict(_metadata_markers))
             inspected.append(rep)
         except Exception:
             if eff_unverified and ordinal in selected_set:
                 info = _preflight_stream_info(source_path, audio_streams, ordinal)
-                audio.require_audio_profile_runtime(profiles[0])
-                audio.validate_audio_stream_for_profile(info, profiles[0])
+                synth_rep = audio.AudioProvenanceReport(
+                    source_path, "", info, _preflight_markers(), "unverified", (), ()
+                )
+                fallback_profile = audio.adaptive_auto_profiles(scheme, synth_rep)[0] if method == "auto" else method
+                audio.require_audio_profile_runtime(fallback_profile)
+                audio.validate_audio_stream_for_profile(info, fallback_profile)
                 continue
             raise
         if ordinal not in selected_set:
@@ -590,6 +615,7 @@ def remove_video_audio_all_streams(
     allow_quality_override: bool = False,
     streams: Sequence[int] | None = None,
     _befores: Sequence[audio.AudioProvenanceReport] | None = None,
+    _metadata_markers: dict[str, str] | None = None,
 ) -> VideoAudioMultiStreamResult:
     """Inspect and clean every watermarked audio track while preserving video and clean tracks."""
     source_path, output_path = Path(source).expanduser().resolve(), Path(output).expanduser()
@@ -628,8 +654,18 @@ def remove_video_audio_all_streams(
         befores = [replace(rep, source=source_path, sha256=source_sha) for rep in _befores]
     else:
         befores = [
-            audio.identify_audio(source_path, check_invisible=verify, stream=ordinal, scheme=scheme)
+            audio.identify_audio(
+                source_path,
+                check_invisible=verify,
+                stream=ordinal,
+                scheme=scheme,
+            )
             for ordinal in range(len(audio_global_indices))
+        ]
+    if _metadata_markers:
+        befores = [
+            replace(rep, metadata_markers=dict(_metadata_markers)) if not rep.metadata_markers else rep
+            for rep in befores
         ]
     eff_unverified = force or allow_unverified
     eff_positive = force or allow_positive
@@ -713,7 +749,11 @@ def remove_video_audio_all_streams(
                         allow_unverified=allow_unverified,
                         allow_positive=allow_positive,
                         allow_quality_override=allow_quality_override,
-                        _before=befores[ordinal] if step == 0 else None,
+                        _before=(
+                            befores[ordinal]
+                            if step == 0
+                            else replace(befores[ordinal], source=current, sha256=sha256_file(current))
+                        ),
                     )
                     if res.skipped or res.output is None:
                         raise RuntimeError(

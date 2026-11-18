@@ -151,7 +151,7 @@ order.
 
 `video invisible` and `video all --invisible` accept MP4, MOV, and M4V only.
 That is the default SynthID profile. It is lossy; its shipped noise profile
-is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID audio), pass an explicit method with `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without a positive public decoder runs `spectral` only, and `focalcodec` failed on a held-out 10 s Gemini audio track).
+is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only, and `focalcodec` failed on a held-out 10 s Gemini audio track).
 
 For an owned Seedance MP4, explicitly opt into the experimental fixed recipe
 (since CLI 0.56.0):
@@ -237,7 +237,7 @@ outputs preserve channels and sample clock (Opus codes internally at 48 kHz and 
 discarded and saved-file decoder verification enforced after encoding. The spectral profile changes audible content and can fail.
 
 `--method auto` (default) tries spectral filtering then combined filtering and
-neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers (using Mid/Side stereo on 2-channel EnCodec passes), routes mono/stereo audio carrying ElevenLabs or Google SynthID metadata directly to `dac` (or `encodec`/`combined` when `dac` is absent) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
+neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers (using Mid/Side stereo on 2-channel EnCodec passes), routes mono/stereo audio carrying ElevenLabs metadata to `dac` (or `encodec`/`combined` when `dac` is absent) and Google SynthID metadata exclusively to `dac`/`combined` (failing closed rather than falling back to `encodec` when `dac` is absent or multichannel) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
 `--method spectral`, `encodec`, or `combined` fixes one profile. Neural profiles
 need `audio-codec`; a missing required fallback fails without replacing output.
 `--bandwidth` accepts `6`, `12`, or `24` kbps, default `24`, for neural profiles.
@@ -284,7 +284,8 @@ resynthesis up to 30 seconds and raised-cosine overlap-window streaming on
 longer mono/stereo audio (`> 30 s`), with raw mid/side stereo, stem RMS
 preservation, bitexact WAV encoding, and rational half-open native clock while
 preserving full 22.05 kHz bandwidth. Keep `--vocoder-device cpu`; EnCodec
-bandwidth does not apply, and `auto` excludes this method.
+bandwidth does not apply, and `auto` selects this method only when pre-strip
+metadata identifies ElevenLabs or Google SynthID.
 
 `--allow-unverified` permits processing without a local source-positive decoder match (or with `--no-verify`) while keeping the audio SNR/RMS/window integrity gate active (`--allow-positive` permits a still-positive final candidate; `--allow-quality-override` overrides the integrity gate; `--force` enables all three).
 `--method spectral --allow-unverified --no-verify` only needs the `audio` extra. Other

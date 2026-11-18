@@ -26,6 +26,7 @@ changes pixels.
 from __future__ import annotations
 
 import logging
+from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from fractions import Fraction
@@ -51,7 +52,7 @@ from remove_ai_watermarks.video_encoding import (
     staged_video_output,
     start_raw_video_encoder,
 )
-from remove_ai_watermarks.video_temporal import stabilize_filled_frame
+from remove_ai_watermarks.video_temporal import recover_unobscured_background, stabilize_filled_frame
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1572,43 +1573,76 @@ def encode_clean_video(
                     time_base=time_base,
                     start_pts=profile.start_pts or 0,
                 )
-            for frame_index, region in enumerate(regions):
-                ok, frame = capture.read()
+            donor_radius = 4 if temporal_consistency else 0
+            total_frames = len(regions)
+            window: deque[tuple[int, NDArray[Any], NDArray[Any] | None]] = deque()
+            next_decode = 0
+
+            def _pull_frame() -> None:
+                nonlocal next_decode
+                ok, raw = capture.read()
                 if not ok:
-                    raise RuntimeError(f"Video ended while reading frame {frame_index}: {source}")
-                source_frame = frame
-                mask: NDArray[Any] | None = None
-                if region is not None:
-                    mask = _mask_for_region(
-                        frame,
-                        region,
+                    raise RuntimeError(f"Video ended while reading frame {next_decode}: {source}")
+                reg = regions[next_decode]
+                m = (
+                    _mask_for_region(
+                        raw,
+                        reg,
                         padding_fraction=padding_fraction,
                         mask_style=mask_style,
                     )
-                    frame = fill(frame, mask, backend=resolved_backend)
-                    if (
-                        temporal_consistency
-                        and previous_source is not None
-                        and previous_cleaned is not None
-                        and previous_mask is not None
-                    ):
-                        frame = stabilize_filled_frame(
-                            previous_source,
-                            previous_cleaned,
-                            previous_mask,
-                            source_frame,
-                            frame,
-                            mask,
-                            copy=False,
-                        )
+                    if reg is not None
+                    else None
+                )
+                window.append((next_decode, raw, m))
+                next_decode += 1
+
+            for frame_index in range(total_frames):
+                while next_decode < total_frames and next_decode <= frame_index + donor_radius:
+                    _pull_frame()
+                while window and window[0][0] < frame_index - donor_radius:
+                    window.popleft()
+
+                _cur_idx, source_frame, mask = next(item for item in window if item[0] == frame_index)
+                frame = source_frame
+                stage_source = source_frame
+                stage_mask: NDArray[Any] | None = None
+                if mask is not None:
+                    working_mask = mask
+                    if temporal_consistency and len(window) > 1:
+                        donors = [
+                            (d_src, d_mask)
+                            for d_idx, d_src, d_mask in sorted(window, key=lambda it: abs(it[0] - frame_index))
+                            if d_idx != frame_index
+                        ]
+                        stage_source, working_mask = recover_unobscured_background(source_frame, mask, donors)
+                    frame = stage_source
+                    if np.any(working_mask > 0):
+                        stage_mask = working_mask
+                        frame = fill(stage_source, working_mask, backend=resolved_backend)
+                        if (
+                            temporal_consistency
+                            and previous_source is not None
+                            and previous_cleaned is not None
+                            and previous_mask is not None
+                        ):
+                            frame = stabilize_filled_frame(
+                                previous_source,
+                                previous_cleaned,
+                                previous_mask,
+                                stage_source,
+                                frame,
+                                working_mask,
+                                copy=False,
+                            )
                     removed_frames += 1
                 if timestamped_writer is None:
                     frame_pipe.write(frame.tobytes())
                 else:
                     timestamped_writer.write(frame, scan.timestamps[frame_index])
-                previous_source = source_frame
+                previous_source = stage_source
                 previous_cleaned = frame
-                previous_mask = mask
+                previous_mask = stage_mask
             if timestamped_writer is not None:
                 timestamped_writer.close()
                 timestamped_writer = None

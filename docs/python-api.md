@@ -668,7 +668,9 @@ Explicit `method="dac"` uses the `audio-codec` extra and fixed CPU FP32
 and 16-million-value bounds, mono/stereo layout checks, raw mid/side stereo with
 stem RMS preservation, rational half-open resampling around 44.1 kHz (preserving
 full 22.05 kHz bandwidth), and bitexact WAV serialization. EnCodec bandwidth is
-ignored, `vocoder_device` must remain `"cpu"`, and `auto` never selects it.
+ignored, `vocoder_device` must remain `"cpu"`, and `auto` selects DAC only when
+pre-strip metadata identifies ElevenLabs or Google SynthID (never falling back to
+`encodec` on Google SynthID if DAC is absent or the layout exceeds stereo).
 
 `remove_video_audio(source, output, stream=0, force=False, verify=True)` processes
 one selected audio track into MKV/MOV with float PCM, or MP4 with lossy AAC

@@ -758,6 +758,102 @@ class TestVideoMetadataApi:
         assert before
         assert frame_hashes(result.output) == before
 
+    def test_structural_stbl_sei_walker_detects_late_video_sei_and_preserves_audio_and_slice_bytes(
+        self,
+        tmp_path: Path,
+    ):
+        import struct
+
+        from remove_ai_watermarks._internal import isobmff
+        from remove_ai_watermarks.video import inspect_video_metadata, remove_video_metadata
+
+        def fullbox(btype: bytes, payload: bytes, version_flags: int = 0) -> bytes:
+            return _box(btype, struct.pack(">I", version_flags) + payload)
+
+        def build_two_track_mp4(*, include_late_video_sei: bool) -> tuple[bytes, int, int, int | None]:
+            # Video sample 0: 1.2 MiB IDR slice NAL (nal_type=5, NOT SEI) containing KLING_SEI_TAG in slice bytes
+            idr_body = b"\x65" + b"\x22" * (1200 * 1024) + KLING_SEI_TAG + b"\x22" * 64
+            vid_sample_0 = struct.pack(">I", len(idr_body)) + idr_body
+            # Audio chunk: raw audio packet containing KLING_SEI_TAG verbatim
+            aud_sample_0 = b"\xff\xf1\x50\x80" + KLING_SEI_TAG + b"\xaa" * 32
+            # Optional video sample 1 (> 1.2 MiB into mdat): H.264 SEI NAL (nal_type=6) with custom UUID + KLING_SEI_TAG
+            custom_uuid = bytes.fromhex("112233445566778899aabbccddeeff00")
+            custom_msg = b"\x05\x14" + custom_uuid + b"vend"
+            kling_msg = b"\x05\x19" + KLING_SEI_TAG + b"\x00"
+            sei_rbsp = b"\x06" + custom_msg + kling_msg + b"\x80"
+            vid_sample_1 = struct.pack(">I", len(sei_rbsp)) + sei_rbsp
+
+            mdat_payload = vid_sample_0 + aud_sample_0 + (vid_sample_1 if include_late_video_sei else b"")
+            mdat_data_off = len(_MP4_FTYP) + 8
+            v0_off = mdat_data_off
+            a0_off = v0_off + len(vid_sample_0)
+            v1_off = a0_off + len(aud_sample_0) if include_late_video_sei else None
+
+            avcc = _box(b"avcC", b"\x01\x64\x00\x1f\xff")  # byte 4 & 0x03 == 3 -> 4-byte NAL lengths
+            avc1 = _box(b"avc1", b"\x00" * 78 + avcc)
+            v_stsd = fullbox(b"stsd", struct.pack(">I", 1) + avc1)
+            v_sizes = [len(vid_sample_0)] + ([len(vid_sample_1)] if include_late_video_sei else [])
+            v_offs = [v0_off] + ([v1_off] if v1_off is not None else [])
+            v_stsc = fullbox(b"stsc", struct.pack(">IIII", 1, 1, 1, 1))
+            v_stsz = fullbox(b"stsz", struct.pack(f">II{len(v_sizes)}I", 0, len(v_sizes), *v_sizes))
+            v_stco = fullbox(b"stco", struct.pack(f">I{len(v_offs)}I", len(v_offs), *v_offs))
+            v_trak = _box(
+                b"trak",
+                _box(
+                    b"mdia",
+                    fullbox(b"hdlr", b"\x00\x00\x00\x00vide" + b"\x00" * 12)
+                    + _box(b"minf", _box(b"stbl", v_stsd + v_stsc + v_stsz + v_stco)),
+                ),
+            )
+
+            mp4a = _box(b"mp4a", b"\x00" * 28)
+            a_stsd = fullbox(b"stsd", struct.pack(">I", 1) + mp4a)
+            a_stsc = fullbox(b"stsc", struct.pack(">IIII", 1, 1, 1, 1))
+            a_stsz = fullbox(b"stsz", struct.pack(">III", 0, 1, len(aud_sample_0)))
+            a_stco = fullbox(b"stco", struct.pack(">II", 1, a0_off))
+            a_trak = _box(
+                b"trak",
+                _box(
+                    b"mdia",
+                    fullbox(b"hdlr", b"\x00\x00\x00\x00soun" + b"\x00" * 12)
+                    + _box(b"minf", _box(b"stbl", a_stsd + a_stsc + a_stsz + a_stco)),
+                ),
+            )
+            raw = _MP4_FTYP + _box(b"mdat", mdat_payload) + _box(b"moov", v_trak + a_trak)
+            idr_tag_off = v0_off + 4 + idr_body.index(KLING_SEI_TAG)
+            aud_tag_off = a0_off + aud_sample_0.index(KLING_SEI_TAG)
+            sei_tag_off = (v1_off + 4 + sei_rbsp.index(KLING_SEI_TAG)) if v1_off is not None else None
+            return raw, idr_tag_off, aud_tag_off, sei_tag_off
+
+        # 1. Decoy bytes in IDR slice and audio track ONLY -> NOT detected as kling_sei, NOT scrubbed
+        decoy_bytes, *_ = build_two_track_mp4(include_late_video_sei=False)
+        decoy_mp4 = tmp_path / "decoy_only.mp4"
+        decoy_mp4.write_bytes(decoy_bytes)
+        assert "kling_sei" not in inspect_video_metadata(decoy_mp4).markers
+        res_decoy = remove_video_metadata(decoy_mp4, tmp_path / "decoy_clean.mp4")
+        assert res_decoy.output.read_bytes() == decoy_bytes
+
+        # 2. Late video SEI past 1.2 MiB + decoys in IDR slice & audio -> detected, and ONLY SEI tag is blanked!
+        late_bytes, idr_off2, aud_off2, sei_off2 = build_two_track_mp4(include_late_video_sei=True)
+        assert sei_off2 is not None
+        assert sei_off2 > 1200 * 1024
+        late_mp4 = tmp_path / "late_sei.mp4"
+        late_mp4.write_bytes(late_bytes)
+        assert "kling_sei" in inspect_video_metadata(late_mp4).markers
+
+        sei_scan = isobmff.scan_isobmff_video_sei(late_mp4)
+        assert sei_scan.has_parsed_tracks is True
+        assert sei_scan.kling_tag_offsets == (sei_off2,)
+        assert "112233445566778899aabbccddeeff00" in sei_scan.unregistered_uuids
+
+        res_late = remove_video_metadata(late_mp4, tmp_path / "late_clean.mp4")
+        cleaned_late = res_late.output.read_bytes()
+        assert res_late.remaining == {}
+        assert cleaned_late[idr_off2 : idr_off2 + len(KLING_SEI_TAG)] == KLING_SEI_TAG
+        assert cleaned_late[aud_off2 : aud_off2 + len(KLING_SEI_TAG)] == KLING_SEI_TAG
+        assert cleaned_late[sei_off2 : sei_off2 + len(KLING_SEI_TAG)] == b" " * len(KLING_SEI_TAG)
+        assert "kling_sei" not in inspect_video_metadata(res_late.output).markers
+
     def test_default_output_preserves_source(self, tmp_path: Path):
         from remove_ai_watermarks.video import remove_video_metadata
 

@@ -568,12 +568,16 @@ generations; `LONG05` marked Perth confidence dropped from `0.988-0.999` to
 
 To prevent regressions across schemes, durations, and container muxes,
 [`scripts/media_removal_benchmark.py`](../scripts/media_removal_benchmark.py)
-synthesizes deterministic clean and watermarked fixtures (or reads an external
-JSONL manifest), executes the real `remove_audio_invisible`,
-`remove_video_audio`, `remove_video_audio_all_streams`, `remove_video_message`,
-and 4-layer `remove_video_all` pipelines, and enforces both saved-output
-negative verification and model-free `quality_passed` gates
-(`_internal/audio_quality.audio_quality_passed` and video PSNR/SSIM/TRR gates).
+(Schema v2) synthesizes deterministic clean and watermarked fixtures including
+stereo 48 kHz polyphonic music (or reads an external JSONL manifest / scores
+out-of-process competitor outputs via `--external-outputs-dir`), executes the
+real `remove_audio_invisible`, `remove_video_audio`,
+`remove_video_audio_all_streams`, `remove_video_message`, and 4-layer
+`remove_video_all` pipelines, and enforces both saved-output negative
+verification and model-free `quality_passed` gates
+(`_internal/audio_quality.audio_quality_passed`, all-stream `MR-STFT`/log-Mel
+perceptual distances, and `video_quality.measure_video_fidelity` PSNR,
+grayscale/color SSIM, worst-frame/worst-window SSIM, and TRR gates).
 In the expanded `--builtin-suite --strict` run
 (`carbon-media-removal-benchmark-v2-b092199d/report.json`, manifest SHA-256
 `6ec1fe651e8e5ac0e6e202161ffc61b0b9ec43e3039832d4d75709554df2215c`), all

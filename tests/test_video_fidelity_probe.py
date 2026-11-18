@@ -284,3 +284,41 @@ def test_fidelity_preserves_timestamps_when_native_opencv_cannot_decode(probe, t
     assert row["source_ssim"] == pytest.approx(1.0)
     assert row["max_timestamp_error_seconds"] == 0
     assert row["video_duration_error_seconds"] == 0
+
+
+def test_color_ssim_and_worst_frame_window_metrics_catch_chroma_inversion_and_spike_drop(
+    probe: ModuleType,
+    tmp_path: Path,
+) -> None:
+    ffmpeg = _ffmpeg()
+    height, width = 48, 64
+    c1 = np.array([220, 40, 20], dtype=np.uint8)
+    c2 = np.array([16, 40, 98], dtype=np.uint8)
+    xs = (np.arange(width) // 8) % 2
+    ys = (np.arange(height) // 8) % 2
+    mask = (ys[:, None] ^ xs[None, :]) == 0
+    base = np.where(mask[:, :, None], c1, c2)
+    swapped = np.where(mask[:, :, None], c2, c1)
+
+    src_frames = [np.roll(base, shift=i * 2, axis=1) for i in range(16)]
+    chroma_frames = [np.roll(swapped, shift=i * 2, axis=1) for i in range(16)]
+    spike_frames = [f.copy() for f in src_frames]
+    spike_frames[8] = np.zeros_like(base)
+
+    src_mp4 = tmp_path / "isolum_src.mp4"
+    chroma_mp4 = tmp_path / "isolum_chroma.mp4"
+    spike_mp4 = tmp_path / "isolum_spike.mp4"
+    _write_clip(src_mp4, src_frames, fps=12.0, ffmpeg=ffmpeg)
+    _write_clip(chroma_mp4, chroma_frames, fps=12.0, ffmpeg=ffmpeg)
+    _write_clip(spike_mp4, spike_frames, fps=12.0, ffmpeg=ffmpeg)
+
+    geom = (width, height, 12.0)
+    row_chroma = probe._measure(src_mp4, chroma_mp4, source_geometry=geom, duration=None)
+    assert row_chroma["source_ssim"] >= 0.98
+    assert row_chroma["source_color_ssim"] < 0.25
+
+    row_spike = probe._measure(src_mp4, spike_mp4, source_geometry=geom, duration=None)
+    assert row_spike["source_ssim"] > 0.90
+    assert row_spike["min_frame_ssim"] < 0.15
+    assert row_spike["min_frame_psnr_db"] < 16.0
+    assert row_spike["worst_window_ssim"] < row_spike["source_ssim"]

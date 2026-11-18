@@ -644,3 +644,62 @@ def test_wan_supports_mov_pcm_and_m4v_aac_containers_end_to_end(tmp_path, monkey
     assert res_all.output == out_all
     assert res_all.invisible_profile == "wan21-synthid-experimental"
     assert out_all.is_file()
+
+
+def test_shipped_wan21_synthid_profile_matches_certified_oracle_manifest() -> None:
+    import csv
+    import hashlib
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    manifest = repo / "data" / "evaluations" / "video-wan-oracle.csv"
+    with manifest.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+
+    assert rows
+    positive_controls: set[str] = set()
+    certified: set[tuple[str, str, str, float, int, float, float, int, int]] = set()
+    multi_window_sources: set[str] = set()
+    for row in rows:
+        carrier = repo / row["source_path"]
+        assert carrier.is_file(), f"Untracked or missing source_path: {row['source_path']}"
+        assert hashlib.sha256(carrier.read_bytes()).hexdigest() == row["source_sha256"]
+        if row["profile"] == "silent_h264_control" and row["output_verdict"] == "detected":
+            positive_controls.add(row["source_sha256"])
+        if (
+            row["profile"] == "wan21-synthid-experimental"
+            and row["output_verdict"] == "not_detected"
+            and row["strength"]
+        ):
+            chunk_frames = int(row["chunk_frames"])
+            certified.add(
+                (
+                    row["source_sha256"],
+                    row["model"],
+                    row["revision"],
+                    float(row["strength"]),
+                    int(row["steps"]),
+                    float(row["flow_shift"]),
+                    float(row["guidance_scale"]),
+                    chunk_frames,
+                    int(row["overlap_frames"]),
+                )
+            )
+            if int(row["source_frames"]) > chunk_frames:
+                multi_window_sources.add(row["source_sha256"])
+
+    matched_configs = {
+        tuple(cfg) for src_sha, *cfg in certified if src_sha in positive_controls and src_sha in multi_window_sources
+    }
+    shipped = (
+        wan.WAN21_MODEL_ID,
+        wan.WAN21_MODEL_REVISION,
+        wan.WAN21_SYNTHID_STRENGTH,
+        wan.WAN21_INFERENCE_STEPS,
+        wan.WAN21_FLOW_SHIFT,
+        wan.WAN21_GUIDANCE_SCALE,
+        wan.WAN21_DEFAULT_CHUNK_FRAMES,
+        wan.WAN21_DEFAULT_OVERLAP_FRAMES,
+    )
+    assert shipped in matched_configs
+    assert (*shipped[:2], round(wan.WAN21_SYNTHID_STRENGTH - 0.05, 2), *shipped[3:]) not in matched_configs

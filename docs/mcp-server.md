@@ -101,8 +101,10 @@ audio, and the same saved-output gates. Explicit `method: "dac"` uses the
 separate CPU FP32 44.1 kHz 3-codebook DAC backend from `audio-codec` with raw
 mid/side stereo, stem RMS preservation, and the same single-pass / overlap-window
 streaming path. Keep `vocoder_device: "cpu"`;
-bandwidth applies only to EnCodec. All three methods are experimental, excluded
-from auto selection, have no built-in provider verifier, and are exposed by
+bandwidth applies only to EnCodec. All three methods are experimental, have no
+built-in provider verifier (`mimi` and `focalcodec` are excluded from `auto`;
+`dac` is selected by `auto` only when pre-strip metadata identifies ElevenLabs or
+Google SynthID), and are exposed by
 legacy tools and the shared operation catalog.
 `silentcipher16` covers only a terminated eight-symbol pattern. Its
 readings label `framing="terminated8"`; `payload_symbols` are seven ternary

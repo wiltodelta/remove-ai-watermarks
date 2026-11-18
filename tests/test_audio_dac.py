@@ -321,3 +321,30 @@ def test_stream_neural_track_crossfades_window_offsets_monotonic():
     assert np.all((overlap > 1.0) & (overlap < 2.0))
     assert np.all(np.diff(overlap) > 0.0)
     np.testing.assert_allclose(out[2200:], 2.0, atol=1e-6)
+
+
+def test_shipped_dac_operating_point_matches_certified_audio_synthid_manifest():
+    import csv
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    manifest = repo / "data" / "evaluations" / "audio-synthid-oracle.csv"
+    with manifest.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+
+    assert rows
+    positive_controls: set[str] = set()
+    certified_dac: set[tuple[str, str, str, int]] = set()
+    for row in rows:
+        carrier = repo / row["source_path"]
+        assert carrier.is_file(), f"Untracked or missing source_path: {row['source_path']}"
+        assert hashlib.sha256(carrier.read_bytes()).hexdigest() == row["source_sha256"]
+        if row["method"] == "source_wav_control" and row["output_verdict"] == "detected":
+            positive_controls.add(row["source_sha256"])
+        if row["method"] == "dac" and row["output_verdict"] == "not_detected" and row["quantizers"]:
+            certified_dac.add((row["source_sha256"], row["model"], row["revision"], int(row["quantizers"])))
+
+    matched_certified = {(model, rev, q) for src_sha, model, rev, q in certified_dac if src_sha in positive_controls}
+    shipped = (dac.MODEL_REPOSITORY, dac.MODEL_REVISION, dac.FIXED_QUANTIZERS)
+    assert shipped in matched_certified
+    assert (dac.MODEL_REPOSITORY, dac.MODEL_REVISION, dac.FIXED_QUANTIZERS + 1) not in matched_certified

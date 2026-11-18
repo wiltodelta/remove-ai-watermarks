@@ -198,8 +198,9 @@ with fixed 32 quantizers and the `audio-codec` extra. Explicit
 conditioned continuous-feature profile (`audio-codec` extra, Apache-2.0 weights).
 Explicit `--method dac` uses the separate experimental CPU FP32 44.1 kHz DAC
 3-codebook codec (`audio-codec` extra, MIT weights). All three share the bounded
-full-track raw mid/side route and saved-output gates; none is selected by auto
-or checks SynthID. Native-rate output does not restore frequencies beyond internal
+full-track raw mid/side route and saved-output gates (`mimi` and `focalcodec` are
+excluded from `auto`; `dac` is selected by `auto` only when pre-strip metadata
+identifies ElevenLabs or Google SynthID), and none checks SynthID. Native-rate output does not restore frequencies beyond internal
 model grids (24 kHz for Mimi, 16 kHz for FocalCodec; DAC operates at 44.1 kHz).
 Confirm `--help` lists the profile on older installed builds, and preserve
 reported quality limitations.

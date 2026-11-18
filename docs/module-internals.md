@@ -323,7 +323,8 @@ stems below `1e-5` RMS), stem-level RMS restoration, and `0.999` peak ceiling.
 It preserves full `22.05 kHz` stereo bandwidth without adding lockfile packages,
 runs single-pass resynthesis up to 30 seconds and raised-cosine overlap-window
 streaming (`_stream_neural_track`, shared with `FocalCodec`) on longer audio,
-stays excluded from `auto`, and enforces the saved-output decoder gate unless
+is selected by `adaptive_auto_profiles` only when pre-strip metadata identifies
+ElevenLabs or Google SynthID, and enforces the saved-output decoder gate unless
 explicitly forced.
 
 The default `auto` sequence is fixed by requested scheme: spectral then combined
@@ -384,8 +385,10 @@ resolution (`resolve_audio_profiles`), separates `allow_unverified`,
 `allow_positive`, and `allow_quality_override` (`force=True` remains a final-attempt
 compatibility alias), populates `AudioProvenanceReport.recommended_recipe` (using
 shared `_internal/c2pa.markers_claim_ai`), routes `adaptive_auto_profiles` away from
-`spectral` onto `dac`/`encodec` when pre-strip metadata identifies ElevenLabs or
-Google SynthID, and copies completely clean inputs byte-for-byte in
+`spectral` onto `dac`/`encodec` when pre-strip metadata identifies ElevenLabs (or
+exclusively `dac`/`combined` for Google SynthID, failing closed rather than falling
+back to `encodec` when DAC is absent or multichannel), preserves pre-strip vendor
+metadata across intermediate `remove_video_all` container stages, and copies completely clean inputs byte-for-byte in
 `remove_audio_all`. `video_audio.py` processes
 one selected audio track into MKV/MOV with float PCM or MP4 with AAC (target
 192 kbps), stream-copies the other tracks, runs `method="auto"` candidate
@@ -528,13 +531,19 @@ type 5, whose 25-byte payload is UUID `91ca6061-4aee-3854-8614-2d5f73f4ae2e`,
 `kling-ai` and a NUL. `get_ai_metadata` reports it as `kling_sei` from the head
 window, and `identify_video` names Kling from it when no TC260 label does, as on
 `data/fixtures/visible/kling/provider-original.mp4`, which carries no other
-signal. The streaming stripper finds every copy of the UUID plus `kling-ai` in
-each top-level `mdat` during the copy pass it already makes, so the file is still
-read once, and overwrites those 24 bytes with spaces. The NAL length,
+signal. `isobmff.scan_isobmff_video_sei` walks each video track's `stbl` sample
+table (`avc1`/`avc3` `avcC` and `hvc1`/`hev1` `hvcC` length-prefixed NAL units,
+seeking past slice payloads) to parse H.264 (`nal_type == 6`) and HEVC
+(`nal_type in {39, 40}`) `SEI user_data_unregistered` (`payloadType == 5`)
+messages across the entire file without touching audio tracks or non-SEI video
+slices (falling back to a raw `mdat` scan only on bare synthetic or fragmented
+`moof` inputs without `stbl` sample tables). `strip_c2pa_file` overwrites those
+exact 24 bytes with spaces in place. The NAL length,
 SEI header and payload size stay, and a run of 0x20 cannot form an
 emulation-prevention sequence, so the message stays well-formed and no decoder
 reads it: `ffmpeg -f framemd5` hashes of every frame match before and after on
-both tracked Kling fixtures (found and fixed 2026-10-17). The QuickTime `©cmt` item in
+both tracked Kling fixtures (found and fixed 2026-10-17; scoped structurally to
+video `stbl` SEI NALs 2026-11-18). The QuickTime `©cmt` item in
 the Grok fixture (`Signature: <base64>`) also survives, because the xAI
 signature rule requires the UUID half of the pair and that half is absent here.
 
@@ -611,8 +620,15 @@ and the corresponding copied-audio offset. No temporary frame sequence or
 second video encoder is introduced.
 
 [`video_temporal.py`](../src/remove_ai_watermarks/video_temporal.py) owns the
-shared optical-flow maps and temporal residual metric. Visible removal uses
-`stabilize_filled_frame` after the selected image backend: it works on a
+shared optical-flow maps and temporal residual metric. Visible removal runs a
+bounded `+/- 4`-frame sliding donor window in `encode_clean_video`: before
+calling single-frame `fill()`, `recover_unobscured_background` fits a robust
+local affine motion field on the cycle-consistent unmasked context ring and
+warps genuine unobscured background pixels from nearby frames into the hole,
+shrinking `working_mask` (so moving/intermittent marks such as `sora` recover
+real background texture while hard scene cuts fail the context-ring residual
+gate). When stationary mask pixels remain, `fill()` runs on `working_mask`
+followed by `stabilize_filled_frame`: it works on a
 bounded crop around adjacent masks, backward-warps the prior cleaned frame,
 requires high warped-mask coverage, and gates blending on an unmasked
 source-context ring. Only covered current-mask pixels change. Scene cuts,
@@ -4127,8 +4143,11 @@ timing, exact decoded samples, languages, and dispositions. Source and saved
 candidate hashes are checked again before atomic publication. Force never
 converts unverified evidence into verified removal.
 
-`video_quality.py` shares delivered-file measurements with the research CLI;
-`_internal/image_quality.py` shares its grayscale SSIM. Measurements include
+`video_quality.py` shares delivered-file measurements with the research CLI and
+`scripts/media_removal_benchmark.py` (Schema v2, including `source_psnr_db`,
+`min_frame_psnr_db`, grayscale `source_ssim`, 3-channel BGR `source_color_ssim`,
+`min_frame_ssim`, 12-frame `worst_window_ssim`, and `temporal_residual_ratio`);
+`_internal/image_quality.py` shares its per-channel SSIM kernel. Measurements include
 resize, frame sampling, codec, and VAE effects. They are not watermark verdicts.
 The [CLI contract](cli.md#public-model-video-messages-experimental) defines the
 public options and output restrictions.

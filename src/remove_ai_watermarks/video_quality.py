@@ -101,8 +101,10 @@ def measure_video_fidelity(
         )
 
     squared_error = 0.0
+    max_frame_mse = 0.0
     pixel_count = 0
     ssim_scores: list[float] = []
+    color_ssim_scores: list[float] = []
     temporal_baseline = 0.0
     temporal_candidate = 0.0
     previous_gray: NDArray[Any] | None = None
@@ -131,13 +133,16 @@ def measure_video_fidelity(
             reference_f32 = reference.astype(np.float32)
             candidate_f32 = candidate.astype(np.float32)
             difference = reference_f32 - candidate_f32
-            squared_error += float(np.sum(difference * difference, dtype=np.float64))
+            frame_sq_err = float(np.sum(difference * difference, dtype=np.float64))
+            squared_error += frame_sq_err
+            max_frame_mse = max(max_frame_mse, frame_sq_err / reference.size)
             pixel_count += reference.size
-            ssim_scores.append(
-                _ssim(cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY), cv2.cvtColor(candidate, cv2.COLOR_BGR2GRAY))
+            current_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+            ssim_scores.append(_ssim(current_gray, cv2.cvtColor(candidate, cv2.COLOR_BGR2GRAY)))
+            color_ssim_scores.append(
+                float(np.mean([_ssim(reference[:, :, ch], candidate[:, :, ch]) for ch in range(3)]))
             )
 
-            current_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
             if previous_gray is not None and previous_reference_f32 is not None and previous_candidate_f32 is not None:
                 frame_maps = backward_motion_map(current_gray, previous_gray)
                 temporal_baseline += motion_residual_energy(reference_f32, previous_reference_f32, frame_maps)
@@ -151,7 +156,14 @@ def measure_video_fidelity(
         raise ValueError(f"{delivered.name} paired fewer than two frames against {source.name}")
 
     mse = squared_error / pixel_count
+    ssim_arr = np.asarray(ssim_scores, dtype=np.float64)
+    win = min(12, frame_count)
+    window_means = np.convolve(ssim_arr, np.ones(win, dtype=np.float64) / win, mode="valid")
     size_bytes = delivered.stat().st_size
+
+    def _psnr_db(mse_val: float) -> float:
+        return math.inf if mse_val == 0.0 else round(20.0 * math.log10(255.0 / math.sqrt(mse_val)), 4)
+
     return {
         "file": delivered.name,
         "source": source.name,
@@ -165,11 +177,57 @@ def measure_video_fidelity(
         "max_timestamp_error_seconds": timing_error,
         "video_duration_error_seconds": duration_error,
         "pixel_ratio": round((width * height) / (source_width * source_height), 4),
-        "source_psnr_db": math.inf if mse == 0.0 else round(20.0 * math.log10(255.0 / math.sqrt(mse)), 4),
-        "source_ssim": round(float(np.mean(ssim_scores)), 4),
+        "source_psnr_db": _psnr_db(mse),
+        "min_frame_psnr_db": _psnr_db(max_frame_mse),
+        "source_ssim": round(float(np.mean(ssim_arr)), 4),
+        "source_color_ssim": round(float(np.mean(color_ssim_scores)), 4),
+        "min_frame_ssim": round(float(np.min(ssim_arr)), 4),
+        "worst_window_ssim": round(float(np.min(window_means)), 4),
         "temporal_residual_ratio": round(temporal_candidate / max(temporal_baseline, 1e-6), 4),
         "size_bytes": size_bytes,
         # The mux copies the source audio track verbatim, so this is a container
         # bitrate. It still ranks candidates at fixed crf; it is not a video bitrate.
         "file_bitrate_kbps": round(size_bytes * 8.0 / (frame_count / fps) / 1000.0, 1),
     }
+
+
+def video_quality_passed(
+    quality: dict[str, Any] | None,
+    *,
+    min_psnr_db: float = 20.0,
+    min_ssim: float = 0.75,
+    min_color_ssim: float = 0.70,
+    min_frame_ssim: float = 0.60,
+    max_temporal_residual_ratio: float = 2.5,
+) -> bool:
+    """Evaluate model-free delivered video fidelity including chroma and worst-frame floors."""
+    if not isinstance(quality, dict):
+        return False
+    raw_psnr = quality.get("source_psnr_db")
+    psnr_ok = (
+        raw_psnr is None
+        or (math.isfinite(float(raw_psnr)) and float(raw_psnr) >= min_psnr_db)
+        or math.isinf(float(raw_psnr))
+    )
+    raw_ssim = quality.get("source_ssim")
+    if raw_ssim is None or not math.isfinite(float(raw_ssim)):
+        return False
+    ssim = float(raw_ssim)
+    raw_color = quality.get("source_color_ssim", ssim)
+    raw_min_f = quality.get("min_frame_ssim", ssim)
+    raw_trr = quality.get("temporal_residual_ratio")
+    if raw_color is None or raw_min_f is None or raw_trr is None:
+        return False
+    color_ssim = float(raw_color)
+    frame_ssim = float(raw_min_f)
+    trr = float(raw_trr)
+    return (
+        psnr_ok
+        and ssim >= min_ssim
+        and math.isfinite(color_ssim)
+        and color_ssim >= min_color_ssim
+        and math.isfinite(frame_ssim)
+        and frame_ssim >= min_frame_ssim
+        and math.isfinite(trr)
+        and trr <= max_temporal_residual_ratio
+    )

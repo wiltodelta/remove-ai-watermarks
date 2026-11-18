@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import subprocess
 import sys
 import time
@@ -30,15 +31,21 @@ if str(REPO) not in sys.path:
 if str(REPO / "src") not in sys.path:
     sys.path.insert(0, str(REPO / "src"))
 
-from remove_ai_watermarks import audio, video, video_audio, video_messages  # noqa: E402
+from remove_ai_watermarks import audio, video, video_audio, video_messages, video_quality  # noqa: E402
 from remove_ai_watermarks._internal import audio_io  # noqa: E402
-from remove_ai_watermarks._internal.audio_quality import compute_perceptual_metrics, sha256_file  # noqa: E402
+from remove_ai_watermarks._internal.audio_quality import (  # noqa: E402
+    audio_quality_passed,
+    compute_perceptual_metrics,
+    measure_fidelity,
+    sha256_file,
+)
+from remove_ai_watermarks._internal.constants import AUDIO_LOSSY_OUTPUT_EXTENSIONS  # noqa: E402
 from remove_ai_watermarks._internal.schema import require_schema_version  # noqa: E402
 from remove_ai_watermarks.video_tools import require_video_tool  # noqa: E402
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 Surface = Literal[
     "audio_invisible",
     "video_audio",
@@ -46,7 +53,8 @@ Surface = Literal[
     "video_message",
     "video_all_4layer",
 ]
-ExpectedOutcome = Literal["skipped_clean", "verified_removed"]
+ExpectedOutcome = Literal["skipped_clean", "verified_removed", "control_stays_positive", "unverified"]
+CaseRole = Literal["clean_control", "marked_control", "candidate"]
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,8 @@ class RemovalBenchmarkCase:
     reference_hex: str | None = None
     long_side: int = video_messages.DEFAULT_VIDEO_MESSAGE_LONG_SIDE
     device: str = "cpu"
+    generation_id: str | None = None
+    role: CaseRole = "candidate"
 
 
 def _ensure_new_file(path: Path) -> None:
@@ -89,7 +99,7 @@ def load_manifest(manifest_path: Path) -> list[RemovalBenchmarkCase]:
         require_schema_version(
             payload.get("schema_version"),
             contract=f"{manifest_path}:{line_no}",
-            supported={SCHEMA_VERSION},
+            supported={1, SCHEMA_VERSION},
         )
         case_id = str(payload["case_id"])
         if case_id in seen_ids:
@@ -101,6 +111,9 @@ def load_manifest(manifest_path: Path) -> list[RemovalBenchmarkCase]:
         expected = payload["expected_outcome"]
         if expected not in get_args(ExpectedOutcome):
             raise ValueError(f"{manifest_path}:{line_no}: unsupported expected_outcome {expected!r}")
+        role = str(payload.get("role", "candidate"))
+        if role not in get_args(CaseRole):
+            raise ValueError(f"{manifest_path}:{line_no}: unsupported role {role!r}")
         method = str(payload.get("method", "auto"))
         allowed_methods = video_messages.VIDEO_MESSAGE_METHODS if surface == "video_message" else audio.AUDIO_METHODS
         if method not in allowed_methods:
@@ -108,6 +121,7 @@ def load_manifest(manifest_path: Path) -> list[RemovalBenchmarkCase]:
         src = Path(payload["source_path"])
         if not src.is_absolute():
             src = (base_dir / src).resolve()
+        gen_raw = payload.get("generation_id")
         cases.append(
             RemovalBenchmarkCase(
                 case_id=case_id,
@@ -122,6 +136,8 @@ def load_manifest(manifest_path: Path) -> list[RemovalBenchmarkCase]:
                 reference_hex=payload.get("reference_hex"),
                 long_side=int(payload.get("long_side", video_messages.DEFAULT_VIDEO_MESSAGE_LONG_SIDE)),
                 device=str(payload.get("device", "cpu")),
+                generation_id=str(gen_raw) if gen_raw is not None else None,
+                role=role,  # type: ignore[arg-type]
             )
         )
     if not cases:
@@ -150,6 +166,43 @@ def _synthetic_speechlike_carrier(sample_rate: int, seconds: float, *, seed: int
     return sig.astype(np.float32)
 
 
+def _synthetic_music_stereo_carrier(sample_rate: int, seconds: float, *, seed: int) -> Any:
+    """Synthesize a calibrated stereo polyphonic music progression (clean-negative verified)."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    total = round(sample_rate * seconds)
+    t = np.arange(total, dtype=np.float64) / sample_rate
+    left = np.zeros_like(t)
+    right = np.zeros_like(t)
+    chords = ((220.0, 261.63, 329.63, 440.0), (196.0, 246.94, 293.66, 392.0), (261.63, 329.63, 392.0, 523.25))
+    pans = ((0.75, 0.25), (0.35, 0.65), (0.65, 0.35), (0.25, 0.75))
+    seg_len = total // len(chords)
+    for seg_idx, freqs in enumerate(chords):
+        sl = slice(seg_idx * seg_len, (seg_idx + 1) * seg_len if seg_idx < len(chords) - 1 else total)
+        seg_t = t[sl] - float(t[sl][0])
+        env = np.exp(-2.2 * seg_t) * (1.0 - np.exp(-60.0 * seg_t))
+        for note_f, (pan_l, pan_r) in zip(freqs, pans, strict=True):
+            vib = 1.0 + 0.008 * np.sin(2.0 * np.pi * float(rng.uniform(4.8, 6.2)) * seg_t)
+            inst_phase = 2.0 * np.pi * np.cumsum(note_f * vib) / sample_rate
+            note = np.zeros_like(seg_t)
+            for h in range(1, 28):
+                if note_f * h >= 0.44 * sample_rate:
+                    break
+                inharm = np.sqrt(1.0 + 0.0004 * h * h)
+                note += (0.55 / (h**1.25)) * np.sin(h * inharm * inst_phase + float(rng.uniform(0.0, 2.0 * np.pi)))
+            left[sl] += pan_l * env * note
+            right[sl] += pan_r * env * note
+        hat_env = np.exp(-28.0 * (seg_t % 0.5))
+        left[sl] += 0.06 * hat_env * rng.standard_normal(len(seg_t))
+        right[sl] += 0.06 * hat_env * rng.standard_normal(len(seg_t))
+    stereo = np.column_stack((left, right)) + 0.012 * rng.standard_normal((total, 2))
+    peak = float(np.max(np.abs(stereo)))
+    if peak > 0.0:
+        stereo = 0.38 * stereo / peak
+    return stereo.astype(np.float32)
+
+
 STRICT_BUILTIN_REQUIRED_CASE_IDS: tuple[str, ...] = (
     "audioseal-mono-clean",
     "audioseal-mono-marked",
@@ -157,6 +210,8 @@ STRICT_BUILTIN_REQUIRED_CASE_IDS: tuple[str, ...] = (
     "audioseal-lossy-m4a-marked",
     "audioseal-lossy-mp3-marked",
     "audioseal-stereo-marked",
+    "audioseal-stereo-music-48k-clean",
+    "audioseal-stereo-music-48k-marked",
     "audioseal-long31s-marked",
     "audioseal-video-mp4-aac192k",
     "video-audio-multistream-marked",
@@ -237,6 +292,43 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
         as_stereo_p = fixtures_dir / "audioseal-stereo-marked.wav"
         sf.write(as_stereo_p, np.column_stack((marked_mono, marked_r)), 16000, subtype="FLOAT")
         add_row("audioseal-stereo-marked", "audio_invisible", "audioseal", as_stereo_p, ".wav", "verified_removed")
+
+        # 48 kHz stereo polyphonic music carrier pair (clean negative + marked positive across dual 16/48 kHz clocks)
+        from remove_ai_watermarks._internal import audio_resampling
+
+        music_48k = _synthetic_music_stereo_carrier(48000, 3.0, seed=104)
+        as_music_clean_p = fixtures_dir / "audioseal-stereo-music-48k-clean.wav"
+        sf.write(as_music_clean_p, music_48k, 48000, subtype="FLOAT")
+        add_row(
+            "audioseal-stereo-music-48k-clean",
+            "audio_invisible",
+            "audioseal",
+            as_music_clean_p,
+            ".wav",
+            "skipped_clean",
+            role="clean_control",
+            generation_id="music-48k-104",
+        )
+        down_clock = audio_resampling.RationalClock(len(music_48k), 48000, 16000)
+        music_16k = np.asarray(audio_resampling.forward(music_48k, down_clock), dtype=np.float32)
+        wm_l_16k = np.asarray(audioseal.embed(gen, music_16k[:, 0], msg_bits), dtype=np.float32) - music_16k[:, 0]
+        wm_r_16k = np.asarray(audioseal.embed(gen, music_16k[:, 1], msg_bits), dtype=np.float32) - music_16k[:, 1]
+        wm_48k = np.asarray(
+            audio_resampling.inverse(np.column_stack((wm_l_16k, wm_r_16k)), down_clock),
+            dtype=np.float32,
+        )
+        music_marked_48k = np.clip(music_48k + wm_48k, -0.98, 0.98).astype(np.float32)
+        as_music_p = fixtures_dir / "audioseal-stereo-music-48k-marked.wav"
+        sf.write(as_music_p, music_marked_48k, 48000, subtype="FLOAT")
+        add_row(
+            "audioseal-stereo-music-48k-marked",
+            "audio_invisible",
+            "audioseal",
+            as_music_p,
+            ".wav",
+            "verified_removed",
+            generation_id="music-48k-104",
+        )
 
         # 31 s long clip (> 30 s whole-clip boundary)
         tile_clean = _synthetic_speechlike_carrier(16000, 4.0, seed=103)
@@ -641,9 +733,9 @@ def _try_perceptual_metrics(
     skipped: bool = False,
     source_info: object = None,
     delivered_info: object = None,
-) -> dict[str, float] | None:
+) -> tuple[dict[str, float] | None, str | None]:
     if skipped or not out_path.is_file():
-        return None
+        return None, None
     try:
         src_info = (
             source_info
@@ -651,17 +743,195 @@ def _try_perceptual_metrics(
             else audio_io.probe_audio(source_path, stream=stream)
         )
         deliv_info = delivered_info if isinstance(delivered_info, audio_io.AudioStreamInfo) else None
-        return asdict(
-            compute_perceptual_metrics(
-                source_path,
-                src_info,
-                out_path,
-                stream=stream,
-                delivered_info=deliv_info,
-            )
+        return (
+            asdict(
+                compute_perceptual_metrics(
+                    source_path,
+                    src_info,
+                    out_path,
+                    stream=stream,
+                    delivered_info=deliv_info,
+                )
+            ),
+            None,
         )
-    except Exception:
-        return None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _case_base_record(case: RemovalBenchmarkCase, actual_sha: str) -> dict[str, Any]:
+    return {
+        "case_id": case.case_id,
+        "generation_id": case.generation_id,
+        "role": case.role,
+        "surface": case.surface,
+        "scheme": case.scheme,
+        "expected_outcome": case.expected_outcome,
+        "source_sha256": actual_sha,
+    }
+
+
+def _verified_transition(before: str | None, after: str | None, *, pos: str, neg: str) -> bool | None:
+    if before == pos and after == neg:
+        return True
+    return False if after == pos else None
+
+
+def _normalize_video_quality(vq: dict[str, Any]) -> dict[str, Any]:
+    out = dict(vq)
+    for key in ("source_psnr_db", "min_frame_psnr_db"):
+        val = out.get(key)
+        if isinstance(val, float) and math.isinf(val):
+            out[key] = None
+    return out
+
+
+def _resolve_external_output(case: RemovalBenchmarkCase, external_outputs_dir: Path) -> Path:
+    for candidate in (
+        external_outputs_dir / f"{case.case_id}{case.output_suffix}",
+        external_outputs_dir / f"{case.case_id}-out{case.output_suffix}",
+    ):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"Case {case.case_id}: missing external output {external_outputs_dir / (case.case_id + case.output_suffix)}"
+    )
+
+
+def evaluate_external_output_case(
+    case: RemovalBenchmarkCase,
+    external_outputs_dir: Path,
+    *,
+    preverified_sha256: str | None = None,
+    strict: bool = False,
+    _source_cache: dict[tuple[Any, ...], Any] | None = None,
+) -> dict[str, Any]:
+    """Score a pre-generated external competitor output on the identical receiver + quality gates."""
+    actual_sha = preverified_sha256 or sha256_file(case.source_path)
+    started = time.monotonic()
+    base = _case_base_record(case, actual_sha)
+    try:
+        ext_path = _resolve_external_output(case, external_outputs_dir)
+    except FileNotFoundError as exc:
+        return {**base, "status": "unavailable", "reason": str(exc), "elapsed_seconds": 0.0}
+
+    try:
+        if case.surface in {"audio_invisible", "video_audio"}:
+            cache_key = ("audio", case.source_path, case.stream, case.scheme)
+            if _source_cache is not None and cache_key in _source_cache:
+                before_rep = _source_cache[cache_key]
+            else:
+                before_rep = audio.identify_audio(case.source_path, stream=case.stream, scheme=case.scheme)  # type: ignore[arg-type]
+                if _source_cache is not None:
+                    _source_cache[cache_key] = before_rep
+            after_rep = audio.identify_audio(ext_path, stream=case.stream, scheme=case.scheme)  # type: ignore[arg-type]
+            fid = measure_fidelity(case.source_path, before_rep.stream, ext_path, stream=case.stream)
+            lossy = ext_path.suffix.lower() in AUDIO_LOSSY_OUTPUT_EXTENSIONS or ext_path.suffix.lower() == ".mp4"
+            q_ok = audio_quality_passed(fid, lossy=lossy)
+            ver = (
+                audio.verification_outcome(before_rep, after_rep)
+                if hasattr(before_rep, "detections") and hasattr(after_rep, "detections")
+                else _verified_transition(
+                    before_rep.watermark_status,
+                    after_rep.watermark_status,
+                    pos="detected",
+                    neg="not_detected",
+                )
+            )
+            perc, perc_err = _try_perceptual_metrics(
+                case.source_path,
+                ext_path,
+                stream=case.stream,
+                source_info=before_rep.stream,
+                delivered_info=after_rep.stream,
+            )
+            passed = _check_outcome(
+                case.expected_outcome,
+                skipped=False,
+                verified_removed=ver,
+                quality_passed=q_ok,
+                before_status=before_rep.watermark_status,
+            ) and not (strict and perc_err is not None)
+            return {
+                **base,
+                "status": "passed" if passed else "failed",
+                "output_sha256": getattr(after_rep, "sha256", None) or sha256_file(ext_path),
+                "selected_method": "external",
+                "before_status": before_rep.watermark_status,
+                "after_status": after_rep.watermark_status,
+                "skipped": False,
+                "verified_removed": ver,
+                "quality_passed": q_ok,
+                "fidelity": asdict(fid),
+                "perceptual": perc,
+                **({"perceptual_error": perc_err} if perc_err else {}),
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            }
+
+        if case.surface == "video_message":
+            if not case.reference_hex:
+                raise ValueError(f"Case {case.case_id}: video_message requires reference_hex")
+            vm_key = ("video_message", case.source_path, case.reference_hex, case.scheme)
+            if _source_cache is not None and vm_key in _source_cache:
+                before_vm, src_geom = _source_cache[vm_key]
+            else:
+                before_vm = video_messages.identify_video_message(
+                    case.source_path,
+                    reference_hex=case.reference_hex,
+                    scheme=case.scheme,  # type: ignore[arg-type]
+                )
+                src_geom = video_quality.delivered_geometry(case.source_path)
+                if _source_cache is not None:
+                    _source_cache[vm_key] = (before_vm, src_geom)
+            after_vm = video_messages.identify_video_message(
+                ext_path,
+                reference_hex=case.reference_hex,
+                scheme=case.scheme,  # type: ignore[arg-type]
+            )
+            vq = _normalize_video_quality(
+                video_quality.measure_video_fidelity(
+                    case.source_path, ext_path, source_geometry=src_geom, duration=None
+                )
+            )
+            profile = "codec" if case.method == "codec" else "vae"
+            q_ok = video_messages._quality_passes(profile, vq)
+            ver = _verified_transition(before_vm.status, after_vm.status, pos="matched", neg="not_matched")
+            passed = _check_outcome(
+                case.expected_outcome,
+                skipped=False,
+                verified_removed=ver,
+                quality_passed=q_ok,
+                before_status=before_vm.status,
+            )
+            return {
+                **base,
+                "status": "passed" if passed else "failed",
+                "output_sha256": getattr(after_vm, "sha256", None) or sha256_file(ext_path),
+                "selected_method": "external",
+                "before_status": before_vm.status,
+                "after_status": after_vm.status,
+                "skipped": False,
+                "verified_removed": ver,
+                "quality_passed": q_ok,
+                "quality": vq,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            }
+    except ImportError as exc:
+        return {
+            **base,
+            "status": "unavailable",
+            "reason": str(exc),
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+        }
+    except Exception as exc:
+        return {
+            **base,
+            "status": "failed",
+            "reason": str(exc),
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+        }
+
+    raise ValueError(f"External output comparison does not yet support surface {case.surface!r}")
 
 
 def evaluate_removal_case(
@@ -669,6 +939,7 @@ def evaluate_removal_case(
     output_dir: Path,
     *,
     preverified_sha256: str | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Verify source digest, execute the public removal API, and score outcome & quality."""
     if preverified_sha256 is not None:
@@ -683,17 +954,14 @@ def evaluate_removal_case(
     out_path = output_dir / f"{case.case_id}-out{case.output_suffix}"
     out_path.unlink(missing_ok=True)
     started = time.monotonic()
-    base: dict[str, Any] = {
-        "case_id": case.case_id,
-        "surface": case.surface,
-        "scheme": case.scheme,
-        "expected_outcome": case.expected_outcome,
-        "source_sha256": actual_sha,
-    }
+    base = _case_base_record(case, actual_sha)
 
     try:
-        if case.surface == "audio_invisible":
-            res_a = audio.remove_audio_invisible(
+        if case.surface in {"audio_invisible", "video_audio"}:
+            runner = (
+                audio.remove_audio_invisible if case.surface == "audio_invisible" else video_audio.remove_video_audio
+            )
+            res_av: Any = runner(
                 case.source_path,
                 out_path,
                 stream=case.stream,
@@ -701,71 +969,35 @@ def evaluate_removal_case(
                 scheme=case.scheme,  # type: ignore[arg-type]
             )
             elapsed = time.monotonic() - started
-            passed = _check_outcome(
-                case.expected_outcome,
-                skipped=res_a.skipped,
-                verified_removed=res_a.verified_removed,
-                quality_passed=res_a.quality_passed,
-                before_status=res_a.before.watermark_status,
-            )
-            return {
-                **base,
-                "status": "passed" if passed else "failed",
-                "output_sha256": _output_sha256(res_a),
-                "selected_method": res_a.method,
-                "before_status": res_a.before.watermark_status,
-                "after_status": res_a.after.watermark_status if res_a.after else None,
-                "skipped": res_a.skipped,
-                "verified_removed": res_a.verified_removed,
-                "quality_passed": res_a.quality_passed,
-                "fidelity": asdict(res_a.fidelity) if res_a.fidelity else None,
-                "perceptual": _try_perceptual_metrics(
-                    case.source_path,
-                    out_path,
-                    stream=case.stream,
-                    skipped=res_a.skipped,
-                    source_info=getattr(res_a.before, "stream", None),
-                    delivered_info=getattr(res_a.after, "stream", None) if res_a.after else None,
-                ),
-                "elapsed_seconds": round(elapsed, 3),
-            }
-
-        if case.surface == "video_audio":
-            res_va = video_audio.remove_video_audio(
+            perc, perc_err = _try_perceptual_metrics(
                 case.source_path,
                 out_path,
                 stream=case.stream,
-                method=case.method,  # type: ignore[arg-type]
-                scheme=case.scheme,  # type: ignore[arg-type]
+                skipped=res_av.skipped,
+                source_info=getattr(res_av.before, "stream", None),
+                delivered_info=getattr(res_av.after, "stream", None) if res_av.after else None,
             )
-            elapsed = time.monotonic() - started
             passed = _check_outcome(
                 case.expected_outcome,
-                skipped=res_va.skipped,
-                verified_removed=res_va.verified_removed,
-                quality_passed=res_va.quality_passed,
-                before_status=res_va.before.watermark_status,
-            )
+                skipped=res_av.skipped,
+                verified_removed=res_av.verified_removed,
+                quality_passed=res_av.quality_passed,
+                before_status=res_av.before.watermark_status,
+            ) and not (strict and not res_av.skipped and perc_err is not None)
             return {
                 **base,
                 "status": "passed" if passed else "failed",
-                "output_sha256": _output_sha256(res_va),
-                "selected_method": res_va.method,
-                "before_status": res_va.before.watermark_status,
-                "after_status": res_va.after.watermark_status if res_va.after else None,
-                "skipped": res_va.skipped,
-                "verified_removed": res_va.verified_removed,
-                "quality_passed": res_va.quality_passed,
-                "unchanged_streams": list(res_va.unchanged_streams),
-                "fidelity": asdict(res_va.fidelity) if res_va.fidelity else None,
-                "perceptual": _try_perceptual_metrics(
-                    case.source_path,
-                    out_path,
-                    stream=case.stream,
-                    skipped=res_va.skipped,
-                    source_info=getattr(res_va.before, "stream", None),
-                    delivered_info=getattr(res_va.after, "stream", None) if res_va.after else None,
-                ),
+                "output_sha256": _output_sha256(res_av),
+                "selected_method": res_av.method,
+                "before_status": res_av.before.watermark_status,
+                "after_status": res_av.after.watermark_status if res_av.after else None,
+                "skipped": res_av.skipped,
+                "verified_removed": res_av.verified_removed,
+                "quality_passed": res_av.quality_passed,
+                **({"unchanged_streams": list(res_av.unchanged_streams)} if case.surface == "video_audio" else {}),
+                "fidelity": asdict(res_av.fidelity) if res_av.fidelity else None,
+                "perceptual": perc,
+                **({"perceptual_error": perc_err} if perc_err else {}),
                 "elapsed_seconds": round(elapsed, 3),
             }
 
@@ -783,19 +1015,45 @@ def evaluate_removal_case(
                 if vam_befores and all(st == "not_detected" for st in vam_befores)
                 else ("detected" if "detected" in vam_befores else "unverified")
             )
+            per_stream_fidelity: dict[str, dict[str, Any]] = {}
+            per_stream_perceptual: dict[str, dict[str, float]] = {}
+            per_stream_errors: dict[str, str] = {}
+            all_streams_q_ok = res_vam.quality_passed is True
+            for ord_idx in res_vam.processed_ordinals:
+                s_item = res_vam.streams[ord_idx] if 0 <= ord_idx < len(res_vam.streams) else None
+                if s_item is None:
+                    all_streams_q_ok = False
+                    continue
+                if getattr(s_item, "quality_passed", True) is False:
+                    all_streams_q_ok = False
+                if getattr(s_item, "fidelity", None) is not None:
+                    per_stream_fidelity[str(ord_idx)] = asdict(s_item.fidelity)
+                s_perc, s_err = _try_perceptual_metrics(
+                    case.source_path,
+                    out_path,
+                    stream=ord_idx,
+                    skipped=res_vam.skipped,
+                    source_info=getattr(getattr(s_item, "before", None), "stream", None),
+                    delivered_info=getattr(getattr(s_item, "after", None), "stream", None),
+                )
+                if s_perc is not None:
+                    per_stream_perceptual[str(ord_idx)] = s_perc
+                if s_err is not None:
+                    per_stream_errors[str(ord_idx)] = s_err
+
+            effective_q = all_streams_q_ok if not res_vam.skipped else res_vam.quality_passed
             passed = _check_outcome(
                 case.expected_outcome,
                 skipped=res_vam.skipped,
                 verified_removed=res_vam.verified_removed,
-                quality_passed=res_vam.quality_passed,
+                quality_passed=effective_q,
                 before_status=vam_before_status,
-            )
+            ) and not (strict and not res_vam.skipped and bool(per_stream_errors))
             first_fid = next((s.fidelity for s in res_vam.streams if s.fidelity is not None), None)
             methods = sorted({s.method for i, s in enumerate(res_vam.streams) if i in res_vam.processed_ordinals})
             last_idx = res_vam.processed_ordinals[-1] if res_vam.processed_ordinals else -1
             last_stream = res_vam.streams[last_idx] if 0 <= last_idx < len(res_vam.streams) else res_vam
             first_ord = res_vam.processed_ordinals[0] if res_vam.processed_ordinals else 0
-            first_stream = res_vam.streams[first_ord] if 0 <= first_ord < len(res_vam.streams) else None
             return {
                 **base,
                 "status": "passed" if passed else "failed",
@@ -806,16 +1064,12 @@ def evaluate_removal_case(
                 "unchanged_streams": list(res_vam.unchanged_streams),
                 "skipped": res_vam.skipped,
                 "verified_removed": res_vam.verified_removed,
-                "quality_passed": res_vam.quality_passed,
+                "quality_passed": effective_q,
                 "fidelity": asdict(first_fid) if first_fid else None,
-                "perceptual": _try_perceptual_metrics(
-                    case.source_path,
-                    out_path,
-                    stream=first_ord,
-                    skipped=res_vam.skipped,
-                    source_info=getattr(getattr(first_stream, "before", None), "stream", None),
-                    delivered_info=getattr(getattr(first_stream, "after", None), "stream", None),
-                ),
+                "per_stream_fidelity": per_stream_fidelity,
+                "perceptual": per_stream_perceptual.get(str(first_ord)),
+                "per_stream_perceptual": per_stream_perceptual,
+                **({"perceptual_errors": per_stream_errors} if per_stream_errors else {}),
                 "elapsed_seconds": round(elapsed, 3),
             }
 
@@ -844,6 +1098,24 @@ def evaluate_removal_case(
             )
             audio_after = audio.identify_audio(out_path, scheme=case.scheme)  # type: ignore[arg-type]
             audio_after_status = audio_after.watermark_status
+            vq_4l: dict[str, Any] | None = None
+            vq_err: str | None = None
+            try:
+                src_geom = video_quality.delivered_geometry(case.source_path)
+                vq_4l = video_quality.measure_video_fidelity(
+                    case.source_path,
+                    out_path,
+                    source_geometry=src_geom,
+                    duration=None,
+                )
+            except Exception as exc:
+                vq_err = str(exc)
+            perc_4l, perc_err_4l = _try_perceptual_metrics(
+                case.source_path,
+                out_path,
+                stream=0,
+                delivered_info=getattr(audio_after, "stream", None),
+            )
             layers_ok = (
                 msg_before.status == "matched"
                 and bool(res_4l.detected_metadata)
@@ -857,8 +1129,19 @@ def evaluate_removal_case(
                 and res_4l.audio.watermark_status == "not_detected"
                 and audio_after_status == "not_detected"
             )
-            q_passed = getattr(res_4l, "audio_quality_passed", None) is True
-            passed = case.expected_outcome == "verified_removed" and layers_ok and q_passed
+            if vq_4l is not None:
+                vq_4l = _normalize_video_quality(vq_4l)
+            q_passed = (
+                getattr(res_4l, "audio_quality_passed", None) is True
+                and vq_err is None
+                and video_quality.video_quality_passed(vq_4l)
+            )
+            passed = (
+                case.expected_outcome == "verified_removed"
+                and layers_ok
+                and q_passed
+                and not (strict and perc_err_4l is not None)
+            )
             visual_label = getattr(res_4l, "invisible_profile", None) or "vae"
             return {
                 **base,
@@ -873,6 +1156,10 @@ def evaluate_removal_case(
                 "skipped": False,
                 "verified_removed": layers_ok,
                 "quality_passed": q_passed,
+                "video_quality": vq_4l,
+                "perceptual": perc_4l,
+                **({"video_quality_error": vq_err} if vq_err else {}),
+                **({"perceptual_error": perc_err_4l} if perc_err_4l else {}),
                 "elapsed_seconds": round(elapsed, 3),
             }
 
@@ -937,13 +1224,15 @@ def _check_outcome(
     before_status: str | None = None,
 ) -> bool:
     if expected == "skipped_clean":
-        return (
-            skipped is True
-            and verified_removed is None
-            and (before_status is None or before_status in {"not_detected", "not_matched"})
-        )
+        return skipped is True and verified_removed is None and before_status in {"not_detected", "not_matched"}
     if expected == "verified_removed":
         return skipped is False and verified_removed is True and quality_passed is True
+    if expected == "control_stays_positive":
+        return (skipped is True and before_status in {"detected", "matched"}) or (
+            skipped is False and verified_removed is False
+        )
+    if expected == "unverified":
+        return verified_removed is None and (skipped is True or quality_passed is True)
     return False
 
 
@@ -969,11 +1258,13 @@ def format_markdown_summary(report: dict[str, Any]) -> str:
             perc = row.get("perceptual")
             if isinstance(perc, dict) and perc.get("mr_stft_loss") is not None:
                 metric += f", MR-STFT {perc['mr_stft_loss']:.3f}, Mel {perc['mel_distance_db']:.2f} dB"
-        elif row.get("quality"):
-            q = row["quality"]
+        elif row.get("quality") or row.get("video_quality"):
+            q = row.get("quality") or row["video_quality"]
             psnr = f"{q['source_psnr_db']:.2f} dB" if q.get("source_psnr_db") is not None else "lossless"
             ssim = f"{q['source_ssim']:.4f}" if q.get("source_ssim") is not None else "n/a"
             metric = f"PSNR {psnr}, SSIM {ssim}"
+            if q.get("source_color_ssim") is not None:
+                metric += f", cSSIM {q['source_color_ssim']:.4f}"
         lines.append(
             f"| `{row['case_id']}` | `{row['surface']}` | `{row['scheme']}` | "
             f"`{row['expected_outcome']}` | `{row['status']}` | "
@@ -988,6 +1279,8 @@ def run_removal_benchmark(
     work_dir: Path,
     output_json: Path,
     output_markdown: Path | None = None,
+    external_outputs_dir: Path | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Validate all input digests up front, run removal cases, and save reports."""
     _ensure_new_file(output_json)
@@ -1007,9 +1300,30 @@ def run_removal_benchmark(
         if actual != case.source_sha256:
             raise ValueError(f"Case {case.case_id}: source SHA-256 mismatch before benchmark start")
 
-    outputs_dir = work_dir / "delivered"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    results = [evaluate_removal_case(case, outputs_dir, preverified_sha256=case.source_sha256) for case in cases]
+    if external_outputs_dir is not None:
+        src_cache: dict[tuple[Any, ...], Any] = {}
+        results = [
+            evaluate_external_output_case(
+                case,
+                external_outputs_dir,
+                preverified_sha256=case.source_sha256,
+                strict=strict,
+                _source_cache=src_cache,
+            )
+            for case in cases
+        ]
+    else:
+        outputs_dir = work_dir / "delivered"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        results = [
+            evaluate_removal_case(
+                case,
+                outputs_dir,
+                preverified_sha256=case.source_sha256,
+                strict=strict,
+            )
+            for case in cases
+        ]
 
     counts = {
         "total": len(results),
@@ -1021,6 +1335,7 @@ def run_removal_benchmark(
         "schema_version": SCHEMA_VERSION,
         "manifest": str(manifest_path),
         "manifest_sha256": sha256_file(manifest_path),
+        "mode": "external_comparator" if external_outputs_dir is not None else "self",
         "counts": counts,
         "results": results,
     }
@@ -1047,6 +1362,12 @@ def main() -> None:
         required=True,
         help="working directory for synthesized/delivered files",
     )
+    parser.add_argument(
+        "--external-outputs-dir",
+        type=Path,
+        default=None,
+        help="score pre-generated external tool outputs (<case_id><suffix>) on identical receivers and quality gates",
+    )
     parser.add_argument("--output", type=Path, required=True, help="new JSON report path (never overwritten)")
     parser.add_argument("--markdown", type=Path, default=None, help="optional new Markdown summary path")
     parser.add_argument("--strict", action="store_true", help="exit nonzero if any case fails or is unavailable")
@@ -1063,6 +1384,8 @@ def main() -> None:
         work_dir=args.work_dir,
         output_json=args.output,
         output_markdown=args.markdown,
+        external_outputs_dir=args.external_outputs_dir,
+        strict=args.strict,
     )
     log.info(
         "Removal benchmark complete: total=%s passed=%s failed=%s unavailable=%s -> %s",

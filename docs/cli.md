@@ -163,7 +163,10 @@ and raised-cosine overlap-window streaming on longer mono/stereo audio (`> 30 s`
 with raw mid/side stereo, stem RMS preservation, exact
 rational half-open clock (`44.1 kHz` internal grid, preserving up to `22.05 kHz`
 bandwidth), and bitexact WAV writer. EnCodec bandwidth and a non-CPU vocoder
-device do not apply, and `auto` never selects DAC. Long audio tracks (`> 30 s`) are verified across
+device do not apply; `auto` selects DAC only when pre-strip metadata identifies
+ElevenLabs (falling back to `encodec` / `combined` if DAC is absent or the stream
+exceeds stereo) or Google SynthID (failing closed rather than falling back to
+`encodec` if DAC is absent or the stream exceeds stereo). Long audio tracks (`> 30 s`) are verified across
 bounded `<= 30 s` whole-clip segments in addition to sliding windows, missing
 requested decoders emit actionable install hints, and JSON output includes
 `quality_passed`. Each method must pass

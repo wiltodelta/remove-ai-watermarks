@@ -1497,8 +1497,17 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     if app_generator:
         result.setdefault("app_aigc", f"App AIGC disclosure ({app_generator})")
 
-    # Kling's encoder tag, an H.264 SEI message in the first video sample.
-    if KLING_SEI_TAG in app_scan:
+    # Kling's encoder tag, an H.264/HEVC SEI user_data_unregistered message.
+    from remove_ai_watermarks._internal import isobmff
+
+    sei_scan = (
+        isobmff.scan_isobmff_video_sei(image_path, stop_on_first_kling=True)
+        if isobmff.is_isobmff(app_scan[:8])
+        else None
+    )
+    if (sei_scan is not None and sei_scan.kling_tag_offsets) or (
+        (sei_scan is None or not sei_scan.has_parsed_tracks) and KLING_SEI_TAG in app_scan
+    ):
         result.setdefault("kling_sei", "Kling AI encoder tag (H.264 SEI kling-ai)")
 
     # xAI / Grok signature pair in EXIF or an equivalent container-native field.

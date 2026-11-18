@@ -982,6 +982,7 @@ def remove_video_all(
             allow_positive=audio_allow_positive,
             allow_quality_override=audio_allow_quality_override,
             streams=audio_streams,
+            _metadata_markers=_detected_metadata,
         )
     _require_video_runtime()
     detected_metadata = _detected_metadata if _detected_metadata is not None else get_ai_metadata(source_path)
@@ -1089,6 +1090,7 @@ def remove_video_all(
                     allow_quality_override=audio_allow_quality_override,
                     streams=audio_streams,
                     _befores=reusable_befores,
+                    _metadata_markers=detected_metadata,
                 )
                 seen_schemes: set[str] = set()
                 for s in audio_res.streams:

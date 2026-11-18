@@ -62,7 +62,25 @@ Visible inpainting/cropping tools and forks are not independent evidence of an
 invisible receiver result. General “humanization,” ultrasonic filtering and
 “remove all fingerprints” claims need compatible positive controls before
 they influence a public profile. Content-based matching may survive every
-metadata edit and is a separate problem from an embedded watermark.
+metadata edit and is a separate problem from an embedded watermark. External
+competitor outputs (`ShadowMarkDefense`, `pagedMark`, `watermarks-remover`) can
+be evaluated out-of-process against identical local receivers and perceptual
+gates via `scripts/media_removal_benchmark.py --external-outputs-dir` without
+importing non-permissive or unpinned code into the package.
+
+## Open-source library and license audit (2026-11)
+
+| Candidate library / checkpoint | Modality & role | Checked license | Integration disposition |
+| --- | --- | --- | --- |
+| `descript/dac_44khz` | 44.1 kHz RVQ neural audio codec | MIT (code + weights) | **Shipped** (`--method dac`, fixed 3 quantizers, raw M/S stereo, overlap-window streaming) |
+| `facebook/encodec_24khz` & `facebook/encodec_48khz` | 24 kHz mono & 48 kHz native stereo neural audio codecs (`transformers`) | MIT | `24 kHz` M/S **shipped** (`--method encodec`); `48 kHz` native stereo **P1.3 candidate** for full-bandwidth music |
+| `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` | 3D causal video VAE + flow-matching diffusion | Apache-2.0 | **Shipped** (`wan21-synthid-experimental`, `wan21-seedance-experimental` on BF16 CUDA) |
+| `facebookresearch/videoseal` (`VideoSeal 0.0/1.0`, `PixelSeal`, `ChunkySeal`) | Public video watermark embedders/detectors (`256`-bit to `1024`-bit) | MIT | `VideoSeal 0.0/1.0` & `PixelSeal` **shipped**; `ChunkySeal` **P1.3 candidate** |
+| `madebyollin/taehv` (`TAEHV` in `diffusers`) | Lightweight causal tiny video autoencoder (`Wan` / `CogVideoX` / `HunyuanVideo` latents) | Apache-2.0 | **P2.1 candidate** for fast consumer-GPU / Apple Silicon MPS temporal regeneration |
+| `moyangkuo/AudioMarkBench` & `zhengyuan-jiang/VideoMarkBench` | Academic audio & video watermark robustness suites | MPL-2.0 / MIT | **External evaluation reference** (keep out of wheel dependencies) |
+| `sczhou/ProPainter` & `lixiaowen-xw/DiffuEraser` | Transformer / diffusion video inpainting | **NTU S-Lab License 1.0 (non-commercial)** | **Excluded from package** (violates permissive commercial-safe dependency policy; replaced by clean-donor flow propagation + permissive `LaMa` / `MI-GAN`) |
+| `stabilityai/stable-audio-open-1.0` (`AutoencoderOobleck`) | 44.1 kHz stereo continuous audio VAE | **Stability AI Community License** | **Excluded from package** (revenue/commercial restrictions) |
+| `TimbreWatermark` / `DiffErase` mel subtree / `REVMark` | Academic audio watermarks & attacks | **GPL-3.0 / Non-commercial** | **Excluded from package** |
 
 ## Primary audio literature
 
@@ -108,7 +126,7 @@ metric is insufficient for music, stereo or environmental fidelity.
 BigVGAN supplies a reproducible vocoder baseline. Its local preflight exposed
 hop-boundary length loss; subsequent complete mono paired tests preserved
 sample counts but retained Perth and showed nonzero lags. The
-[roadmap](media-removal-roadmap.md) records the full codec/vocoder rate grid,
+[evidence log](media-removal-evidence-log.md) records the full codec/vocoder rate grid,
 quality limits and the scoped EnCodec results. Rate-correct handling, exact
 length, perceptual quality and compatible signal outcomes remain separate gates.
 

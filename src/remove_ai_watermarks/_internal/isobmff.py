@@ -35,6 +35,7 @@ import os
 import re
 import shutil
 import struct
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 if TYPE_CHECKING:
@@ -84,6 +85,18 @@ _XAI_REGION_SENTINEL_START = b"\xa9cmt\x00"
 _XAI_REGION_SENTINEL_END = b"\x00"
 _STREAM_COPY_BYTES = 1024 * 1024
 STREAM_SCAN_BYTES = 4 * 1024 * 1024
+_MAX_STBL_ENTRIES = 2_000_000
+_MAX_SEI_NAL_BYTES = 256 * 1024
+_X264_SEI_UUID_HEX = "dc45e9bde6d948b7962cd820d923eeef"
+
+
+@dataclass(frozen=True)
+class IsobmffVideoSeiScan:
+    """Structural H.264/HEVC SEI scan across ISO-BMFF video sample tables."""
+
+    has_parsed_tracks: bool
+    kling_tag_offsets: tuple[int, ...] = ()
+    unregistered_uuids: tuple[str, ...] = ()
 
 
 # TC260-PG-20257A stores an MP4/MOV label as an ``AIGC`` key in
@@ -508,6 +521,316 @@ def _app_metadata_regions(
     ]
 
 
+_VIDEO_NAL_CODEC_SPECS: dict[bytes, tuple[str, bytes, int]] = {
+    b"avc1": ("avc", b"avcC", 4),
+    b"avc3": ("avc", b"avcC", 4),
+    b"hvc1": ("hevc", b"hvcC", 21),
+    b"hev1": ("hevc", b"hvcC", 21),
+}
+
+
+def _unescape_rbsp_with_map(raw: bytes) -> tuple[bytes, list[int] | None]:
+    """Strip H.264/HEVC 0x000003 emulation-prevention bytes while preserving raw byte indices."""
+    if b"\x00\x00\x03" not in raw:
+        return raw, None
+    rbsp = bytearray()
+    raw_indices: list[int] = []
+    zero_run = 0
+    for idx, b in enumerate(raw):
+        if zero_run >= 2 and b == 0x03:
+            zero_run = 0
+            continue
+        rbsp.append(b)
+        raw_indices.append(idx)
+        zero_run = zero_run + 1 if b == 0x00 else 0
+    return bytes(rbsp), raw_indices
+
+
+def _read_sei_uint(rbsp: bytes, pos: int) -> tuple[int, int] | None:
+    limit = len(rbsp)
+    val = 0
+    while pos < limit and rbsp[pos] == 0xFF:
+        val += 255
+        pos += 1
+    if pos >= limit:
+        return None
+    return val + rbsp[pos], pos + 1
+
+
+def _scan_sei_rbsp(
+    raw_sei: bytes,
+    raw_file_offset: int,
+    kling_offsets: set[int],
+    uuids: set[str],
+) -> None:
+    """Parse SEI messages in one NAL body and record Kling tag offsets + unregistered UUIDs."""
+    rbsp, raw_map = _unescape_rbsp_with_map(raw_sei)
+    pos = 0
+    limit = len(rbsp)
+    while pos + 2 <= limit and rbsp[pos] != 0x80:
+        t_pair = _read_sei_uint(rbsp, pos)
+        if t_pair is None:
+            return
+        payload_type, pos = t_pair
+        s_pair = _read_sei_uint(rbsp, pos)
+        if s_pair is None:
+            return
+        payload_size, pos = s_pair
+        if pos + payload_size > limit:
+            return
+        if payload_type == 5 and payload_size >= 16:
+            msg = rbsp[pos : pos + payload_size]
+            uuid_hex = msg[:16].hex()
+            if uuid_hex != _X264_SEI_UUID_HEX and msg[: len(KLING_SEI_TAG)] != KLING_SEI_TAG:
+                uuids.add(uuid_hex)
+            found = msg.find(KLING_SEI_TAG)
+            while found != -1:
+                rbsp_start = pos + found
+                if raw_map is None:
+                    kling_offsets.add(raw_file_offset + rbsp_start)
+                else:
+                    raw_start = raw_map[rbsp_start]
+                    raw_end = raw_map[rbsp_start + len(KLING_SEI_TAG) - 1] + 1
+                    if raw_end - raw_start == len(KLING_SEI_TAG):
+                        kling_offsets.add(raw_file_offset + raw_start)
+                found = msg.find(KLING_SEI_TAG, found + 1)
+        pos += payload_size
+
+
+def _parse_video_codec_map(stream: BinaryIO, stsd_payload: int, stsd_end: int) -> dict[int, tuple[str, int]]:
+    """Map 1-based sample_description_index -> ('avc'|'hevc', nal_length_size)."""
+    if stsd_payload + 8 > stsd_end:
+        return {}
+    stream.seek(stsd_payload + 4)
+    entry_count = struct.unpack(">I", stream.read(4))[0]
+    codec_map: dict[int, tuple[str, int]] = {}
+    for idx, (_s, entry_end, entry_type, entry_payload) in enumerate(
+        list(iter_file_boxes(stream, stsd_payload + 8, stsd_end)),
+        start=1,
+    ):
+        if idx > entry_count:
+            break
+        spec = _VIDEO_NAL_CODEC_SPECS.get(entry_type)
+        children_start = entry_payload + 78
+        if spec is None or children_start > entry_end:
+            continue
+        family, cfg_box, len_byte_off = spec
+        for _cs, c_end, c_type, c_payload in iter_file_boxes(stream, children_start, entry_end):
+            if c_type == cfg_box and c_payload + len_byte_off + 1 <= c_end:
+                stream.seek(c_payload + len_byte_off)
+                codec_map[idx] = (family, (stream.read(1)[0] & 0x03) + 1)
+                break
+    return codec_map
+
+
+def _pread_or_seek(stream: BinaryIO, fd: int | None, offset: int, count: int) -> bytes:
+    if fd is not None:
+        return os.pread(fd, count, offset)  # type: ignore[attr-defined]
+    stream.seek(offset)
+    return stream.read(count)
+
+
+def _scan_video_stbl_sei(
+    stream: BinaryIO,
+    stbl_payload: int,
+    stbl_end: int,
+    file_size: int,
+    kling_offsets: set[int],
+    uuids: set[str],
+    *,
+    stop_on_first_kling: bool = False,
+) -> bool:
+    """Walk one video track's sample table and scan only H.264/HEVC SEI NALs."""
+    boxes = {btype: (pay, end) for _s, end, btype, pay in iter_file_boxes(stream, stbl_payload, stbl_end)}
+    if b"stsd" not in boxes or b"stsc" not in boxes or b"stsz" not in boxes:
+        return False
+    if b"stco" not in boxes and b"co64" not in boxes:
+        return False
+
+    codec_map = _parse_video_codec_map(stream, *boxes[b"stsd"])
+    if not codec_map:
+        return True  # Parsed valid non-AVC/HEVC video stbl (e.g. av01/vp09); no AVC/HEVC SEI present.
+
+    stsc_pay, stsc_end = boxes[b"stsc"]
+    if stsc_pay + 8 > stsc_end:
+        return False
+    stream.seek(stsc_pay + 4)
+    stsc_count = struct.unpack(">I", stream.read(4))[0]
+    if stsc_count == 0 or stsc_count > _MAX_STBL_ENTRIES or stsc_pay + 8 + stsc_count * 12 > stsc_end:
+        return False
+    stsc_raw = stream.read(stsc_count * 12)
+    stsc_entries = [struct.unpack_from(">III", stsc_raw, i * 12) for i in range(stsc_count)]
+
+    stsz_pay, stsz_end = boxes[b"stsz"]
+    if stsz_pay + 12 > stsz_end:
+        return False
+    stream.seek(stsz_pay + 4)
+    fixed_size, sample_count = struct.unpack(">II", stream.read(8))
+    if sample_count > _MAX_STBL_ENTRIES:
+        return False
+    sample_sizes: tuple[int, ...] = ()
+    if fixed_size == 0:
+        if stsz_pay + 12 + sample_count * 4 > stsz_end:
+            return False
+        raw_sizes = stream.read(sample_count * 4)
+        sample_sizes = struct.unpack(f">{sample_count}I", raw_sizes) if sample_count else ()
+
+    (co_pay, co_end), co_width, co_fmt = (boxes[b"stco"], 4, "I") if b"stco" in boxes else (boxes[b"co64"], 8, "Q")
+    if co_pay + 8 > co_end:
+        return False
+    stream.seek(co_pay + 4)
+    chunk_count = struct.unpack(">I", stream.read(4))[0]
+    if chunk_count > _MAX_STBL_ENTRIES or co_pay + 8 + chunk_count * co_width > co_end:
+        return False
+    raw_co = stream.read(chunk_count * co_width)
+    chunk_offsets = struct.unpack(f">{chunk_count}{co_fmt}", raw_co) if chunk_count else ()
+
+    fd: int | None = None
+    if hasattr(os, "pread"):
+        try:
+            fd = stream.fileno()
+        except (AttributeError, OSError, io.UnsupportedOperation):
+            fd = None
+
+    stsc_idx = 0
+    sample_idx = 0
+    for chunk_1based, chunk_off in enumerate(chunk_offsets, start=1):
+        while stsc_idx + 1 < len(stsc_entries) and chunk_1based >= stsc_entries[stsc_idx + 1][0]:
+            stsc_idx += 1
+        _first_chunk, samples_per_chunk, desc_idx = stsc_entries[stsc_idx]
+        codec_cfg = codec_map.get(desc_idx)
+        cur_off = int(chunk_off)
+        for _ in range(samples_per_chunk):
+            if sample_idx >= sample_count:
+                break
+            sz = int(fixed_size if fixed_size > 0 else sample_sizes[sample_idx])
+            sample_idx += 1
+            if codec_cfg is not None and sz > 0 and cur_off >= 0 and cur_off + sz <= file_size:
+                family, len_size = codec_cfg
+                sample_end = cur_off + sz
+                nal_pos = cur_off
+                while nal_pos + len_size < sample_end:
+                    hdr = _pread_or_seek(stream, fd, nal_pos, min(len_size + 2, sample_end - nal_pos))
+                    if len(hdr) <= len_size:
+                        break
+                    nal_len = int.from_bytes(hdr[:len_size], "big")
+                    nal_body_start = nal_pos + len_size
+                    if nal_len <= 0 or nal_body_start + nal_len > sample_end:
+                        break
+                    if family == "avc":
+                        hdr_len = 1
+                        is_sei = (hdr[len_size] & 0x1F) == 6
+                    else:
+                        hdr_len = 2
+                        is_sei = len(hdr) >= len_size + 2 and ((hdr[len_size] >> 1) & 0x3F) in {39, 40}
+                    if is_sei and nal_len > hdr_len:
+                        read_len = min(nal_len - hdr_len, _MAX_SEI_NAL_BYTES)
+                        sei_file_off = nal_body_start + hdr_len
+                        _scan_sei_rbsp(
+                            _pread_or_seek(stream, fd, sei_file_off, read_len), sei_file_off, kling_offsets, uuids
+                        )
+                        if stop_on_first_kling and kling_offsets:
+                            return True
+                    nal_pos = nal_body_start + nal_len
+            cur_off += sz
+    return True
+
+
+def _iter_trak_boxes(stream: BinaryIO, moov_payload: int, moov_end: int) -> list[tuple[int, int]]:
+    return [
+        (t_pay, t_end)
+        for _ts, t_end, t_type, t_pay in iter_file_boxes(stream, moov_payload, moov_end)
+        if t_type == b"trak"
+    ]
+
+
+def _scan_stream_video_sei(
+    stream: BinaryIO,
+    file_size: int,
+    *,
+    stop_on_first_kling: bool = False,
+) -> IsobmffVideoSeiScan:
+    """Scan all ISO-BMFF tracks in an open stream for video SEI payloads."""
+    top_boxes = list(iter_file_boxes(stream, 0, file_size))
+    has_moof = any(box_type == b"moof" for _s, _e, box_type, _p in top_boxes)
+    parsed_tracks = 0
+    all_tracks_parsed = True
+    kling_offsets: set[int] = set()
+    uuids: set[str] = set()
+    for _start, end, box_type, payload in top_boxes:
+        if box_type != b"moov":
+            continue
+        for t_pay, t_end in _iter_trak_boxes(stream, payload, end):
+            mdia_list = [
+                (m_pay, m_end)
+                for _ms, m_end, m_type, m_pay in iter_file_boxes(stream, t_pay, t_end)
+                if m_type == b"mdia"
+            ]
+            if len(mdia_list) != 1:
+                all_tracks_parsed = False
+                continue
+            m_pay, m_end = mdia_list[0]
+            mdia_boxes = {bt: (bp, be) for _bs, be, bt, bp in iter_file_boxes(stream, m_pay, m_end)}
+            if b"hdlr" not in mdia_boxes or b"minf" not in mdia_boxes:
+                all_tracks_parsed = False
+                continue
+            h_pay, h_end = mdia_boxes[b"hdlr"]
+            if h_pay + 12 > h_end:
+                all_tracks_parsed = False
+                continue
+            stream.seek(h_pay + 8)
+            handler_type = stream.read(4)
+            minf_pay, minf_end = mdia_boxes[b"minf"]
+            minf_boxes = {bt: (bp, be) for _bs, be, bt, bp in iter_file_boxes(stream, minf_pay, minf_end)}
+            if b"stbl" not in minf_boxes:
+                all_tracks_parsed = False
+                continue
+            if handler_type == b"vide":
+                if stop_on_first_kling and kling_offsets:
+                    parsed_tracks += 1
+                    continue
+                stbl_pay, stbl_end = minf_boxes[b"stbl"]
+                if _scan_video_stbl_sei(
+                    stream,
+                    stbl_pay,
+                    stbl_end,
+                    file_size,
+                    kling_offsets,
+                    uuids,
+                    stop_on_first_kling=stop_on_first_kling,
+                ):
+                    parsed_tracks += 1
+                else:
+                    all_tracks_parsed = False
+            else:
+                parsed_tracks += 1
+    return IsobmffVideoSeiScan(
+        has_parsed_tracks=parsed_tracks > 0 and all_tracks_parsed and not has_moof,
+        kling_tag_offsets=tuple(sorted(kling_offsets)),
+        unregistered_uuids=tuple(sorted(uuids)),
+    )
+
+
+def scan_isobmff_video_sei(
+    path: str | Path,
+    *,
+    strict: bool = False,
+    stop_on_first_kling: bool = False,
+) -> IsobmffVideoSeiScan:
+    """Walk ISO-BMFF sample tables to locate H.264/HEVC video SEI provenance payloads."""
+    try:
+        with open(path, "rb") as stream:
+            if not is_isobmff(stream.read(8)):
+                return IsobmffVideoSeiScan(has_parsed_tracks=False)
+            stream.seek(0, 2)
+            file_size = stream.tell()
+            return _scan_stream_video_sei(stream, file_size, stop_on_first_kling=stop_on_first_kling)
+    except OSError:
+        if strict:
+            raise
+        return IsobmffVideoSeiScan(has_parsed_tracks=False)
+
+
 def _copy_finding_kling_sei(
     source: BinaryIO,
     target: BinaryIO,
@@ -874,20 +1197,29 @@ def strip_isobmff_media_file(
         audio_regions = (
             _audio_creation_regions(stream, file_size) if targets is not None and strip_audio_comments else []
         )
+        sei_scan = (
+            _scan_stream_video_sei(stream, file_size)
+            if targets is not None
+            else IsobmffVideoSeiScan(has_parsed_tracks=False)
+        )
         mdat_ranges = (
             [
                 (payload, end)
                 for _start, end, box_type, payload in iter_file_boxes(stream, 0, file_size)
                 if box_type == b"mdat"
             ]
-            if targets is not None
+            if targets is not None and not sei_scan.has_parsed_tracks
             else []
         )
         blanked_key_spans = {key_span for key_span, _v0, _v1 in blank_regions if key_span is not None}
 
     with atomic_video_output(output_path) as temporary_path:
         with source_path.open("rb") as source_stream, temporary_path.open("r+b") as temporary:
-            kling_sei_offsets = _copy_finding_kling_sei(source_stream, temporary, mdat_ranges)
+            if sei_scan.has_parsed_tracks:
+                shutil.copyfileobj(source_stream, temporary, _STREAM_COPY_BYTES)
+                kling_sei_offsets = list(sei_scan.kling_tag_offsets)
+            else:
+                kling_sei_offsets = _copy_finding_kling_sei(source_stream, temporary, mdat_ranges)
             if targets is not None:
                 for box_start, payload_start, box_end in targets:
                     temporary.seek(box_start + 4)

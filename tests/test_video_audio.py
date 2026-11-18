@@ -763,3 +763,42 @@ def test_preflight_untagged_stereo_post_fidelity_hash_and_selected_stream_ordina
     assert res_sel.processed_ordinals == (0,)
     assert res_sel.streams[0].skipped is False
     assert res_sel.streams[1].skipped is True
+
+
+def test_video_audio_all_streams_preserves_prestrip_vendor_metadata(tmp_path, monkeypatch):
+    from remove_ai_watermarks import audio, video_audio
+
+    source = _video(tmp_path, container=".mp4", audio_codec="aac", first_offset=0, selected_offset=0)
+    monkeypatch.setattr(audio.audioseal, "is_available", lambda: False)
+    monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
+    monkeypatch.setattr(audio.perth, "is_available", lambda: False)
+    monkeypatch.setattr(audio.metadata, "get_ai_metadata", lambda _p: {})
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    dac_calls: list[tuple[int, ...]] = []
+    monkeypatch.setattr(
+        audio.audio_dac,
+        "resynthesize",
+        lambda samples, *_a, **_k: dac_calls.append(samples.shape) or (samples * 0.9),
+    )
+    monkeypatch.setattr(
+        audio.audio_spectral,
+        "filter_audio_chunks",
+        lambda *_a, **_k: pytest.fail("spectral must not run when pre-strip Google SynthID metadata is supplied"),
+    )
+
+    out = tmp_path / "clean_veo_stage.mp4"
+    res = video_audio.remove_video_audio_all_streams(
+        source,
+        out,
+        verify=False,
+        method="auto",
+        scheme="auto",
+        allow_unverified=True,
+        _metadata_markers={
+            "issuer": "Google LLC",
+            "synthid_watermark": "present according to Google LLC provenance",
+        },
+    )
+    assert res.skipped is False
+    assert [s.method for s in res.streams] == ["dac", "dac"]
+    assert len(dac_calls) == 2

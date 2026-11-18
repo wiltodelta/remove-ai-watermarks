@@ -559,6 +559,7 @@ def _audio_metadata_vendor(markers: dict[str, str]) -> Literal["elevenlabs", "go
 def _recommend_audio_recipe(
     source: Path,
     *,
+    info: audio_io.AudioStreamInfo,
     markers: dict[str, str],
     watermark_status: AudioWatermarkStatus,
 ) -> str | None:
@@ -568,7 +569,7 @@ def _recommend_audio_recipe(
     in_ext = source.suffix.lower() or ".wav"
     out_ext = in_ext if in_ext in AUDIO_OUTPUT_EXTENSIONS else ".wav"
     vendor = _audio_metadata_vendor(markers)
-    if vendor is not None:
+    if vendor == "elevenlabs" or (vendor == "google_synthid" and _is_mono_or_stereo(info)):
         method = "auto" if vendor == "elevenlabs" else "dac"
         perm = "" if watermark_status == "detected" else " --allow-unverified"
         return f"remove-ai-watermarks audio all input{in_ext} -o clean{out_ext} --invisible --method {method}{perm}"
@@ -585,6 +586,7 @@ def identify_audio(
     check_invisible: bool = True,
     stream: int = 0,
     scheme: AudioScheme = "audioseal",
+    _metadata_markers: dict[str, str] | None = None,
 ) -> AudioProvenanceReport:
     """Inspect one audio track; missing decoders remain explicitly unverified.
 
@@ -597,7 +599,7 @@ def identify_audio(
         raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
     path, info = _source(source, stream)
     digest = sha256_file(path)
-    markers = metadata.get_ai_metadata(path)
+    markers = dict(_metadata_markers) if _metadata_markers is not None else metadata.get_ai_metadata(path)
     detections: tuple[AudioDetection, ...] = ()
     caveats: list[str] = []
     availability = {
@@ -657,7 +659,7 @@ def identify_audio(
     if sha256_file(path) != digest:
         raise RuntimeError("Audio source changed during inspection")
     status = _aggregate(detections)
-    recipe = _recommend_audio_recipe(path, markers=markers, watermark_status=status)
+    recipe = _recommend_audio_recipe(path, info=info, markers=markers, watermark_status=status)
     return AudioProvenanceReport(path, digest, info, markers, status, detections, tuple(caveats), recipe)
 
 
@@ -755,7 +757,7 @@ def adaptive_auto_profiles(scheme: AudioScheme, before: AudioProvenanceReport) -
         can_use_dac = _is_mono_or_stereo(before.stream) and audio_dac.is_available()
         if vendor == "elevenlabs":
             return ("dac", "encodec", "combined") if can_use_dac else ("encodec", "combined")
-        return ("dac", "combined") if can_use_dac else ("encodec", "combined")
+        return ("dac", "combined") if can_use_dac else ("dac",)
     if scheme not in {"all", "auto"} or before.watermark_status != "detected":
         return _AUTO_PROFILES[scheme]
     detected = {item.scheme for item in before.detections if item.status == "detected"}
@@ -860,12 +862,13 @@ def remove_audio_invisible(
     failed integrity gate; ``force=True`` remains an alias enabling all three.
     Output files (.wav, .flac, .mp3, .m4a, .ogg, .opus) discard metadata and
     preserve channel geometry.
-    Explicit bigvgan, mimi, focalcodec, and dac are experimental bounded
-    full-track raw M/S profiles, excluded from auto. None supplies a SynthID
-    verifier. Mimi, FocalCodec, and DAC use CPU float32 (fixed 32-quantizer
-    Mimi; conditioned 50 Hz WavLM-to-Vocos FocalCodec; 3-codebook 44.1 kHz
-    DAC); BigVGAN retains its selected device. Codec reconstruction does not
-    guarantee voice identity.
+    Explicit bigvgan, mimi, and focalcodec are experimental bounded full-track
+    raw M/S profiles, excluded from auto; dac is selected by auto only when
+    pre-strip metadata identifies ElevenLabs or Google SynthID. None supplies a
+    SynthID verifier. Mimi, FocalCodec, and DAC use CPU float32 (fixed
+    32-quantizer Mimi; conditioned 50 Hz WavLM-to-Vocos FocalCodec; 3-codebook
+    44.1 kHz DAC); BigVGAN retains its selected device. Codec reconstruction
+    does not guarantee voice identity.
     """
     profiles = resolve_audio_profiles(
         method=method,

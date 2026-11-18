@@ -191,3 +191,170 @@ def test_iter_stabilized_regenerated_frames_streams_with_one_frame_lookahead() -
     assert consumed == [0, 1]
     assert np.array_equal(first_src, frames[0])
     assert first_stab.shape == frames[0].shape
+
+
+def _textured_panning_clip(frame_count: int = 5) -> list[np.ndarray]:
+    height, width = 120, 160
+    # Fine multi-frequency pattern inside the canvas that single-frame Telea smears badly
+    canvas_w = width + 32
+    cy, cx = np.mgrid[0:height, 0:canvas_w].astype(np.float32)
+    b = 128.0 + 70.0 * np.sin(cx * 0.42) * np.cos(cy * 0.38)
+    g = 128.0 + 65.0 * np.cos(cx * 0.31 + cy * 0.27)
+    r = 128.0 + 70.0 * (((cx.astype(int) // 5) ^ (cy.astype(int) // 5)) * 2 - 1) * 0.65
+    canvas = np.clip(np.stack([b, g, r], axis=2), 10, 245).astype(np.uint8)
+    return [canvas[:, idx * 2 : idx * 2 + width].copy() for idx in range(frame_count)]
+
+
+def test_recover_unobscured_background_restores_moving_mark_and_rejects_scene_cut() -> None:
+    from remove_ai_watermarks.video_temporal import recover_unobscured_background
+
+    clean = _textured_panning_clip(3)
+    boxes = [(14, 16, 42, 38), (48, 44, 76, 66), (88, 72, 116, 94)]
+    watermarked: list[np.ndarray] = []
+    masks: list[np.ndarray] = []
+    for frame, (x0, y0, x1, y1) in zip(clean, boxes, strict=True):
+        wm = frame.copy()
+        wm[y0:y1, x0:x1] = 250
+        m = np.zeros(frame.shape[:2], dtype=np.uint8)
+        m[y0:y1, x0:x1] = 255
+        watermarked.append(wm)
+        masks.append(m)
+
+    hole = masks[1] > 0
+    single_frame_inpaint = cv2.inpaint(watermarked[1], masks[1], 3.0, cv2.INPAINT_TELEA)
+    inpaint_mse = float(np.mean((single_frame_inpaint[hole].astype(np.float32) - clean[1][hole]) ** 2))
+
+    recovered, remaining = recover_unobscured_background(
+        watermarked[1],
+        masks[1],
+        [(watermarked[0], masks[0]), (watermarked[2], masks[2])],
+    )
+    recovered_mse = float(np.mean((recovered[hole].astype(np.float32) - clean[1][hole]) ** 2))
+
+    assert int(np.count_nonzero(remaining)) == 0
+    assert recovered_mse < inpaint_mse * 0.10
+    assert np.array_equal(recovered[~hole], watermarked[1][~hole])
+
+    # Scene cut donor must be rejected without bleeding pixels into the target hole
+    rng = np.random.default_rng(99)
+    cut_donor = rng.integers(0, 40, clean[1].shape, dtype=np.uint8)
+    cut_recovered, cut_remaining = recover_unobscured_background(
+        watermarked[1],
+        masks[1],
+        [(cut_donor, None)],
+    )
+    assert np.array_equal(cut_remaining, masks[1])
+    assert np.array_equal(cut_recovered, watermarked[1])
+
+
+def test_encode_clean_video_recovers_moving_watermark_end_to_end(tmp_path) -> None:
+    import shutil
+    import subprocess
+
+    import pytest
+
+    from remove_ai_watermarks.video_decode import open_video_capture
+    from remove_ai_watermarks.video_visible import FrameLocalization, VideoScan, encode_clean_video
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None or shutil.which("ffprobe") is None:
+        pytest.skip("ffmpeg and ffprobe required")
+
+    clean = _textured_panning_clip(5)
+    positions = [(14, 16), (46, 38), (80, 60), (46, 38), (14, 16)]
+    wm_frames: list[np.ndarray] = []
+    regions: list[tuple[int, int, int, int] | None] = []
+    detections: list[FrameLocalization] = []
+    for idx, (frame, (x, y)) in enumerate(zip(clean, positions, strict=True)):
+        wm = frame.copy()
+        wm[y : y + 22, x : x + 28] = 245
+        wm_frames.append(wm)
+        reg = (x, y, 28, 22)
+        regions.append(reg)
+        detections.append(FrameLocalization(frame_index=idx, confidence=0.95, region=reg))
+
+    src_mp4 = tmp_path / "moving_wm.mp4"
+    h, w = clean[0].shape[:2]
+    subprocess.run(  # noqa: S603
+        [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s:v",
+            f"{w}x{h}",
+            "-r",
+            "12",
+            "-i",
+            "pipe:0",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "10",
+            "-pix_fmt",
+            "yuv420p",
+            str(src_mp4),
+        ],
+        input=b"".join(f.tobytes() for f in wm_frames),
+        check=True,
+    )
+
+    scan = VideoScan(
+        width=w,
+        height=h,
+        fps=12.0,
+        detections=tuple(detections),
+        timestamps=tuple(i / 12.0 for i in range(len(wm_frames))),
+    )
+    out_single = tmp_path / "single.mp4"
+    out_temporal = tmp_path / "temporal.mp4"
+    encode_clean_video(
+        src_mp4,
+        out_single,
+        scan,
+        regions,
+        backend="cv2",
+        strip_metadata=True,
+        temporal_consistency=False,
+    )
+    encode_clean_video(
+        src_mp4,
+        out_temporal,
+        scan,
+        regions,
+        backend="cv2",
+        strip_metadata=True,
+        temporal_consistency=True,
+    )
+
+    def _read_all(path):
+        cap = open_video_capture(path)
+        out = []
+        try:
+            while True:
+                ok, frm = cap.read()
+                if not ok:
+                    break
+                out.append(frm)
+        finally:
+            cap.release()
+        return out
+
+    single_decoded = _read_all(out_single)
+    temporal_decoded = _read_all(out_temporal)
+    assert len(single_decoded) == len(clean)
+    assert len(temporal_decoded) == len(clean)
+
+    # Compare interior target-box MSE against ground-truth clean frames
+    single_err = 0.0
+    temporal_err = 0.0
+    for gt, sf_frm, tf_frm, (x, y) in zip(clean, single_decoded, temporal_decoded, positions, strict=True):
+        gt_box = gt[y : y + 22, x : x + 28].astype(np.float32)
+        single_err += float(np.mean((sf_frm[y : y + 22, x : x + 28].astype(np.float32) - gt_box) ** 2))
+        temporal_err += float(np.mean((tf_frm[y : y + 22, x : x + 28].astype(np.float32) - gt_box) ** 2))
+
+    assert temporal_err < single_err * 0.25
