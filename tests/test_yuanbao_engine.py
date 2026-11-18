@@ -101,3 +101,39 @@ class TestDetectAndMask:
         output, region = registry.get_mark("yuanbao").remove(watermark, backend="cv2")
         assert region is not None
         assert not YuanbaoEngine().detect(output).detected
+
+    def test_corner_bars_and_caption_envelope_demoted_by_two_line_detail_gate(self):
+        """Horizontal corner bars/captions inside the 0.04 anchor clear raw contrast NCC
+        (>0.40) on 1D envelope alone, and must be demoted by YuanbaoEngine._post_gate."""
+        from remove_ai_watermarks._text_mark_engine import BottomRightAnchoredEngine, TextMarkEngine
+
+        class AnchorOnly(YuanbaoEngine):
+            def _post_gate(self, det, scan):
+                return BottomRightAnchoredEngine._post_gate(self, det, scan)
+
+        h, w = 583, 780
+        decoy = np.zeros((h, w, 3), np.uint8)
+        decoy[:, :] = (20, 120, 245)  # saturated backdrop outside the low-sat shadow bars
+        decoy[h - 33 : h - 23, w - 49 : w - 22] = (18, 18, 18)
+        decoy[h - 19 : h - 9, w - 58 : w - 14] = (18, 18, 18)
+
+        ungated = AnchorOnly().detect(decoy)
+        assert ungated.detected
+        assert ungated.template_asset == "yuanbao_alpha.png"
+        assert ungated.confidence >= 0.40
+
+        eng = YuanbaoEngine()
+        base_strict, base_relaxed = TextMarkEngine.detect_both(eng, decoy)
+        assert not base_strict.detected
+        assert not base_relaxed.detected
+        assert base_strict.confidence == ungated.confidence
+
+        mark = registry.get_mark("yuanbao")
+        strict, relaxed = mark.detect_both(decoy)
+        det_strict = mark.detect(decoy, provenance=False)
+        det_relaxed = mark.detect(decoy, provenance=True)
+        assert not strict.detected
+        assert (strict.detected, strict.confidence) == (det_strict.detected, det_strict.confidence)
+        assert (relaxed.detected, relaxed.confidence) == (det_relaxed.detected, det_relaxed.confidence)
+        assert mark.localize(decoy).mask is None
+        assert registry.decide(registry._build_candidates(decoy), registry.Context()) == []

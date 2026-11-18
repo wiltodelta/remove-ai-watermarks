@@ -341,15 +341,36 @@ class TestSparkleFalsePositiveGate:
         assert det.confidence < 0.5
         assert not det.detected
 
+    def test_off_corner_blurred_white_blob_not_rescued(self):
+        """A blurry white bokeh blob floating >2x the nominal corner margin (yet still
+        inside ``_FP_MAX_CORNER_AXIS_FRAC``) must NOT be rescued by the low-gradient
+        white-core exception meant for re-compressed sparkles at the corner."""
+        width, height = 1240, 840
+        scale = 48
+        x, y = WatermarkPosition(110, 150, scale).get_position(width, height)
+        img = np.full((height, width, 3), 110, dtype=np.float32)
+        alpha = self.engine.get_alpha_map(WatermarkSize.SMALL)
+        a = np.clip(alpha * 1.45, 0.0, 1.0)[:, :, None]
+        img[y : y + scale, x : x + scale] = a * 255.0 + (1.0 - a) * img[y : y + scale, x : x + scale]
+        img = cv2.GaussianBlur(np.clip(img, 0, 255).astype(np.uint8), (21, 21), 0)
+        strict, relaxed = self.engine.detect_watermark_both(img)
+        assert relaxed.gradient_score < self.engine._SPARKLE_FP_GRAD
+        assert self.engine._SPARKLE_KEEP_CONF <= relaxed.confidence < self.engine._SPARKLE_FP_CONF
+        assert relaxed.detected
+        assert strict.confidence <= 0.30
+        assert not strict.detected
+
     @pytest.mark.parametrize(
         ("width", "height", "scale", "margin_right", "margin_bottom", "alpha_scale", "noise_std", "seed"),
         [
             # Micro-scale match (16 px on a >1024 px LARGE frame expecting 96 px) far from the corner.
             (1874, 2272, 16, 454, 349, 0.65, 28, 7),
-            # Narrow frame where the 512 px window reaches past 0.5 * min(width, height).
+            # Narrow frame where the 512 px window reaches past _FP_MAX_CORNER_AXIS_FRAC * min(width, height).
             (458, 779, 46, 26, 331, 0.68, 24, 11),
+            # Landscape photo bokeh sitting a third of the short axis above the bottom edge.
+            (1240, 840, 44, 125, 294, 0.66, 24, 19),
         ],
-        ids=["undersized-off-corner", "outside-corner-quadrant"],
+        ids=["undersized-off-corner", "outside-corner-quadrant", "mid-height-landscape-bokeh"],
     )
     def test_implausible_corner_geometry_is_demoted(
         self,

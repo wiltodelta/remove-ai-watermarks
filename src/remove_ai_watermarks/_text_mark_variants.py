@@ -92,12 +92,16 @@ class BottomRightGlyphTextMarkEngine(GlyphTextMarkEngine, BottomRightAnchoredEng
     _ANCHOR_MAX_BOTTOM = 0.04
 
     def _ladder_best(
-        self, image: NDArray[Any], loc: TextMarkLocation
+        self,
+        image: NDArray[Any],
+        loc: TextMarkLocation,
+        *,
+        response: NDArray[Any] | None = None,
     ) -> tuple[float, tuple[int, int, int, int] | None]:
         """Find the strongest match among placements that satisfy the anchor."""
-        response = self._detect_response(image, loc)
+        resp = self._detect_response(image, loc) if response is None else response
         silhouette = self._glyph_silhouette()
-        if response is None or silhouette is None:
+        if resp is None or silhouette is None:
             return 0.0, None
         frame_h, frame_w = image.shape[:2]
         anchor_base = min(frame_h, frame_w)
@@ -107,10 +111,10 @@ class BottomRightGlyphTextMarkEngine(GlyphTextMarkEngine, BottomRightAnchoredEng
         for scale in self.config.ladder:
             glyph_w = max(self.config.min_gw, int(self.config.alpha_width_frac * base * scale))
             glyph_h = max(4, int(self.config.alpha_height_frac * base * scale))
-            if glyph_w >= response.shape[1] or glyph_h >= response.shape[0]:
+            if glyph_w >= resp.shape[1] or glyph_h >= resp.shape[0]:
                 continue
             template = cv2.resize(silhouette, (glyph_w, glyph_h), interpolation=cv2.INTER_AREA)
-            scores = cv2.matchTemplate(response, template, cv2.TM_CCOEFF_NORMED)
+            scores = cv2.matchTemplate(resp, template, cv2.TM_CCOEFF_NORMED)
             min_x = max(0, round(frame_w - loc.x - glyph_w - self._ANCHOR_MAX_RIGHT * anchor_base))
             max_x = min(scores.shape[1] - 1, frame_w - loc.x - glyph_w)
             min_y = max(0, round(frame_h - loc.y - glyph_h - self._ANCHOR_MAX_BOTTOM * anchor_base))

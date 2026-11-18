@@ -146,7 +146,7 @@ class GeminiEngine:
     _SPARKLE_FP_GRAD = 0.55
     _SPARKLE_KEEP_CONF = 0.52
     _SPARKLE_WHITE_SAT = 0.20
-    _FP_MAX_CORNER_AXIS_FRAC = 0.5
+    _FP_MAX_CORNER_AXIS_FRAC = 0.25
     _FP_OFF_CORNER_MARGIN_MULT = 2
     _FP_OFF_CORNER_MIN_SCALE_FRAC = 0.6
     _CORNER_PROMOTE_NCC = 0.85
@@ -283,20 +283,20 @@ class GeminiEngine:
         result.detected = result.confidence >= 0.35
         return result
 
-    def _has_plausible_corner_geometry(self, width: int, height: int, candidate: _Candidate) -> bool:
-        config = get_watermark_config(width, height)
-        margin_right = width - candidate.x - candidate.scale
-        margin_bottom = height - candidate.y - candidate.scale
-        max_margin = max(margin_right, margin_bottom)
+    def _corner_geometry(self, width: int, height: int, candidate: _Candidate) -> tuple[bool, bool]:
+        max_margin = max(width - candidate.x - candidate.scale, height - candidate.y - candidate.scale)
         if max_margin > min(width, height) * self._FP_MAX_CORNER_AXIS_FRAC:
-            return False
+            return False, True
+        config = get_watermark_config(width, height)
         off_corner = max_margin > config.margin_right * self._FP_OFF_CORNER_MARGIN_MULT
-        undersized = candidate.scale < config.logo_size * self._FP_OFF_CORNER_MIN_SCALE_FRAC
-        return not (off_corner and undersized)
+        if off_corner and candidate.scale < config.logo_size * self._FP_OFF_CORNER_MIN_SCALE_FRAC:
+            return False, True
+        return True, off_corner
 
     def _apply_false_positive_gate(self, image: NDArray[Any], candidate: _Candidate, confidence: float) -> float:
         height, width = image.shape[:2]
-        if not self._has_plausible_corner_geometry(width, height, candidate):
+        plausible, off_corner = self._corner_geometry(width, height, candidate)
+        if not plausible:
             logger.debug(
                 "Sparkle candidate demoted on corner geometry: confidence=%.3f, region=(%d, %d, %d, %d), image=%dx%d",
                 confidence,
@@ -327,10 +327,13 @@ class GeminiEngine:
                 candidate.gradient,
             )
             return confidence
-        saturation = self._core_saturation(image, alpha, position)
-        neutral_core = not low_margin and saturation is not None and saturation <= self._SPARKLE_WHITE_SAT
-        if confidence >= self._SPARKLE_KEEP_CONF and neutral_core:
-            return confidence
+        saturation: float | None = None
+        if not low_margin and confidence >= self._SPARKLE_KEEP_CONF and not off_corner:
+            saturation = self._core_saturation(image, alpha, position)
+            if saturation is not None and saturation <= self._SPARKLE_WHITE_SAT:
+                return confidence
+        elif logger.isEnabledFor(logging.DEBUG):
+            saturation = self._core_saturation(image, alpha, position)
         logger.debug(
             "Sparkle candidate demoted: confidence=%.3f, margin=%s, gradient=%.3f, saturation=%s",
             confidence,

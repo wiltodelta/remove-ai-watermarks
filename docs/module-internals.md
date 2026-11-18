@@ -2135,21 +2135,33 @@ production occurrences.
 
 Texture reaches the trust gate too. A local sweep on 2026-09-24 found non-Gemini
 images scoring up to 0.67 (whiteboard photos, UI screenshots, digital art) while
-real Google-signed sparkles went as low as 0.55, and two Higgsfield downloads
-scored 0.53 on wood grain. No threshold separates those, so `identify` passes
-`_collect_visible_signals` the first non-Google AI vendor from the trusted
-vendor claims (C2PA only when verified) and drops a sparkle on such an image
-with `_SPARKLE_VETOED_CAVEAT`. Google provenance never vetoes. The removal
-arbitration does not see these claims.
+real Google-signed sparkles went as low as 0.55 (two Higgsfield wood-grain
+downloads that previously scored 0.53 at `7.8x` and `10.2x` nominal margin are
+now rejected directly by `_apply_false_positive_gate`'s off-corner guard). No
+threshold separates sharp nominal-corner texture matches from genuine weak
+sparkles, so `identify` passes `_collect_visible_signals` the first non-Google
+AI vendor from the trusted vendor claims (C2PA only when verified) and drops a
+sparkle on such an image with `_SPARKLE_VETOED_CAVEAT`. Google provenance never
+vetoes. The removal arbitration does not see these claims.
 
 When `trust_provenance=False` and fused confidence sits below `_SPARKLE_FP_CONF`
 (`0.65`), `_apply_false_positive_gate` also checks corner placement against the
 frame's expected `WatermarkPosition` before consulting brightness or edge
-gradients: a candidate sitting further than `0.5 * min(width, height)` from the
+gradients: a candidate sitting further than `0.25 * min(width, height)` from the
 bottom or right edge, or an undersized match (`< 0.6 * config.logo_size`) sitting
 further than `2 * config.margin_right` from the corner, is demoted to `0.30`.
-This prevents micro-scale lattice/mesh cells and mid-frame highlights inside the
-`512x512` search window from passing as uncorroborated corner sparkles.
+Inside that window, the low-gradient white-core blurred-sparkle rescue
+(`_SPARKLE_KEEP_CONF = 0.52`, `_SPARKLE_WHITE_SAT = 0.20`) applies only within
+`2 * config.margin_right` of the corner (`not off_corner` in `_corner_geometry`), keeping
+re-compressed sparkles at nominal margins while refusing to rescue out-of-focus
+crowd bokeh floating mid-frame (across 46 strict Google C2PA exports and 12
+`WildAIGC-Bench` AIGC Gemini positives, every genuine sparkle sits within
+`0.125 * min(width, height)` and `3.0 * config.margin_right`, and `0` low-gradient
+positives exceed `2.0 * config.margin_right`, whereas the `WildAIGC-Bench` real
+photo bokeh false positive sat at `0.350 * min(width, height)` / `9.19 *
+config.margin_right`). This prevents micro-scale lattice/mesh cells and
+mid-frame highlights inside the `512x512` search window from passing as
+uncorroborated corner sparkles.
 
 Regression coverage:
 
@@ -2316,17 +2328,24 @@ with the synthetic core alone would overfit the font render and could discard a
 real variant stroke the pixel mask already found.
 
 Samsung uses the continuous top-hat front end with an exact `(1.0,)` scale ladder.
-The three retained real positives (two controlled captures and one real-content
-photo) scored 0.82-0.90, while 421 public clean controls reached at most 0.38, so
-the existing 0.40 threshold did not need to move. The exact rung matches the measured
-width at both 1086 and 2958 pixels and avoids giving clean corners extra scale trials.
-Samsung is strict-only under provenance: the inherited 0.70 factor would lower the
-gate to 0.28 and admitted 14/421 clean controls without recovering any retained real
-positive.
-On the same 421 backgrounds, nominal constructed detection rose from 81/421 through
-the binary front end to 321/421 through continuous top-hat, with no control fires in
-either arm. This constructed arm measures the known failure mode on textured content;
-it is not a production-recall estimate.
+The three primary real positives (two controlled captures and one real-content
+photo) scored 0.82-0.90 (and an additional retained 3000x4000 upload scored 0.692),
+while 421 public clean non-caption controls reached at most 0.387. On `WildAIGC-Bench`
+real photos, small bottom-left archival postcard captions and negative borders
+scored 0.403-0.434 (and synthetic postcard caption decoys reached 0.435), causing
+four uncorroborated false positives at the old 0.40 gate. Base `DETECT_NCC_THRESHOLD`
+therefore sits at 0.50, clearing the caption band with >=0.065 headroom while
+retaining 305/421 nominal constructed marks; `PROVENANCE_NCC_FACTOR` is `0.40 / 0.50`
+(`0.80`) so `samsung_genai` metadata-confirmed detection keeps its 0.40 floor
+(never relaxing to 0.28, which admitted 14/421 clean controls without recovering any
+real positive). The Korean `samsung_ko_alpha.png` variant explicitly pins
+`provenance_ncc_factor=1.0` so its 0.46 gate is not lowered by `replace(_CONFIG, ...)`.
+The exact `(1.0,)` rung on the Italian wordmark matches the measured width at both
+1086 and 2958 pixels and avoids giving clean corners extra scale trials.
+On the original 421 clean backgrounds, nominal constructed detection rose from 81/421
+through the binary front end to 321/421 at 0.40 through continuous top-hat, with no
+control fires in either arm. This constructed arm measures the known failure mode on
+textured content; it is not a production-recall estimate.
 
 The winning template location travels with the score. `SamsungEngine.footprint_mask`
 aligns the captured alpha to that same box and masks only pixels above the measured
@@ -2350,9 +2369,20 @@ detectable and is surfaced by post-removal validation; the detector does not tri
 an automatic retry.
 
 Yuanbao uses the polarity-independent `contrast` front end because its standard
-two-line mark can be light on dark scenes or dark on light scenes. Its detector
-and footprint both use the same best-match box. The separate one-line overlay
-variant is not covered.
+two-line mark (`元宝` over `AI生成`) can be light on dark scenes or dark on light
+scenes. Its detector and footprint both use the same best-match box, keeping
+`provenance_ncc_factor=1.0` so `_footprint_rect`'s strict re-detection agrees with
+perception. Base `DETECT_NCC_THRESHOLD` sits at 0.395 inside the verified empty
+`[0.38, 0.3975)` cohort band (lowest 2026-07-25 positive 0.3975; lowest retained
+on-disk positive 0.424). Because genuine positives overlap the 0.403-0.439 band
+reached by dark corner shadows, saturated-sky railings, and hoodie folds on
+`WildAIGC-Bench` and clean controls, `YuanbaoEngine._post_gate` calls
+`super()._post_gate(...)` for the 0.04 bottom-right anchor and then requires both
+stacked half-lines to correlate (`min(top_ncc, bot_ncc) >= 0.36`; real positives
+0.384-0.950 vs false positives 0.221-0.344) as well as row/column mean-subtracted
+2D glyph detail (`glyph_detail_ncc >= 0.31`; real positives 0.326-0.952 vs false
+positives 0.214-0.289). The separate one-line photographer-overlay variant is not
+covered.
 
 #### Generic bare "AI生成" label
 

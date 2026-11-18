@@ -205,6 +205,7 @@ class TextMarkScan:
     coverage: float = 0.0
     score: float | None = None
     match_box: tuple[int, int, int, int] | None = None
+    match_patch: NDArray[Any] | None = None
 
 
 # Alpha / silhouette templates, cached per asset name. This shared cache lets every
@@ -300,6 +301,20 @@ def _template_match_best(
 def template_match_score(box_mask: NDArray[Any], scale_base: int, config: TextMarkConfig) -> float:
     """Zero-mean normalized correlation of the expected glyph against ``box_mask``."""
     return _template_match_best(box_mask, scale_base, config)[0]
+
+
+def glyph_detail_ncc(patch: NDArray[Any], template: NDArray[Any]) -> float:
+    """Zero-mean correlation after subtracting 1D row and column averages.
+
+    Removes pure horizontal bars, vertical borders, and separable corner ramps so a
+    multi-line silhouette cannot clear its gate on coarse 1D envelope alone.
+    """
+    p = patch.astype(np.float32)
+    t = template.astype(np.float32)
+    p = p - p.mean(axis=0, keepdims=True) - p.mean(axis=1, keepdims=True) + p.mean()
+    t = t - t.mean(axis=0, keepdims=True) - t.mean(axis=1, keepdims=True) + t.mean()
+    denom = float(np.linalg.norm(p) * np.linalg.norm(t))
+    return float((p * t).sum()) / denom if denom > 1e-6 else 0.0
 
 
 class TextMarkEngine:
@@ -439,7 +454,11 @@ class TextMarkEngine:
         raise ValueError(f"{frontend!r} has no ladder response (binary runs no sweep)")
 
     def _ladder_best(
-        self, image: NDArray[Any], loc: TextMarkLocation
+        self,
+        image: NDArray[Any],
+        loc: TextMarkLocation,
+        *,
+        response: NDArray[Any] | None = None,
     ) -> tuple[float, tuple[int, int, int, int] | None]:
         """Best TM_CCOEFF_NORMED of the mark's silhouette against its front-end response,
         and the ROI-local box (x0, y0, x1, y1) where that best match sits.
@@ -461,7 +480,7 @@ class TextMarkEngine:
         returns no box at all.
         """
         c = self.config
-        resp = self._detect_response(image, loc)
+        resp = self._detect_response(image, loc) if response is None else response
         sil = self._glyph_silhouette()
         if resp is None or sil is None:
             return (0.0, None)
@@ -650,6 +669,7 @@ class TextMarkEngine:
         coverage = float((box > 0).sum()) / float(max(1, bw * bh))
         base = self.scale_base(image)
         match_box: tuple[int, int, int, int] | None = None
+        match_patch: NDArray[Any] | None = None
         if c.detect_frontend == "binary":
             # The coverage gate is a blob-AREA heuristic, so it applies only to the
             # front-end that binarizes; the continuous ones never build a blob. Below
@@ -657,11 +677,27 @@ class TextMarkEngine:
             # never consulted, so the score stays None here.
             if coverage >= c.detect_min_coverage:
                 score, match_box = _template_match_best(box, base, c)
+                if match_box is not None:
+                    x0, y0, x1, y1 = match_box
+                    match_patch = box[y0 : y1 + 1, x0 : x1 + 1]
             else:
                 score = None
         else:
-            score, match_box = self._ladder_best(image, loc)
-        return TextMarkScan(loc, box, base, frame=image.shape[:2], coverage=coverage, score=score, match_box=match_box)
+            resp = self._detect_response(image, loc)
+            score, match_box = self._ladder_best(image, loc, response=resp)
+            if resp is not None and match_box is not None:
+                x0, y0, x1, y1 = match_box
+                match_patch = resp[y0 : y1 + 1, x0 : x1 + 1]
+        return TextMarkScan(
+            loc,
+            box,
+            base,
+            frame=image.shape[:2],
+            coverage=coverage,
+            score=score,
+            match_box=match_box,
+            match_patch=match_patch,
+        )
 
     def _verdict(self, scan: TextMarkScan, *, provenance: bool) -> TextMarkDetection:
         """Apply the trust-level-dependent tail to a scan, as a fresh result object."""

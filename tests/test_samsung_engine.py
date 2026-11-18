@@ -27,11 +27,12 @@ from remove_ai_watermarks.samsung_engine import (
 )
 
 
-def _compose(w: int, h: int, bg: float = 100.0):
-    """Composite the real alpha (scaled to width ``w``) onto a flat bg by the
+def _compose(w: int, h: int, bg: float | np.ndarray = 100.0):
+    """Composite the real alpha (scaled to width ``w``) onto ``bg`` by the
     engine's fixed bottom-left geometry. Returns ``(watermarked_uint8, mark_bool_mask)``."""
-    img = np.full((h, w, 3), bg, np.float32)
+    img = np.broadcast_to(bg, (h, w, 3)).astype(np.float32)
     at = _alpha_template()
+    assert at is not None
     gw, gh = int(_ALPHA_WIDTH_FRAC * w), int(_ALPHA_HEIGHT_FRAC * w)
     margin = int(0.015 * w)
     ax = margin
@@ -105,6 +106,51 @@ class TestDetect:
         det = eng.detect(wm)
         assert det.detected
         assert det.confidence >= DETECT_NCC_THRESHOLD
+
+    def test_archival_postcard_caption_decoy_not_detected(self):
+        """A bottom-left archival postcard caption strip (0.40-0.44 NCC) stays rejected.
+
+        Constructed deterministically from integer bitmap blocks (no cv2.putText, whose
+        Hershey glyph rasterization differs between OpenCV 4 and 5).
+        """
+        h, w = 583, 780
+        yy, xx = np.ogrid[:h, :w]
+        bg = (110 + 25 * np.sin(xx / 47.0) + 20 * np.cos(yy / 39.0)).clip(20, 235).astype(np.uint8)
+        card = np.repeat(bg[:, :, None], 3, axis=2)
+        bar_top, bar_bot, left_b = h - 64, h - 14, 11
+        card[bar_top:, :] = 12
+        card[bar_top:bar_bot, left_b : w - left_b] = 244
+        pattern = "101 010 100 111 101 111 010 101 111  011 111 110 010 111 011  101 010  111 111 111"
+        strip = np.concatenate([np.full((14, 2), 25 if c == "1" else 244, np.uint8) for c in pattern], axis=1)
+        cy, cx = bar_top + 9, left_b + 54
+        card[cy : cy + strip.shape[0], cx : cx + strip.shape[1]] = strip[:, :, None]
+
+        mark = registry.get_mark("samsung")
+        loc = mark.localize(card)
+        assert 0.40 <= loc.confidence < DETECT_NCC_THRESHOLD
+        assert not loc.detected
+        assert loc.mask is None
+        assert registry.decide(registry._build_candidates(card), registry.Context()) == []
+
+    def test_provenance_keeps_samsung_genai_gate_at_040_without_relaxing_korean_variant(self):
+        """samsung_genai metadata relaxes the Italian wordmark back to 0.40 and aligns its
+        sparse mask, while the Korean variant stays strict-only at 0.46."""
+        eng = SamsungEngine()
+        h, w = 1448, 1086
+        yy, xx = np.ogrid[:h, :w]
+        tex = 125.0 + 68.0 * np.sin(xx / 4.5) * np.cos(yy / 4.5)
+        wm, _ = _compose(w, h, bg=tex.clip(0, 255).astype(np.float32)[:, :, None])
+
+        strict, relaxed = eng.detect_both(wm)
+        assert 0.40 <= strict.confidence < DETECT_NCC_THRESHOLD
+        assert not strict.detected
+        assert relaxed.detected
+
+        uncorroborated = registry.remove_auto_marks_detailed(wm, provenance=frozenset(), backend="cv2")
+        assert uncorroborated.marks == ()
+        corroborated = registry.remove_auto_marks_detailed(wm, provenance=frozenset({"samsung"}), backend="cv2")
+        assert [m.key for m in corroborated.marks] == ["samsung"]
+        assert corroborated.marks[0].status == "cleaned"
 
 
 class TestAlphaAssetAndRemoval:

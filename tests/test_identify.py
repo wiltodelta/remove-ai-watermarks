@@ -857,10 +857,41 @@ class TestIdentifyRealSamples:
         assert r.platform == "ByteDance Dreamina"
 
     @pytest.mark.parametrize("name", ["higgsfield-gpt-image.jpg", "higgsfield-kling-o1.png"])
-    def test_non_google_provenance_vetoes_a_sparkle_on_texture(self, name: str):
-        # Higgsfield downloads (2026-09-24): a valid OpenAI C2PA and a Kuaishou TC260
-        # label, each scoring 0.53 as a Gemini sparkle on wood texture.
+    def test_higgsfield_wood_grain_rejected_by_sparkle_corner_gate(self, name: str):
+        # Higgsfield downloads (2026-09-24): off-corner low-gradient wood-grain highlights
+        # (7.8x and 10.2x nominal margin) used to clear the white-core rescue at 0.53 and
+        # rely on the non-Google provenance veto; the engine corner gate now rejects them
+        # directly before identify's veto runs.
         r = identify(SAMPLES_DIR / name, check_visible=True, check_invisible=False)
+        assert r.is_ai_generated is True
+        assert not any("Gemini visible" in watermark for watermark in r.watermarks)
+        assert not any("not reported as a Gemini mark" in caveat for caveat in r.caveats)
+
+    def test_non_google_provenance_vetoes_a_sparkle_on_texture(self, tmp_path: Path):
+        # End-to-end non-Google veto through the real GeminiEngine: when a sharp corner
+        # texture/glyph at nominal placement clears GeminiEngine strictly, trusted
+        # non-Google provenance (here Kuaishou Kling TC260) suppresses the Gemini claim
+        # and records the veto caveat.
+        import numpy as np
+        from PIL import Image
+        from PIL.PngImagePlugin import PngInfo
+
+        from remove_ai_watermarks.gemini_engine import GeminiEngine, WatermarkSize, get_watermark_config
+
+        size = 256
+        engine = GeminiEngine()
+        config = get_watermark_config(size, size)
+        x, y = config.get_position(size, size)
+        alpha = engine.get_alpha_map(WatermarkSize.SMALL)[:, :, None]
+        canvas = np.full((size, size, 3), 60, dtype=np.float32)
+        h, w = alpha.shape[:2]
+        canvas[y : y + h, x : x + w] = alpha * 235.0 + (1.0 - alpha) * canvas[y : y + h, x : x + w]
+        png_info = PngInfo()
+        png_info.add_text("AIGC", json.dumps({"Label": "1", "ContentProducer": "001191110108335469089C10100"}))
+        path = tmp_path / "kling_corner_glint.png"
+        Image.fromarray(np.clip(canvas, 0, 255).astype(np.uint8)).save(path, pnginfo=png_info)
+
+        r = identify(path, check_visible=True, check_invisible=False)
         assert r.is_ai_generated is True
         assert not any("Gemini visible" in watermark for watermark in r.watermarks)
         assert any("not reported as a Gemini mark" in caveat for caveat in r.caveats)

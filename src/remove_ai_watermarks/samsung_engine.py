@@ -48,12 +48,18 @@ MAX_SATURATION = 55
 LOGO_MIN_LUMA = 110
 TOPHAT_DELTA = 8
 
-# Shape-consistent detection. The continuous top-hat scored the three retained real
-# positives at 0.82-0.90 and 421 public clean controls no higher than 0.38, so the
-# binary-era 0.40 threshold stays unchanged. The exact one-rung ladder matches both
-# measured widths and avoids handing clean corners two unneeded scale trials.
+# Shape-consistent detection. Retained real positives score 0.69-0.90 (0.82-0.90 on
+# the three primary calibration captures) and clean non-caption controls stay <=0.39,
+# while archival bottom-left postcard captions and negative borders in WildAIGC-Bench
+# reach 0.403-0.434 (and synthetic caption decoys reach 0.435). Raising the strict gate
+# to 0.50 clears captions with >=0.065 headroom while retaining 305/421 nominal
+# constructed marks; ``PROVENANCE_NCC_FACTOR = 0.40 / DETECT_NCC_THRESHOLD`` keeps the
+# ``samsung_genai`` metadata-corroborated gate at 0.40 (above clean texture, avoiding
+# the 0.28 clean-fire band). The exact one-rung ladder matches both measured widths and
+# avoids handing clean corners unneeded scale trials.
 DETECT_MIN_COVERAGE = 0.01
-DETECT_NCC_THRESHOLD = 0.40
+DETECT_NCC_THRESHOLD = 0.50
+PROVENANCE_NCC_FACTOR = 0.40 / DETECT_NCC_THRESHOLD
 
 # Detection-silhouette geometry, solved by scripts/visible_alpha_solve.py from the flat
 # gray capture (native width 1086). Real photos are ~2958 wide, so the captured glyph is
@@ -87,7 +93,7 @@ _CONFIG = TextMarkConfig(
     detect_ncc_threshold=DETECT_NCC_THRESHOLD,
     detect_frontend="tophat",
     ladder=(1.0,),
-    provenance_ncc_factor=1.0,
+    provenance_ncc_factor=PROVENANCE_NCC_FACTOR,
     alpha_width_frac=_ALPHA_WIDTH_FRAC,
     alpha_height_frac=_ALPHA_HEIGHT_FRAC,
     min_gw=16,
@@ -127,6 +133,7 @@ class SamsungEngine(TextMarkVariantsMixin):
                     max_saturation=255,
                     detect_frontend="contrast",
                     detect_ncc_threshold=0.46,
+                    provenance_ncc_factor=1.0,
                 )
             ),
         )

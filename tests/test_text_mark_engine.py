@@ -56,11 +56,19 @@ class TestPerMarkProvenanceRelaxation:
     Jimeng because its relaxed silhouette confuses other bottom-right text marks.
     """
 
-    def test_samsung_stays_strict_with_provenance(self):
-        """Its three real positives clear 0.40; relaxing to 0.28 admits clean texture."""
+    def test_samsung_provenance_floor_stays_at_040_and_korean_stays_strict(self):
+        """Base Samsung lifts strict detection to 0.50 against corner captions while keeping
+        its samsung_genai-confirmed floor at 0.40 (never 0.28, which admits clean texture);
+        the Korean variant stays strict-only at 0.46."""
+        import pytest
+
         from remove_ai_watermarks import samsung_engine
 
-        assert samsung_engine._CONFIG.provenance_ncc_factor == 1.0
+        cfg = samsung_engine._CONFIG
+        assert cfg.detect_ncc_threshold == 0.50
+        assert cfg.detect_ncc_threshold * cfg.provenance_ncc_factor == pytest.approx(0.40)
+        ko_cfg = samsung_engine.SamsungEngine()._variants[0].config
+        assert ko_cfg.provenance_ncc_factor == 1.0
 
 
 class TestScaleBasis:

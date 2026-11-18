@@ -57,7 +57,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import cv2
-import numpy as np
 
 from remove_ai_watermarks import _text_mark_engine
 from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkDetection, TextMarkEngine
@@ -174,24 +173,21 @@ class _KlingTextEngine(TextMarkEngine):
     """Require glyph structure beyond a horizontal or vertical background edge."""
 
     def _ladder_best(
-        self, image: NDArray[Any], loc: _text_mark_engine.TextMarkLocation
+        self,
+        image: NDArray[Any],
+        loc: _text_mark_engine.TextMarkLocation,
+        *,
+        response: NDArray[Any] | None = None,
     ) -> tuple[float, tuple[int, int, int, int] | None]:
-        score, box = super()._ladder_best(image, loc)
-        response = self._detect_response(image, loc)
+        resp = self._detect_response(image, loc) if response is None else response
+        score, box = super()._ladder_best(image, loc, response=resp)
         silhouette = self._glyph_silhouette()
-        if box is None or response is None or silhouette is None:
+        if box is None or resp is None or silhouette is None:
             return score, box
         x, y, x1, y1 = box
-        patch = response[y : y1 + 1, x : x1 + 1].astype(np.float32)
+        patch = resp[y : y1 + 1, x : x1 + 1]
         template = cv2.resize(silhouette, (patch.shape[1], patch.shape[0]), interpolation=cv2.INTER_AREA)
-
-        def glyph_detail(array: NDArray[Any]) -> NDArray[Any]:
-            array = array.astype(np.float32)
-            return array - array.mean(axis=0, keepdims=True) - array.mean(axis=1, keepdims=True) + array.mean()
-
-        patch, template = glyph_detail(patch), glyph_detail(template)
-        denominator = float(np.linalg.norm(patch) * np.linalg.norm(template))
-        detail_score = float((patch * template).sum()) / denominator if denominator > 1e-6 else 0.0
+        detail_score = _text_mark_engine.glyph_detail_ncc(patch, template)
         return max(0.0, min(score, detail_score)), box
 
 

@@ -207,8 +207,11 @@ production-recall sample. The corrected report is
 The 2026-09-05 Samsung follow-up changed the front end, not the threshold. Continuous
 top-hat with an exact `(1.0,)` ladder scored the three retained real positives at
 0.82-0.90 and produced 0/421 fires on the full public clean pool (maximum 0.38; 95%
-Wilson upper bound 0.9%). The provenance factor is 1.0: the inherited 0.70 relaxation
-would admit 14/421 controls at its 0.28 gate and recovered no retained real positive.
+Wilson upper bound 0.9%). At that 0.40 gate the provenance factor was set to 1.0: the
+inherited 0.70 relaxation would admit 14/421 controls at its 0.28 gate and recovered no
+retained real positive (later corner-caption hardening raised base `DETECT_NCC_THRESHOLD`
+to 0.50 with `PROVENANCE_NCC_FACTOR = 0.80`, keeping the relaxed gate at 0.40 and pinning
+`1.0` on the Korean variant; see [`module-internals.md`](module-internals.md)).
 On correctly stamped nominal marks over those same controls,
 detection improved from 81/421 (19.2%) for binary to 321/421 (76.2%) for top-hat. All
 321 boxes exactly matched the known stamp geometry and were maskable. After one OpenCV
