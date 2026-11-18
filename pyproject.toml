@@ -110,7 +110,7 @@ audio = [
 # separate from proprietary provider audio-watermark verification.
 audio-detect = [
     "remove-ai-watermarks[audio]",
-    "audioseal==0.2.0",
+    "audioseal==0.2.1",
     "huggingface-hub>=0.20.0,<2",
 ]
 # Compatible public WavMark decoding, separate from production provider claims.
