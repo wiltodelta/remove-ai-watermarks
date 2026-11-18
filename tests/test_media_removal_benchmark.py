@@ -413,3 +413,98 @@ def test_load_manifest_accepts_dac_method(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="unsupported method"):
         bench.load_manifest(bad_method)
+
+
+def test_perceptual_audio_metrics_phase_invariance_and_markdown_rendering(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import shutil
+    import wave
+
+    np = pytest.importorskip("numpy")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg and ffprobe are required")
+
+    from remove_ai_watermarks._internal import audio_io, audio_quality
+
+    sr = 24000
+    t = np.arange(sr * 2, dtype=np.float32) / sr
+    carrier = (
+        0.30 * np.sin(2 * np.pi * 220.0 * t)
+        + 0.18 * np.sin(2 * np.pi * 660.0 * t)
+        + 0.10 * np.sin(2 * np.pi * 1980.0 * t)
+    ).astype(np.float32)
+
+    def _write_pcm16_wav(path: Path, mono: object) -> Path:
+        pcm = np.clip(np.rint(np.asarray(mono) * 32767.0), -32768, 32767).astype("<i2")
+        with wave.open(str(path), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(pcm.tobytes())
+        return path
+
+    src_wav = _write_pcm16_wav(tmp_path / "src.wav", carrier)
+    inv_wav = _write_pcm16_wav(tmp_path / "inverted.wav", -carrier)
+    rng = np.random.default_rng(7)
+    noisy_wav = _write_pcm16_wav(tmp_path / "noisy.wav", carrier * 0.4 + rng.normal(0.0, 0.18, size=carrier.shape))
+
+    info = audio_io.probe_audio(src_wav)
+    fid_inv = audio_quality.measure_fidelity(src_wav, info, inv_wav)
+    assert fid_inv.snr_db is not None
+    assert fid_inv.snr_db < -5.0
+
+    perc_same = audio_quality.compute_perceptual_metrics(src_wav, info, src_wav)
+    assert perc_same.mr_stft_loss == pytest.approx(0.0, abs=1e-6)
+    assert perc_same.mel_distance_db == pytest.approx(0.0, abs=1e-6)
+
+    perc_inv = audio_quality.compute_perceptual_metrics(src_wav, info, inv_wav)
+    assert perc_inv.mr_stft_loss < 0.01
+    assert perc_inv.mel_distance_db < 0.05
+
+    perc_noisy = audio_quality.compute_perceptual_metrics(src_wav, info, noisy_wav)
+    assert perc_noisy.mr_stft_loss > 0.4
+    assert perc_noisy.mel_distance_db > 4.0
+
+    def fake_audio_remove(_src: Path, out: Path, **_kw: object) -> object:
+        shutil.copyfile(inv_wav, out)
+        return SimpleNamespace(
+            output=out,
+            method="focalcodec",
+            before=SimpleNamespace(watermark_status="detected"),
+            after=SimpleNamespace(watermark_status="not_detected"),
+            skipped=False,
+            verified_removed=True,
+            quality_passed=True,
+            fidelity=fid_inv,
+        )
+
+    monkeypatch.setattr(bench.audio, "remove_audio_invisible", fake_audio_remove)
+    case = bench.RemovalBenchmarkCase(
+        case_id="phase-free-vocoder",
+        surface="audio_invisible",
+        scheme="perth",
+        source_path=src_wav,
+        source_sha256=sha256_file(src_wav),
+        output_suffix=".wav",
+        expected_outcome="verified_removed",
+        method="focalcodec",
+    )
+    delivered_dir = tmp_path / "delivered"
+    delivered_dir.mkdir()
+    row = bench.evaluate_removal_case(case, delivered_dir)
+    assert row["status"] == "passed"
+    assert row["perceptual"] is not None
+    assert row["perceptual"]["mr_stft_loss"] < 0.01
+    assert row["perceptual"]["mel_distance_db"] < 0.05
+
+    md = bench.format_markdown_summary(
+        {
+            "manifest_sha256": "0" * 64,
+            "counts": {"total": 1, "passed": 1, "failed": 0, "unavailable": 0},
+            "results": [row],
+        }
+    )
+    assert "MR-STFT" in md
+    assert "Mel" in md

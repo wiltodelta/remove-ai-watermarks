@@ -1026,3 +1026,46 @@ def inject_c2pa_chunk(target_path: Path, output_path: Path, c2pa_chunk: bytes) -
                 _copy_bytes(source, target, length + 4)
             if kind == b"IEND":
                 break
+
+
+# C2PA fields that describe a manifest without asserting AI. A platform that
+# re-signs every upload (YouTube, "opened" and "transcoded", or Anthropic Files)
+# leaves only these, and the signer's name alone is not an AI generator claim.
+C2PA_STRUCTURAL_MARKERS: frozenset[str] = frozenset(
+    {
+        "c2pa_manifest",
+        "claim_generator",
+        "ai_tool",
+        "c2pa_spec",
+        "issuer",
+        "actions",
+        "c2pa_validation_source",
+        "c2pa_validation_state",
+        "c2pa_integrity",
+        "c2pa_signature",
+        "c2pa_signer_trust",
+        "c2pa_signer_validity",
+        "soft_binding",
+        "soft_binding_algorithm",
+        "soft_binding_value",
+    }
+)
+
+
+def markers_claim_ai(markers: dict[str, str]) -> bool:
+    """Return whether container metadata asserts AI origin rather than neutral C2PA transport."""
+    if not markers:
+        return False
+    from remove_ai_watermarks._internal.constants import C2PA_AI_TOOLS, C2PA_IDENTITY_AI_ORGS
+
+    source_type = markers.get("source_type", "")
+    if any(key not in C2PA_STRUCTURAL_MARKERS and key != "source_type" for key in markers):
+        return True
+    if "trainedalgorithmicmedia" in source_type.casefold() or source_type.startswith("c2pa.ai-disclosure"):
+        return True
+    issuer = markers.get("issuer", "")
+    return any(org in issuer for org in C2PA_IDENTITY_AI_ORGS) or any(
+        bool(value)
+        and (claim_generator_platform(value) is not None or bool(registry_word_matches(value, C2PA_AI_TOOLS)))
+        for value in (markers.get("claim_generator", ""), markers.get("ai_tool", ""))
+    )

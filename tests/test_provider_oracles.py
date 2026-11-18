@@ -17,19 +17,32 @@ if TYPE_CHECKING:
 
 def test_catalog_covers_every_project_vendor_oracle_surface() -> None:
     assert set(oracles.SURFACES) == {
+        "cartesia-api",
+        "cartesia-web",
+        "elevenlabs-api",
         "gemini-web",
+        "kling-web",
         "meta-web",
         "microsoft-api",
         "microsoft-web",
         "openai-api",
         "openai-web",
+        "resemble-api",
         "synthid-web",
     }
-    assert {"google", "meta", "microsoft", "openai"} == oracles.PROVIDER_KEYS
+    assert {"cartesia", "elevenlabs", "google", "kling", "meta", "microsoft", "openai", "resemble"} == (
+        oracles.PROVIDER_KEYS
+    )
     assert oracles.SURFACES["openai-api"].automation == "api"
     assert oracles.SURFACES["microsoft-api"].automation == "api"
+    assert oracles.SURFACES["elevenlabs-api"].automation == "api"
+    assert oracles.SURFACES["cartesia-api"].automation == "api"
+    assert oracles.SURFACES["resemble-api"].automation == "api"
+    assert oracles.SURFACES["resemble-api"].media_types == ("audio", "image", "video")
     assert oracles.SURFACES["gemini-web"].automation == "real_browser"
     assert oracles.SURFACES["meta-web"].automation == "playwright"
+    assert oracles.SURFACES["kling-web"].automation == "playwright"
+    assert oracles.SURFACES["cartesia-web"].automation == "playwright"
     assert oracles.SURFACES["gemini-web"].media_types == ("image", "video", "audio")
     assert oracles.SURFACES["gemini-web"].prompt == (
         "Does this image/video/audio contain a SynthID watermark? Use the SynthID verification tool only; "
@@ -56,9 +69,14 @@ def test_list_json_exposes_scope_and_surface() -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert [row["key"] for row in payload] == [
+        "cartesia-api",
+        "elevenlabs-api",
         "microsoft-api",
         "openai-api",
+        "resemble-api",
+        "cartesia-web",
         "gemini-web",
+        "kling-web",
         "meta-web",
         "microsoft-web",
         "openai-web",
@@ -70,10 +88,14 @@ def test_list_json_exposes_scope_and_surface() -> None:
 @pytest.mark.parametrize(
     ("provider", "expected"),
     [
+        ("cartesia", ["cartesia-api", "cartesia-web"]),
+        ("elevenlabs", ["elevenlabs-api"]),
         ("google", ["gemini-web", "synthid-web"]),
+        ("kling", ["kling-web"]),
         ("meta", ["meta-web"]),
         ("microsoft", ["microsoft-api", "microsoft-web"]),
         ("openai", ["openai-api", "openai-web"]),
+        ("resemble", ["resemble-api"]),
     ],
 )
 def test_provider_plan_prefers_api_before_web(provider: str, expected: list[str]) -> None:
@@ -228,7 +250,7 @@ def test_proxy_is_only_for_an_unauthenticated_oracle(tmp_path: Path) -> None:
         }
         if surface.key == "gemini-web":
             slot["google_account_index"] = 0
-        if surface.key == "openai-api":
+        if surface.key in oracles.API_KEY_SURFACES:
             slot["api_key_env"] = "OPENAI_API_KEY_1"
         config = tmp_path / f"{surface.key}.json"
         config.write_text(json.dumps({"format_version": 1, "slots": [slot]}), encoding="utf-8")
@@ -325,7 +347,7 @@ def test_slots_override_requires_a_named_slot(tmp_path: Path) -> None:
                 "network_label": "home",
                 "api_key_env": "OPENAI_API_KEY_1",
             },
-            "only openai-api uses api_key_env",
+            "does not use api_key_env",
         ),
         (
             {

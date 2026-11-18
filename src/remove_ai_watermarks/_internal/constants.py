@@ -27,11 +27,14 @@ AUDIO_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".
 AUDIO_OUTPUT_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".opus")
 AUDIO_LOSSY_OUTPUT_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".m4a", ".ogg", ".opus"})
 
+ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v"})
+
 WanExperimentalProfile = Literal["wan21-synthid-experimental", "wan21-seedance-experimental"]
 WAN_EXPERIMENTAL_PROFILES: tuple[WanExperimentalProfile, ...] = (
     "wan21-synthid-experimental",
     "wan21-seedance-experimental",
 )
+WAN_SUPPORTED_EXTENSIONS: frozenset[str] = ISOBMFF_VIDEO_EXTENSIONS
 VideoInvisibleProfile = Literal[
     "auto",
     "synthid",

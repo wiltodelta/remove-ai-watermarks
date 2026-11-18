@@ -391,3 +391,28 @@ def test_resynthesize_conditioned_preconditions_midband_and_restores_subband_env
     rms_out_active = float(np.sqrt(np.mean(delivered[2400:16800, 1] ** 2)))
     assert abs(20.0 * np.log10(rms_out_active / rms_src_active)) < 0.5
     assert float(np.sqrt(np.mean(delivered[-1200:, 0] ** 2))) < 0.001
+
+
+def test_resynthesize_conditioned_soft_knee_bounds_constructive_subband_spikes(monkeypatch):
+    pytest.importorskip("scipy")
+    monkeypatch.setattr(focal, "is_available", lambda: True)
+
+    sr = 24000
+    t = np.arange(sr, dtype=np.float32) / sr
+    # Source peak stays comfortably under full scale (~0.86), mimicking ElevenLabs speech dynamics.
+    source = (
+        0.45 * np.sin(2 * np.pi * 240.0 * t)
+        + 0.25 * np.sin(2 * np.pi * 900.0 * t)
+        + 0.16 * np.sin(2 * np.pi * 2600.0 * t)
+    ).astype(np.float32)[:, None]
+
+    def fake_resynthesize_spiky(samples, sample_rate, *, stereo_mode="ms", local_files_only=True):
+        # Attenuated steady body (triggering 2.5x subband boost) with constructive phase spike at mid-clip
+        out = samples * 0.42
+        out[11995:12005, 0] = 0.65
+        return out
+
+    monkeypatch.setattr(focal, "resynthesize", fake_resynthesize_spiky)
+    delivered = focal.resynthesize_conditioned(source, sr, local_files_only=False)
+    assert float(np.max(np.abs(delivered))) <= 0.98
+    assert int(np.count_nonzero(np.abs(delivered) > 1.0)) == 0

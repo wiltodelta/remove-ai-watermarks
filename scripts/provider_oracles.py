@@ -31,7 +31,7 @@ import click
 from PIL import Image
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SLOTS_PATH = REPOSITORY_ROOT / ".oracle-slots.json"
@@ -146,6 +146,60 @@ class ResultsDocument(TypedDict):
 
 
 SURFACES: dict[str, OracleSurface] = {
+    "cartesia-api": OracleSurface(
+        key="cartesia-api",
+        provider_key="cartesia",
+        provider="Cartesia",
+        signal_family="sonic_watermark",
+        surface="Cartesia Watermark Detection API",
+        automation="api",
+        url="https://docs.cartesia.ai/api-reference/watermark/detect",
+        media_types=("audio", "video"),
+        project_evidence=(),
+        prompt=None,
+        clean_result_note=(
+            'Record detected for {"detected": true} and not_detected for {"detected": false}; '
+            "the API checks Cartesia Sonic audio watermarks independent of C2PA."
+        ),
+        account_slots=True,
+        network_slots=True,
+    ),
+    "cartesia-web": OracleSurface(
+        key="cartesia-web",
+        provider_key="cartesia",
+        provider="Cartesia",
+        signal_family="sonic_watermark",
+        surface="Cartesia Watermark Detector",
+        automation="playwright",
+        url="https://www.cartesia.ai/watermark-detector",
+        media_types=("audio", "video"),
+        project_evidence=(),
+        prompt=None,
+        clean_result_note=(
+            "Record the settled Cartesia Sonic watermark verdict under --acknowledge-uploads; stop immediately "
+            "as refused when Cloudflare Turnstile gates the form, and prefer cartesia-api."
+        ),
+        account_slots=False,
+        network_slots=True,
+    ),
+    "elevenlabs-api": OracleSurface(
+        key="elevenlabs-api",
+        provider_key="elevenlabs",
+        provider="ElevenLabs",
+        signal_family="elevenlabs_watermark",
+        surface="ElevenLabs Content Provenance API",
+        automation="api",
+        url="https://elevenlabs.io/docs/api-reference/content-provenance/verify-watermark",
+        media_types=("audio",),
+        project_evidence=("audio",),
+        prompt=None,
+        clean_result_note=(
+            'Record detected for {"is_detected": true} and not_detected for {"is_detected": false}; '
+            "the endpoint checks the ElevenLabs waveform watermark independent of C2PA."
+        ),
+        account_slots=True,
+        network_slots=True,
+    ),
     "gemini-web": OracleSurface(
         key="gemini-web",
         provider_key="google",
@@ -184,6 +238,26 @@ SURFACES: dict[str, OracleSurface] = {
         account_slots=False,
         network_slots=True,
     ),
+    "kling-web": OracleSurface(
+        key="kling-web",
+        provider_key="kling",
+        provider="Kling AI",
+        signal_family="kling_blind_watermark",
+        surface="Kling AI Content Detection",
+        automation="playwright",
+        url="https://kling.ai/detection",
+        media_types=("image", "video", "audio"),
+        project_evidence=("image", "video"),
+        prompt=None,
+        clean_result_note=(
+            'Read the "Invisible watermark" detector row separately from "AIGC metadata" and "C2PA manifest". '
+            "On MP4 video, Invisible watermark checks Kling's H.264 SEI tag; on PNG it returns Failed. "
+            "Anonymous submission stops at the Kling AI sign-in modal (indeterminate); continue in the user's "
+            "already-authenticated real Chrome only when explicitly authorized, never signing in automatically."
+        ),
+        account_slots=False,
+        network_slots=True,
+    ),
     "meta-web": OracleSurface(
         key="meta-web",
         provider_key="meta",
@@ -193,7 +267,7 @@ SURFACES: dict[str, OracleSurface] = {
         automation="playwright",
         url="https://www.meta.ai/identification/",
         media_types=("image", "video", "audio"),
-        project_evidence=("image",),
+        project_evidence=("image", "video"),
         prompt=None,
         clean_result_note=(
             'Record the settled result after "Upload another file" appears; do not reuse stale page text.'
@@ -270,9 +344,35 @@ SURFACES: dict[str, OracleSurface] = {
         account_slots=False,
         network_slots=True,
     ),
+    "resemble-api": OracleSurface(
+        key="resemble-api",
+        provider_key="resemble",
+        provider="Resemble AI",
+        signal_family="perth",
+        surface="Resemble Watermark Detection API",
+        automation="api",
+        url="https://docs.resemble.ai/detect/watermark/detect",
+        media_types=("audio", "image", "video"),
+        project_evidence=(),
+        prompt=None,
+        clean_result_note=(
+            'Record detected for overall_status in {"present", "degraded"}, not_detected for '
+            'overall_status == "absent" when coverage_complete is not False, and indeterminate '
+            'for "inconclusive" or incomplete audio coverage; preserve the independent synthid boolean separately.'
+        ),
+        account_slots=True,
+        network_slots=True,
+    ),
 }
 
 PROVIDER_KEYS = frozenset(surface.provider_key for surface in SURFACES.values())
+
+API_KEY_SURFACES: dict[str, tuple[str, str]] = {
+    "cartesia-api": ("Cartesia", "CARTESIA_API_KEY"),
+    "elevenlabs-api": ("ElevenLabs", "ELEVENLABS_API_KEY"),
+    "openai-api": ("OpenAI", "OPENAI_API_KEY"),
+    "resemble-api": ("Resemble", "RESEMBLE_API_KEY"),
+}
 
 
 def _surface_order(surface: OracleSurface) -> tuple[bool, str]:
@@ -442,10 +542,10 @@ def load_slots(path: Path) -> dict[str, ExecutionSlot]:
         # A proxy belongs to Playwright pages. Gemini and API calls stay direct.
         if proxy_url_env is not None and surface_key not in playwright:
             raise ValueError(f"surface {surface_key} does not use proxy_url_env")
-        if surface_key == "openai-api" and api_key_env is None:
-            raise ValueError("surface openai-api requires an api_key_env")
-        if surface_key != "openai-api" and api_key_env is not None:
-            raise ValueError("only openai-api uses api_key_env")
+        if surface_key in API_KEY_SURFACES and api_key_env is None:
+            raise ValueError(f"surface {surface_key} requires an api_key_env")
+        if surface_key not in API_KEY_SURFACES and api_key_env is not None:
+            raise ValueError(f"surface {surface_key} does not use api_key_env")
         if name in slots:
             raise ValueError(f"duplicate slot name: {name}")
         slots[name] = {
@@ -478,6 +578,42 @@ def resolve_slot(surface: str, *, slots_path: Path | None, slot_name: str | None
     return slot
 
 
+def _slot_api_key(
+    slot: ExecutionSlot | None,
+    *,
+    surface_label: str,
+    default_var: str,
+    env_file: Path,
+    environ: Mapping[str, str] = os.environ,
+) -> str:
+    """Resolve one selected API key without logging or mutating the environment."""
+    variable = default_var if slot is None else slot.get("api_key_env")
+    if variable is None:
+        raise ValueError(f"the selected {surface_label} slot has no api_key_env")
+    value = secret_environment(env_file, environ=environ).get(variable)
+    if value is not None:
+        return value
+    raise ValueError(f"{surface_label} API key variable {variable} is missing from the environment and {env_file}")
+
+
+def surface_api_key(
+    surface_key: str,
+    slot: ExecutionSlot | None,
+    *,
+    env_file: Path,
+    environ: Mapping[str, str] = os.environ,
+) -> str:
+    """Resolve one API key for a registered API-key surface without mutating the environment."""
+    surface_label, default_var = API_KEY_SURFACES[surface_key]
+    return _slot_api_key(
+        slot,
+        surface_label=surface_label,
+        default_var=default_var,
+        env_file=env_file,
+        environ=environ,
+    )
+
+
 def openai_api_key(
     slot: ExecutionSlot | None,
     *,
@@ -485,13 +621,7 @@ def openai_api_key(
     environ: Mapping[str, str] = os.environ,
 ) -> str:
     """Resolve one selected OpenAI key without logging or mutating the environment."""
-    variable = "OPENAI_API_KEY" if slot is None else slot.get("api_key_env")
-    if variable is None:
-        raise ValueError("the selected openai-api slot has no api_key_env")
-    value = secret_environment(env_file, environ=environ).get(variable)
-    if value is not None:
-        return value
-    raise ValueError(f"OpenAI API key variable {variable} is missing from the environment and {env_file}")
+    return surface_api_key("openai-api", slot, env_file=env_file, environ=environ)
 
 
 def secret_environment(
@@ -945,6 +1075,62 @@ def verify_microsoft(
     )
 
 
+def verify_elevenlabs(
+    path: Path,
+    *,
+    acknowledge_upload: bool,
+    api_key: str,
+    strip_metadata: bool = True,
+) -> object:
+    """Call the direct ElevenLabs Content Provenance adapter."""
+    from provider_oracle_audio_apis import verify_elevenlabs_provenance
+
+    return verify_elevenlabs_provenance(
+        path,
+        acknowledge_upload=acknowledge_upload,
+        api_key=api_key,
+        strip_metadata=strip_metadata,
+    )
+
+
+def verify_cartesia(
+    path: Path,
+    *,
+    acknowledge_upload: bool,
+    api_key: str,
+    strip_metadata: bool = True,
+) -> object:
+    """Call the direct Cartesia Watermark Detection adapter."""
+    from provider_oracle_audio_apis import verify_cartesia_watermark
+
+    return verify_cartesia_watermark(
+        path,
+        acknowledge_upload=acknowledge_upload,
+        api_key=api_key,
+        strip_metadata=strip_metadata,
+    )
+
+
+def verify_resemble(
+    path: Path,
+    *,
+    content_uri: str,
+    custom_message: str | None = None,
+    acknowledge_upload: bool,
+    api_key: str,
+) -> object:
+    """Call the direct Resemble Watermark Detection adapter."""
+    from provider_oracle_audio_apis import verify_resemble_watermark
+
+    return verify_resemble_watermark(
+        path,
+        content_uri=content_uri,
+        custom_message=custom_message,
+        acknowledge_upload=acknowledge_upload,
+        api_key=api_key,
+    )
+
+
 @click.group()
 def cli() -> None:
     """Work with every provider watermark oracle used by the project."""
@@ -1014,13 +1200,22 @@ def guide(surface: str, slots_path: Path | None, slot_name: str | None) -> None:
         if proxy_url_env is not None:
             click.echo(f"Proxy environment variable: {proxy_url_env}")
         if api_key_env is not None:
-            click.echo(f"OpenAI API key variable: {api_key_env}")
+            click.echo(f"API key environment variable: {api_key_env}")
     if oracle.automation == "playwright":
         click.echo("Prepare a batch, then run it with run-web and an explicit upload acknowledgement.")
     elif oracle.automation == "real_browser":
         click.echo("Prepare a batch, then invoke the provider-oracles skill to drive the authenticated Chrome session.")
     elif surface == "microsoft-api":
         click.echo("Run check-microsoft with an HTTPS media URI whose bytes exactly match the local source.")
+    elif surface == "elevenlabs-api":
+        click.echo("Run check-elevenlabs with --acknowledge-upload and an ELEVENLABS_API_KEY dotenv/slot.")
+    elif surface == "cartesia-api":
+        click.echo("Run check-cartesia with --acknowledge-upload and a CARTESIA_API_KEY dotenv/slot.")
+    elif surface == "resemble-api":
+        click.echo(
+            "Run check-resemble with an HTTPS media URI matching SOURCE, --acknowledge-upload, "
+            "and a RESEMBLE_API_KEY dotenv/slot."
+        )
     else:
         click.echo("Prepare files first, submit one file at a time, and preserve the settled response verbatim.")
 
@@ -1185,16 +1380,7 @@ def check_openai(
     slot = resolve_slot("openai-api", slots_path=slots_path, slot_name=slot_name)
     api_key = openai_api_key(slot, env_file=env_file)
     result = verify_openai(source, acknowledge_upload=True, api_key=api_key)
-    to_dict = getattr(result, "to_dict", None)
-    if not callable(to_dict):
-        raise RuntimeError("OpenAI oracle returned an unexpected result object")
-    raw_payload: object = to_dict()
-    if not isinstance(raw_payload, dict):
-        raise RuntimeError("OpenAI oracle returned an unexpected result payload")
-    payload = cast("dict[str, object]", raw_payload).copy()
-    payload["surface"] = "openai-api"
-    payload["execution_slot"] = slot
-    click.echo(json.dumps(payload, indent=2, sort_keys=True))
+    _echo_api_result(result, surface="openai-api", provider_label="OpenAI", slot=slot)
 
 
 @cli.command("check-microsoft")
@@ -1239,16 +1425,165 @@ def check_microsoft(
         storage_resource_group=storage_resource_group,
         acknowledge_upload=True,
     )
+    _echo_api_result(result, surface="microsoft-api", provider_label="Microsoft", slot=slot)
+
+
+def _echo_api_result(result: object, *, surface: str, provider_label: str, slot: ExecutionSlot | None) -> None:
     to_dict = getattr(result, "to_dict", None)
     if not callable(to_dict):
-        raise RuntimeError("Microsoft oracle returned an unexpected result object")
+        raise RuntimeError(f"{provider_label} oracle returned an unexpected result object")
     raw_payload: object = to_dict()
     if not isinstance(raw_payload, dict):
-        raise RuntimeError("Microsoft oracle returned an unexpected result payload")
+        raise RuntimeError(f"{provider_label} oracle returned an unexpected result payload")
     payload = cast("dict[str, object]", raw_payload).copy()
-    payload["surface"] = "microsoft-api"
+    payload["surface"] = surface
     payload["execution_slot"] = slot
     click.echo(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _api_check_options(
+    provider_label: str, *, allow_keep_metadata: bool = False
+) -> Callable[[Callable[..., None]], Callable[..., None]]:
+    def _decorate(func: Callable[..., None]) -> Callable[..., None]:
+        options: list[Callable[[Callable[..., None]], Callable[..., None]]] = [
+            click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path)),
+            click.option(
+                "--acknowledge-upload",
+                is_flag=True,
+                help=f"Acknowledge exactly one {provider_label} oracle request.",
+            ),
+        ]
+        if allow_keep_metadata:
+            options.append(
+                click.option(
+                    "--keep-metadata",
+                    is_flag=True,
+                    help="Send the container bytes unchanged instead of stripping AI metadata before upload.",
+                )
+            )
+        options.extend(
+            [
+                click.option("--slots", "slots_path", type=click.Path(exists=True, dir_okay=False, path_type=Path)),
+                click.option("--slot", "slot_name"),
+                click.option(
+                    "--env-file",
+                    type=click.Path(dir_okay=False, path_type=Path),
+                    default=Path(".env"),
+                    show_default=True,
+                    help=f"Read the selected {provider_label} API key variable from this dotenv file.",
+                ),
+            ]
+        )
+        for opt in reversed(options):
+            func = opt(func)
+        return func
+
+    return _decorate
+
+
+def _run_audio_api_check(
+    source: Path,
+    *,
+    surface: str,
+    provider_label: str,
+    acknowledge_upload: bool,
+    keep_metadata: bool,
+    slots_path: Path | None,
+    slot_name: str | None,
+    env_file: Path,
+    verifier: Callable[..., object],
+) -> None:
+    if not acknowledge_upload:
+        raise click.UsageError(f"pass --acknowledge-upload to authorize exactly one {provider_label} request")
+    slot = resolve_slot(surface, slots_path=slots_path, slot_name=slot_name)
+    api_key = surface_api_key(surface, slot, env_file=env_file)
+    result = verifier(
+        source,
+        acknowledge_upload=True,
+        api_key=api_key,
+        strip_metadata=not keep_metadata,
+    )
+    _echo_api_result(result, surface=surface, provider_label=provider_label, slot=slot)
+
+
+@cli.command("check-elevenlabs")
+@_api_check_options("ElevenLabs", allow_keep_metadata=True)
+def check_elevenlabs(
+    source: Path,
+    acknowledge_upload: bool,
+    keep_metadata: bool,
+    slots_path: Path | None,
+    slot_name: str | None,
+    env_file: Path,
+) -> None:
+    """Run one official ElevenLabs Content Provenance watermark check."""
+    _run_audio_api_check(
+        source,
+        surface="elevenlabs-api",
+        provider_label="ElevenLabs",
+        acknowledge_upload=acknowledge_upload,
+        keep_metadata=keep_metadata,
+        slots_path=slots_path,
+        slot_name=slot_name,
+        env_file=env_file,
+        verifier=verify_elevenlabs,
+    )
+
+
+@cli.command("check-cartesia")
+@_api_check_options("Cartesia", allow_keep_metadata=True)
+def check_cartesia(
+    source: Path,
+    acknowledge_upload: bool,
+    keep_metadata: bool,
+    slots_path: Path | None,
+    slot_name: str | None,
+    env_file: Path,
+) -> None:
+    """Run one official Cartesia Sonic watermark check."""
+    _run_audio_api_check(
+        source,
+        surface="cartesia-api",
+        provider_label="Cartesia",
+        acknowledge_upload=acknowledge_upload,
+        keep_metadata=keep_metadata,
+        slots_path=slots_path,
+        slot_name=slot_name,
+        env_file=env_file,
+        verifier=verify_cartesia,
+    )
+
+
+@cli.command("check-resemble")
+@_api_check_options("Resemble")
+@click.option("--content-uri", required=True, help="HTTPS media URI whose bytes exactly match SOURCE.")
+@click.option(
+    "--custom-message",
+    default=None,
+    help="Optional custom message (1..64 characters) for Resemble image/video watermark checks.",
+)
+def check_resemble(
+    source: Path,
+    acknowledge_upload: bool,
+    slots_path: Path | None,
+    slot_name: str | None,
+    env_file: Path,
+    content_uri: str,
+    custom_message: str | None,
+) -> None:
+    """Run one official Resemble Perth watermark and auxiliary SynthID check."""
+    if not acknowledge_upload:
+        raise click.UsageError("pass --acknowledge-upload to authorize exactly one Resemble request")
+    slot = resolve_slot("resemble-api", slots_path=slots_path, slot_name=slot_name)
+    api_key = surface_api_key("resemble-api", slot, env_file=env_file)
+    result = verify_resemble(
+        source,
+        content_uri=content_uri,
+        custom_message=custom_message,
+        acknowledge_upload=True,
+        api_key=api_key,
+    )
+    _echo_api_result(result, surface="resemble-api", provider_label="Resemble", slot=slot)
 
 
 if __name__ == "__main__":

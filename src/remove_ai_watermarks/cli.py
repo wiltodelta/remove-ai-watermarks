@@ -1257,6 +1257,8 @@ def cmd_audio_identify(
     console.print(f"  Audio: {report.stream.sample_rate} Hz, {report.stream.channels} channel(s)")
     console.print(f"  Compatible watermark checks: {report.watermark_status.upper()}")
     console.print(f"  Metadata markers: {', '.join(report.metadata_markers) or 'none found'}")
+    if report.recommended_recipe is not None:
+        console.print(f"  Recommended recipe: {report.recommended_recipe}")
     for caveat in report.caveats:
         console.print(f"  - {caveat}")
 

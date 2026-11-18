@@ -547,7 +547,8 @@ Install `audio-detect` for compatible open AudioSeal checks, or `audio` for
 explicit processing without verification. Both need ffmpeg and ffprobe.
 `identify_audio(source, check_invisible=True, stream=0, scheme="audioseal")` selects a zero-based
 audio-track ordinal. `AudioProvenanceReport` includes `sha256`, stream geometry,
-`metadata_markers`, per-channel `detections`, `watermark_status`, and `caveats`.
+`metadata_markers`, per-channel `detections`, `watermark_status`, `caveats`, and
+optional `recommended_recipe`.
 Each `AudioDetection` holds whole-clip and native-frame-bounded window readings;
 multichannel inputs also get a mono-downmix check. For validated 24 and 48 kHz
 sources, AudioSeal checks both 16 kHz and the original sample clock, with
@@ -622,7 +623,7 @@ bandwidths are defined in `_internal/audio_codec.py`. Install `audio-codec`
 for this optional CPU backend. Result `method` and `bandwidth_kbps` identify
 the applied profile. Neural resynthesis can alter speech timbre and music;
 it retains the same strict saved-file verification policy, and 2-channel EnCodec passes operate in Mid/Side (`M/S`) space to preserve stereo phantom-center coherence. Auto tries spectral
-then combined for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, and adapts to positively detected schemes under `scheme="auto"` or `"all"` before falling back to `combined`. A missing required neural fallback raises without publishing output.
+then combined for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, routes ElevenLabs and Google SynthID metadata-identified mono/stereo audio to `dac` (falling back to `encodec`/`combined` when `dac` is absent) instead of `spectral`, and adapts to positively detected schemes under `scheme="auto"` or `"all"` before falling back to `combined`. A missing required neural fallback raises without publishing output.
 
 Both functions also accept explicit `method="bigvgan"` with the `audio-vocoder`
 extra and `vocoder_device="cpu"`, `"mps"`, or `"cuda"`. This experimental pinned
@@ -919,7 +920,7 @@ emulated BF16 are excluded), `remove_video_wan_experimental`
 `"wan21-seedance-experimental"` in `remove_video_invisible`, `remove_video_all`,
 and `remove_video_batch`) runs pinned Apache-2.0 3D `Wan 2.1`
 (`Wan-AI/Wan2.1-T2V-1.3B-Diffusers` at `0fad780a534b6463e45facd96134c9f345acfa5b`)
-at native resolution and exact frame timestamps on SDR 8-bit MP4 clips within
+at native resolution and exact frame timestamps on SDR 8-bit MP4, MOV, and M4V clips within
 `WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
 (`600 * 1280 * 720`, streaming clips exceeding `chunk_frames=193` across
 `overlap_frames=17` raised-cosine 3D causal windows directly to the encoder and
@@ -927,8 +928,8 @@ pre-encoding `prompt_embeds` once so the T5 text encoder is freed before 3D
 denoising), returning
 `VideoWanExperimentalResult` (which exposes `strength` alongside the compatible
 `noise_std` mirror). `profile="auto"` selects `wan21-seedance-experimental` on
-eligible BF16 CUDA sources (`<= 1280x720` frame area and `>= 16 GiB` total VRAM;
-`seedance-experimental` fallback on CPU/MPS or when the auto Wan budget is
+eligible BF16 CUDA MP4, MOV, and M4V sources (`<= 1280x720` frame area and `>= 16 GiB` total VRAM;
+`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V or when the auto Wan budget is
 exceeded) when ByteDance/Seedance metadata or visible marks are present, and
 `wan21-synthid-experimental` (`synthid` fallback) otherwise. `wan21-synthid-experimental` uses `strength=0.38`
 and `wan21-seedance-experimental` uses `strength=0.12`. Both accept

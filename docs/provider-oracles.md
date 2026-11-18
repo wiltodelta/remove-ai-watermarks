@@ -1,9 +1,10 @@
 # Provider oracle tooling
 
-`scripts/provider_oracles.py` is the development-only entry point for the four
+`scripts/provider_oracles.py` is the development-only entry point for the eight
 remote watermark-oracle families used by this project. It drives Gemini through
 the user's real authenticated Chrome and drives every other public Web surface,
-including SynthID Detector, through isolated Playwright. It keeps provider scope, execution identity,
+including SynthID Detector, Kling AI Content Detection, and Cartesia Watermark
+Detector, through isolated Playwright. It keeps provider scope, execution identity,
 immutable media, and verbatim results in one format without exposing any oracle
 through the installed CLI or public Python API.
 
@@ -11,11 +12,16 @@ through the installed CLI or public Python API.
 
 | Surface key | Provider signal | Access | Project evidence |
 | --- | --- | --- | --- |
+| `cartesia-api` | Cartesia Sonic watermark | Official Cartesia Watermark Detection API (`X-API-Key`) | None recorded |
+| `elevenlabs-api` | ElevenLabs waveform watermark | Official ElevenLabs Content Provenance API (`xi-api-key`) | Audio |
 | `openai-api` | OpenAI SynthID | Official Content Provenance API | Images |
 | `microsoft-api` | Microsoft InvisMark | Azure Content Provenance Detection API | Images |
+| `resemble-api` | Resemble Perth v1/v2 (+ auxiliary SynthID) | Official Resemble Watermark Detection API (`Bearer`) | None recorded |
+| `cartesia-web` | Cartesia Sonic watermark | Public Cartesia detector (Cloudflare Turnstile gated) | None recorded |
 | `gemini-web` | Google SynthID | User's authenticated Chrome | Images and videos |
+| `kling-web` | Kling blind watermark (H.264 SEI + TC260) | Isolated Playwright probe; user's authenticated Chrome on sign-in gate | Images and videos |
 | `synthid-web` | Partner SynthID | Anonymous Playwright page at synthid.com | None recorded |
-| `meta-web` | Meta Content Seal | Anonymous Meta identification page | Images |
+| `meta-web` | Meta Content Seal (`VideoSeal v4`) | Anonymous Meta identification page | Images and videos |
 | `microsoft-web` | Microsoft InvisMark | Public Azure AI validation page | Images |
 | `openai-web` | OpenAI SynthID | Public web verifier | Images |
 
@@ -598,6 +604,81 @@ operation, ignores process proxy settings, and records Watermark separately
 from C2PA. The current adapter accepts JPEG, PNG, and WebP up to the provider's
 100 MiB limit. See Microsoft's
 [Content Provenance workflow](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection).
+
+## ElevenLabs, Cartesia, and Resemble APIs, Kling Web, and Cartesia Web
+
+`scripts/provider_oracle_audio_apis.py` provides direct `httpx` (`trust_env=False`)
+adapters for ElevenLabs Content Provenance (`POST https://api.elevenlabs.io/v1/content-provenance/watermark`
+via `check-elevenlabs`), Cartesia Sonic watermark detection
+(`POST https://api.cartesia.ai/v1/watermark/detect` with `Cartesia-Version: 2026-08-14`
+via `check-cartesia`), and Resemble Perth watermark detection
+(`POST https://app.resemble.ai/api/v2/watermark/detect` + `GET .../detect/{uuid}/result`
+via `check-resemble --content-uri <https_url>`). By default, `check-elevenlabs`
+and `check-cartesia` strip AI container metadata into a
+temporary sibling and verify bit-exact decoded float32 PCM invariance
+(`ffmpeg -flags2 +skip_manual`) before transmitting one acknowledged multipart
+upload, so C2PA manifests cannot mask waveform watermark verdicts (`--keep-metadata`
+sends raw bytes when explicitly testing container-level behavior). `check-resemble`
+streams the caller-supplied HTTPS `--content-uri` first (redacting any presigned
+query signature from logs and stored responses) and verifies that its SHA-256
+matches the local `SOURCE` file before submitting one job, mapping `overall_status`
+(`present`/`degraded` -> `detected`, `absent` with complete coverage -> `not_detected`,
+`inconclusive` or incomplete audio coverage -> `indeterminate`) separately from
+the optional `synthid` boolean (`synthid_status`):
+
+```bash
+uv run python scripts/provider_oracles.py check-elevenlabs speech.mp3 \
+  --acknowledge-upload --env-file .env
+uv run python scripts/provider_oracles.py check-cartesia sonic.wav \
+  --acknowledge-upload --env-file .env
+uv run python scripts/provider_oracles.py check-resemble perth.wav \
+  --content-uri https://cdn.example.com/perth.wav --acknowledge-upload --env-file .env
+```
+
+On 2026-11-17, live `check-elevenlabs` verification across native long-form
+ElevenLabs exports (`Eleven Multilingual v2` `34.9 s` and `eleven_v3_dpo` `61.8 s`)
+confirmed that ElevenLabs embeds an inaudible payload-carrying waveform watermark
+(`unique_id`, `model`, `product`, `generated_at`) that survives lossless C2PA
+metadata stripping (`is_detected: true`) and `--method spectral` (`is_detected: true`),
+while `--method encodec`, `--method combined`, `--method focalcodec`, and
+multi-window `--method dac` (`34.9 s` 2-window and `61.8 s` 3-window MP3s) all
+returned HTTP 200 `{"is_detected": false, "details": null}`.
+
+For Web surfaces:
+
+- `kling-web` (`https://kling.ai/detection`): the frontend bundle renders three
+  separate detector rows (`Invisible watermark`, `AIGC metadata`, and
+  `C2PA manifest`, with a `10 detections` quota pool on authenticated sessions).
+  `parse_provider_result("kling-web", ...)` reads the `Invisible watermark` row
+  independently from `AIGC metadata` and `C2PA manifest`. Anonymous `run-web`
+  clicks `Start Detection` and records `indeterminate` when Kling opens its
+  mandatory sign-in modal (`Welcome to Kling AI`), never signing into a user
+  account automatically. On 2026-11-18 UTC, an authorized run in the user's
+  already-authenticated Chrome across 9 native Kling exports and ablations
+  (`provider-original.mp4`, `Kling 3.0 Turbo`, `Kling O3 Standard` with AAC
+  audio, and `Kling Image v3`) proved that what Kling labels
+  `Invisible watermark` on MP4 video is the H.264 `user_data_unregistered` SEI
+  `kling-ai` tag rather than a pixel or audio waveform mark: all three native
+  MP4 originals returned `Invisible watermark: Detected (Kling AI)`, and
+  lossless `remove_video_metadata` alone (stream-copying H.264 video and AAC
+  audio while scrubbing `kling_sei` and TC260 `AIGC`) flipped all three to
+  `Invisible watermark: Not detected` and `No supported signal was detected.`
+  On `Kling Image v3` PNG, `Invisible watermark` returned `Failed` and lossless
+  `remove_ai_metadata` cleared `AIGC metadata: Detected (Kling AI)` to
+  `No supported signal was detected.`
+- `cartesia-web` (`https://www.cartesia.ai/watermark-detector`): `run-web`
+  proceeds directly under `--acknowledge-uploads` without an extra Terms flag,
+  but on 2026-11-18 UTC the live form embedded a Cloudflare Turnstile gate
+  (`input[name="cf-turnstile-response"]`) that keeps `Check for watermark`
+  disabled in isolated Playwright; `run-web` detects the Turnstile gate and
+  stops immediately with `refused` rather than waiting out or attempting to
+  bypass the challenge. Prefer `cartesia-api` (`check-cartesia`) when an API key
+  is available.
+- `meta-web` (`https://www.meta.ai/identification/`): on 2026-11-17, encoding a
+  native `Muse Image 1` export (`ID: AXZpZGVvc2VhbHY0X2NhX3NjbOQFLyN-TEfk`,
+  `VideoSeal v4`) into an H.264 MP4 returned `AI signatures were found` (`detected`),
+  and regenerating that MP4 with `remove_video_invisible(..., profile="synthid")`
+  returned `No AI signatures from Meta were found` (`not_detected`).
 
 ## Live cross-provider smoke
 

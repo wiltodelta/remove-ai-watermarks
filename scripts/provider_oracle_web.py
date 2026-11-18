@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-PLAYWRIGHT_SURFACES = frozenset({"openai-web", "microsoft-web", "meta-web", "synthid-web"})
+PLAYWRIGHT_SURFACES = oracles._automation_keys("playwright")
 # A proxy exit is chosen when the run starts. These are the countries that
 # choice may use: the United States and European ISO codes.
 EUROPE_OR_US_COUNTRIES = (
@@ -87,11 +87,25 @@ _RESULT_MARKERS = {
         "Watermark not detected",
         "SynthID was not detected",
     ),
+    "kling-web": (
+        "Kling AI generation signals were detected.",
+        "AI-generation signals were detected, but not identified as Kling AI.",
+        "No supported signal was detected. This does not prove the content was not AI-generated.",
+        "The available detectors could not reach a reliable conclusion.",
+    ),
+    "cartesia-web": (
+        "Watermark detected",
+        "contains a Cartesia watermark",
+        "Watermark not detected",
+        "does not contain a Cartesia watermark",
+    ),
 }
 
 _REFUSAL_MARKERS = (
     "you've reached the daily limit",
     "you\u2019ve reached the daily limit",
+    "your detection quota has been used up",
+    "cloudflare turnstile challenge present",
     "rate_limited",
     "too many requests",
     "verify you are human",
@@ -102,6 +116,8 @@ _REFUSAL_MARKERS = (
 _INDETERMINATE_MARKERS = (
     "Something went wrong. Please try again. If the issue persists, contact support",
     "Please sign in before detection.",
+    "Please sign in again before starting detection.",
+    "Welcome to Kling AI",
 )
 
 
@@ -124,6 +140,41 @@ def _provenance_result(text: str) -> Literal["present", "absent", "unavailable"]
     if any(marker in lowered for marker in present):
         return "present"
     return "unavailable"
+
+
+def _kling_detector_row(text: str, label: str) -> str | None:
+    match = re.search(
+        rf"{re.escape(label)}[\s:|]+(not detected|detected|unsupported|failed)\b",
+        text,
+        re.IGNORECASE,
+    )
+    return match.group(1).casefold() if match is not None else None
+
+
+def _parse_kling_result(
+    response: str,
+    fallback_provenance: Literal["present", "absent", "unavailable"],
+) -> WebVerdict:
+    lowered = response.casefold()
+    if "welcome to kling ai" in lowered or "please sign in" in lowered:
+        return WebVerdict("indeterminate", "unavailable", response)
+    inv = _kling_detector_row(response, "Invisible watermark")
+    aigc = _kling_detector_row(response, "AIGC metadata")
+    c2pa = _kling_detector_row(response, "C2PA manifest")
+    if "detected" in (aigc, c2pa):
+        prov: Literal["present", "absent", "unavailable"] = "present"
+    elif "not detected" in (aigc, c2pa):
+        prov = "absent"
+    else:
+        prov = fallback_provenance
+
+    if inv == "detected":
+        return WebVerdict("detected", prov, response)
+    if inv == "not detected":
+        return WebVerdict("not_detected", prov, response)
+    if "no supported signal was detected." in lowered or (inv in {"unsupported", "failed"} and prov == "present"):
+        return WebVerdict("not_detected", prov, response)
+    return WebVerdict("indeterminate", prov, response or "Provider page returned no readable result")
 
 
 def parse_provider_result(surface: str, page_text: str) -> WebVerdict:
@@ -159,6 +210,18 @@ def parse_provider_result(surface: str, page_text: str) -> WebVerdict:
         if not_detected and not detected:
             return WebVerdict("not_detected", "unavailable", response)
         if detected and not not_detected:
+            return WebVerdict("detected", "unavailable", response)
+    elif surface == "kling-web":
+        return _parse_kling_result(response, provenance)
+    elif surface == "cartesia-web":
+        if (
+            "no watermark detected" in lowered
+            or "watermark not detected" in lowered
+            or "does not contain a cartesia watermark" in lowered
+            or "no cartesia watermark" in lowered
+        ):
+            return WebVerdict("not_detected", "unavailable", response)
+        if "watermark detected" in lowered or "contains a cartesia watermark" in lowered:
             return WebVerdict("detected", "unavailable", response)
     else:
         if "no ai signatures from meta were found" in lowered or "no ai signatures were found" in lowered:
@@ -265,12 +328,10 @@ def _settled(surface: str, text: str) -> bool:
     return surface != "meta-web" or "upload another file" in text.casefold()
 
 
-def _set_upload_file(page: Page, surface: str, upload: Path, timeout_seconds: float) -> None:
+def _set_upload_file(page: Page, surface: str, upload: Path, timeout_seconds: float) -> bool:
     """Wait for a provider's upload handler before assigning one prepared file."""
     timeout_ms = int(timeout_seconds * 1_000)
-    if surface == "openai-web":
-        # OpenAI keeps background requests alive, so network-idle is
-        # unreachable. Its visible input becomes handler-ready at page load.
+    if surface in {"openai-web", "kling-web", "cartesia-web"}:
         page.wait_for_load_state("load", timeout=timeout_ms)
     elif surface == "meta-web":
         # Meta keeps background /monitoring telemetry open, preventing
@@ -286,7 +347,17 @@ def _set_upload_file(page: Page, surface: str, upload: Path, timeout_seconds: fl
         page.wait_for_load_state("networkidle", timeout=timeout_ms)
     file_input = page.locator('input[type="file"]').first
     file_input.wait_for(state="attached", timeout=timeout_ms)
+    if surface == "cartesia-web":
+        turnstile = page.locator('input[name="cf-turnstile-response"]')
+        if turnstile.count() > 0 and not turnstile.first.input_value(timeout=timeout_ms).strip():
+            return False
     file_input.set_input_files(str(upload), timeout=timeout_ms)
+    if surface == "kling-web":
+        page.get_by_role("button", name="Start Detection").first.click(timeout=timeout_ms)
+    elif surface == "cartesia-web":
+        page.locator('input[type="checkbox"]').first.check(timeout=timeout_ms)
+        page.get_by_role("button", name="Check for watermark").first.click(timeout=timeout_ms)
+    return True
 
 
 def _check_page(page: Page, surface: str, upload: Path, timeout_seconds: float) -> WebVerdict:
@@ -302,7 +373,7 @@ def _check_page(page: Page, surface: str, upload: Path, timeout_seconds: float) 
         return WebVerdict("unreachable", "unavailable", f"Browser navigation failed: {error}")
 
     try:
-        _set_upload_file(page, surface, upload, timeout_seconds)
+        submitted = _set_upload_file(page, surface, upload, timeout_seconds)
     except PlaywrightTimeoutError:
         evidence = _page_evidence(page)
         log.warning("Provider upload control did not become ready at %s: %s", oracle.url, evidence)
@@ -310,6 +381,11 @@ def _check_page(page: Page, surface: str, upload: Path, timeout_seconds: float) 
     except PlaywrightError as error:
         log.warning("Browser upload of %s to %s failed: %s", upload.name, oracle.url, error)
         return WebVerdict("unreachable", "unavailable", f"Browser file upload failed: {error}")
+
+    if not submitted:
+        msg = "Cloudflare Turnstile challenge present on Cartesia Watermark Detector"
+        log.warning("%s at %s; stopping without attempting to solve or wait out challenge", msg, oracle.url)
+        return WebVerdict("refused", "unavailable", msg)
 
     deadline = monotonic() + timeout_seconds
     evidence = ""

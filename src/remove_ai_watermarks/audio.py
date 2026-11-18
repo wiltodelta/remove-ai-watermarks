@@ -121,6 +121,7 @@ class AudioProvenanceReport:
     watermark_status: AudioWatermarkStatus
     detections: tuple[AudioDetection, ...]
     caveats: tuple[str, ...]
+    recommended_recipe: str | None = None
 
 
 @dataclass(frozen=True)
@@ -527,6 +528,57 @@ def _scan_audio_at_clock(
     return tuple(detections), tuple(caveats)
 
 
+def _audio_metadata_vendor(markers: dict[str, str]) -> Literal["elevenlabs", "google_synthid"] | None:
+    """Identify proprietary AI-audio waveform vendors from pre-strip metadata."""
+    if not markers:
+        return None
+    from remove_ai_watermarks._internal.c2pa import markers_claim_ai
+    from remove_ai_watermarks._internal.constants import SYNTHID_EDIT_SIGNERS
+
+    identity_text = " ".join(
+        (
+            markers.get("claim_generator", ""),
+            markers.get("issuer", ""),
+            markers.get("ai_tool", ""),
+        )
+    ).casefold()
+    if "elevenlabs" in identity_text or "eleven labs" in identity_text:
+        return "elevenlabs"
+    synthid_marker = markers.get("synthid_watermark", "").casefold()
+    soft_binding_text = f"{markers.get('soft_binding_algorithm', '')} {markers.get('soft_binding', '')}".casefold()
+    if "google" in synthid_marker or ("google" in soft_binding_text and "synthid" in soft_binding_text):
+        return "google_synthid"
+    has_google_identity = "google" in identity_text and not any(
+        signer.decode("utf-8", errors="ignore").casefold() in identity_text for signer in SYNTHID_EDIT_SIGNERS
+    )
+    if has_google_identity and ("synthid_watermark" in markers or markers_claim_ai(markers)):
+        return "google_synthid"
+    return None
+
+
+def _recommend_audio_recipe(
+    source: Path,
+    *,
+    markers: dict[str, str],
+    watermark_status: AudioWatermarkStatus,
+) -> str | None:
+    """Suggest an explicit read-only audio cleaning command without claiming hidden marks exist."""
+    from remove_ai_watermarks._internal.c2pa import markers_claim_ai
+
+    in_ext = source.suffix.lower() or ".wav"
+    out_ext = in_ext if in_ext in AUDIO_OUTPUT_EXTENSIONS else ".wav"
+    vendor = _audio_metadata_vendor(markers)
+    if vendor is not None:
+        method = "auto" if vendor == "elevenlabs" else "dac"
+        perm = "" if watermark_status == "detected" else " --allow-unverified"
+        return f"remove-ai-watermarks audio all input{in_ext} -o clean{out_ext} --invisible --method {method}{perm}"
+    if watermark_status == "detected":
+        return f"remove-ai-watermarks audio all input{in_ext} -o clean{out_ext} --invisible"
+    if markers_claim_ai(markers):
+        return f"remove-ai-watermarks audio metadata input{in_ext} --remove -o clean{in_ext}"
+    return None
+
+
 def identify_audio(
     source: str | Path,
     *,
@@ -604,7 +656,9 @@ def identify_audio(
         detections = tuple(found)
     if sha256_file(path) != digest:
         raise RuntimeError("Audio source changed during inspection")
-    return AudioProvenanceReport(path, digest, info, markers, _aggregate(detections), detections, tuple(caveats))
+    status = _aggregate(detections)
+    recipe = _recommend_audio_recipe(path, markers=markers, watermark_status=status)
+    return AudioProvenanceReport(path, digest, info, markers, status, detections, tuple(caveats), recipe)
 
 
 def _missing_decoder_reason(report: AudioProvenanceReport) -> str | None:
@@ -678,11 +732,13 @@ def require_audio_profile_runtime(method: AudioProfile) -> None:
     _require_base_audio_runtime(method)
 
 
+def _is_mono_or_stereo(info: audio_io.AudioStreamInfo) -> bool:
+    return info.channel_layout in {"mono", "stereo"} and info.channels in (1, 2)
+
+
 def validate_audio_stream_for_profile(info: audio_io.AudioStreamInfo, method: AudioProfile) -> None:
     """Validate channel layout and bounded full-track limits for a selected audio profile."""
-    if method in {"bigvgan", "mimi", "focalcodec", "dac"} and (
-        info.channel_layout not in {"mono", "stereo"} or info.channels not in (1, 2)
-    ):
+    if method in {"bigvgan", "mimi", "focalcodec", "dac"} and not _is_mono_or_stereo(info):
         label = {"bigvgan": "BigVGAN", "mimi": "Mimi", "focalcodec": "FocalCodec", "dac": "DAC"}[method]
         raise ValueError(f"{label} requires a mono or stereo channel layout")
     if method in {"bigvgan", "mimi"} and info.duration is not None:
@@ -693,7 +749,13 @@ def validate_audio_stream_for_profile(info: audio_io.AudioStreamInfo, method: Au
 
 
 def adaptive_auto_profiles(scheme: AudioScheme, before: AudioProvenanceReport) -> tuple[AudioProfile, ...]:
-    """Select minimal-distortion candidate profiles matched to detected schemes."""
+    """Select minimal-distortion candidate profiles matched to detected schemes and vendor metadata."""
+    vendor = _audio_metadata_vendor(before.metadata_markers)
+    if vendor is not None:
+        can_use_dac = _is_mono_or_stereo(before.stream) and audio_dac.is_available()
+        if vendor == "elevenlabs":
+            return ("dac", "encodec", "combined") if can_use_dac else ("encodec", "combined")
+        return ("dac", "combined") if can_use_dac else ("encodec", "combined")
     if scheme not in {"all", "auto"} or before.watermark_status != "detected":
         return _AUTO_PROFILES[scheme]
     detected = {item.scheme for item in before.detections if item.status == "detected"}

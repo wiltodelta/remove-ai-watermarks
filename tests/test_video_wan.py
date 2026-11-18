@@ -24,11 +24,19 @@ def _metrics() -> RegenerationMetrics:
     return RegenerationMetrics(frames=6, fps=12.0, width=70, height=50, psnr_db=31.0, temporal_residual_ratio=0.98)
 
 
-def _source_mp4(tmp_path: Path, *, width: int = 70, height: int = 50, frames: int = 6) -> Path:
+def _source_mp4(
+    tmp_path: Path,
+    *,
+    width: int = 70,
+    height: int = 50,
+    frames: int = 6,
+    suffix: str = ".mp4",
+    audio_codec: str = "aac",
+) -> Path:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg or not shutil.which("ffprobe"):
         pytest.skip("ffmpeg and ffprobe are required")
-    source = tmp_path / "source.mp4"
+    source = tmp_path / f"source{suffix}"
     duration = frames / 12.0
     subprocess.run(  # noqa: S603
         [
@@ -48,7 +56,7 @@ def _source_mp4(tmp_path: Path, *, width: int = 70, height: int = 50, frames: in
             "-pix_fmt",
             "yuv420p",
             "-c:a",
-            "aac",
+            audio_codec,
             str(source),
         ],
         check=True,
@@ -157,9 +165,9 @@ def test_validation_rejects_hdr_odd_dims_wrong_runtime_and_2d_vae_flags(tmp_path
             invisible_profile="wan21-synthid-experimental",
             long_side=768,
         )
-    other = tmp_path / "owned.mov"
-    other.write_bytes(source.read_bytes())
-    with pytest.raises(ValueError, match="MP4 input"):
+    other = tmp_path / "owned.webm"
+    other.write_bytes(b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm")
+    with pytest.raises(ValueError, match=r"requires one of: \.m4v, \.mov, \.mp4"):
         raiw.remove_video_wan_experimental(other)
 
     bad_runtime = wan.VideoWanRuntime(
@@ -229,12 +237,13 @@ def test_cli_routes_wan21_profiles_and_prints_experimental_label(tmp_path, monke
     assert "calibrated SynthID" not in res.output
 
 
-def test_wan_batch_reuses_wan_runtime_across_mp4_items(tmp_path, monkeypatch):
+def test_wan_batch_reuses_wan_runtime_across_isobmff_items(tmp_path, monkeypatch):
     directory = tmp_path / "clips"
     directory.mkdir()
     payload = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
-    for name in ("a.mp4", "b.mp4", "c.mov"):
+    for name in ("a.mp4", "b.mov", "c.m4v"):
         (directory / name).write_bytes(payload)
+    (directory / "d.webm").write_bytes(b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm")
 
     runtime = wan.VideoWanRuntime(
         model=wan.WAN21_MODEL_ID,
@@ -265,7 +274,7 @@ def test_wan_batch_reuses_wan_runtime_across_mp4_items(tmp_path, monkeypatch):
         seed=5,
         device="cuda",
     )
-    assert batch_res.processed == 2
+    assert batch_res.processed == 3
     assert batch_res.failed == 1
     assert loaded == [{"device": "cuda"}]
     assert (
@@ -281,9 +290,9 @@ def test_wan_batch_reuses_wan_runtime_across_mp4_items(tmp_path, monkeypatch):
                 "runtime": runtime,
             }
         ]
-        * 2
+        * 3
     )
-    assert "MP4 input" in (batch_res.items[-1].error or "")
+    assert "requires one of: .m4v, .mov, .mp4" in (batch_res.items[-1].error or "")
 
 
 def test_pad_and_run_wan_sliding_windows_crossfade_long_clips_smoothly():
@@ -564,3 +573,74 @@ def test_stream_wan_windows_matches_batch_math_and_bounds_live_frames(frame_coun
     got = np.stack(streamed, axis=0)
     np.testing.assert_array_equal(got, expected)
     assert peak_live_frames <= 193 + 18
+
+
+@pytest.mark.parametrize(
+    ("suffix", "audio_codec"),
+    [
+        (".mov", "pcm_s16le"),
+        (".m4v", "aac"),
+    ],
+)
+def test_wan_supports_mov_pcm_and_m4v_aac_containers_end_to_end(tmp_path, monkeypatch, suffix, audio_codec):
+    pytest.importorskip("torch")
+    source = _source_mp4(tmp_path, width=64, height=48, frames=5, suffix=suffix, audio_codec=audio_codec)
+
+    class IdentityPipe:
+        def __call__(self, **kwargs):
+            imgs = kwargs["video"]
+            stacked = np.stack([np.asarray(img, dtype=np.float32) / 255.0 for img in imgs], axis=0)
+            return SimpleNamespace(frames=[stacked])
+
+    runtime = wan.VideoWanRuntime(
+        model=wan.WAN21_MODEL_ID,
+        revision=wan.WAN21_MODEL_REVISION,
+        resolved_device="cpu",
+        pipe=IdentityPipe(),
+        prompt_embeds="CACHED",
+    )
+
+    assert wan.can_run_wan_on_source(source, device="auto", runtime=runtime, for_auto=True) is True
+    assert (
+        video._resolve_video_invisible_profile(
+            "auto",
+            source,
+            device="auto",
+            quality="delivery",
+            noise_std=video.DEFAULT_VIDEO_SYNTHID_NOISE_STD,
+            long_side=video.DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
+            fps=video.DEFAULT_VIDEO_SYNTHID_FPS,
+            batch_size=4,
+            seed=0,
+            model=video.DEFAULT_VIDEO_SYNTHID_VAE,
+            temporal_stabilize=True,
+            detected_metadata={"issuer": "Google LLC"},
+            runtime=runtime,
+        )
+        == "wan21-synthid-experimental"
+    )
+
+    out_direct = tmp_path / f"direct_out{suffix}"
+    res = video.remove_video_wan_experimental(
+        source,
+        out_direct,
+        profile="wan21-synthid-experimental",
+        quality="master",
+        _runtime=runtime,
+    )
+    assert res.output == out_direct
+    assert out_direct.is_file()
+    assert probe_video_timestamps(out_direct) == pytest.approx(probe_video_timestamps(source), abs=1e-3)
+
+    out_all = tmp_path / f"all_out{suffix}"
+    res_all = video.remove_video_all(
+        source,
+        out_all,
+        include_invisible=True,
+        invisible_profile="wan21-synthid-experimental",
+        invisible_quality="delivery",
+        _invisible_runtime=runtime,
+    )
+    assert res_all.output == out_all
+    assert res_all.invisible_profile == "wan21-synthid-experimental"
+    assert out_all.is_file()

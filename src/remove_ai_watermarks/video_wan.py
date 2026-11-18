@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PIL import Image
 
+from remove_ai_watermarks._internal.constants import WAN_SUPPORTED_EXTENSIONS
 from remove_ai_watermarks.optional_deps import module_available
 from remove_ai_watermarks.video_encoding import (
     atomic_video_output,
@@ -193,7 +194,7 @@ def can_run_wan_on_source(
     for_auto: bool = False,
 ) -> bool:
     """Return whether source, device, VRAM, and runtime satisfy Wan 2.1 eligibility."""
-    if source.suffix.lower() != ".mp4" or device not in {"auto", "cuda"}:
+    if source.suffix.lower() not in WAN_SUPPORTED_EXTENSIONS or device not in {"auto", "cuda"}:
         return False
     if runtime is not None:
         if not isinstance(runtime, VideoWanRuntime):
@@ -457,7 +458,8 @@ def regenerate_wan_experimental(
         )
         if runtime is None:
             del active_runtime
-        master = Path(directory) / "master.mp4"
+        master_suffix = output.suffix.lower() if output.suffix.lower() in WAN_SUPPORTED_EXTENSIONS else ".mp4"
+        master = Path(directory) / f"master{master_suffix}"
         return _finalize_experimental_output(
             streamed_bgr,
             source,

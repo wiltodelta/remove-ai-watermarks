@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Literal, cast
 
 from remove_ai_watermarks._internal.constants import (
+    ISOBMFF_VIDEO_EXTENSIONS,
     VIDEO_INVISIBLE_PROFILES,
     WAN_EXPERIMENTAL_PROFILES,
     VideoInvisibleProfile,
@@ -39,11 +40,12 @@ if TYPE_CHECKING:
 VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".flv"})
 VIDEO_VISIBLE_MARKS = ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
 _EXPECTED_VIDEO_MARKS = f"{', '.join(('auto', *VIDEO_VISIBLE_MARKS[:-1]))}, or {VIDEO_VISIBLE_MARKS[-1]}"
-_ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v"})
+_ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = ISOBMFF_VIDEO_EXTENSIONS
 _EBML_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".webm", ".mkv"})
 _RIFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".avi"})
 _FLV_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".flv"})
 _REGENERATED_VIDEO_EXTENSIONS: frozenset[str] = _ISOBMFF_VIDEO_EXTENSIONS
+_EXPECTED_REGENERATED_VIDEO_EXTENSIONS = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
 
 
 def _require_video_runtime() -> None:
@@ -376,51 +378,11 @@ def _select_stable_visible_mark(
     return None
 
 
-# C2PA fields that describe a manifest without asserting AI. A platform that
-# re-signs every upload (YouTube, "opened" and "transcoded") leaves only these,
-# and the signer's name alone is not an AI generator claim.
-_C2PA_STRUCTURAL_MARKERS = frozenset(
-    {
-        "c2pa_manifest",
-        "claim_generator",
-        "ai_tool",
-        "c2pa_spec",
-        "issuer",
-        "actions",
-        "c2pa_validation_source",
-        "c2pa_validation_state",
-        "c2pa_integrity",
-        "c2pa_signature",
-        "c2pa_signer_trust",
-        "c2pa_signer_validity",
-        "soft_binding",
-        "soft_binding_algorithm",
-        "soft_binding_value",
-    }
-)
-
-
 def _video_markers_claim_ai(markers: dict[str, str]) -> bool:
-    """Return whether the metadata asserts AI, mirroring the image path's C2PA rule.
+    """Return whether the metadata asserts AI, mirroring the image path's C2PA rule."""
+    from remove_ai_watermarks._internal.c2pa import markers_claim_ai
 
-    A marker outside the C2PA structure (a digital source type, SynthID, a TC260
-    label, an xAI signature) asserts AI. A C2PA manifest with nothing else does
-    so only through an AI-generator identity: a registered AI signer or an AI
-    product named as the claim generator.
-    """
-    from remove_ai_watermarks._internal.c2pa import claim_generator_platform, registry_word_matches
-    from remove_ai_watermarks._internal.constants import C2PA_AI_TOOLS, C2PA_IDENTITY_AI_ORGS
-
-    source_type = markers.get("source_type", "")
-    if any(key not in _C2PA_STRUCTURAL_MARKERS and key != "source_type" for key in markers):
-        return True
-    if "trainedalgorithmicmedia" in source_type.casefold() or source_type.startswith("c2pa.ai-disclosure"):
-        return True
-    issuer = markers.get("issuer", "")
-    return any(org in issuer for org in C2PA_IDENTITY_AI_ORGS) or any(
-        claim_generator_platform(value) is not None or bool(registry_word_matches(value, C2PA_AI_TOOLS))
-        for value in (markers.get("claim_generator", ""), markers.get("ai_tool", ""))
-    )
+    return markers_claim_ai(markers)
 
 
 def _platform_from_video_metadata(markers: dict[str, str]) -> str | None:
@@ -855,13 +817,13 @@ def _resolve_video_invisible_profile(
         temporal_stabilize=temporal_stabilize,
     )
     resolved: Literal["synthid", "seedance-experimental", "wan21-synthid-experimental", "wan21-seedance-experimental"]
-    if has_overrides or source_path.suffix.lower() != ".mp4":
+    if has_overrides or source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         resolved = "synthid"
     else:
         from remove_ai_watermarks import video_wan
 
         can_wan = video_wan.can_run_wan_on_source(source_path, device=device, runtime=runtime, for_auto=True)
-        if not can_wan and seed != 0:
+        if not can_wan and (seed != 0 or source_path.suffix.lower() != ".mp4"):
             resolved = "synthid"
         else:
             if visible_mark in {"seedance", "doubao", "dola"}:
@@ -994,11 +956,14 @@ def remove_video_all(
     output_path = _video_output(source_path, output, operation="complete cleaning")
     if include_invisible and invisible_profile == "seedance-experimental" and source_path.suffix.lower() != ".mp4":
         raise ValueError("Experimental Seedance processing requires MP4 input")
-    if include_invisible and invisible_profile in WAN_EXPERIMENTAL_PROFILES and source_path.suffix.lower() != ".mp4":
-        raise ValueError("Experimental Wan 2.1 processing requires MP4 input")
+    if (
+        include_invisible
+        and invisible_profile in WAN_EXPERIMENTAL_PROFILES
+        and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS
+    ):
+        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
     if include_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
-        supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
-        raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
+        raise ValueError(f"Video SynthID regeneration requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
     preflight_befores: tuple[AudioProvenanceReport, ...] = ()
     if include_audio_invisible:
         if source_path.suffix.lower() not in {".mp4", ".mov", ".mkv"}:
@@ -1325,7 +1290,9 @@ def remove_video_batch(
                             lazy_getter = _get_batch_runtime
                     else:
                         needs_wan = invisible_profile in WAN_EXPERIMENTAL_PROFILES
-                        allowed_exts = {".mp4"} if invisible_profile != "synthid" else _REGENERATED_VIDEO_EXTENSIONS
+                        allowed_exts = (
+                            {".mp4"} if invisible_profile == "seedance-experimental" else _REGENERATED_VIDEO_EXTENSIONS
+                        )
                         if source_path.suffix.lower() in allowed_exts:
                             selected_runtime = _get_batch_runtime("wan" if needs_wan else "vae")
                 all_result = remove_video_all(
@@ -1600,7 +1567,7 @@ def remove_video_wan_experimental(
     overlap_frames: int = 17,
     _runtime: VideoWanRuntime | None = None,
 ) -> VideoWanExperimentalResult:
-    """Apply an experimental CUDA 3D Wan 2.1 video-to-video profile to an owned MP4.
+    """Apply an experimental CUDA 3D Wan 2.1 video-to-video profile to an owned MP4, MOV, or M4V.
 
     Preserves native resolution, exact frame timestamps, and source audio while
     stripping AI metadata. Clips exceeding ``chunk_frames`` are processed through
@@ -1611,8 +1578,8 @@ def remove_video_wan_experimental(
     from remove_ai_watermarks.metadata import get_ai_metadata
 
     source_path = _video_source(source)
-    if source_path.suffix.lower() != ".mp4":
-        raise ValueError("Experimental Wan 2.1 processing requires MP4 input")
+    if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
+        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
     if profile not in WAN_EXPERIMENTAL_PROFILES:
         raise ValueError("profile must be wan21-synthid-experimental or wan21-seedance-experimental")
     if quality not in {"delivery", "master"}:

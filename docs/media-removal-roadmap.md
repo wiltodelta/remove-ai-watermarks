@@ -640,7 +640,25 @@ returned its generic error (`indeterminate`) on short isolated audio uploads and
 notes a `10-60 s` clip range in its live FAQ. Specialist third-party portals
 (`synthid.com`, `cartesia.ai/watermark-detector`, `ai-generated-detect.capcut.com`)
 gate uploads behind additional legal Terms and were inspected read-only without
-uploading files.
+uploading files. Follow-up Stage 2/3 verification wired `elevenlabs-api`,
+`cartesia-api`, `cartesia-web`, `resemble-api`, and `kling-web` into `scripts/provider_oracles.py`:
+live `elevenlabs-api` checks on `34.9 s` (`Eleven Multilingual v2`) and `61.8 s`
+(`eleven_v3_dpo`) native MP3s proved ElevenLabs's waveform watermark survives
+C2PA stripping and `--method spectral` (`is_detected: true`) while clearing to
+`is_detected: false` under `encodec`, `combined`, `focalcodec`, and multi-window
+`dac` (driving `adaptive_auto_profiles` to route ElevenLabs and Google SynthID
+metadata directly to `dac`/`encodec` rather than `spectral`); live `meta-web` checks on an H.264 MP4 carrying production `Muse Image 1`
+`VideoSeal v4` (`detected` -> `not_detected` after `remove_video_invisible`)
+established positive-to-negative video coverage; authorized authenticated-Chrome
+`kling-web` checks across 9 native Kling exports and ablations
+(`provider-original.mp4`, `Kling 3.0 Turbo`, `Kling O3 Standard` with AAC audio,
+and `Kling Image v3`) proved Kling's `"Invisible watermark"` detector row on MP4
+video reads the H.264 `kling-ai` SEI tag rather than a pixel/audio watermark
+(`3/3` MP4 originals `Detected -> Not detected` under lossless
+`remove_video_metadata` alone, and `Kling Image v3` cleared under lossless
+`remove_ai_metadata`); and `media_removal_benchmark.py`
+added phase-invariant multi-resolution STFT and 64-band log-Mel perceptual
+distances alongside native `44.1 kHz` stereo multi-window `dac` verification.
 
 Score all delivered frames and worst intervals, including temporal chunk
 boundaries and occlusions. Report color separately from gray SSIM. SIFT needs

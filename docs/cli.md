@@ -59,8 +59,9 @@ remove-ai-watermarks audio batch ./tracks -o ./tracks_clean --mode all --invisib
 ```
 
 `audio identify` and `audio invisible` accept `--stream N`, the zero-based audio-track ordinal, and
-`--json`. Inspection reports metadata, a source SHA-256, stream geometry, and
-named compatible decoder checks. `--no-invisible` skips model inference.
+`--json`. Inspection reports metadata, a source SHA-256, stream geometry, named
+compatible decoder checks, and a suggested `recommended_recipe` when AI metadata
+or a compatible watermark signal is found. `--no-invisible` skips model inference.
 `--scheme` selects `audioseal` (default on `identify`/`invisible`), `auto` (scans every *installed* non-experimental compatible public decoder — `audioseal`, `wavmark`, and `perth` — without failing when an optional decoder extra is absent or a clip is shorter than WavMark's 1-second minimum window, leaving the overall status `unverified` only if no applicable decoder completes), `wavmark`, `perth`, `silentcipher`, `silentcipher16`, or `all` (requires all named public
 models, including both experimental SilentCipher receivers). A missing explicitly requested decoder keeps the combined result unverified.
 For validated 24 and 48 kHz sources, AudioSeal checks both a resampled 16 kHz
@@ -87,8 +88,8 @@ a negative. `all` includes both SilentCipher receivers. Neither negative
 certifies a production provider, other framing, or complete payload erasure.
 
 `audio invisible` defaults to `--method auto`, an adaptive minimal-distortion profile sequence for the
-requested scheme. AudioSeal and Perth v1 try spectral then combined processing; WavMark and both experimental SilentCipher receivers
-try neural then combined; when `--scheme auto` or `--scheme all` detects a specific subset of schemes on the source, `--method auto` adapts to the lightest profile sequence covering only the positively detected schemes before falling back to `combined`. Publication requires
+requested scheme and pre-strip vendor metadata. AudioSeal and Perth v1 try spectral then combined processing; WavMark and both experimental SilentCipher receivers
+try neural then combined; when pre-strip C2PA/container metadata identifies ElevenLabs (`("dac", "encodec", "combined")` on mono/stereo when `dac` is installed, else `("encodec", "combined")`) or Google SynthID (`("dac", "combined")` on mono/stereo when `dac` is installed, else `("encodec", "combined")`), `--method auto` skips `spectral` and routes directly to neural codec resynthesis; when `--scheme auto` or `--scheme all` detects a specific subset of public schemes on the source, `--method auto` adapts to the lightest profile sequence covering only the positively detected schemes before falling back to `combined`. Publication requires
 a positive compatible source check and proceeds only after the
 saved output is negative in whole-clip and window checks. A resistant or
 incompletely checked candidate raises an error and preserves an existing output.
@@ -695,15 +696,17 @@ to have been handled already; `video all` runs its existing visible stage first.
 
 On hosts with a hardware BF16-capable NVIDIA CUDA GPU (Ampere or newer; ROCm and
 pre-Ampere emulation are excluded), two explicit 3D causal video diffusion
-profiles preserve native resolution and frame rate on SDR 8-bit MP4 clips within
+profiles preserve native resolution and frame rate on SDR 8-bit MP4, MOV, and
+M4V clips within
 the conservative decoded-frame budget (`<= 1920x1080` frame area and
 `<= 552,960,000` total decoded pixel-frames, streaming clips longer than 193
 frames through overlapping 3D causal windows with 17-frame raised-cosine
 temporal crossfades directly to the encoder without buffering the full clip in
 host RAM), and `--profile auto` automatically routes eligible ByteDance/Seedance
-MP4s (`<= 1280x720` frame area and `>= 16 GiB` total GPU VRAM) to
+MP4, MOV, and M4V clips (`<= 1280x720` frame area and `>= 16 GiB` total GPU VRAM) to
 `wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` on CPU/MPS
-or when the auto Wan budget is exceeded) and other eligible SDR 8-bit MP4s to
+for MP4, or `synthid` for MOV/M4V or when the auto Wan budget is exceeded) and
+other eligible SDR 8-bit MP4, MOV, and M4V clips to
 `wan21-synthid-experimental` on BF16 CUDA (`synthid` fallback otherwise):
 
 ```bash

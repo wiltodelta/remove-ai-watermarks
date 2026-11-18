@@ -287,6 +287,16 @@ def resynthesize_conditioned(
         gain = np.clip(xe / ye, 0.0, _ENVELOPE_MAX_GAIN)
         out += gain * yb
 
+    src_peak = max(abs(float(x64.min())), abs(float(x64.max())))
+    out_peak = max(abs(float(out.min())), abs(float(out.max())))
+    ceiling = min(max(src_peak, 0.25), 0.96) if src_peak <= 1.0 else src_peak
+    if out_peak > ceiling > 0.0:
+        knee = 0.85 * ceiling
+        headroom = ceiling - knee
+        over = (out > knee) | (out < -knee)
+        vals = out[over]
+        out[over] = np.sign(vals) * (knee + headroom * np.tanh((np.abs(vals) - knee) / headroom))
+
     delivered_cond = np.asarray(out, dtype=np.float32)
     if delivered_cond.shape != source_f32.shape or not np.isfinite(delivered_cond).all():
         raise RuntimeError("FocalCodec envelope conditioning produced nonfinite samples")

@@ -107,6 +107,90 @@ def _thordata_slot() -> oracles.ExecutionSlot:
             "indeterminate",
             "unavailable",
         ),
+        (
+            "kling-web",
+            (
+                "AI Content Detection Results\n"
+                "Conclusion: Kling AI generation signals were detected.\n"
+                "Invisible watermark\tDetected\tKling AI\n"
+                "AIGC metadata\tDetected\tKling AI\n"
+                "C2PA manifest\tNot detected\t-"
+            ),
+            "detected",
+            "present",
+        ),
+        (
+            "kling-web",
+            (
+                "AI Content Detection Results\n"
+                "Conclusion: Kling AI generation signals were detected.\n"
+                "Invisible watermark\tNot detected\t-\n"
+                "AIGC metadata\tDetected\tKling AI\n"
+                "C2PA manifest\tNot detected\t-"
+            ),
+            "not_detected",
+            "present",
+        ),
+        (
+            "kling-web",
+            (
+                "AI Content Detection Results\n"
+                "Conclusion: No supported signal was detected. This does not prove the content was not AI-generated.\n"
+                "Invisible watermark\tNot detected\t-\n"
+                "AIGC metadata\tNot detected\t-\n"
+                "C2PA manifest\tNot detected\t-"
+            ),
+            "not_detected",
+            "absent",
+        ),
+        (
+            "kling-web",
+            (
+                "AI Content Detection Results\n"
+                "Conclusion: No supported signal was detected. This does not prove the content was not AI-generated.\n"
+                "C2PA manifest\tNot detected\t—\n"
+                "Invisible watermark\tFailed\t—\n"
+                "AIGC metadata\tFailed\t—"
+            ),
+            "not_detected",
+            "absent",
+        ),
+        (
+            "kling-web",
+            (
+                "AI Content Detection Results\n"
+                "Conclusion: Kling AI generation signals were detected.\n"
+                "C2PA manifest\tNot detected\t—\n"
+                "Invisible watermark\tFailed\t—\n"
+                "AIGC metadata\tDetected\tKling AI"
+            ),
+            "not_detected",
+            "present",
+        ),
+        (
+            "kling-web",
+            "Welcome to Kling AI\nContinue with Google\nContinue with Apple\nContinue with email",
+            "indeterminate",
+            "unavailable",
+        ),
+        (
+            "kling-web",
+            "Your detection quota has been used up.",
+            "refused",
+            "unavailable",
+        ),
+        (
+            "cartesia-web",
+            "Watermark detected\nThis audio contains a Cartesia watermark.",
+            "detected",
+            "unavailable",
+        ),
+        (
+            "cartesia-web",
+            "No watermark detected\nThis audio does not contain a Cartesia watermark.",
+            "not_detected",
+            "unavailable",
+        ),
     ],
 )
 def test_parse_provider_result(
@@ -561,3 +645,37 @@ def test_batch_continues_only_after_conclusive_verdicts_and_closes(
     results = json.loads((manifest.parent / "results.json").read_text())
     assert results["rows"][0]["watermark_result"] == outcome
     assert results["rows"][1]["watermark_result"] == ("not_detected" if conclusive else None)
+
+
+def test_cartesia_web_runs_directly_under_acknowledge_uploads_without_extra_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wav_path = tmp_path / "clip.wav"
+    import wave
+
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 16000 * 6)
+
+    slot: oracles.ExecutionSlot = {
+        "name": "cartesia-direct",
+        "surface": "cartesia-web",
+        "account_label": None,
+        "browser_profile": None,
+        "google_account_index": None,
+        "network_label": "direct",
+        "proxy_url_env": None,
+        "api_key_env": None,
+    }
+    manifest = oracles.prepare_batch("cartesia-web", [wav_path], output_dir=tmp_path / "cartesia-batch", slot=slot)
+    monkeypatch.setattr(
+        web,
+        "_submit_batch",
+        lambda *_a, **_kw: iter([web.WebVerdict("not_detected", "unavailable", "No watermark detected")]),
+    )
+    report = web.run_web_batch(manifest, acknowledge_uploads=True, headed=False, environ={})
+    assert report["complete"] is True
+    assert report["watermark_results"] == {"not_detected": 1}

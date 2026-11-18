@@ -1128,3 +1128,175 @@ def test_windowed_audio_quality_gate_catches_mid_track_dropout_and_stereo_drift(
     assert fid.worst_window_rms_ratio == pytest.approx(0.0, abs=1e-4)
     assert fid.max_side_mid_drift_db is not None
     assert audio_quality_passed(fid, lossy=False) is False
+
+
+def test_identify_audio_recommended_recipe_and_cli_rendering(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from remove_ai_watermarks import audio
+    from remove_ai_watermarks.cli import main
+
+    src_wav = _source(tmp_path, frames=16000)
+    monkeypatch.setattr(audio.audioseal, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audioseal, "load_pinned_detector", object)
+    monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: audio.audioseal.AudioSealReading(0.0, 0.0, (0,) * 16))
+
+    # 1. Completely unmarked audio -> recommended_recipe is None
+    monkeypatch.setattr(audio.metadata, "get_ai_metadata", lambda _p: {})
+    rep_clean = audio.identify_audio(src_wav)
+    assert rep_clean.recommended_recipe is None
+    runner = CliRunner()
+    cli_clean = runner.invoke(main, ["audio", "identify", str(src_wav)])
+    assert cli_clean.exit_code == 0, cli_clean.output
+    assert "Recommended recipe:" not in cli_clean.output
+
+    # 2. Neutral C2PA transport signer (e.g., Anthropic Files) -> recommended_recipe is None
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {
+            "c2pa_manifest": "C2PA manifest store (4942 bytes)",
+            "claim_generator": "Anthropic Files",
+            "issuer": "Anthropic Claude",
+            "actions": "opened, com.anthropic.claude.provided",
+        },
+    )
+    assert audio.identify_audio(src_wav).recommended_recipe is None
+
+    # 3. Metadata-only AI provenance (e.g., Suno fingerprint C2PA) -> lossless metadata strip recipe
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {
+            "c2pa_manifest": "C2PA manifest store (5806 bytes)",
+            "claim_generator": "Suno",
+            "source_type": "trainedAlgorithmicMedia (AI-generated)",
+        },
+    )
+    rep_meta = audio.identify_audio(src_wav)
+    assert rep_meta.recommended_recipe == "remove-ai-watermarks audio metadata input.wav --remove -o clean.wav"
+
+    # 4. ElevenLabs C2PA provenance -> auto neural waveform cleaning with --allow-unverified
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {
+            "c2pa_manifest": "C2PA manifest store (4339 bytes)",
+            "claim_generator": "ElevenLabs",
+            "issuer": "ElevenLabs",
+            "source_type": "trainedAlgorithmicMedia (AI-generated)",
+        },
+    )
+    rep_el = audio.identify_audio(src_wav)
+    assert rep_el.recommended_recipe == (
+        "remove-ai-watermarks audio all input.wav -o clean.wav --invisible --method auto --allow-unverified"
+    )
+    cli_el = runner.invoke(main, ["audio", "identify", str(src_wav)])
+    assert cli_el.exit_code == 0, cli_el.output
+    assert "Recommended recipe: remove-ai-watermarks audio all input.wav -o clean.wav" in cli_el.output
+
+    # 5. Google SynthID C2PA provenance -> DAC waveform cleaning with --allow-unverified
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {
+            "c2pa_manifest": "C2PA manifest store (3818 bytes)",
+            "issuer": "Google LLC",
+            "synthid_watermark": "present according to Google LLC provenance",
+        },
+    )
+    rep_google = audio.identify_audio(src_wav)
+    assert rep_google.recommended_recipe == (
+        "remove-ai-watermarks audio all input.wav -o clean.wav --invisible --method dac --allow-unverified"
+    )
+
+    # 6. Compatible public watermark detected -> --invisible without --allow-unverified
+    monkeypatch.setattr(audio.metadata, "get_ai_metadata", lambda _p: {})
+    monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: audio.audioseal.AudioSealReading(1.0, 1.0, (0, 1) * 8))
+    rep_pos = audio.identify_audio(src_wav)
+    assert rep_pos.recommended_recipe == "remove-ai-watermarks audio all input.wav -o clean.wav --invisible"
+
+
+def test_adaptive_auto_profiles_routes_elevenlabs_and_google_synthid_metadata(tmp_path, monkeypatch):
+    from remove_ai_watermarks import audio
+
+    src_wav = _source(tmp_path, frames=16000)
+    monkeypatch.setattr(audio.audioseal, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audioseal, "load_pinned_detector", object)
+    monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
+    monkeypatch.setattr(audio.perth, "is_available", lambda: False)
+    monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: audio.audioseal.AudioSealReading(0.0, 0.0, (0,) * 16))
+
+    # ElevenLabs C2PA: routes to ("dac", "encodec", "combined") when DAC is available,
+    # and ("encodec", "combined") when DAC is unavailable (never "spectral").
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {"claim_generator": "ElevenLabs", "issuer": "ElevenLabs"},
+    )
+    rep_el = audio.identify_audio(src_wav, scheme="auto")
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    assert audio.adaptive_auto_profiles("auto", rep_el) == ("dac", "encodec", "combined")
+    assert audio.adaptive_auto_profiles("audioseal", rep_el) == ("dac", "encodec", "combined")
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: False)
+    assert audio.adaptive_auto_profiles("auto", rep_el) == ("encodec", "combined")
+
+    # Google SynthID C2PA: routes to ("dac", "combined") when DAC is available, while YouTube re-signer does not.
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {"issuer": "Google LLC", "synthid_watermark": "present according to Google LLC provenance"},
+    )
+    rep_google = audio.identify_audio(src_wav, scheme="auto")
+    assert audio.adaptive_auto_profiles("auto", rep_google) == ("dac", "combined")
+
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {"c2pa_manifest": "C2PA manifest store", "issuer": "YouTube Video Processing Services"},
+    )
+    rep_yt = audio.identify_audio(src_wav, scheme="auto")
+    assert audio.adaptive_auto_profiles("auto", rep_yt) == ("spectral", "combined")
+
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda _p: {"issuer": "OpenAI", "synthid_watermark": "present according to OpenAI provenance"},
+    )
+    rep_oai = audio.identify_audio(src_wav, scheme="auto")
+    assert audio.adaptive_auto_profiles("auto", rep_oai) == ("spectral", "combined")
+
+    # End-to-end remove_audio_invisible on ElevenLabs C2PA:
+    # skips when allow_unverified=False, and selects DAC (not spectral) when allow_unverified=True + method="auto".
+    el_markers = {"claim_generator": "ElevenLabs", "issuer": "ElevenLabs"}
+    monkeypatch.setattr(
+        audio.metadata,
+        "get_ai_metadata",
+        lambda p: el_markers if Path(p).resolve() == src_wav.resolve() else {},
+    )
+    skipped = audio.remove_audio_invisible(src_wav, tmp_path / "skipped.wav", scheme="auto", method="auto")
+    assert skipped.skipped is True
+    assert not (tmp_path / "skipped.wav").exists()
+
+    dac_calls: list[tuple[int, ...]] = []
+    monkeypatch.setattr(
+        audio.audio_dac,
+        "resynthesize",
+        lambda samples, *_a, **_k: dac_calls.append(samples.shape) or (samples * 0.9),
+    )
+    monkeypatch.setattr(
+        audio.audio_spectral,
+        "filter_audio_chunks",
+        lambda *_a, **_k: pytest.fail("spectral must not run on ElevenLabs auto routing"),
+    )
+    cleaned = audio.remove_audio_invisible(
+        src_wav,
+        tmp_path / "el_clean.wav",
+        scheme="auto",
+        method="auto",
+        allow_unverified=True,
+    )
+    assert cleaned.skipped is False
+    assert cleaned.method == "dac"
+    assert len(dac_calls) == 1

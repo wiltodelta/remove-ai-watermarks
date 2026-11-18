@@ -440,7 +440,7 @@ Registered fingerprint algorithms remain metadata, outside the watermark hints.
 | Meitu, vivo, Xiaomi, and Agnes AI | Generic `AI生成` label on vivo and Xiaomi Gallery AI edits | No registered pixel decoder | TC260 AIGC producer attribution |
 | Sync Labs, PixelBin.io, and TikTok AI | None registered | No registered pixel decoder | C2PA attribution |
 | Qwen | Qwen mark | No registered pixel decoder | TC260 AIGC |
-| Kling AI | Kling AI image and video marks | No registered pixel decoder | TC260 AIGC and the video SEI tag |
+| Kling AI | Kling AI image and video marks | No pixel-domain mark found on tested exports (`provider-original.mp4`, `Kling 3.0 Turbo`, `Kling O3 Standard` with AAC audio, `Kling Image v3`); `kling.ai/detection`'s `"Invisible watermark"` row reads the H.264 `kling-ai` SEI tag (`3/3` MP4 originals `Detected -> Not detected` after lossless `video metadata --remove`) | TC260 AIGC and the video SEI tag (verified `0/5` on `kling.ai/detection` after lossless metadata/SEI strip) |
 | Vidu (ShengShu) | Vidu video mark | No registered pixel decoder | TC260 AIGC in the MP4 `AIGC` key |
 | Runway | None measured on paid-plan output | No registered pixel decoder | C2PA signed `RUNWAY AI, INC.` on its own models; third-party models keep their vendor's manifest |
 | Amazon Bedrock (Nova Canvas, Titan Image, Nova Reel) | None | Diffusion regeneration for Nova Canvas and Titan Image, oracle-verified against `DetectGeneratedContent` (`0/18` across `qwen-zimage`, `sdxl-zimage`, `chroma-zimage`; already `0/6` at `qwen-zimage` `s=0.03`) | C2PA signed `Amazon Web Services, Inc.`, claim generator `Amazon Bedrock` |

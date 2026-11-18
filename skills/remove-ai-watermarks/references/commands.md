@@ -175,13 +175,13 @@ integration; verify `video all --help` before using them.
 On machines with a hardware BF16-capable NVIDIA CUDA GPU (Ampere or newer; ROCm
 and pre-Ampere emulation are excluded), two additional
 experimental 3D video diffusion profiles preserve native resolution and frame
-rate on SDR 8-bit MP4 clips within the conservative decoded-frame budget
+rate on SDR 8-bit MP4, MOV, and M4V clips within the conservative decoded-frame budget
 (`<= 1920x1080` frame area and `<= 552,960,000` decoded pixel-frames, streaming
 clips over 193 frames via overlapping 3D causal windows, since CLI 0.63.0), and
-`--profile auto` automatically routes eligible ByteDance/Seedance MP4s
+`--profile auto` automatically routes eligible ByteDance/Seedance MP4, MOV, and M4V clips
 (`<= 1280x720` frame area and `>= 16 GiB` total GPU VRAM) to
 `wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` fallback on
-CPU/MPS or over budget) and other eligible SDR 8-bit MP4s to `wan21-synthid-experimental`
+CPU/MPS MP4, or `synthid` on MOV/M4V or over budget) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental`
 on BF16 CUDA (`synthid` fallback otherwise):
 
 ```bash
@@ -216,7 +216,7 @@ remove-ai-watermarks audio all input.mp3 -o clean.mp3 --invisible
 remove-ai-watermarks audio batch ./tracks -o ./tracks_clean --mode all --invisible
 ```
 
-`audio identify` and `audio invisible` accept `--stream N`, a zero-based audio-track ordinal. `audio metadata` checks (`--check`) or strips (`--remove`) AI metadata via stream-copy remuxing (`--keep-standard/--remove-all`, `-o`). `audio all` strips AI metadata and, with `--invisible`, removes compatible waveform watermarks (`--scheme auto` default, writing a metadata-cleaned passthrough when no positive compatible watermark is detected). `audio batch` runs `--mode [all|metadata]` across a directory (`-o` / `--output-dir`). Inspection without
+`audio identify` and `audio invisible` accept `--stream N`, a zero-based audio-track ordinal (`audio identify` also emits `recommended_recipe` when AI metadata or a compatible watermark signal is found). `audio metadata` checks (`--check`) or strips (`--remove`) AI metadata via stream-copy remuxing (`--keep-standard/--remove-all`, `-o`). `audio all` strips AI metadata and, with `--invisible`, removes compatible waveform watermarks (`--scheme auto` default, writing a metadata-cleaned passthrough when no positive compatible watermark is detected). `audio batch` runs `--mode [all|metadata]` across a directory (`-o` / `--output-dir`). Inspection without
 models needs ffmpeg and ffprobe. `--scheme audioseal` (default on `identify`/`invisible`) needs
 `audio-detect`; `--scheme auto` scans every installed compatible decoder without failing on absent optional extras; `--scheme wavmark` needs `audio-wavmark`; `--scheme perth` needs `audio-perth`; `--scheme silentcipher` and `--scheme silentcipher16` need `audio-silentcipher`; `--scheme all` checks
 all named models and needs all named decoder extras. WavMark also checks the
@@ -237,7 +237,7 @@ outputs preserve channels and sample clock (Opus codes internally at 48 kHz and 
 discarded and saved-file decoder verification enforced after encoding. The spectral profile changes audible content and can fail.
 
 `--method auto` (default) tries spectral filtering then combined filtering and
-neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers (using Mid/Side stereo on 2-channel EnCodec passes), and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
+neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers (using Mid/Side stereo on 2-channel EnCodec passes), routes mono/stereo audio carrying ElevenLabs or Google SynthID metadata directly to `dac` (or `encodec`/`combined` when `dac` is absent) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
 `--method spectral`, `encodec`, or `combined` fixes one profile. Neural profiles
 need `audio-codec`; a missing required fallback fails without replacing output.
 `--bandwidth` accepts `6`, `12`, or `24` kbps, default `24`, for neural profiles.

@@ -305,11 +305,12 @@ and Vocos). `_internal/audio_resampling.py` maps the exact native duration to
 the 16 kHz model grid and back with explicit symmetric `(40, 40)` WavLM context
 samples (`RF=400`, `hop=320`) and raw mid/side stereo; non-multiple frame tails
 pad on the right before cropping back to the exact core sample count.
-`resynthesize_conditioned` computes a smooth source-activity envelope (`20 ms`
-RMS windows, `-50 dBFS` quiet floor to `-42 dBFS` active speech, `80 ms` holdover,
-and `40 ms` raised-cosine smoothing) on the `16 kHz` grid so quiet pause intervals
-retain the clean source rather than unconditioned Vocos phase randomization that
-can cross-react with magnitude-domain Perth windows. The route remains excluded
+`resynthesize_conditioned` preconditions the 1.0-1.5 kHz band, runs FocalCodec
+resynthesis, restores complementary zero-phase Butterworth sub-band 35 Hz
+envelopes (`[0.0, 2.5]` gain clamp), and applies a smooth `tanh` soft-knee peak
+ceiling (`min(max(source_peak, 0.25), 0.96)` when `source_peak <= 1.0`) so
+constructive random-phase sub-band summation cannot push lossy MP3/AAC
+reconstruction past the quality gate. The route remains excluded
 from `auto` and enforces the saved-output decoder gate unless explicitly forced.
 
 `_internal/audio_dac.py` implements the separately selected experimental 44.1 kHz
@@ -374,11 +375,17 @@ and final-mux gates. SDK byte framing and the general 32-bit profile remain unqu
 `_internal/audio_quality.py` shares saved-file fidelity, model-free
 `audio_quality_passed` gating (method-aware SNR, clipping-delta, global silent-drop,
 1-second active-window `worst_window_rms_ratio` in `[0.005, 4.0]`, and stereo
-`max_side_mid_drift_db` diagnostics), and source hashing across audio and video.
+`max_side_mid_drift_db` diagnostics), bounded-memory phase-invariant perceptual
+distances (`AudioPerceptualMetrics` / `compute_perceptual_metrics`: `(512, 128)`,
+`(1024, 256)`, and `(2048, 512)` multi-resolution STFT distance plus 64-band
+log-Mel spectral distance in dB), and source hashing across audio and video.
 `audio.py` splits argument validation (`validate_audio_arguments`) from decoder/backend
 resolution (`resolve_audio_profiles`), separates `allow_unverified`,
 `allow_positive`, and `allow_quality_override` (`force=True` remains a final-attempt
-compatibility alias), and copies completely clean inputs byte-for-byte in
+compatibility alias), populates `AudioProvenanceReport.recommended_recipe` (using
+shared `_internal/c2pa.markers_claim_ai`), routes `adaptive_auto_profiles` away from
+`spectral` onto `dac`/`encodec` when pre-strip metadata identifies ElevenLabs or
+Google SynthID, and copies completely clean inputs byte-for-byte in
 `remove_audio_all`. `video_audio.py` processes
 one selected audio track into MKV/MOV with float PCM or MP4 with AAC (target
 192 kbps), stream-copies the other tracks, runs `method="auto"` candidate
@@ -712,11 +719,14 @@ guidance_scale=1.0)`, pre-encodes `WAN21_DEFAULT_PROMPT` once into cached
 and streams `_stream_wan_windows` (`chunk_frames=193` / `overlap_frames=17`
 raised-cosine temporal crossfades with symmetric 16-pixel reflection padding and
 `4k+1` tail-frame causal padding) directly into `_finalize_experimental_output`
-without buffering the full decoded video in host RAM. `video.py` also exposes
-`profile="auto"`, routing eligible ByteDance/Seedance MP4s (`WAN21_AUTO_MAX_FRAME_PIXELS = 1280 * 720`
+without buffering the full decoded video in host RAM. `WAN_SUPPORTED_EXTENSIONS`
+covers `.mp4`, `.mov`, and `.m4v`, staging `master<suffix>` in the matching
+container so QuickTime `.mov` sources with uncompressed PCM audio mux losslessly
+without MP4 codec rejection. `video.py` also exposes
+`profile="auto"`, routing eligible ByteDance/Seedance MP4, MOV, and M4V clips (`WAN21_AUTO_MAX_FRAME_PIXELS = 1280 * 720`
 and `WAN21_MIN_CUDA_VRAM_BYTES = 16 GiB`) to `wan21-seedance-experimental` on BF16 CUDA
-(`seedance-experimental` fallback on CPU/MPS or when the auto Wan budget is
-exceeded) and other eligible SDR 8-bit MP4s to `wan21-synthid-experimental` on BF16 CUDA
+(`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V or when the auto Wan budget is
+exceeded) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental` on BF16 CUDA
 (`synthid` fallback otherwise). Coverage in
 `tests/test_video_seedance.py` includes source-detail separation, quantization,
 VFR/nonzero-start/audio-tail preservation, and failure-before-publication.

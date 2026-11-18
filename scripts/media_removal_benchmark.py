@@ -31,7 +31,8 @@ if str(REPO / "src") not in sys.path:
     sys.path.insert(0, str(REPO / "src"))
 
 from remove_ai_watermarks import audio, video, video_audio, video_messages  # noqa: E402
-from remove_ai_watermarks._internal.audio_quality import sha256_file  # noqa: E402
+from remove_ai_watermarks._internal import audio_io  # noqa: E402
+from remove_ai_watermarks._internal.audio_quality import compute_perceptual_metrics, sha256_file  # noqa: E402
 from remove_ai_watermarks._internal.schema import require_schema_version  # noqa: E402
 from remove_ai_watermarks.video_tools import require_video_tool  # noqa: E402
 
@@ -214,6 +215,7 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
         )
 
     # 1. AudioSeal mono 16 kHz, stereo 16 kHz, long 31 s 16 kHz, and 3-stream MP4 AAC 192k
+    gen: Any = None
     if audioseal.available():
         gen, _det = audioseal.load_pinned_models()
         msg_bits = [int(b) for b in "1011001111000101"]
@@ -429,6 +431,39 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
                     "verified_removed",
                     method="dac",
                 )
+                if gen is not None:
+                    from remove_ai_watermarks._internal import audio_resampling
+
+                    as33_l = np.asarray(
+                        audioseal.embed(
+                            gen,
+                            _synthetic_speechlike_carrier(16000, 33.0, seed=311),
+                            [int(b) for b in "1010110011110001"],
+                        ),
+                        dtype=np.float32,
+                    )
+                    as33_r = np.asarray(
+                        audioseal.embed(
+                            gen,
+                            _synthetic_speechlike_carrier(16000, 33.0, seed=312),
+                            [int(b) for b in "0101001100001110"],
+                        ),
+                        dtype=np.float32,
+                    )
+                    as33_16k = np.column_stack((as33_l, as33_r))
+                    clock_44k = audio_resampling.RationalClock(len(as33_16k), 16000, 44100)
+                    as33_44k = np.asarray(audio_resampling.forward(as33_16k, clock_44k), dtype=np.float32)
+                    as33_p = fixtures_dir / "audioseal-long33s-stereo44k-marked.wav"
+                    sf.write(as33_p, as33_44k, 44100, subtype="FLOAT")
+                    add_row(
+                        "audioseal-long33s-stereo44k-windowed-dac",
+                        "audio_invisible",
+                        "audioseal",
+                        as33_p,
+                        ".wav",
+                        "verified_removed",
+                        method="dac",
+                    )
             except Exception:
                 log.info("Skipping optional dac builtin cases because weights are not cached locally")
 
@@ -492,7 +527,7 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
 
             # 5. Unified 4-layer audiovisual clip (AI metadata + visible Kling + VideoSeal pixels + AudioSeal audio)
             kling_fixture = REPO / "data/fixtures/visible/kling/provider-original.mp4"
-            if audioseal.available() and kling_fixture.is_file():
+            if gen is not None and kling_fixture.is_file():
                 k_cap = open_video_capture(kling_fixture)
                 k_frames: list[Any] = []
                 try:
@@ -519,10 +554,9 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
                         proc_4l.stdin.write(fr.tobytes())
                     finish_raw_video_encoder(proc_4l, raw_4l, operation="4-layer benchmark video encode")
 
-                    gen_4l, _det_4l = audioseal.load_pinned_models()
                     aud_2s = _synthetic_speechlike_carrier(16000, 2.0, seed=401)
                     aud_2s_marked = np.asarray(
-                        audioseal.embed(gen_4l, aud_2s, [int(b) for b in "1011001111000101"]),
+                        audioseal.embed(gen, aud_2s, [int(b) for b in "1011001111000101"]),
                         dtype=np.float32,
                     )
                     aud_4l_wav = fixtures_dir / "four-layer-audio.wav"
@@ -599,6 +633,37 @@ def _output_sha256(res: Any) -> str | None:
     return sha256_file(out) if out and Path(out).is_file() else None
 
 
+def _try_perceptual_metrics(
+    source_path: Path,
+    out_path: Path,
+    *,
+    stream: int = 0,
+    skipped: bool = False,
+    source_info: object = None,
+    delivered_info: object = None,
+) -> dict[str, float] | None:
+    if skipped or not out_path.is_file():
+        return None
+    try:
+        src_info = (
+            source_info
+            if isinstance(source_info, audio_io.AudioStreamInfo)
+            else audio_io.probe_audio(source_path, stream=stream)
+        )
+        deliv_info = delivered_info if isinstance(delivered_info, audio_io.AudioStreamInfo) else None
+        return asdict(
+            compute_perceptual_metrics(
+                source_path,
+                src_info,
+                out_path,
+                stream=stream,
+                delivered_info=deliv_info,
+            )
+        )
+    except Exception:
+        return None
+
+
 def evaluate_removal_case(
     case: RemovalBenchmarkCase,
     output_dir: Path,
@@ -654,6 +719,14 @@ def evaluate_removal_case(
                 "verified_removed": res_a.verified_removed,
                 "quality_passed": res_a.quality_passed,
                 "fidelity": asdict(res_a.fidelity) if res_a.fidelity else None,
+                "perceptual": _try_perceptual_metrics(
+                    case.source_path,
+                    out_path,
+                    stream=case.stream,
+                    skipped=res_a.skipped,
+                    source_info=getattr(res_a.before, "stream", None),
+                    delivered_info=getattr(res_a.after, "stream", None) if res_a.after else None,
+                ),
                 "elapsed_seconds": round(elapsed, 3),
             }
 
@@ -685,6 +758,14 @@ def evaluate_removal_case(
                 "quality_passed": res_va.quality_passed,
                 "unchanged_streams": list(res_va.unchanged_streams),
                 "fidelity": asdict(res_va.fidelity) if res_va.fidelity else None,
+                "perceptual": _try_perceptual_metrics(
+                    case.source_path,
+                    out_path,
+                    stream=case.stream,
+                    skipped=res_va.skipped,
+                    source_info=getattr(res_va.before, "stream", None),
+                    delivered_info=getattr(res_va.after, "stream", None) if res_va.after else None,
+                ),
                 "elapsed_seconds": round(elapsed, 3),
             }
 
@@ -713,6 +794,8 @@ def evaluate_removal_case(
             methods = sorted({s.method for i, s in enumerate(res_vam.streams) if i in res_vam.processed_ordinals})
             last_idx = res_vam.processed_ordinals[-1] if res_vam.processed_ordinals else -1
             last_stream = res_vam.streams[last_idx] if 0 <= last_idx < len(res_vam.streams) else res_vam
+            first_ord = res_vam.processed_ordinals[0] if res_vam.processed_ordinals else 0
+            first_stream = res_vam.streams[first_ord] if 0 <= first_ord < len(res_vam.streams) else None
             return {
                 **base,
                 "status": "passed" if passed else "failed",
@@ -725,6 +808,14 @@ def evaluate_removal_case(
                 "verified_removed": res_vam.verified_removed,
                 "quality_passed": res_vam.quality_passed,
                 "fidelity": asdict(first_fid) if first_fid else None,
+                "perceptual": _try_perceptual_metrics(
+                    case.source_path,
+                    out_path,
+                    stream=first_ord,
+                    skipped=res_vam.skipped,
+                    source_info=getattr(getattr(first_stream, "before", None), "stream", None),
+                    delivered_info=getattr(getattr(first_stream, "after", None), "stream", None),
+                ),
                 "elapsed_seconds": round(elapsed, 3),
             }
 
@@ -875,6 +966,9 @@ def format_markdown_summary(report: dict[str, Any]) -> str:
             snr = f"{fid['snr_db']:.2f} dB" if fid.get("snr_db") is not None else "n/a"
             rms_err = f"{fid['rms_error']:.4f}" if fid.get("rms_error") is not None else "n/a"
             metric = f"SNR {snr}, RMS err {rms_err}"
+            perc = row.get("perceptual")
+            if isinstance(perc, dict) and perc.get("mr_stft_loss") is not None:
+                metric += f", MR-STFT {perc['mr_stft_loss']:.3f}, Mel {perc['mel_distance_db']:.2f} dB"
         elif row.get("quality"):
             q = row["quality"]
             psnr = f"{q['source_psnr_db']:.2f} dB" if q.get("source_psnr_db") is not None else "lossless"
