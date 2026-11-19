@@ -90,7 +90,7 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Neural audio resynthesis (`--method encodec`, `combined`, or an automatic neural profile) | add `audio-codec`; retain the decoder extra for verification |
 | Experimental Mimi codec (`--method mimi`) | add `audio-codec`; fixed CPU FP32 and 32 quantizers; retain the decoder extra; model weights CC-BY-4.0 |
 | Experimental FocalCodec continuous features (`--method focalcodec`) | add `audio-codec`; fixed CPU FP32 50 Hz WavLM-to-Vocos profile; retain the decoder extra; model weights Apache-2.0 |
-| Experimental 44.1 kHz DAC codec (`--method dac`) | add `audio-codec`; fixed CPU FP32 and 3 codebooks; retain the decoder extra; model weights MIT |
+| Experimental 44.1 kHz DAC codec (`--method dac`) | add `audio-codec`; FP32 with 3 codebooks, CPU by default, MPS or CUDA through the vocoder device option; retain the decoder extra; model weights MIT |
 | Experimental full-track mel-vocoder (`--method bigvgan`) | add `audio-vocoder`; retain the decoder extra for verification; mono/stereo up to 30 seconds |
 | Compatible open AudioSeal checks and verified audio processing | `audio-detect`, plus ffmpeg and ffprobe |
 | Experimental SilentCipher-44k (`--scheme silentcipher`) and terminated 16k pattern (`--scheme silentcipher16`) | `audio-silentcipher`, plus ffmpeg and ffprobe; minimum three seconds, complete documented phase grid; neural removal also needs `audio-codec` |

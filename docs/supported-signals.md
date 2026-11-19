@@ -16,10 +16,10 @@ The `visible` command registers these mark keys:
 | `qwen` | `千问AI生成` or the three-lobe Qwen symbol | Bottom right | Separate strict templates cover the text and Qwen Create symbol variants. |
 | `wan` | Wan logo and `Wan` wordmark | Bottom right, hugging the corner | Provisional: one real Wan 2.7 Pro export. Requires NCC >= 0.55 and a match that ends within 0.015 of the short side from both edges. |
 | `kling` | `可灵AI 3.0`/`4.0` or `KlingAI 3.0`/`4.0` | Bottom right | Separate calibrated silhouettes cover the CJK and Latin 3.0/4.0 variants; a glyph-detail gate rejects plain UI boundaries. |
-| `yuanbao` | `元宝` over `AI生成` | Bottom right | Separate strict and provenance-corroborated templates cover the measured two-line rasterizations. |
+| `yuanbao` | `元宝` over `AI生成` | Bottom right | Separate strict and provenance-corroborated templates cover the measured two-line rasterizations; both lines and the 2D glyph detail must match. |
 | `dola` | `Dola AI` | Bottom right | Text detector and detector-aligned wordmark footprint. |
 | `workbuddy` | `AI生成` and `WORKBUDDY>_` | Bottom right | Separate templates cover the single-line and stacked two-line layouts; corroborated by the registered Tencent WorkBuddy TC260 producer code. |
-| `samsung` | Italian or Korean Galaxy AI disclosure | Bottom left | Independently gated text layouts cover `Contenuti generati dall'AI` and `AI로 생성한 콘텐츠`. |
+| `samsung` | Italian or Korean Galaxy AI disclosure | Bottom left | Independently gated text layouts cover `Contenuti generati dall'AI` and `AI로 생성한 콘텐츠`; the Italian layout's lower gate needs Samsung AI-edit metadata. |
 | `runninghub` | `RunningHub AI生成` | Top left | Strict visual and position gates. |
 | `baidu` | `百度 AI生成` | Bottom right | Detector and extended removal footprint. |
 | `liblib` | `LiblibAI` | Bottom center | Historical wordmark variant; includes a minimum image size gate. |
@@ -216,7 +216,10 @@ CPU FP32 and an internal 24 kHz grid; FocalCodec uses fixed CPU FP32 continuous
 6-layer WavLM-to-Vocos resynthesis on an internal 16 kHz grid (`8 kHz` ceiling);
 BigVGAN has an explicit device selector. All three use
 bounded mono/stereo processing, preserve the native sample grid and expose
-quality limitations separately. None implements a SynthID decoder.
+quality limitations separately. The 44.1 kHz DAC codec profile also handles
+tagged 5.1/7.1 surround and is what `auto` selects when pre-strip metadata or an
+explicit audio vendor names ElevenLabs, Google SynthID, or another wideband AI
+audio cohort. None implements a SynthID decoder.
 Default removal requires a
 source-positive and saved-output-negative check; resistant and incomplete
 candidates are rejected. This does not establish compatibility with proprietary
@@ -374,9 +377,11 @@ the benchmark's threshold. The SynthID certification does not certify VideoSeal
 removal.
 
 The explicit [`video message`](cli.md#public-model-video-messages-experimental) route
-compares an independently known message under pinned public VideoSeal or PixelSeal
-weights and gates processing on saved-file checks. It does not add these signals
-to generic AI-origin identification.
+compares an independently known message under pinned public VideoSeal, PixelSeal,
+or ChunkySeal weights and gates processing on saved-file checks. A separate blind
+presence check (`detect_video_watermark_presence`) reads detection probability
+and cross-frame payload stability without a reference message. Neither adds
+these signals to generic AI-origin identification.
 
 [Non-SynthID video coverage](non-synthid-video.md) separates registry
 declarations, open-model VideoSeal/PixelSeal checks, and provider verification.
@@ -391,7 +396,8 @@ The fixed recipe has a positive-control/negative-output CapCut check on an
 owned label-free forest clip. It preserves native geometry, the complete frame
 clock and copied audio, while changing texture and color. This is an explicit
 experimental pixel transform, not a local detector or the default SynthID
-profile. Prepare visible labels separately. On NVIDIA CUDA GPUs, explicit
+profile. Prepare visible labels separately. On NVIDIA CUDA GPUs (or with an
+explicit Apple Silicon MPS device), explicit
 `wan21-synthid-experimental` (`strength=0.38`) and `wan21-seedance-experimental`
 (`strength=0.12`) additionally provide native-resolution 3D `Wan 2.1` video-to-video
 regeneration (`remove_video_wan_experimental`, using `chunk_frames=193` and

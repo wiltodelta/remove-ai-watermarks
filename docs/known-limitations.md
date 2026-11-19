@@ -12,7 +12,7 @@ the remaining layers need their own check.
 | Path | Removes | May remain | How to check what remains |
 | --- | --- | --- | --- |
 | `metadata --remove`, `video metadata --remove` | Supported AI metadata: C2PA manifests, TC260 labels, IPTC AI fields, app-export JSON, generation parameters | Every pixel and audio watermark (SynthID, Meta Content Seal, InvisMark, TrustMark, DWT-DCT). A C2PA soft binding can still lead a resolver to a manifest stored remotely. Strings inside encoded video streams, such as H.264 SEI messages, stay too, except Kling's SEI tag, which `video metadata --remove` blanks | `identify` re-reads the metadata. Only the provider's verifier can confirm a pixel watermark. The pixels are not regenerated, so an AI-image classifier scores the output the same as the input |
-| `visible`, `erase`, `video visible` | The selected label region, refilled. AI metadata too, unless `--keep-metadata` is given | Any invisible watermark across the rest of the frame. The fill can leave a visible patch on structured backgrounds | Look at the output. Use `identify` for metadata and the provider's verifier for invisible marks |
+| `visible`, `erase`, `video visible`, `video erase` | The selected label region, refilled. AI metadata too, unless `--keep-metadata` is given | Any invisible watermark across the rest of the frame. The fill can leave a visible patch on structured backgrounds | Look at the output. Use `identify` for metadata and the provider's verifier for invisible marks |
 | `invisible`, `all`, `video invisible` | Regenerates pixels to disrupt invisible watermarks. `all` also removes visible marks and metadata | No local decoder confirms that SynthID is gone from a given file, and the outcome depends on content and seed. `video invisible` copies the audio track unchanged, so an audio watermark survives | The provider's verifier, such as Google's SynthID Detector or OpenAI's provenance check. A pass there says nothing about AI-image classifiers |
 | `text metadata --remove`, `text all` | C2PA 2.3/2.4 text/HTML wrappers (`C2PATXT\0`, ASCII armor, HTML `<head>` C2PA), `VSRMark` (`VSR1`), Unicode Tags, and zero-width steganography | Token-level statistical LLM watermarks (Google `SynthID-Text`, Anthropic Claude Fable 5.1/5.2 and Mythos 5.1/5.2, OpenAI GPT-6 Astra `textGrain`, KGW, Unigram) live in token choices, not hidden characters | `text identify` re-reads character wrappers; `text invisible` or `text all --invisible` regenerates unlocked prose spans while locking code, math, and URLs |
 | `identify`, `video identify`, `text identify` | Nothing | Not applicable | `unknown` means no supported local signal was found (`video identify --audio` checks compatible public audio decoders only, not proprietary SynthID audio). A declared video watermark algorithm may remain in `invisible_watermark_hints`; this is not a clean verdict |
@@ -90,14 +90,15 @@ Known examples:
   bottom-right template also remains specific to its measured glyph layout,
   although it now handles marks tinted by saturated backgrounds.
 - Samsung detection is calibrated for the Italian
-  `Contenuti generati dall'AI` text variant.
+  `Contenuti generati dall'AI` and Korean `AI로 생성한 콘텐츠` text variants.
 - The Jimeng top-left pill has a weak visual detector and is intentionally
   subject to additional product and background checks.
 - The compact LiblibAI top-left pill is generic on its own. Automatic removal
   requires LiblibAI metadata or the bottom-center wordmark and a flat footprint;
   `--sensitivity strict` leaves this corroboration-only component untouched.
 - Kling AI support covers the calibrated variants rather than every Kling AI label.
-- Dreamina's boxed `AI` badge (top-left, images and video) is deliberately not
+- Dreamina's boxed `AI` badge (top-left) is registered only for video
+  (`dreamina` in `video visible`); the image badge is deliberately not
   registered; see the EU disclosure-icon boundary in
   [legal-and-safety.md](legal-and-safety.md) and the decision in
   [research-sweep-2026-09.md](research-sweep-2026-09.md#decisions).
@@ -347,15 +348,17 @@ there is no runtime CapCut detector or external upload. Visible labels must
 be handled before this pixel stage. Temporary guide/master videos need disk
 space, although pixel processing uses bounded batches. It leaves the default
 video SynthID profile as the default unless `--profile auto` (`profile="auto"`)
-or an explicit Seedance profile is chosen. The separate BF16 CUDA-only
+or an explicit Seedance profile is chosen. The separate
 `wan21-synthid-experimental` and `wan21-seedance-experimental` 3D diffusion
 profiles (`remove_video_wan_experimental`) require an Ampere-or-newer BF16 NVIDIA
-CUDA GPU and SDR 8-bit MP4 input within `WAN21_MAX_FRAME_PIXELS` (`1920x1080`)
-and `WAN21_MAX_TOTAL_PIXEL_FRAMES` (`600 * 1280 * 720`, because decoded frames
-currently reside in host RAM before encoding), blend clips longer than `193`
-frames across `4k+1` 3D causal windows (`chunk_frames=193`, `overlap_frames=17`)
-with raised-cosine temporal crossfades, have oracle evidence from an NVIDIA H100
-at `1280x720`, and likewise perform no runtime detector verification.
+CUDA GPU, or an explicit `device="mps"` on Apple Silicon that automatic profile
+selection never chooses, and SDR 8-bit MP4, MOV, or M4V input within
+`WAN21_MAX_FRAME_PIXELS` (`1920x1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
+(`7200 * 1920 * 1080`). They stream clips longer than `193` frames across `4k+1`
+3D causal windows (`chunk_frames=193`, `overlap_frames=17`) with raised-cosine
+temporal crossfades directly to the encoder, have oracle evidence from an NVIDIA
+H100 at `1280x720`, and likewise perform no runtime detector
+verification.
 
 `remove_video_invisible` regenerates the video stream and copies the source audio
 verbatim: the extracted audio bitstream of input and output has an identical
@@ -702,9 +705,13 @@ audio offset are preserved through ffmpeg timestamp passthrough.
 The encoder is source-aware for common 8-bit inputs: it probes and preserves
 supported chroma sampling, recognized color metadata, encoder time base, and
 MP4/MOV track timescale instead of accepting ffmpeg's implicit `yuv444p`
-raw-BGR output. OpenCV and the PyAV fallback decode through 8-bit BGR, so HDR/high-bit-depth
-inputs are rejected before encoding rather than silently falling back to
-`yuv420p`. The synthetic
+raw-BGR output. 10-bit `yuv420p10le`, `yuv422p10le`, and `yuv444p10le`
+sources, HDR transfers included, are decoded as 16-bit BGR through ffmpeg and
+re-encoded at the same depth with libx265 (VP9 profile 2 for WebM) and their
+BT.2020/PQ/HLG color tags; that path skips the stationary-matte temporal
+precalibration. Other high-bit-depth inputs (12-bit, for example) are rejected
+before encoding rather than silently falling back to `yuv420p`. Invisible
+regeneration still accepts SDR 8-bit input only. The synthetic
 Sora/OpenCV full-clip CI gate covers complete removal, untouched-region PSNR,
 frame count, frame rate, duration, copied-audio identity, source stream
 properties, paired temporal deltas against an independently encoded

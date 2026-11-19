@@ -94,8 +94,8 @@ Audio vendor cohorts: `auto`, `google`, `elevenlabs`, `suno`, `udio`, `openai`,
 `cartesia`, `meta`, `resemble`, `microsoft`. Naming an audio cohort on `all`,
 `audio invisible`, `audio all`, `audio batch`, `video audio` (`--vendor`), or
 `video all` / `video batch` (`--audio-vendor`) asserts the waveform mark is
-present, selects the certified wideband `dac` profile when metadata was already
-stripped, and runs without needing `--allow-unverified` while keeping the audio
+present, selects a vendor-matched profile sequence (`dac` first for most cohorts,
+`spectral` first for `meta`) when metadata was already stripped, and runs without needing `--allow-unverified` while keeping the audio
 integrity gate active.
 
 Meta Muse Image exports can retain standalone IPTC metadata, but that generic
@@ -202,7 +202,8 @@ remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile wan2
 Both `wan21-*` profiles use pinned Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`
 (`strength=0.38` for SynthID, `strength=0.12` for Seedance, 193-frame chunks
 with 17-frame raised-cosine temporal crossfades on longer clips), accept
-`--quality [delivery|master]` and `--seed`, require `device=auto` or `cuda`, and
+`--quality [delivery|master]` and `--seed`, require `device=auto`, `cuda`, or an
+explicit `mps` (FP16 transformer; `auto` never selects MPS), and
 reject 2D VAE SynthID tuning flags. Neither performs per-file oracle verification.
 
 Unlike the image path, `video invisible`, `video all` and `video batch` do
@@ -246,7 +247,7 @@ outputs preserve channels and sample clock (Opus codes internally at 48 kHz and 
 discarded and saved-file decoder verification enforced after encoding. The spectral profile changes audible content and can fail.
 
 `--method auto` (default) tries spectral filtering then combined filtering and
-neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers (using Mid/Side stereo on 2-channel EnCodec passes), routes mono/stereo audio carrying ElevenLabs metadata to `dac` (or `encodec`/`combined` when `dac` is absent) and Google SynthID metadata exclusively to `dac`/`combined` (failing closed rather than falling back to `encodec` when `dac` is absent or multichannel) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
+neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers (using Mid/Side stereo on 2-channel EnCodec passes), routes mono, stereo, or tagged 5.1/7.1 audio carrying ElevenLabs metadata to `dac` (or `encodec`/`combined` when `dac` is absent) and Google SynthID metadata exclusively to `dac`/`combined` (failing closed rather than falling back to `encodec` when `dac` is absent or the layout is unsupported) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
 `--method spectral`, `encodec`, or `combined` fixes one profile. Neural profiles
 need `audio-codec`; a missing required fallback fails without replacing output.
 `--bandwidth` accepts `6`, `12`, or `24` kbps, default `24`, for neural profiles.
@@ -407,4 +408,5 @@ every frame, four aggregations, and stride-1 12-frame sliding windows, plus an
 sources, exit 1 reports failure or a forced still-match, and exit 0 can include
 explicitly unverified output. `--no-verify` requires `--force`; inspect
 `verified_removed` and before/after reports. These checks do not establish AI
-origin, unknown-message detection, provider compatibility, or complete erasure.
+origin, detection beyond the pinned public models, provider compatibility, or
+complete erasure.

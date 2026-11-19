@@ -316,16 +316,22 @@ from `auto` and enforces the saved-output decoder gate unless explicitly forced.
 `_internal/audio_dac.py` implements the separately selected experimental 44.1 kHz
 Descript Audio Codec profile (`descript/dac_44khz@c1bc521685adf9cfe247bc39a5ca58917eda1ac4`,
 MIT weights attributed in `licenses/dac/NOTICE.txt`) using built-in
-`transformers.DacModel` on CPU FP32 with SHA-256-verified configuration and
+`transformers.DacModel` in FP32 on the explicit vocoder device (CPU default;
+`mps` or `cuda` only when available, never a silent fallback; EnCodec takes the
+same device) with SHA-256-verified configuration and
 safetensors, fixed `n_quantizers=3`, rational half-open resampling around the
 44.1 kHz hop-512 grid, raw mid/side stereo decomposition (skipping silent Side
 stems below `1e-5` RMS), stem-level RMS restoration, and `0.999` peak ceiling.
 It preserves full `22.05 kHz` stereo bandwidth without adding lockfile packages,
 runs single-pass resynthesis up to 30 seconds and raised-cosine overlap-window
 streaming (`_stream_neural_track`, shared with `FocalCodec`) on longer audio,
-is selected by `adaptive_auto_profiles` only when pre-strip metadata identifies
-ElevenLabs or Google SynthID, and enforces the saved-output decoder gate unless
-explicitly forced.
+is selected by `adaptive_auto_profiles` only for a vendor cohort (explicit or from
+pre-strip metadata), and enforces the saved-output decoder gate unless
+explicitly forced. DAC and EnCodec also accept a tagged 5.1 or 7.1 layout:
+`_transform_surround_stems` runs the model on FL/FR, the center, and each
+surround pair as mid/side stems and only low-passes the LFE channel below
+120 Hz (`test_surround_5_1_stem_processing_preserves_channels_and_lowpasses_lfe`);
+BigVGAN, Mimi and FocalCodec stay mono/stereo.
 
 The default `auto` sequence is fixed by requested scheme: spectral then combined
 for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, combined for all. Inspection
@@ -384,10 +390,16 @@ log-Mel spectral distance in dB), and source hashing across audio and video.
 resolution (`resolve_audio_profiles`), separates `allow_unverified`,
 `allow_positive`, and `allow_quality_override` (`force=True` remains a final-attempt
 compatibility alias), populates `AudioProvenanceReport.recommended_recipe` (using
-shared `_internal/c2pa.markers_claim_ai`), routes `adaptive_auto_profiles` away from
-`spectral` onto `dac`/`encodec` when pre-strip metadata identifies ElevenLabs (or
-exclusively `dac`/`combined` for Google SynthID, failing closed rather than falling
-back to `encodec` when DAC is absent or multichannel), preserves pre-strip vendor
+shared `_internal/c2pa.markers_claim_ai`), routes `adaptive_auto_profiles` by an
+explicit `vendor` (`AUDIO_VENDORS`, validated by `normalize_audio_vendor`) or else
+the pre-strip metadata vendor: Google uses only `dac`/`combined` (just `dac`,
+failing closed rather than falling back to `encodec`, when DAC is absent or the
+layout is neither mono/stereo nor a tagged surround layout); ElevenLabs, Suno,
+Udio, OpenAI, Cartesia and Microsoft use `dac`/`encodec`/`combined`; Meta starts
+with `spectral` and Resemble with `dac` then `spectral`. An explicit vendor also
+asserts the mark is present, so it implies `allow_unverified`, the invisible stage
+of `remove_audio_all` / `remove_audio_batch`, and the audio-invisible stage of
+`remove_video_all` / `remove_video_batch`. It preserves pre-strip vendor
 metadata across intermediate `remove_video_all` container stages, and copies completely clean inputs byte-for-byte in
 `remove_audio_all`. `video_audio.py` processes
 one selected audio track into MKV/MOV with float PCM or MP4 with AAC (target
@@ -495,6 +507,11 @@ source-sized memory bound.
 Publication is atomic, and a malformed top-level walk is copied unchanged,
 although `strip_and_verify` refuses such a source before the stripper runs. A
 generic `AIGC` key whose value has no TC260 field is ignored.
+A top-level fragmented-MP4 `emsg` box whose first 256 payload bytes carry
+`urn:c2pa:` (or a JUMBF `c2pa` pair) is a C2PA segment-provenance message:
+`get_ai_metadata` reports it as `c2pa_manifest` and the stripper turns it into a
+same-size `free` box like the others
+(`test_fmp4_c2pa_emsg_detected_and_scrubbed_in_place`).
 
 The in-memory image path (AVIF, HEIF, JPEG-XL and unknown suffixes, through
 `strip_c2pa_boxes`) blanks the same top-level boxes to same-size `free` boxes.
@@ -528,8 +545,9 @@ The exception is Kling's encoder tag. Every Kling video in the tracked fixtures
 and local captures (Kling 2.6, 3.0, 3.0 Omni and O3, through Higgsfield, Runway
 and Kling itself) carries one H.264 `user_data_unregistered` SEI message, payload
 type 5, whose 25-byte payload is UUID `91ca6061-4aee-3854-8614-2d5f73f4ae2e`,
-`kling-ai` and a NUL. `get_ai_metadata` reports it as `kling_sei` from the head
-window, and `identify_video` names Kling from it when no TC260 label does, as on
+`kling-ai` and a NUL. `get_ai_metadata` reports it as `kling_sei` from the
+structural SEI scan below (the head-window byte match is only the fallback when
+no video sample table parses), and `identify_video` names Kling from it when no TC260 label does, as on
 `data/fixtures/visible/kling/provider-original.mp4`, which carries no other
 signal. `isobmff.scan_isobmff_video_sei` walks each video track's `stbl` sample
 table (`avc1`/`avc3` `avcC` and `hvc1`/`hev1` `hvcC` length-prefixed NAL units,
@@ -537,7 +555,7 @@ seeking past slice payloads) to parse H.264 (`nal_type == 6`) and HEVC
 (`nal_type in {39, 40}`) `SEI user_data_unregistered` (`payloadType == 5`)
 messages across the entire file without touching audio tracks or non-SEI video
 slices (falling back to a raw `mdat` scan only on bare synthetic or fragmented
-`moof` inputs without `stbl` sample tables). `strip_c2pa_file` overwrites those
+`moof` inputs without `stbl` sample tables). `strip_isobmff_media_file` overwrites those
 exact 24 bytes with spaces in place. The NAL length,
 SEI header and payload size stay, and a run of 0x20 cannot form an
 emulation-prevention sequence, so the message stays well-formed and no decoder
@@ -547,11 +565,25 @@ video `stbl` SEI NALs 2026-11-18). The QuickTime `©cmt` item in
 the Grok fixture (`Signature: <base64>`) also survives, because the xAI
 signature rule requires the UUID half of the pair and that half is absent here.
 
+The same structural walk also collects `ai_sei_spans`: a non-x264
+`user_data_unregistered` message whose UUID is `C2PA_UUID`, or whose body holds
+`urn:c2pa:`, a JUMBF `c2pa` box, or a TC260 `"Label"`/`"ContentProducer"` pair.
+`get_ai_metadata` reports them as `ai_sei`, and
+`strip_isobmff_media_file` overwrites each payload with spaces in place, mapped
+through emulation-prevention bytes and skipped when that mapping would change
+the span length (`test_h264_ai_sei_payload_scrubbed_in_place`).
+
 [`_internal/ebml.py`](../src/remove_ai_watermarks/_internal/ebml.py) provides the
 corresponding bounded Matroska/WebM reader. It seeks over clusters and accepts
 only a `Segment.Tags.Tag.SimpleTag` pairing `TagName=AIGC` with a JSON
 `TagString` carrying a TC260 field. The existing ffmpeg stream-copy path removes
 those container tags without transcoding the encoded streams.
+`c2pa_attachment_payloads` also reads `Attachments.AttachedFile` entries whose
+MIME type is `application/c2pa` or `application/x-c2pa-manifest-store` (each
+bounded by `_MAX_C2PA_ATTACHMENT_BYTES`); `get_ai_metadata` parses them as C2PA,
+and `_strip_with_ffmpeg` drops exactly those attachment streams by the ordinals
+`attachment_ordinals` returns, keeping other attachments and their tags
+(`test_mkv_c2pa_attachment_detected_and_stripped`).
 
 [`_internal/riff.py`](../src/remove_ai_watermarks/_internal/riff.py) and
 [`_internal/flv.py`](../src/remove_ai_watermarks/_internal/flv.py) implement the remaining
@@ -597,15 +629,26 @@ The mux also redirects diagnostics to disk and reports only a bounded head and
 tail. Command regressions assert the single-input encoder and final map targets;
 failure regressions cover bounded mux diagnostics and atomic cleanup.
 `probe_video_encode_profile` reads the first source video stream with ffprobe
-and preserves the supported properties that survive the 8-bit BGR boundary:
-`yuv420p`/`yuv422p`/`yuv444p` chroma sampling, recognized color tags, encoder
-time base, MP4/MOV track timescale, source pixel format, and component depth.
+and preserves the supported properties that survive the BGR boundary:
+`yuv420p`/`yuv422p`/`yuv444p` chroma sampling (plus their 10-bit forms in
+`HIGH_BIT_DEPTH_PIXEL_FORMATS`, with `p010le` and big-endian aliases normalized),
+recognized color tags including BT.2020, PQ and HLG, encoder time base, MP4/MOV
+track timescale, source pixel format, and component depth.
 Both raw-CFR and timestamped-NUT inputs use ffmpeg's passthrough FPS mode. This
 keeps one encoded frame per supplied frame when an older ffmpeg receives a
 fine-grained source encoder time base such as `1/90000`; implicit synchronization
 can otherwise synthesize thousands of duplicate frames between CFR timestamps.
-HDR transfer functions and component depths above 8 bits are rejected before
-encoding so the OpenCV boundary cannot silently reduce them to SDR 8-bit.
+A source in a `HIGH_BIT_DEPTH_PIXEL_FORMATS` format takes a 16-bit path on the
+visible and region-erase encoder: `video_decode` reads `bgr48le` frames from
+ffmpeg, the encoder is fed `bgr48le`, and `_video_codec_args` switches to
+`libx265` (`hvc1` tag in MP4/MOV/M4V, VP9 profile 2 in WebM) carrying the
+primaries, transfer and matrix tags into `-x265-params`; the stationary-matte
+precalibration is skipped on that path
+(`test_10bit_hdr_bt2020_pq_erase_preserves_depth_and_hdr_color_tags`). Any other
+depth above 8 bits or a PQ/HLG transfer (`_HDR_TRANSFERS`) is still rejected
+before encoding, and invisible video regeneration and the Seedance profile
+reject every source above 8 bits or with a PQ/HLG transfer, so no path silently
+reduces it to SDR 8-bit.
 `probe_video_timestamps` reads authoritative per-frame display PTS through
 ffprobe. The CSV reader consumes the first column and ignores appended SEI
 side-data columns; otherwise a valid first row such as `0.000000,` invalidates
@@ -620,8 +663,17 @@ and the corresponding copied-audio offset. No temporary frame sequence or
 second video encoder is introduced.
 
 [`video_temporal.py`](../src/remove_ai_watermarks/video_temporal.py) owns the
-shared optical-flow maps and temporal residual metric. Visible removal runs a
-bounded `+/- 4`-frame sliding donor window in `encode_clean_video`: before
+shared optical-flow maps and temporal residual metric. For a box anchored at
+`IoU >= 0.85` on at least 12 frames, `_precalibrate_stationary_mattes` samples
+up to 36 of them and `estimate_clip_alpha_matte` fits a per-pixel YCrCb alpha
+and composite color (`ClipAlphaMatte`); `unblend_ycbcr_roi` then inverts the
+translucent pixels algebraically and shrinks the mask to the opaque or
+uncalibrated core before any donor or fill step. Mattes need
+`temporal_consistency` and are skipped on the 16-bit path
+(`test_ycbcr_reverse_alpha_unblending_recovers_moving_textured_background`).
+Visible removal then runs a
+bounded `+/- 12`-frame sliding donor window in `encode_clean_video` (none on
+the 16-bit path, which also skips stabilization): before
 calling single-frame `fill()`, `recover_unobscured_background` fits a robust
 local affine motion field on the cycle-consistent unmasked context ring and
 warps genuine unobscured background pixels from nearby frames into the hole,
@@ -743,7 +795,9 @@ without MP4 codec rejection. `video.py` also exposes
 and `WAN21_MIN_CUDA_VRAM_BYTES = 16 GiB`) to `wan21-seedance-experimental` on BF16 CUDA
 (`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V or when the auto Wan budget is
 exceeded) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental` on BF16 CUDA
-(`synthid` fallback otherwise). Coverage in
+(`synthid` fallback otherwise). The invisible stage of `remove_video_all`
+accepts `_REGENERATED_VIDEO_EXTENSIONS` (MP4, MOV, M4V and `.mkv`); an MKV
+source never qualifies for Wan, so `auto` resolves it to `synthid`. Coverage in
 `tests/test_video_seedance.py` includes source-detail separation, quantization,
 VFR/nonzero-start/audio-tail preservation, and failure-before-publication.
 
@@ -801,7 +855,7 @@ even when a detector fails. Real FFV1 and complete marked-video regressions cove
 pixels, variable timestamps, source preservation, and copied audio.
 
 [`video_visible.py`](../src/remove_ai_watermarks/video_visible.py) implements
-the first pixel stages for Sora, Veo, Seedance, Doubao, Dola, Hailuo AI, Vidu, and Kling AI. The
+the first pixel stages for Sora, Veo, Dreamina, Seedance, Doubao, Dola, Hailuo AI, Vidu, Wan, and Kling AI. The
 Sora detector searches a normalized frame with fully synthetic
 mascot-and-text and mascot-only silhouettes at several scales. The mascot-only
 candidate must also correlate with the complete grayscale shape, including the
@@ -816,7 +870,11 @@ MINIMAX/Hailuo AI text, separator, and ring. Vidu uses two outlined capsules
 leaning into a V plus a font-rendered `Vidu AI`, sized from the measured 1080p
 mark (232 x 50 px); its floors (0.52 weak, 0.58 strong) sit between the one real
 clip (0.72 at 480-1080p, 0.60 at 360p) and the maximum over the 956 other local
-videos (0.41), measured 2026-09-24. Kling AI combines synthetic font
+videos (0.41), measured 2026-09-24. Dreamina uses a synthetic rounded-box italic
+`AI` silhouette searched in the top-left corner (floors 0.40 weak, 0.45 strong),
+and Wan reuses the image engine's synthetic `wan_alpha.png` logo-and-wordmark asset
+in the bottom-right corner (0.50 weak, 0.56 strong); both use box masks with
+12% padding. Kling AI combines synthetic font
 and capitalization variants with a ring approximation of its swirl. The Dola and
 Kling Hershey renders are frozen PNG assets drawn by OpenCV 4
 (`scripts/render_video_hershey_templates.py`): OpenCV 5 draws the same `putText`
@@ -824,7 +882,8 @@ call smaller and heavier, and with runtime rendering the Dola gallery clip was
 selected as Kling; the logo path rescues
 wordmarks whose version or font differs, while the edge and white-label gates
 reject recurring scene texture. All fixed-mark searches are bounded to the
-expected lower-frame area and calibrated independently. A strong relocated Veo
+mark's expected frame area (the lower frame for every mark except Dreamina's
+top-left badge) and calibrated independently. A strong relocated Veo
 diamond may bypass the known layout anchors, but weak free-corner matches never
 enter the temporal arbiter.
 
@@ -832,8 +891,9 @@ The default `auto` route decodes each frame once, shares its grayscale and
 normalized representations across all detectors, and caches resized synthetic
 template features for the fixed stream geometry. Provider confidence scales
 are not comparable: selection applies each provider's temporal arbiter and
-takes the first stable result in specificity order (`sora`, `veo`, `seedance`,
-`doubao`, `dola`, `hailuo`, `vidu`, `kling`). `vidu` precedes `kling` because the
+takes the first stable result in specificity order (`VIDEO_VISIBLE_MARKS`:
+`sora`, `veo`, `dreamina`, `seedance`, `doubao`, `dola`, `hailuo`, `vidu`, `wan`,
+`kling`). `vidu` precedes `kling` because the
 Kling detector also scores the Vidu wordmark. An explicit mark uses the same scan path with one
 candidate. Removal also collects authoritative per-frame timestamps for the
 encoder, while identification omits that unused ffprobe pass.
@@ -1247,9 +1307,8 @@ Key contracts:
   key that verifies proves integrity only and adds no signal. Both reserved
   fields preserve nested objects as JSON. Honor YOYO uses `PubSd`, RSA/SHA-256
   and `TBSData.Type=Content` with a null binding hash and no content selection;
-  Tencent Yuanbao writes a raw 64-byte hex SM2 `(r || s)` signature (decoded by
-  `parse_sm2_signature` alongside DER-encoded `SEQUENCE { INTEGER r, INTEGER s }`)
-  with `PubKey: ""` and `Cert: ""`. Both forms are recognized and reported as
+  Tencent Yuanbao writes a raw 64-byte hex SM2 `(r || s)` signature, the only
+  form `sm2.verify` accepts (no DER decoding), with `PubKey: ""` and `Cert: ""`. Both forms are recognized and reported as
   unsupported rather than failed, with no integrity or signer-trust claim.
   Only the producer slot is checked; Honor's repeated propagator slot adds no
   independent verification. Verifications
@@ -1815,7 +1874,7 @@ runtime loading across five `.npz` bundle schemas:
   L2-normalized `24-d` Sub-Center ArcFace embedding (`[15:39]`) plus `10`
   per-provider prototype cosine similarities (`[39:49]`), a `24x24`
   `SpatialPatchHead` (`top-12/48/144` graphics-masked synthetic means, LSE,
-  contrast, boundary TV, `non_gfx_fraction`, `photo_region_syn_logit`), and
+  contrast, boundary TV, `non_gfx_frac`, `photo_region_syn`), and
   `AIDE`-style smooth vs high-frequency patch pools (`[57:59]`,
   `VIT_OUT_DIM_V8 = 59`). Inside `classify_source()`, `_eval_v5_core_state` runs
   once per image, an anchored `106-d` `LayerNorm` + `SiLU` skip fusion head
@@ -2280,7 +2339,8 @@ across the 94 available neighboring real and synthetic image controls, while an
 adversarial solid corner blob reached 0.379, so its strict gate is 0.40. This is
 one-positive provisional calibration, intentionally separate from the older
 CJK detector rather than presented as broad recall evidence. Both layouts now
-project row-wide and column-wide structure out of the winning patch before a
+project row-wide and column-wide structure out of the winning patch (shared
+`_text_mark_engine.glyph_detail_ncc`) before a
 second correlation. This preserves glyph detail while rejecting ordinary panel
 and image boundaries that previously matched the Latin template.
 
@@ -2642,6 +2702,19 @@ Regression coverage:
 
 - [`test_region_eraser.py`](../tests/test_region_eraser.py)
 - [`test_inpaint_fallback.py`](../tests/test_inpaint_fallback.py)
+
+`_get_session` prefers `CUDAExecutionProvider` when onnxruntime offers it and
+falls back to a CPU-only session if creating the CUDA session raises.
+
+`video erase` is the user-directed video counterpart, through
+`video.remove_video_region`: each `x,y,w,h` box is clipped to the frame (a box
+wholly outside raises), an optional frame range limits the erased slice, and the
+frames go through the shared `encode_clean_video` with
+`allow_unmasked_donors=False`, so frames outside the slice are never copied back
+as temporal donors. With metadata stripping on, the result carries
+`remaining_metadata` from a post-write `get_ai_metadata`, and the text output
+exits `1` when it is non-empty
+(`test_video_erase_partial_frame_range_preserves_outside_frames`).
 
 ## Invisible watermark regeneration
 
@@ -4147,6 +4220,14 @@ container metadata. Inspection binds the input hash before and after decoding.
 Missing optional dependencies remain unverified; model, numerical, and demux
 failures propagate.
 
+`detect_video_watermark_presence` (`video message detect`) is the blind check
+without a reference: it averages the channel-0 presence probability over every
+frame and the sign stability of each message bit, reports `detected` at mean
+probability `>= 0.70` with consistency `>= 0.65` (`>= 0.85` probability alone
+below four frames), and then returns the majority-sign payload as `decoded_hex`.
+It covers only the pinned public models and says nothing about provider keys or
+SynthID (`test_blind_video_watermark_presence_cli_and_api`).
+
 `_internal/video_message_models.py` validates content-addressed assets before
 loading. PixelSeal strictly replaces only detector weights in the verified
 VideoSeal JIT graph, with `weights_only=True`; ChunkySeal verifies the archive
@@ -4161,8 +4242,10 @@ accumulator so a valid prefix cannot become a false whole-file negative.
 
 Removal tries a fixed codec/VAE sequence behind a saved-file verification gate,
 supports opt-in single-encode `temporal_stabilize`, and reports model-free
-`quality_passed` (`source_psnr_db >= 18.0`, `source_ssim >= 0.70`,
-`temporal_residual_ratio <= 4.0`).
+`quality_passed` from `_quality_passes`: `codec` needs `source_psnr_db >= 25.0`
+and `source_ssim >= 0.75`, `vae` needs `>= 18.0` and `>= 0.35`, and a lossless
+candidate (infinite PSNR) is judged on SSIM alone. A failing candidate moves to
+the next profile, and only `force` on the last profile keeps it.
 `_internal/video_message_regeneration.py` checks revision-pinned config and
 safetensors hashes, complete state loading, and latent scale before using the
 float32 graph. The legacy SynthID profile is separate. Processing accepts one

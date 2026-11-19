@@ -70,7 +70,7 @@ when an optional backend is absent.
 | `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all --invisible` for audio; `text metadata --remove` or `text all` for text | One output file, `<name>_clean` beside the source unless `output` is given |
 | `batch` | `batch --mode` for images, `video batch --mode` for video (`media: "video"`), or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
 | `audio_identify` | `audio identify --json`; `check_invisible: false` skips models | Nothing |
-| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `allow_unverified`, `allow_positive`, `allow_quality_override`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
+| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `vendor`, `allow_unverified`, `allow_positive`, `allow_quality_override`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
 | `video_message_identify` | `video message identify --json`, required `reference`, optional `scheme` | Nothing |
 | `video_message_remove` | `video message remove --json`, same reference and scheme, profile and verification options | MP4, MOV, or M4V, `<name>_message_processed.mp4` by default |
 | `video_audio` | `video audio --json`, with the same audio options plus `all_streams` | MKV/MOV with PCM or MP4 with AAC, `<name>_audio_processed.mkv` by default |
@@ -80,7 +80,7 @@ Audio tools ship since 0.63.0. `stream` is a nonnegative audio-track ordinal (`v
 or `"combined"`, and integer
 `bandwidth` (`6`, `12`, or `24`, default `24`) for the optional codec backend.
 `audio_invisible` requires `audio-detect` for default source-positive and
-saved-output-negative verification. `allow_unverified: true` (for example with `method: "dac"`, or alongside `verify: false`) permits unverified processing with the `audio` extra while keeping the audio SNR/RMS/window integrity gate active (`force: true` remains an alias enabling `allow_unverified`, `allow_positive`, and `allow_quality_override`). Audio tools require ffmpeg and
+saved-output-negative verification. A `vendor` other than `"auto"` (`google`, `elevenlabs`, `suno`, `udio`, `openai`, `cartesia`, `meta`, `resemble`, `microsoft`) names a known source cohort for stripped files, selects a vendor-matched profile sequence, and implies `allow_unverified`. `allow_unverified: true` (for example with `method: "dac"`, or alongside `verify: false`) permits unverified processing with the `audio` extra while keeping the audio SNR/RMS/window integrity gate active (`force: true` remains an alias enabling `allow_unverified`, `allow_positive`, and `allow_quality_override`). Audio tools require ffmpeg and
 ffprobe. `scheme: "audioseal"` (default), `"auto"` (scans installed non-experimental decoders `audioseal`, `wavmark`, `perth` without failing on missing optional extras), `"wavmark"`, `"perth"`, `"silentcipher"`, `"silentcipher16"`, or `"all"` selects
 compatible public-model checks. WavMark needs `audio-wavmark`, Perth v1 needs `audio-perth`, and both experimental SilentCipher receivers need
 `audio-silentcipher`; `all` needs every decoder extra. Auto tries spectral then combined for AudioSeal and Perth v1, neural then
@@ -98,13 +98,14 @@ FocalCodec continuous WavLM-to-Vocos backend from `audio-codec`, operating on an
 internal 16 kHz grid with symmetric `(40, 40)` WavLM boundary context, single-pass
 resynthesis up to 30 seconds, raised-cosine overlap-window streaming on longer
 audio, and the same saved-output gates. Explicit `method: "dac"` uses the
-separate CPU FP32 44.1 kHz 3-codebook DAC backend from `audio-codec` with raw
+separate FP32 44.1 kHz 3-codebook DAC backend from `audio-codec` with raw
 mid/side stereo, stem RMS preservation, and the same single-pass / overlap-window
-streaming path. Keep `vocoder_device: "cpu"`;
-bandwidth applies only to EnCodec. All three methods are experimental, have no
+streaming path. Keep `vocoder_device: "cpu"` for Mimi and FocalCodec; DAC,
+EnCodec, and `combined` also accept `"mps"` or `"cuda"`. Bandwidth applies only
+to EnCodec. All three methods are experimental, have no
 built-in provider verifier (`mimi` and `focalcodec` are excluded from `auto`;
 `dac` is selected by `auto` only when pre-strip metadata identifies ElevenLabs or
-Google SynthID), and are exposed by
+Google SynthID, or `vendor` names a cohort), and are exposed by
 legacy tools and the shared operation catalog.
 `silentcipher16` covers only a terminated eight-symbol pattern. Its
 readings label `framing="terminated8"`; `payload_symbols` are seven ternary
@@ -176,7 +177,9 @@ can only verify a release whose README carries that marker.
 published automatically; the workflow is described in
 [release and distribution](release-and-distribution.md#mcp-registry).
 
-The video-message tools require an independent 64-digit hexadecimal encoder message.
-They compare known targets under public VideoSeal/PixelSeal weights, without
-classifying AI origin or unknown marks. See the [CLI contract](cli.md#public-model-video-messages-experimental)
+The video-message tools require an independent hexadecimal encoder message: 64
+digits for VideoSeal and PixelSeal, 256 for ChunkySeal. They compare known targets
+under public VideoSeal/PixelSeal/ChunkySeal weights, without classifying AI origin
+or unknown marks. The blind presence check without a reference is available as
+`cli_video_message_detect`. See the [CLI contract](cli.md#public-model-video-messages-experimental)
 for fixed profiles, optional extras, timeline limits, quality reports, and force semantics.

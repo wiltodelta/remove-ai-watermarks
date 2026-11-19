@@ -89,7 +89,7 @@ certifies a production provider, other framing, or complete payload erasure.
 
 `audio invisible` defaults to `--method auto`, an adaptive minimal-distortion profile sequence for the
 requested scheme and pre-strip vendor metadata. AudioSeal and Perth v1 try spectral then combined processing; WavMark and both experimental SilentCipher receivers
-try neural then combined; when pre-strip C2PA/container metadata identifies ElevenLabs (`("dac", "encodec", "combined")` on mono/stereo when `dac` is installed, else `("encodec", "combined")`) or Google SynthID (`("dac", "combined")` on mono/stereo when `dac` is installed, else `("encodec", "combined")`), `--method auto` skips `spectral` and routes directly to neural codec resynthesis; when `--scheme auto` or `--scheme all` detects a specific subset of public schemes on the source, `--method auto` adapts to the lightest profile sequence covering only the positively detected schemes before falling back to `combined`. Publication requires
+try neural then combined; when pre-strip C2PA/container metadata identifies ElevenLabs (`("dac", "encodec", "combined")` on mono, stereo, or tagged 5.1/7.1 when `dac` is installed, else `("encodec", "combined")`) or Google SynthID (`("dac", "combined")` on the same layouts when `dac` is installed, else `dac` alone, which fails closed), `--method auto` skips `spectral` and routes directly to neural codec resynthesis; an explicit `--vendor` cohort (`google`, `elevenlabs`, `suno`, `udio`, `openai`, `cartesia`, `meta`, `resemble`, `microsoft`) selects the same kind of vendor-matched sequence when metadata was already stripped and authorizes processing without `--allow-unverified`; when `--scheme auto` or `--scheme all` detects a specific subset of public schemes on the source, `--method auto` adapts to the lightest profile sequence covering only the positively detected schemes before falling back to `combined`. Publication requires
 a positive compatible source check and proceeds only after the
 saved output is negative in whole-clip and window checks. A resistant or
 incompletely checked candidate raises an error and preserves an existing output.
@@ -105,13 +105,15 @@ See [audio coverage](audio-video-removal.md) for tested families and limits.
 
 `audio metadata` inspects (`--check`, default) or strips (`--remove`) AI creation tags and C2PA manifests on standalone audio files without altering PCM/compressed audio frames via stream-copy remuxing (`-o` / `--output` defaults to `<source>_clean<ext>`; `--keep-standard/--remove-all` controls non-AI tags; `--json` emits JSON).
 
-`audio all` provides the predictable single-file product contract (`<source>_clean<ext>` by default): it always strips verified AI metadata (`--keep-standard/--remove-all`) and, when `--invisible` is passed (`--no-invisible` is the default), runs compatible waveform watermark removal (`--scheme auto` by default, plus `--method`, `--bandwidth`, `--vocoder-device`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--stream`, `--json`). When `--invisible` finds no positive compatible watermark (and neither `--allow-unverified` nor `--force` is set) and the source carries no AI metadata, `audio all` copies the source file byte-for-byte rather than re-muxing container headers unnecessarily.
+`audio all` provides the predictable single-file product contract (`<source>_clean<ext>` by default): it always strips verified AI metadata (`--keep-standard/--remove-all`) and, when `--invisible` is passed (`--no-invisible` is the default), runs compatible waveform watermark removal (`--scheme auto` by default, plus `--method`, `--bandwidth`, `--vocoder-device`, `--vendor`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--stream`, `--json`). An explicit `--vendor` cohort implies the waveform stage even without `--invisible`. When `--invisible` finds no positive compatible watermark (and neither `--allow-unverified` nor `--force` is set) and the source carries no AI metadata, `audio all` copies the source file byte-for-byte rather than re-muxing container headers unnecessarily.
 
-`audio batch` processes every supported audio file in a top-level directory (`-o` / `--output-dir` defaults to `<dir>_clean`, `--mode [all|metadata]` defaults to `all`, with `--invisible/--no-invisible`, `--scheme`, `--method`, `--bandwidth`, `--vocoder-device`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--keep-standard/--remove-all`, and `--json`).
+`audio batch` processes every supported audio file in a top-level directory (`-o` / `--output-dir` defaults to `<dir>_clean`, `--mode [all|metadata]` defaults to `all`, with `--invisible/--no-invisible`, `--scheme`, `--method`, `--bandwidth`, `--vocoder-device`, `--vendor`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--keep-standard/--remove-all`, and `--json`).
 
 `--method spectral` fixes the spectral profile. `--method encodec` selects
 optional neural resynthesis. `--bandwidth` accepts
 `6`, `12`, or `24` kbps and defaults to `24`; it applies only to EnCodec.
+`--vocoder-device` (`cpu` default, `mps`, or `cuda`) applies to EnCodec,
+`combined`, BigVGAN, and DAC; spectral, Mimi, and FocalCodec require `cpu`.
 Lower bandwidth can change speech timbre or music substantially. On 2-channel stereo tracks, EnCodec resynthesizes in Mid/Side (`M/S`) space rather than independent L/R passes so stereo phantom-center phase coherence is preserved, while retaining native channels, rate, and sample-frame count using bounded context.
 It has the same source-positive and saved-output verification gate, and can
 fail even when a whole-clip reading is negative but a window remains positive.
@@ -155,18 +157,19 @@ passed complete paired WAV, PCM MOV, and AAC 192 kbps MP4 checks across `LONG03`
 lexical phrasing where Mimi regularized a word. None of BigVGAN, Mimi,
 FocalCodec, or DAC supplies a SynthID decoder or guarantees words, voice, music,
 or ambience fidelity on a new input.
-`--method dac` selects the separate experimental CPU FP32 44.1 kHz 3-codebook
+`--method dac` selects the separate experimental FP32 44.1 kHz 3-codebook
 Descript Audio Codec (`audio-codec` extra, pinned to
 `descript/dac_44khz@c1bc521685adf9cfe247bc39a5ca58917eda1ac4`, MIT weights in
-`licenses/dac/NOTICE.txt`). It runs single-pass resynthesis up to 30 seconds
-and raised-cosine overlap-window streaming on longer mono/stereo audio (`> 30 s`),
+`licenses/dac/NOTICE.txt`). It accepts mono, stereo, and tagged 5.1/7.1 layouts,
+and runs single-pass resynthesis up to 30 seconds
+and raised-cosine overlap-window streaming on longer audio (`> 30 s`),
 with raw mid/side stereo, stem RMS preservation, exact
 rational half-open clock (`44.1 kHz` internal grid, preserving up to `22.05 kHz`
-bandwidth), and bitexact WAV writer. EnCodec bandwidth and a non-CPU vocoder
-device do not apply; `auto` selects DAC only when pre-strip metadata identifies
-ElevenLabs (falling back to `encodec` / `combined` if DAC is absent or the stream
-exceeds stereo) or Google SynthID (failing closed rather than falling back to
-`encodec` if DAC is absent or the stream exceeds stereo). Long audio tracks (`> 30 s`) are verified across
+bandwidth), and bitexact WAV writer. EnCodec bandwidth does not apply;
+`--vocoder-device` accepts `cpu` (default), `mps`, or `cuda`. `auto` selects DAC only when pre-strip metadata identifies
+ElevenLabs (falling back to `encodec` / `combined` if DAC is absent or the
+layout is unsupported) or Google SynthID (failing closed rather than falling back to
+`encodec` if DAC is absent or the layout is unsupported), or when `--vendor` names a cohort. Long audio tracks (`> 30 s`) are verified across
 bounded `<= 30 s` whole-clip segments in addition to sliding windows, missing
 requested decoders emit actionable install hints, and JSON output includes
 `quality_passed`. Each method must pass
@@ -183,7 +186,7 @@ remove-ai-watermarks video audio input.mp4 -o processed.mp4 --all-streams --sche
 This command processes one selected audio track (`--stream N`, default `0`) or every watermarked audio track (`--all-streams`, optionally restricted to repeatable zero-based ordinals via `--target-stream N`) while copying encoded video and subtitle streams.
 It accepts `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--stream`, `--all-streams`, `--target-stream`, `--scheme`, `--json`, and
 `-o` / `--output` with the same verification and exit policy as `audio invisible`.
-It also accepts `--method`, `--bandwidth`, and `--vocoder-device` with the same audio backend rules.
+It also accepts `--method`, `--bandwidth`, `--vocoder-device`, and `--vendor` with the same audio backend rules.
 When `--all-streams` is passed, every audio track in the container is inspected sequentially; unmarked tracks are stream-copied unchanged while each positively detected track is cleaned and verified in the final mux.
 The default output is `SOURCE_audio_processed.mkv`. MKV and MOV store the selected audio as uncompressed float PCM and can substantially
 increase file size. An explicit `.mp4` output encodes only the selected track as
@@ -241,6 +244,11 @@ remove-ai-watermarks identify image.png --no-visible
 Despite the historical option name, `--no-visible` skips all pixel detectors,
 including visible marks, open DWT-DCT, and TrustMark. Metadata inspection still
 runs.
+
+`identify` also routes other media by file suffix: a video runs `video identify`
+(with `--audio --audio-scheme auto` unless `--no-visible` is passed), an audio
+file runs `audio identify --scheme auto` (`--no-visible` maps to
+`--no-invisible`), and a text file runs `text identify`.
 
 ## Classify source/export pipeline from pixels (opt-in)
 
@@ -360,8 +368,9 @@ remove-ai-watermarks erase image.png \
   -o clean.png
 ```
 
-`erase` accepts `cv2`, `migan`, and `lama`. The corresponding optional extra
-must be installed for a learned backend.
+`erase` accepts `cv2` (the default for images), `migan`, `lama`, and `auto`, which
+selects the best installed backend. The corresponding optional extra must be
+installed for a learned backend. A video input is routed to `video erase`.
 
 Two more knobs tune the fill. `--dilate N` (default 3) grows every box by `N`
 pixels before inpainting, which helps when a mark has a soft edge or a drop
@@ -727,8 +736,9 @@ attribution in `licenses/wan/NOTICE.txt`) with an FP32 tiled/sliced 3D
 `AutoencoderKLWan`, BF16 `WanVideoToVideoPipeline`, and `UniPCMultistepScheduler`
 (`flow_shift=3.0`, 20 steps, `guidance_scale=1.0`), using `strength=0.38` for
 `wan21-synthid-experimental` and `strength=0.12` for `wan21-seedance-experimental`.
-Both accept `--quality [delivery|master]`, `--seed`, and `--device [auto|cuda]`,
-while rejecting 2D VAE SynthID tuning options. Neither performs per-file oracle
+Both accept `--quality [delivery|master]`, `--seed`, and `--device [auto|cuda|mps]`
+(explicit `mps` runs the transformer in FP16 on Apple silicon; `auto` and
+`--profile auto` never select MPS), while rejecting 2D VAE SynthID tuning options. Neither performs per-file oracle
 verification.
 
 ## Remove a supported visible video mark
@@ -791,6 +801,12 @@ to 8-bit SDR. On CPU, MI-GAN is the practical learned tier. LaMa remains an
 explicit offline quality option because full-sequence inference is too slow and
 memory-heavy for an online worker.
 
+AI metadata is stripped from the encoded output by default. Use
+`--keep-metadata` to retain mapped container metadata. When no temporally stable
+mark is found, the command writes no output and exits with the no-visible-mark
+status. The final path is replaced atomically only after ffmpeg completes, so a
+failed encode does not overwrite an existing result.
+
 For user-specified rectangular overlays on owned video clips, use `video erase`
 (or pass a video file to top-level `erase`):
 
@@ -800,15 +816,10 @@ remove-ai-watermarks erase input.mp4 --region 24,24,180,56 --frames 0:120 --dila
 ```
 
 Pass one or more `--region x,y,w,h` boxes, optional inclusive `--frames START:END`
-to restrict erasing to a frame interval, `--dilate`, `--backend`,
+to restrict erasing to a frame interval, `--dilate`, `--backend` (default `auto`),
 `--strip-metadata` / `--keep-metadata`, `--temporal-consistency` /
-`--no-temporal-consistency`, and `--json`.
-
-AI metadata is stripped from the encoded output by default. Use
-`--keep-metadata` to retain mapped container metadata. When no temporally stable
-mark is found, the command writes no output and exits with the no-visible-mark
-status. The final path is replaced atomically only after ffmpeg completes, so a
-failed encode does not overwrite an existing result.
+`--no-temporal-consistency`, and `--json`. Top-level `erase` on a video always
+keeps temporal consistency enabled.
 
 ## Remove invisible watermarks
 
@@ -1031,6 +1042,14 @@ The command runs:
 3. AI metadata stripping.
 
 The visible options and diffusion options are also available on `all`.
+
+`all` also routes other media by file suffix, with fixed defaults: a video runs
+`video all` with audio inspection (pixel regeneration only with `--force` or an
+explicit `--vendor`), an audio file runs `audio all --invisible --scheme auto`,
+and a text file runs `text all` (regeneration only with `--force`). On these
+inputs `--vendor` also accepts the audio cohorts (`elevenlabs`, `suno`, `udio`,
+`cartesia`, `resemble`); an audio-only cohort on an image is a usage error. Use
+the media-specific commands for any other option.
 After the visible stage, `all` reports whether the once-filled result was
 validated as cleaned, still produced an overlapping residual (`Partial`), or
 could not be validated. These statuses do not trigger another fill and do not
@@ -1083,8 +1102,9 @@ and the batch does not retry them automatically.
 remove-ai-watermarks mcp
 ```
 
-Runs a Model Context Protocol server on stdin and stdout whose `identify`,
-`remove` and `batch` tools each run one command of this CLI. Client setup and
+Runs a Model Context Protocol server on stdin and stdout whose tools
+(`identify`, `remove`, `batch`, the audio and video-message tools, and one
+`cli_<command>` tool per CLI command) each run one command of this CLI. Client setup and
 the tool contract are in the [MCP server guide](mcp-server.md).
 
 ## Exit behavior
@@ -1104,7 +1124,14 @@ per-command contract is maintained in
 ```bash
 remove-ai-watermarks video message identify input.mp4 --scheme videoseal --reference "$ENCODER_MESSAGE_HEX" --json
 remove-ai-watermarks video message remove input.mp4 -o processed.mp4 --scheme pixelseal --reference "$ENCODER_MESSAGE_HEX" --json
+remove-ai-watermarks video message detect input.mp4 --scheme chunkyseal --json
 ```
+
+`video message detect` is a blind presence check that needs no reference. It
+combines the pinned public model's presence probability with cross-frame payload
+stability and reports `detected`, `not_detected`, or `unverified` (when
+`video-detect` is not installed), plus any recovered payload hex. It covers only
+the pinned public model family; proprietary keys and SynthID remain unverified.
 
 `--reference` must be the independently known encoder message: 64 hexadecimal
 digits (`256` bits) for `videoseal` and `pixelseal`, or 256 hexadecimal digits

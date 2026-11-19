@@ -1780,6 +1780,44 @@ class TestVideoBatchApi:
             remove_video_batch(tmp_path, tmp_path)
 
 
+class TestVideoEraseCli:
+    @pytest.mark.parametrize("as_json", [False, True])
+    def test_fails_when_ai_metadata_survives(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        as_json: bool,
+    ):
+        """JSON and text output must agree on failure when AI metadata survived."""
+        from remove_ai_watermarks import video
+        from remove_ai_watermarks.video import VideoEraseResult
+
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"video")
+        output = tmp_path / "clean.mp4"
+        monkeypatch.setattr(
+            video,
+            "remove_video_region",
+            lambda *_args, **_kwargs: VideoEraseResult(
+                source=source,
+                output=output,
+                regions=((0, 0, 8, 8),),
+                total_frames=3,
+                erased_frames=3,
+                frame_range=None,
+                backend="cv2",
+                remaining_metadata={"c2pa_manifest": "present"},
+            ),
+        )
+
+        args = ["video", "erase", str(source), "--region", "0,0,8,8", "-o", str(output)]
+        result = CliRunner().invoke(main, [*args, "--json"] if as_json else args)
+
+        assert result.exit_code == 1, result.output
+        if as_json:
+            assert json.loads(result.output)["remaining_metadata"] == {"c2pa_manifest": "present"}
+
+
 class TestVideoBatchCli:
     def test_help(self):
         result = CliRunner().invoke(main, ["video", "batch", "--help"])

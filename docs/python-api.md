@@ -598,7 +598,7 @@ selects an adaptive minimal-distortion processing sequence. By default it skips 
 positive source signal and publishes only a fully checked negative saved output.
 `AudioVerificationIncomplete` exposes `before` and `after` on rejection and
 preserves an existing output. `force=True` permits unverified or still-positive
-results. `verify=False` requires force. Outputs accept `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, and `.opus` (`libopus` 192 kbps); AI metadata is
+results. `verify=False` requires `force=True`, `allow_unverified=True`, or an explicit `vendor`. Outputs accept `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, and `.opus` (`libopus` 192 kbps); AI metadata is
 discarded. The source must stay unchanged during processing.
 
 `inspect_audio_metadata(source)` returns `AudioMetadataReport`, and `remove_audio_metadata(source, output=None, *, keep_standard=True)` strips AI creation tags and C2PA manifests without re-encoding audio frames (`AudioMetadataResult`). `remove_audio_all(source, output=None, *, include_invisible=False, scheme="auto", method="auto", ...)` returns `AudioAllResult`, always writing a metadata-cleaned output (`<source>_clean<ext>` by default) and optionally cleaning compatible waveform watermarks when `include_invisible=True`. `remove_audio_batch(input_dir, output_dir=None, *, mode="all", include_invisible=False, ...)` runs sequentially over a directory and returns `AudioBatchSummary` of `AudioBatchItem` rows.
@@ -623,15 +623,15 @@ bandwidths are defined in `_internal/audio_codec.py`. Install `audio-codec`
 for this optional CPU backend. Result `method` and `bandwidth_kbps` identify
 the applied profile. Neural resynthesis can alter speech timbre and music;
 it retains the same strict saved-file verification policy, and 2-channel EnCodec passes operate in Mid/Side (`M/S`) space to preserve stereo phantom-center coherence. Auto tries spectral
-then combined for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, routes ElevenLabs and Google SynthID metadata-identified mono/stereo audio to `dac` (falling back to `encodec`/`combined` when `dac` is absent) instead of `spectral`, and adapts to positively detected schemes under `scheme="auto"` or `"all"` before falling back to `combined`. A missing required neural fallback raises without publishing output.
+then combined for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, routes ElevenLabs and Google SynthID metadata-identified mono, stereo, or tagged 5.1/7.1 audio to `dac` (falling back to `encodec`/`combined` when `dac` is absent) instead of `spectral`, and adapts to positively detected schemes under `scheme="auto"` or `"all"` before falling back to `combined`. A missing required neural fallback raises without publishing output.
 
 Both functions also accept explicit `method="bigvgan"` with the `audio-vocoder`
 extra and `vocoder_device="cpu"`, `"mps"`, or `"cuda"`. This experimental pinned
 full-track mel-vocoder accepts mono/stereo tracks up to 30 seconds and 16 million
 sample values. It retains the native rational sample grid and uses raw mid/side
 for stereo, without normalization, extra clipping, chunking, or device fallback.
-The CPU default is required for other methods; a non-CPU `vocoder_device` with
-another method is rejected. EnCodec bandwidth does not apply. `auto` does not
+A non-CPU `vocoder_device` also applies to `dac`, `encodec`, `combined`, and
+`auto`; it is rejected with `spectral`, `mimi`, or `focalcodec`. EnCodec bandwidth does not apply. `auto` does not
 select BigVGAN. Local source/saved-output decoder gates remain mandatory unless
 explicitly forced; they cannot certify SynthID or transfer a provider verdict
 from another file. CUDA and short-signal perceptual quality remain unqualified.
@@ -672,7 +672,16 @@ half-open resampling around 44.1 kHz (preserving full 22.05 kHz bandwidth), and
 overlap-window streaming on tracks over 30 seconds. EnCodec bandwidth is
 ignored, and `auto` selects DAC automatically when pre-strip metadata or an
 explicit `vendor` cohort (`"suno"`, `"udio"`, `"elevenlabs"`, `"google"`, etc.)
-asserts a wideband AI audio generator.
+asserts a wideband AI audio generator. Tagged `5.1` / `7.1` tracks under
+`encodec` and `combined` use the same stem decomposition.
+
+`remove_audio_invisible`, `remove_audio_all`, `remove_audio_batch`,
+`remove_video_audio`, and `remove_video_audio_all_streams` accept `vendor`
+(`"auto"`, `"google"`, `"elevenlabs"`, `"suno"`, `"udio"`, `"openai"`,
+`"cartesia"`, `"meta"`, `"resemble"`, or `"microsoft"`); `remove_video_all` and
+`remove_video_batch` take it as `audio_vendor`. A named vendor (not `"auto"`)
+selects that cohort's `method="auto"` candidate order and, because naming it
+asserts the proprietary mark is present, implies `allow_unverified=True`.
 
 `remove_video_audio(source, output, stream=0, force=False, verify=True)` processes
 one selected audio track into MKV/MOV with float PCM, or MP4 with lossy AAC
@@ -739,6 +748,12 @@ if result.remaining_metadata:
 erased = raiw.remove_video_region("input.mp4", "erased.mp4", regions=[(20, 20, 140, 44)], frame_range=(0, 96))
 ```
 
+`remove_video_region(source, output=None, *, regions, frame_range=None, backend="cv2", dilate=3, strip_metadata=True, temporal_consistency=True)`
+fills the given `(x, y, w, h)` boxes on every frame, or only inside the
+inclusive `frame_range`, and returns `VideoEraseResult` with `regions`,
+`total_frames`, `erased_frames`, `frame_range`, the resolved `backend`, and
+`remaining_metadata`.
+
 The default removes one stable supported visible provider mark when present,
 always strips verified AI metadata, and copies the source file byte-for-byte
 when no visual, metadata, or audio signal requires rewriting. This gives callers
@@ -749,7 +764,7 @@ It does not run lossy invisible regeneration by default.
 with the default `invisible_profile="synthid"`, motion-compensated `temporal_stabilize=True`, and `invisible_fps=DEFAULT_VIDEO_SYNTHID_FPS` (pass `invisible_fps=None` to preserve native source frame rate). Select
 `invisible_profile="seedance-experimental"` for the experimental MP4 texture-transfer
 recipe, or `invisible_profile="wan21-synthid-experimental"` / `"wan21-seedance-experimental"`
-on NVIDIA CUDA GPUs for full native-resolution 3D `Wan 2.1` video diffusion, and
+on NVIDIA CUDA GPUs (or explicit Apple Silicon `device="mps"`) for full native-resolution 3D `Wan 2.1` video diffusion, and
 `invisible_quality="delivery"` (default) or `"master"` for their output encode.
 Pass `include_audio_invisible=True` (with `audio_scheme="auto"`, `audio_method="auto"`, `audio_allow_unverified=False`, `audio_allow_positive=False`, `audio_allow_quality_override=False`, `audio_streams=None`, or compatibility alias `audio_force=False`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline.
 These options also apply to `remove_video_batch(..., mode="all")`, where each `VideoBatchItem` also exposes `audio_verification_scope` and `audio_quality_passed`.
@@ -922,14 +937,15 @@ stage before the selected pixel stage. The CLI exposes the same choice through
 SynthID remains the default.
 
 On hosts with a hardware BF16-capable NVIDIA CUDA GPU (Ampere or newer; ROCm and
-emulated BF16 are excluded), `remove_video_wan_experimental`
+emulated BF16 are excluded), or with explicit `device="mps"` on Apple Silicon
+(FP16 transformer; `profile="auto"` never selects MPS), `remove_video_wan_experimental`
 (and `profile="auto"`, `"wan21-synthid-experimental"`, or
 `"wan21-seedance-experimental"` in `remove_video_invisible`, `remove_video_all`,
 and `remove_video_batch`) runs pinned Apache-2.0 3D `Wan 2.1`
 (`Wan-AI/Wan2.1-T2V-1.3B-Diffusers` at `0fad780a534b6463e45facd96134c9f345acfa5b`)
 at native resolution and exact frame timestamps on SDR 8-bit MP4, MOV, and M4V clips within
 `WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
-(`600 * 1280 * 720`, streaming clips exceeding `chunk_frames=193` across
+(`7200 * 1920 * 1080`, streaming clips exceeding `chunk_frames=193` across
 `overlap_frames=17` raised-cosine 3D causal windows directly to the encoder and
 pre-encoding `prompt_embeds` once so the T5 text encoder is freed before 3D
 denoising), returning

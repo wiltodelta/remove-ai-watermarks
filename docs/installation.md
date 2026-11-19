@@ -127,7 +127,8 @@ CPU FP32 codec with 32 default quantizers, explicit experimental
 `--method focalcodec`, a pinned CPU FP32 continuous 6-layer WavLM feature-to-Vocos
 resynthesizer (`lucadellalib/focalcodec_50hz` at revision
 `d6d6d9524e52155c85193c2c3b8da1cf8842f019`), and explicit experimental
-`--method dac`, a pinned CPU FP32 44.1 kHz 3-codebook Descript Audio Codec
+`--method dac`, a pinned FP32 44.1 kHz 3-codebook Descript Audio Codec (CPU by
+default; `--vocoder-device mps` or `cuda` also apply)
 (`descript/dac_44khz` at revision `c1bc521685adf9cfe247bc39a5ca58917eda1ac4`).
 Each downloads separate safetensors and configuration artifacts.
 [Mimi weights](https://huggingface.co/kyutai/mimi) are CC-BY-4.0 with
@@ -266,9 +267,9 @@ application actually uses:
 | `audio-wavmark` | Public WavMark checks | `audio`, WavMark | Yes |
 | `audio-perth` | Public Perth v1 checks | `audio`, validated Perth model modules | Yes |
 | `audio-silentcipher` | Experimental SilentCipher-44k and terminated 16k receivers | `audio`, Torch, librosa, Hugging Face Hub | Yes |
-| `audio-codec` | Pinned EnCodec and experimental Mimi / FocalCodec resynthesis | `audio`, Torch, Transformers, safetensors | Yes |
+| `audio-codec` | Pinned EnCodec and experimental Mimi / FocalCodec / DAC resynthesis | `audio`, Torch, Transformers, safetensors | Yes |
 | `audio-vocoder` | Experimental pinned full-track BigVGAN | `audio`, Torch, librosa, Hugging Face Hub | Yes |
-| `video-detect` | Public VideoSeal/PixelSeal known-message checks | `video`, Torch | Yes |
+| `video-detect` | Public VideoSeal/PixelSeal/ChunkySeal known-message and blind presence checks | `video`, Torch | Yes |
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV, FFmpeg/ffprobe bundle | No |
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |
 | `trustmark` | Adobe TrustMark detection | trustmark | Yes |
@@ -457,10 +458,11 @@ path and needs `video` and `diffusion`.
 
 ## Public-model video message checks
 
-`video-detect` adds Torch to the `video` stack for pinned public VideoSeal and
-PixelSeal known-message decoders. Checkpoint downloads are checked against
+`video-detect` adds Torch to the `video` stack for pinned public VideoSeal,
+PixelSeal, and ChunkySeal decoders. Checkpoint downloads are checked against
 packaged SHA-256 values before loading; the PixelSeal checkpoint uses
-`weights_only=True`. The decoder does not install the upstream training SDK.
+`weights_only=True`, and ChunkySeal loads a digest-pinned detector slice without
+unpickling. The decoder does not install the upstream training SDK.
 
 ```bash
 uv tool install --force "remove-ai-watermarks[video-detect]"
@@ -469,5 +471,6 @@ uv tool install --force "remove-ai-watermarks[video-detect,diffusion]"
 
 The first supports inspection and codec-only processing. The second adds the
 pinned float32 safetensors VAE. Processing needs ffmpeg and ffprobe. The caller
-must supply an independently known encoder message; these extras do not add a
-general AI-origin or unknown-message detector.
+must supply an independently known encoder message for `identify` and `remove`.
+`video message detect` is a blind presence check limited to the pinned public
+models; these extras do not add a general AI-origin detector.

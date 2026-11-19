@@ -2462,6 +2462,8 @@ def cmd_video_erase(
 
     if as_json:
         click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if result.remaining_metadata:
+            raise SystemExit(1)
         return
     if result.remaining_metadata:
         console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")

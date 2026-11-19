@@ -24,6 +24,8 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Watermark benchmark kernel](benchmark-kernel.md) | Reproducible local detection, removal-observation, and fidelity measurements. |
 | [Code provenance](code-provenance.md) | Required notices for licensed derivative work. |
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
+| [Audio and video watermark removal](audio-video-removal.md) | Implementation map, coverage evidence, and next requirements for audio and video removal. |
+| [Non-SynthID video coverage](non-synthid-video.md) | Evidence map separating video metadata declarations, open-model message decoding, and provider verification. |
 | [Real video and audio roadmap](media-removal-roadmap.md) | Ranked experiments, competitor and paper evidence, provider verifiers, and native product sample acquisition. |
 | [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, `wiltodelta/raiw-source-classify` Hub model, ComfyUI Registry, and the release workflow. |
 | [Agent skill](agent-skill.md) | Install and maintain the published Agent Skill, the Claude plugin and the Codex plugin. |
@@ -48,6 +50,10 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [SynthID identity research](synthid-robust-identity-research.md)
 - [SynthID identity follow-up](synthid-robust-identity-research-2026-06-08.md)
 - [Seedance video study](seedance-video-study.md) (local comparison runner and provider-evidence gates)
+- [Video and audio methods and competitors](media-removal-research.md) (evidence review behind the roadmap)
+- [Video and audio provider verifiers](media-provider-verifiers.md) (dated verifier matrix by check type)
+- [Real product sample corpus](media-sample-corpus.md) (provenance tiers for native product samples)
+- [Code and documentation audit](code-and-documentation-audit.md) (2026-09-08 review snapshot and repair status)
 - [Real video and audio evidence log](media-removal-evidence-log.md) (chronological audio and video oracle tranches and experiment cards)
 - [Video SynthID quality research](video-synthid-quality-research.md)
 - [OpenAI SynthID oracle ladders](synthid-oracle-ladders.md) (routing hub)

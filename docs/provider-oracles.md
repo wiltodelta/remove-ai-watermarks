@@ -28,9 +28,11 @@ through the installed CLI or public Python API.
 ## Surface priority
 
 The default selection order is API first, then Web. OpenAI therefore plans
-`openai-api` before `openai-web`, and Microsoft plans `microsoft-api` before
-`microsoft-web`. Google and Meta currently have no usable API adapter in this
-tooling, so each of their Web surfaces is primary. Google has two: `gemini-web`
+`openai-api` before `openai-web`, Microsoft plans `microsoft-api` before
+`microsoft-web`, and Cartesia plans `cartesia-api` before `cartesia-web`.
+ElevenLabs and Resemble have only an API surface. Google, Meta, and Kling
+currently have no usable API adapter in this tooling, so each of their Web
+surfaces is primary. Google has two: `gemini-web`
 and `synthid-web` at `https://synthid.com/`.
 
 Inspect the machine-readable order before preparing a batch:
@@ -42,8 +44,8 @@ uv run python scripts/provider_oracles.py plan google
 ```
 
 API-first is the default order. Run the API surface when this tooling has a
-usable route for the provider, media, and local configuration. Google and Meta
-have no API surface, so each of their Web oracles is primary. For Google that
+usable route for the provider, media, and local configuration. Google, Meta,
+and Kling have no API surface, so each of their Web oracles is primary. For Google that
 is `gemini-web`, then `synthid-web`. After a refusal, quota response, transport
 failure, or indeterminate verdict, record that result and continue with the next
 surface as its own acknowledged command, then the remaining configured account
@@ -318,8 +320,9 @@ remains, and report anything still open. Do not start a new login. Each
 submitted artifact stays frozen inside its own batch. Do not change candidate
 pixels during the continuation.
 
-Each `openai-api` slot must name exactly one `api_key_env`. Put the corresponding
-values in the gitignored local `.env`, never in the slot JSON:
+Each `openai-api`, `elevenlabs-api`, `cartesia-api`, and `resemble-api` slot
+must name exactly one `api_key_env`. Put the corresponding values in the
+gitignored local `.env`, never in the slot JSON:
 
 ```dotenv
 OPENAI_API_KEY_1=replace-with-first-key
@@ -333,7 +336,8 @@ process environment value overrides the matching `.env` entry. It never prints
 the value. One call reads only its selected slot. After authentication,
 entitlement, quota, or transport failure, continue with the next configured
 slot in a new call. The no-slot compatibility path reads
-`OPENAI_API_KEY`.
+`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `CARTESIA_API_KEY`, or
+`RESEMBLE_API_KEY` for the matching surface.
 
 Several Google accounts may share one real Chrome profile: give them distinct
 slot names and `google_account_index` values while keeping `browser_profile` the

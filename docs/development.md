@@ -84,6 +84,10 @@ The published extras and Dependabot configuration carry matching bounds:
   [Module internals, C2PA](module-internals.md#c2pa). Recheck both positive
   certificate acceptance and negative credential, signature, and asset-binding
   validation when upgrading the reader; retain every SDK validation status.
+  The reader stays below 0.39: c2pa-python 0.39.0 (c2pa-rs 0.92) reports the
+  committed fixtures' valid signatures as `unknown` and accepts a rejected
+  signer certificate, which fails the C2PA validation suite on every CI target.
+  Lift the bound only for a release that passes that suite unchanged.
 
 The OpenCV headless pin follows PaddleX's contrib build, and Dependabot excludes
 newer headless builds until that shared runtime can move together. The lock
@@ -108,14 +112,19 @@ reducing the supported Python range does not fix them.
 minor with default plus development dependencies and pytest-xdist, cross-platform coverage at the
 oldest and newest minors, and a separate Ubuntu job that activates the packaged
 offline FFmpeg/ffprobe pair on PATH to
-run the full-clip video test, experimental Seedance profile tests, and Seedance
-study integration tests. FFmpeg-dependent cases skip when those binaries are
+run the full-clip video test, the video fidelity probe, experimental Seedance
+profile and study integration tests, video audio and message tests, and the
+media removal benchmark tests. FFmpeg-dependent cases skip when those binaries are
 absent from the general matrix; pure study and profile tests remain active.
 Diffusion and model-running tests skip in that matrix; metadata, identification,
 visible removal, the DWT-DCT decoder, and the OpenCV eraser remain covered across
 operating systems. Each matrix job requires the offline video payload;
 `test_video_tools.py` then exercises real encoding, probing, audio muxing,
 Seedance delivery, and metadata stripping with an empty `PATH`.
+
+A `transport-contract-python-314` job installs only the runtime `pixels` and
+`heif` extras into a clean Python 3.14 environment and runs the versioned
+forensic-metadata, metadata-record, and pixel-evidence transport contract tests.
 
 A separate `security` job runs the `maintain.sh` lockfile scan, so an advisory
 without a released fix turns `main` red; see

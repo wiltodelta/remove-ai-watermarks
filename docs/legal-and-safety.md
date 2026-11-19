@@ -80,7 +80,7 @@ watermarks, `remove-ai-watermarks text` separates the two physical layers
   spans with an unwatermarked local model without claiming a per-file provider
   oracle verdict.
 
-The `erase` command is a generic region tool. Users are responsible for having
+The `erase` and `video erase` commands are generic region tools. Users are responsible for having
 the right to edit the selected content.
 
 ## What removal does not prove

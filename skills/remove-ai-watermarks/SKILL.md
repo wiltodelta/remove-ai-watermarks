@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Audio needs ffmpeg and ffprobe. The video extra bundles these tools on supported platforms. Installer may be uv, pipx, pip, or Homebrew.
 metadata:
   author: wiltodelta
-  version: "1.0.21"
+  version: "1.0.22"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -132,13 +132,13 @@ Default: inspect first.
 | --- | --- | --- |
 | What is on this file? | `identify`, `video identify`, or `text identify` | use `video identify --no-visible` when `pixel_stack=missing` |
 | Known visible AI label on an image | `visible` | |
-| User-supplied box on their own image | `erase` | |
+| User-supplied box on their own image or video | `erase` or `video erase` | video needs the `video` extra |
 | AI metadata only | `metadata`, `video metadata`, `audio metadata`, or `text metadata` | `audio metadata` requires ffmpeg and ffprobe |
 | Known visible AI label on video | `video visible` or `video all` | `video_visible=needs_video_extra`, `needs_ffmpeg`, or `unverified` |
 | Invisible image / image SynthID | `invisible` | `invisible_images=unavailable_no_cuda` |
 | Owned Seedance video, experimental opt-in | `video all --invisible --profile auto` (or explicit `--profile seedance-experimental` / `--profile wan21-seedance-experimental` on NVIDIA CUDA) | `video,diffusion` required; `wan21-*` also requires CUDA |
 | Video SynthID | `video invisible` or `video all --invisible --profile auto` (selects `--profile wan21-synthid-experimental` on BF16 NVIDIA CUDA for eligible `<= 1280x720` MP4/MOV/M4V clips with `>= 16 GiB` VRAM; add `--audio-invisible --audio-method dac --audio-allow-unverified` when SynthID audio also needs experimental 3-codebook DAC resynthesis while keeping the audio quality gate active) | `video_invisible=needs_video_and_diffusion_extras`, `needs_ffmpeg`, or `unverified` |
-| Public VideoSeal or PixelSeal with an independent encoder message | `video message identify` then `video message remove` | requires `video-detect`, plus `diffusion` for VAE; no unknown-message or AI-origin verdict |
+| Public VideoSeal, PixelSeal, or ChunkySeal with an independent encoder message | `video message identify` then `video message remove` (`video message detect` for a blind public-model presence check) | requires `video-detect`, plus `diffusion` for VAE; no AI-origin verdict |
 | Inspect audio | `audio identify` | use `--no-invisible` for metadata-only inspection; ffmpeg and ffprobe are required |
 | Compatible public AudioSeal, WavMark, Perth v1, or experimental SilentCipher audio patterns | `audio invisible` or `audio all --invisible` (`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`, or `silentcipher16`) | install `audio-detect`, `audio-wavmark`, `audio-perth`, or `audio-silentcipher` for verification; `audio_stack` only checks the CPU processor |
 | Everything on an audio file | `audio all` (add `--invisible` for compatible waveform watermarks) | needs ffmpeg and ffprobe; add decoder extras for `--invisible` |
@@ -196,11 +196,12 @@ Explicit `--method mimi` uses the separate experimental CPU FP32 Mimi codec
 with fixed 32 quantizers and the `audio-codec` extra. Explicit
 `--method focalcodec` uses the separate experimental CPU FP32 FocalCodec 50 Hz
 conditioned continuous-feature profile (`audio-codec` extra, Apache-2.0 weights).
-Explicit `--method dac` uses the separate experimental CPU FP32 44.1 kHz DAC
-3-codebook codec (`audio-codec` extra, MIT weights). All three share the bounded
-full-track raw mid/side route and saved-output gates (`mimi` and `focalcodec` are
-excluded from `auto`; `dac` is selected by `auto` only when pre-strip metadata
-identifies ElevenLabs or Google SynthID), and none checks SynthID. Native-rate output does not restore frequencies beyond internal
+Explicit `--method dac` uses the separate experimental FP32 44.1 kHz DAC
+3-codebook codec (`audio-codec` extra, MIT weights; CPU by default, `mps` or
+`cuda` via `--vocoder-device`). All three share the raw mid/side route and
+saved-output gates (`mimi` and `focalcodec` are excluded from `auto`; `dac` is
+selected by `auto` only when pre-strip metadata identifies ElevenLabs or Google
+SynthID, or `--vendor` names a cohort), and none checks SynthID. Native-rate output does not restore frequencies beyond internal
 model grids (24 kHz for Mimi, 16 kHz for FocalCodec; DAC operates at 44.1 kHz).
 Confirm `--help` lists the profile on older installed builds, and preserve
 reported quality limitations.
@@ -341,7 +342,8 @@ Output:
 - Scrape or guess a region for a third-party commercial mark.
 - Claim a file is human-made after a local edit.
 
-For `video message`, require an independently supplied 64-digit hexadecimal
-encoder message. Never derive the reference by decoding the tested input. Read
+For `video message identify` and `remove`, require an independently supplied
+hexadecimal encoder message (64 digits for VideoSeal and PixelSeal, 256 for
+ChunkySeal). Never derive the reference by decoding the tested input. Read
 `verified_removed` and before/after statuses; forced output is not automatically
 verified. See [the command contract](references/commands.md#public-video-model-messages).

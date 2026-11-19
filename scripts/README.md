@@ -16,9 +16,11 @@ explicitly names a tracked canonical result.
 | `invisible_quality_audit.py` | Pair originals and invisible-removal outputs for quality review. |
 | `metadata_removal_audit.py` | Check metadata detection/removal parity over a corpus. |
 | `pill_gate_audit.py` | Measure the Jimeng pill detector on the product path. |
+| `media_removal_benchmark.py` | Run the public audio and video removal pipelines over clean controls and marked inputs, binding source and delivered digests to detector verdicts and delivered quality; `--external-outputs-dir` scores other tools' outputs on the same gates. |
+| `provider_oracle_audio_apis.py` | Implement the direct ElevenLabs, Cartesia, and Resemble watermark-detection API adapters for the unified provider-oracle runner. |
 | `provider_oracle_web.py` | Implement isolated Playwright submissions for the unified provider-oracle runner. |
 | `provider_oracle_microsoft.py` | Call Microsoft's Content Provenance API with hash-bound public media and Azure CLI authentication. |
-| `provider_oracles.py` | Plan API-first and drive hash-bound Google, OpenAI, Microsoft, and Meta oracle checks. |
+| `provider_oracles.py` | Plan API-first and drive hash-bound Google, OpenAI, Microsoft, Meta, ElevenLabs, Cartesia, Resemble, and Kling oracle checks. |
 | `real_examples_e2e.py` | Run end-to-end confidence checks over local examples. |
 | `record_parity_audit.py` | Compare record-based and file-based identification. |
 | `resource_ceilings.py` | Measure peak RSS and runtime for fill backends. |

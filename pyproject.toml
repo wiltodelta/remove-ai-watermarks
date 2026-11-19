@@ -4,7 +4,7 @@
 # on it, including the ComfyUI node package. The console script below carries
 # the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.63.0"
+version = "0.64.0"
 description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -60,7 +60,9 @@ dependencies = [
     # synthetic/partial blobs the validator rejects. Binary wheel (Rust), but the
     # import is light (no torch/numpy) so it fits the dependency-light identify
     # host. Prebuilt wheels cover the full CI matrix (linux/macos/windows).
-    "c2pa-python>=0.38.0",
+    # 0.39.0 (c2pa-rs 0.92) reports valid signatures as unknown and accepts a
+    # rejected signer, so stay on 0.38 until a release passes the C2PA suite.
+    "c2pa-python>=0.38.0,<0.39",
 ]
 
 [project.optional-dependencies]
@@ -110,7 +112,7 @@ audio = [
 # separate from proprietary provider audio-watermark verification.
 audio-detect = [
     "remove-ai-watermarks[audio]",
-    "audioseal==0.2.0",
+    "audioseal==0.2.1",
     "huggingface-hub>=0.20.0,<2",
 ]
 # Compatible public WavMark decoding, separate from production provider claims.

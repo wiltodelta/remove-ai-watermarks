@@ -22,11 +22,15 @@ data/
     manifest.csv  Provenance and verification record for each original
     full-pipeline-quality.csv
                   Reusable full-pipeline evaluation selection
+  contentseal/    Meta Content Seal oracle originals and manifest (see its README)
   evaluations/
     engine-selection/
                   Prompt-matched, publication-cleared AI content matrix for
                   deterministic auto-engine and watermark benchmark research
     fidelity/     Evaluation instructions and hand-verified ground truth
+    skill/        Agent Skill evaluation cases
+    text-watermark/
+                  Text-watermark benchmark catalog and fidelity cases
     audio-synthid-oracle.csv
                   Reproducible Gemini SynthID audio verdicts for DAC / FocalCodec
     video-synthid-oracle.csv
