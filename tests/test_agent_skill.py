@@ -634,12 +634,20 @@ def test_documented_vendor_cohorts_match_the_cli() -> None:
     invisible to them. Meta Muse Image carries no provenance at all, so that flag is
     the only route to cleaning one.
     """
-    documented = _documented(COMMANDS.read_text(encoding="utf-8"), "Vendor cohorts:")
+    text = COMMANDS.read_text(encoding="utf-8")
+    documented = _documented(text, "Vendor cohorts:")
+    documented_audio = _documented(text, "Audio vendor cohorts:")
     commands = _cli_commands()
 
     assert documented == _choices(commands[("invisible",)], "--vendor")
-    for path in (("all",), ("batch",)):
-        assert _choices(commands[path], "--vendor") == documented, f"{path[0]} disagrees with invisible"
+    assert _choices(commands[("batch",)], "--vendor") == documented
+    assert _choices(commands[("all",)], "--vendor") == documented | documented_audio
+    for path in (("audio", "invisible"), ("audio", "all"), ("audio", "batch"), ("video", "audio")):
+        assert _choices(commands[path], "--vendor") == documented_audio, f"{path} disagrees with audio vendor cohorts"
+    for path in (("video", "all"), ("video", "batch")):
+        assert _choices(commands[path], "--audio-vendor") == documented_audio, (
+            f"{path} disagrees with audio vendor cohorts"
+        )
 
 
 def test_documented_pipeline_profiles_match_the_cli() -> None:

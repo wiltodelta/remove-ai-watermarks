@@ -74,13 +74,13 @@ class TestVideoGallery:
         missing = [key for key in VIDEO_VISIBLE_MARKS if not (_GALLERY / key / "example.mp4").is_file()]
         assert missing == [], f"video mark without an example: {missing}; run scripts/render_visible_examples.py"
 
-    def test_selection_accepts_each_example(self) -> None:
+    @pytest.mark.parametrize("key", VIDEO_VISIBLE_MARKS)
+    def test_selection_accepts_each_example(self, key: str) -> None:
         # The shipped temporal selection (not just the per-frame detector) must
         # accept the clip, including the mascot-only Sora example and the
         # generated Veo text variant.
-        for key in VIDEO_VISIBLE_MARKS:
-            rep = identify_video(_GALLERY / key / "example.mp4", check_visible=True)
-            assert rep.visible_mark == key, f"{key}: selection returned {rep.visible_mark!r}"
+        rep = identify_video(_GALLERY / key / "example.mp4", check_visible=True)
+        assert rep.visible_mark == key, f"{key}: selection returned {rep.visible_mark!r}"
 
     @pytest.mark.parametrize("key", sorted(_VIDEO_PROVIDER_ORIGINALS))
     def test_selection_accepts_provider_original(self, key: str) -> None:

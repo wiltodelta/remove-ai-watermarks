@@ -670,10 +670,14 @@ Prefer `--audio-allow-unverified` over `--audio-force` when processing a
 public-decoder-negative track: `--audio-allow-unverified` keeps the saved-file
 SNR, RMS, and 1-second active-window integrity gate active, whereas
 `--audio-force` also enables `--audio-allow-positive` and
-`--audio-allow-quality-override`. Always pass an explicit `--audio-method`
-because `--audio-method auto` without a positive public decoder runs `spectral`
-only. Current `dac` provider-oracle evidence covers short single-pass clips
-(`<= 10 s`); `focalcodec` failed on a held-out 10 s native Gemini audio output.
+`--audio-allow-quality-override`. When provenance metadata was already stripped
+and you know the AI generator cohort (`google`, `elevenlabs`, `suno`, `udio`,
+`openai`, `cartesia`, `meta`, `resemble`, `microsoft`), pass `--audio-vendor` on
+`video all` or `video batch` (or `--vendor` on `audio invisible`, `audio all`,
+`audio batch`, `video audio`, and multimodal `all`) to select `dac` and run the
+audio scrub without needing `--audio-allow-unverified`. Current `dac`
+provider-oracle evidence covers short single-pass clips (`<= 10 s`);
+`focalcodec` failed on a held-out 10 s native Gemini audio output.
 
 ## Apply the experimental Seedance profile
 
@@ -750,9 +754,9 @@ must also remain anchored instead of drifting with a scene object. Matching
 provider provenance may relax the visual score only for registered
 provenance-aware marks; metadata alone never creates a detection.
 
-`--mark auto` is the default. It evaluates all providers in one decode pass and
-selects the first stable match in specificity order: Sora, Veo, Seedance,
-Doubao, Dola, Hailuo AI, then Kling AI. Their confidence scores are independently calibrated and
+`--mark auto` is the default. It evaluates all ten providers in one decode pass and
+selects the first stable match in specificity order: Sora, Veo, Dreamina, Seedance,
+Doubao, Dola, Hailuo AI, Vidu, Wan, then Kling AI. Their confidence scores are independently calibrated and
 are not compared across providers. Valid Google AI-video provenance resolves a
 stable Sora/Veo match in favor of Veo when their regions overlap or Veo spans
 the full clip while Sora does not; it does not create a visual detection.
@@ -779,12 +783,26 @@ and blends only the safely covered pixels. Scene cuts, disjoint moving marks,
 or a poor motion match keep the independent current-frame fill. Use
 `--no-temporal-consistency` for an exact frame-local baseline.
 
-The pixel path is intentionally limited to SDR 8-bit video. A high-bit-depth,
-PQ, or HLG source is rejected before ffmpeg starts, preserving any existing
-output instead of silently downconverting it through OpenCV's 8-bit boundary.
-On CPU, MI-GAN is the practical learned tier. LaMa remains an explicit offline
-quality option because full-sequence inference is too slow and memory-heavy
-for an online worker.
+Supported 8-bit SDR and 10-bit HDR (`yuv420p10le`, `yuv422p10le`, `yuv444p10le`,
+`bt2020nc`, `smpte2084`, `arib-std-b67`) sources preserve their native bit depth
+and color transfer tags through a 16-bit `bgr48le` pipe; unsupported pixel
+formats still fail closed before ffmpeg starts instead of silently downconverting
+to 8-bit SDR. On CPU, MI-GAN is the practical learned tier. LaMa remains an
+explicit offline quality option because full-sequence inference is too slow and
+memory-heavy for an online worker.
+
+For user-specified rectangular overlays on owned video clips, use `video erase`
+(or pass a video file to top-level `erase`):
+
+```bash
+remove-ai-watermarks video erase input.mp4 --region 24,24,180,56 --frames 0:120 -o clean.mp4
+remove-ai-watermarks erase input.mp4 --region 24,24,180,56 --frames 0:120 --dilate 5 --backend auto --json
+```
+
+Pass one or more `--region x,y,w,h` boxes, optional inclusive `--frames START:END`
+to restrict erasing to a frame interval, `--dilate`, `--backend`,
+`--strip-metadata` / `--keep-metadata`, `--temporal-consistency` /
+`--no-temporal-consistency`, and `--json`.
 
 AI metadata is stripped from the encoded output by default. Use
 `--keep-metadata` to retain mapped container metadata. When no temporally stable
@@ -1088,10 +1106,11 @@ remove-ai-watermarks video message identify input.mp4 --scheme videoseal --refer
 remove-ai-watermarks video message remove input.mp4 -o processed.mp4 --scheme pixelseal --reference "$ENCODER_MESSAGE_HEX" --json
 ```
 
-`--reference` must be the independently known 256-bit encoder message, exactly
-64 hexadecimal digits. Deriving it by decoding the tested file makes the source
-check circular. These explicit commands compare a known target under pinned
-public VideoSeal or PixelSeal weights. They do not identify AI origin, arbitrary
+`--reference` must be the independently known encoder message: 64 hexadecimal
+digits (`256` bits) for `videoseal` and `pixelseal`, or 256 hexadecimal digits
+(`1024` bits) for `chunkyseal`. Deriving it by decoding the tested file makes the
+source check circular. These explicit commands compare a known target under
+pinned public VideoSeal, PixelSeal, or ChunkySeal weights. They do not identify AI origin, arbitrary
 unknown messages, proprietary deployments, or complete information erasure.
 The generic `identify`, `all`, and SynthID routes do not run these checks.
 

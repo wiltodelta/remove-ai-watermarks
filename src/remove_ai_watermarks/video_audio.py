@@ -257,6 +257,7 @@ def remove_video_audio(
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
+    vendor: audio.AudioVendor | None = None,
     _before: audio.AudioProvenanceReport | None = None,
     _metadata_markers: dict[str, str] | None = None,
 ) -> VideoAudioRemovalResult:
@@ -271,9 +272,9 @@ def remove_video_audio(
     Packet durations may differ by one source or output time-base tick.
     """
     source, output = Path(source).expanduser().resolve(), Path(output).expanduser()
-    if output.suffix.lower() not in {".mkv", ".mov", ".mp4"}:
-        raise ValueError("Audio-only video output must be MKV, MOV, or MP4")
-    lossy = output.suffix.lower() == ".mp4"
+    if output.suffix.lower() not in {".mkv", ".mov", ".mp4", ".m4v"}:
+        raise ValueError("Audio-only video output must be MKV, MOV, MP4, or M4V")
+    lossy = output.suffix.lower() in {".mp4", ".m4v"}
     caveats = (
         *_CAVEATS,
         "The selected track uses lossy AAC with a target bitrate of 192 kbps; "
@@ -289,6 +290,8 @@ def remove_video_audio(
     info = audio_io.probe_audio(source, stream=stream)
     selected = next(s for s in streams if s["index"] == info.index)
     start, count = _timeline(source, info.index, info.sample_rate, Fraction(selected["time_base"]))
+    explicit_vendor = audio.normalize_audio_vendor(vendor)
+    eff_allow_unverified = allow_unverified or explicit_vendor is not None
     profiles = audio.resolve_audio_profiles(
         method=method,
         scheme=scheme,
@@ -296,7 +299,8 @@ def remove_video_audio(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
-        allow_unverified=allow_unverified,
+        allow_unverified=eff_allow_unverified,
+        vendor=vendor,
     )
     before = (
         _before
@@ -306,8 +310,8 @@ def remove_video_audio(
     if _metadata_markers and not before.metadata_markers:
         before = replace(before, metadata_markers=dict(_metadata_markers))
     if method == "auto":
-        profiles = audio.adaptive_auto_profiles(scheme, before)
-    eff_unverified = force or allow_unverified
+        profiles = audio.adaptive_auto_profiles(scheme, before, vendor=explicit_vendor)
+    eff_unverified = force or eff_allow_unverified
     if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
         first = profiles[0]
         return VideoAudioRemovalResult(
@@ -320,7 +324,9 @@ def remove_video_audio(
             True,
             method=first,
             bandwidth_kbps=bandwidth_kbps if first in {"encodec", "combined"} else None,
-            vocoder_device=vocoder_device if first in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
+            vocoder_device=vocoder_device
+            if first in {"bigvgan", "mimi", "focalcodec", "dac", "encodec", "combined"}
+            else None,
             caveats=caveats,
         )
     if (
@@ -334,7 +340,7 @@ def remove_video_audio(
         for attempt, profile in enumerate(profiles):
             is_last = attempt == len(profiles) - 1
             attempt_force = force and is_last
-            attempt_unverified = (force or allow_unverified) and is_last
+            attempt_unverified = (force or eff_allow_unverified) and is_last
             attempt_positive = (force or allow_positive) and is_last
             attempt_quality = (force or allow_quality_override) and is_last
             candidate = Path(tmp) / f"processed-{attempt}.wav"
@@ -351,7 +357,7 @@ def remove_video_audio(
                     _before=before,
                     _skip_post_verify=True,
                     vocoder_device=vocoder_device,
-                    allow_unverified=allow_unverified and is_last,
+                    allow_unverified=eff_allow_unverified and is_last,
                     allow_positive=allow_positive and is_last,
                     allow_quality_override=allow_quality_override and is_last,
                 )
@@ -490,12 +496,15 @@ def preflight_video_audio_workload(
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
+    vendor: audio.AudioVendor | None = None,
     streams: Sequence[int] | None = None,
     _metadata_markers: dict[str, str] | None = None,
 ) -> tuple[audio.AudioProvenanceReport, ...]:
     """Validate audio dependencies, layout, and bounded-track limits before visual processing."""
     _ = allow_quality_override
     source_path = Path(source).expanduser().resolve()
+    explicit_vendor = audio.normalize_audio_vendor(vendor)
+    eff_allow_unverified = allow_unverified or explicit_vendor is not None
     audio.validate_audio_arguments(
         method=method,
         scheme=scheme,
@@ -503,7 +512,8 @@ def preflight_video_audio_workload(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
-        allow_unverified=allow_unverified,
+        allow_unverified=eff_allow_unverified,
+        vendor=vendor,
     )
     container_streams = stream_inventory(source_path)
     if [s["index"] for s in container_streams] != list(range(len(container_streams))):
@@ -519,13 +529,14 @@ def preflight_video_audio_workload(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
-        allow_unverified=allow_unverified,
+        allow_unverified=eff_allow_unverified,
+        vendor=vendor,
     )
     if method != "auto":
         audio.require_audio_profile_runtime(method)
     if not any("sample_rate" in s and "channels" in s for s in audio_streams):
         return ()
-    eff_unverified = force or allow_unverified
+    eff_unverified = force or eff_allow_unverified
     selected_set = set(selected_ordinals)
     inspected: list[audio.AudioProvenanceReport] = []
     cached_markers: dict[str, str] | None = dict(_metadata_markers) if _metadata_markers is not None else None
@@ -541,7 +552,11 @@ def preflight_video_audio_workload(
         for ordinal in selected_ordinals:
             info = _preflight_stream_info(source_path, audio_streams, ordinal)
             synth_rep = audio.AudioProvenanceReport(source_path, "", info, markers, "unverified", (), ())
-            target_profile = audio.adaptive_auto_profiles(scheme, synth_rep)[0] if method == "auto" else method
+            target_profile = (
+                audio.adaptive_auto_profiles(scheme, synth_rep, vendor=explicit_vendor)[0]
+                if method == "auto"
+                else method
+            )
             audio.require_audio_profile_runtime(target_profile)
             audio.validate_audio_stream_for_profile(info, target_profile)
         return ()
@@ -562,7 +577,11 @@ def preflight_video_audio_workload(
                 synth_rep = audio.AudioProvenanceReport(
                     source_path, "", info, _preflight_markers(), "unverified", (), ()
                 )
-                fallback_profile = audio.adaptive_auto_profiles(scheme, synth_rep)[0] if method == "auto" else method
+                fallback_profile = (
+                    audio.adaptive_auto_profiles(scheme, synth_rep, vendor=explicit_vendor)[0]
+                    if method == "auto"
+                    else method
+                )
                 audio.require_audio_profile_runtime(fallback_profile)
                 audio.validate_audio_stream_for_profile(info, fallback_profile)
                 continue
@@ -571,7 +590,7 @@ def preflight_video_audio_workload(
             continue
         if not (eff_unverified or allow_positive) and rep.watermark_status != "detected":
             continue
-        selected = audio.adaptive_auto_profiles(scheme, rep)[0] if method == "auto" else method
+        selected = audio.adaptive_auto_profiles(scheme, rep, vendor=explicit_vendor)[0] if method == "auto" else method
         audio.require_audio_profile_runtime(selected)
         audio.validate_audio_stream_for_profile(rep.stream, selected)
     return tuple(inspected) if len(inspected) == len(audio_streams) else ()
@@ -613,16 +632,19 @@ def remove_video_audio_all_streams(
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
+    vendor: audio.AudioVendor | None = None,
     streams: Sequence[int] | None = None,
     _befores: Sequence[audio.AudioProvenanceReport] | None = None,
     _metadata_markers: dict[str, str] | None = None,
 ) -> VideoAudioMultiStreamResult:
     """Inspect and clean every watermarked audio track while preserving video and clean tracks."""
     source_path, output_path = Path(source).expanduser().resolve(), Path(output).expanduser()
-    if output_path.suffix.lower() not in {".mkv", ".mov", ".mp4"}:
-        raise ValueError("Audio-only video output must be MKV, MOV, or MP4")
+    if output_path.suffix.lower() not in {".mkv", ".mov", ".mp4", ".m4v"}:
+        raise ValueError("Audio-only video output must be MKV, MOV, MP4, or M4V")
     if output_path.resolve() == source_path or (output_path.exists() and output_path.samefile(source_path)):
         raise ValueError("Video output must differ from the source")
+    explicit_vendor = audio.normalize_audio_vendor(vendor)
+    eff_allow_unverified = allow_unverified or explicit_vendor is not None
     profiles = audio.resolve_audio_profiles(
         method=method,
         scheme=scheme,
@@ -630,7 +652,8 @@ def remove_video_audio_all_streams(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
-        allow_unverified=allow_unverified,
+        allow_unverified=eff_allow_unverified,
+        vendor=vendor,
     )
     container_streams = _streams(source_path)
     if [s["index"] for s in container_streams] != list(range(len(container_streams))):
@@ -639,7 +662,7 @@ def remove_video_audio_all_streams(
     if not audio_global_indices:
         raise ValueError("Source has no audio stream")
     selected_set = set(_resolve_selected_ordinals(streams, len(audio_global_indices)))
-    lossy = output_path.suffix.lower() == ".mp4"
+    lossy = output_path.suffix.lower() in {".mp4", ".m4v"}
     caveats = (
         "All source-positive audio tracks are processed; clean tracks and video marks remain unchanged.",
         "Metadata is not intentionally stripped; container conversion can change it. "
@@ -667,7 +690,7 @@ def remove_video_audio_all_streams(
             replace(rep, metadata_markers=dict(_metadata_markers)) if not rep.metadata_markers else rep
             for rep in befores
         ]
-    eff_unverified = force or allow_unverified
+    eff_unverified = force or eff_allow_unverified
     eff_positive = force or allow_positive
     to_process = [
         ordinal
@@ -687,7 +710,9 @@ def remove_video_audio_all_streams(
                 True,
                 method=first,
                 bandwidth_kbps=bandwidth_kbps if first in {"encodec", "combined"} else None,
-                vocoder_device=vocoder_device if first in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
+                vocoder_device=vocoder_device
+                if first in {"bigvgan", "mimi", "focalcodec", "dac", "encodec", "combined"}
+                else None,
                 caveats=caveats,
             )
             for rep in befores
@@ -722,9 +747,10 @@ def remove_video_audio_all_streams(
                 bandwidth_kbps=bandwidth_kbps,
                 scheme=scheme,
                 vocoder_device=vocoder_device,
-                allow_unverified=allow_unverified,
+                allow_unverified=eff_allow_unverified,
                 allow_positive=allow_positive,
                 allow_quality_override=allow_quality_override,
+                vendor=vendor,
                 _before=befores[sole],
             )
             if sole_res.skipped or sole_res.output is None:
@@ -746,9 +772,10 @@ def remove_video_audio_all_streams(
                         bandwidth_kbps=bandwidth_kbps,
                         scheme=scheme,
                         vocoder_device=vocoder_device,
-                        allow_unverified=allow_unverified,
+                        allow_unverified=eff_allow_unverified,
                         allow_positive=allow_positive,
                         allow_quality_override=allow_quality_override,
+                        vendor=vendor,
                         _before=(
                             befores[ordinal]
                             if step == 0

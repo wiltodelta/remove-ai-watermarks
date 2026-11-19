@@ -51,11 +51,18 @@ def _check_config(config: Any) -> None:
         raise RuntimeError("Pinned DAC configuration does not match the fixed inference profile")
 
 
-@lru_cache(maxsize=2)
-def load_pinned_model(*, local_files_only: bool = True) -> Any:
-    """Load built-in Transformers DacModel on CPU after checking artifact hashes."""
+@lru_cache(maxsize=4)
+def load_pinned_model(*, local_files_only: bool = True, device: str = "cpu") -> Any:
+    """Load built-in Transformers DacModel on the requested device after checking artifact hashes."""
+    if device not in {"cpu", "mps", "cuda"}:
+        raise ValueError("DAC device must be cpu, mps, or cuda")
     if not is_available():
         raise ImportError("DAC requires numpy, scipy, torch, transformers, huggingface_hub, and safetensors")
+    torch = import_module("torch")
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("Requested DAC MPS device is unavailable")
+    if device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("Requested DAC CUDA device is unavailable")
     hub = import_module("huggingface_hub")
     paths: dict[str, Path] = {}
     for filename, expected in (("config.json", CONFIG_SHA256), (CHECKPOINT_FILENAME, CHECKPOINT_SHA256)):
@@ -88,11 +95,24 @@ def load_pinned_model(*, local_files_only: bool = True) -> Any:
     if any(loading.get(key) for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")):
         raise RuntimeError(f"Pinned DAC checkpoint did not load completely: {loading}")
     _check_config(model.config)
-    log.info("Loaded pinned DAC %s@%s on CPU (FP32, %d quantizers)", MODEL_REPOSITORY, MODEL_REVISION, FIXED_QUANTIZERS)
-    return model.to("cpu").train(False)
+    log.info(
+        "Loaded pinned DAC %s@%s on %s (FP32, %d quantizers)",
+        MODEL_REPOSITORY,
+        MODEL_REVISION,
+        device,
+        FIXED_QUANTIZERS,
+    )
+    return model.to(device).train(False)
 
 
-def resynthesize(samples: Any, sample_rate: int, *, stereo_mode: str = "ms", local_files_only: bool = True) -> Any:
+def resynthesize(
+    samples: Any,
+    sample_rate: int,
+    *,
+    stereo_mode: str = "ms",
+    local_files_only: bool = True,
+    device: str = "cpu",
+) -> Any:
     """Resynthesize a finite mono or stereo signal on its exact native sample grid."""
     if not is_available():
         raise ImportError("DAC requires the optional numerical and Transformers codec dependencies")
@@ -119,7 +139,11 @@ def resynthesize(samples: Any, sample_rate: int, *, stereo_mode: str = "ms", loc
 
     output_channels: list[Any] = []
     with _MODEL_LOCK, torch.inference_mode():
-        model = load_pinned_model(local_files_only=local_files_only)
+        model = (
+            load_pinned_model(local_files_only=local_files_only)
+            if device == "cpu"
+            else load_pinned_model(local_files_only=local_files_only, device=device)
+        )
         for channel in range(prepared.shape[1]):
             native_stem = stems_native[:, channel]
             in_rms = float(np.sqrt(np.mean(np.square(native_stem, dtype=np.float64))))
@@ -129,7 +153,9 @@ def resynthesize(samples: Any, sample_rate: int, *, stereo_mode: str = "ms", loc
             model_stem = prepared[:, channel]
             peak_in = float(np.max(np.abs(model_stem)))
             scale = _HEADROOM_CEILING / max(peak_in, 1e-6) if peak_in > _HEADROOM_CEILING else 1.0
-            dac_in = torch.from_numpy(np.ascontiguousarray(model_stem * scale, dtype=np.float32)).view(1, 1, -1)
+            dac_in = (
+                torch.from_numpy(np.ascontiguousarray(model_stem * scale, dtype=np.float32)).view(1, 1, -1).to(device)
+            )
             encoded = model.encode(dac_in, n_quantizers=FIXED_QUANTIZERS)
             decoded_tensor = model.decode(audio_codes=encoded.audio_codes).audio_values
             decoded = decoded_tensor.reshape(-1).detach().to(device="cpu", dtype=torch.float32).numpy() / scale

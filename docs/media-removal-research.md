@@ -68,19 +68,27 @@ be evaluated out-of-process against identical local receivers and perceptual
 gates via `scripts/media_removal_benchmark.py --external-outputs-dir` without
 importing non-permissive or unpinned code into the package.
 
-## Open-source library and license audit (2026-11)
+## Open-source library and license audit (2026-11-18)
 
 | Candidate library / checkpoint | Modality & role | Checked license | Integration disposition |
 | --- | --- | --- | --- |
-| `descript/dac_44khz` | 44.1 kHz RVQ neural audio codec | MIT (code + weights) | **Shipped** (`--method dac`, fixed 3 quantizers, raw M/S stereo, overlap-window streaming) |
-| `facebook/encodec_24khz` & `facebook/encodec_48khz` | 24 kHz mono & 48 kHz native stereo neural audio codecs (`transformers`) | MIT | `24 kHz` M/S **shipped** (`--method encodec`); `48 kHz` native stereo **P1.3 candidate** for full-bandwidth music |
-| `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` | 3D causal video VAE + flow-matching diffusion | Apache-2.0 | **Shipped** (`wan21-synthid-experimental`, `wan21-seedance-experimental` on BF16 CUDA) |
-| `facebookresearch/videoseal` (`VideoSeal 0.0/1.0`, `PixelSeal`, `ChunkySeal`) | Public video watermark embedders/detectors (`256`-bit to `1024`-bit) | MIT | `VideoSeal 0.0/1.0` & `PixelSeal` **shipped**; `ChunkySeal` **P1.3 candidate** |
-| `madebyollin/taehv` (`TAEHV` in `diffusers`) | Lightweight causal tiny video autoencoder (`Wan` / `CogVideoX` / `HunyuanVideo` latents) | Apache-2.0 | **P2.1 candidate** for fast consumer-GPU / Apple Silicon MPS temporal regeneration |
-| `moyangkuo/AudioMarkBench` & `zhengyuan-jiang/VideoMarkBench` | Academic audio & video watermark robustness suites | MPL-2.0 / MIT | **External evaluation reference** (keep out of wheel dependencies) |
-| `sczhou/ProPainter` & `lixiaowen-xw/DiffuEraser` | Transformer / diffusion video inpainting | **NTU S-Lab License 1.0 (non-commercial)** | **Excluded from package** (violates permissive commercial-safe dependency policy; replaced by clean-donor flow propagation + permissive `LaMa` / `MI-GAN`) |
+| `descript/dac_44khz` | 44.1 kHz RVQ neural audio codec | MIT (code + weights) | **Shipped** (`--method dac`, fixed 3 quantizers, `cpu`/`mps`/`cuda`, raw M/S stereo + `5.1`/`7.1` surround stems, overlap-window streaming, `--vendor` default) |
+| `nvidia/bigvgan_v2_44khz_128band_512x` | 44.1 kHz 128-band phase-free studio neural vocoder | MIT (code + weights) | **Shipped** (`--method bigvgan`); pre-warped Mel bottleneck benchmarked and **held back** (`MR-STFT 1.63` vs `DAC 1.11`, retained `Perth` 16k, 100x slower on `mps`) |
+| `hubertsiuzdak/snac_44khz` & `jishengpeng/WavTokenizer` | Multi-scale 44.1 kHz (`12 Hz` coarse tokens) & single-quantizer neural audio codecs | MIT (code + weights) | **Future candidates** (`DAC 44.1 kHz` won all removal + `MR-STFT 1.11` axes) |
+| `facebook/encodec_24khz` & `facebook/encodec_48khz` | 24 kHz mono & 48 kHz native stereo neural audio codecs (`transformers`) | MIT (code + weights) | `24 kHz` M/S **shipped** (`--method encodec`, `cpu`/`mps`/`cuda`); `48 kHz` (`6 kbps`) **held back** (`MR-STFT 1.99` vs `DAC 1.11`, `12/24 kbps` retained `AudioSeal`) |
+| `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` & `Wan2.2` | 3D causal video VAE + flow-matching diffusion | Apache-2.0 | **Shipped** (`wan21-*` with CPU `UMT5-XXL` prompt offload cutting accelerator memory to `~3.4 GiB`, `cuda` + explicit `mps`, 5-min 1080p streaming budget) |
+| `madebyollin/taehv` (`TAEW2_1`, `TAEW2_2`) & `westlake-repl/LeanVAE` | Fast causal 3D video autoencoders aligned to Wan latents | MIT (code + weights) | **Phase 3 candidates** (`0.4 GiB` VRAM / 10-44x speedup) paired with few-step `Wan 2.1` |
+| `microsoft/DCVC` (`DCVC-RT`, `DCVC-UF`) | Real-time chunk/P-frame neural video codecs (`100-450+ fps`) | MIT (code + weights) | **Phase 3 candidate** (requires QP sweep against local `VideoSeal`/`PixelSeal`/`ChunkySeal` + provider oracles) |
+| `facebookresearch/videoseal` (`VideoSeal 1.0`, `PixelSeal`, `ChunkySeal`) | Public video watermark detectors (`256`-bit and `1024`-bit; upstream `VideoSeal 0.0` is `96`-bit) | MIT | `VideoSeal 1.0` (`256`-bit), `PixelSeal` (`256`-bit) & `ChunkySeal` (`1024`-bit) **shipped** |
+| `Peterande/D-FINE`, `lyuwenyu/RT-DETR` & `facebookresearch/sam2` (`SAM 2.1 Tiny`) | Permissive real-time object detection & video mask propagation | Apache-2.0 | **Phase 2 candidates** for moving AI-badge localization & `video erase --track` |
+| `allenk/GeminiWatermarkTool` | Calibrated reverse alpha unblending + optional FDnCNN post-filter | MIT | **Phase 2 reference** for self-calibrated multi-frame `YCbCr` reverse alpha unblending |
+| `moyangkuo/AudioMarkBench` & `zhengyuan-jiang/VideoMarkBench` | Academic audio & video watermark robustness suites | MIT | **External evaluation reference** (keep out of wheel dependencies) |
+| `sczhou/ProPainter`, `lixiaowen-xw/DiffuEraser`, `zibojia/MiniMax-Remover`, `TencentARC/VideoPainter`, `MCG-NKU/E2FGVI` | Video inpainting / object removal | **NTU S-Lab 1.0 / CC-BY-NC-4.0 / Research-only** | **Excluded from package** (`DiffuEraser` Stage 1 depends on NC `ProPainter`; replaced by multi-frame `YCbCr` unblending + bidirectional clean-plate flow + `MI-GAN`/`LaMa`) |
+| `linkedlist771/SoraWatermarkCleaner` (`ultralytics` YOLOv11 + `E2FGVI-HQ`) | Moving Sora badge cleaner | **AGPL-3.0 + CC-BY-NC-4.0** | **Excluded from package** (transitively copyleft + non-commercial) |
+| `Lightricks/LTX-Video` / `LTX-2` & `NVIDIA/Cosmos-Tokenizer` | Video DiT / causal video tokenizers | **OpenRAIL / ARR-capped Community / NVIDIA Open Model License** | **Excluded from default package** (weight restrictions & guardrail-circumvention termination clause) |
+| `facebookresearch/demucs` (`htdemucs` weights), `HKUSTAudio/xcodec2`, `nvidia/audio-codec-44khz` | Stem separation & audio codecs | **MUSDB18-HQ NC / CC-BY-NC-4.0 / NSCLv1** | **Excluded from package** (official `htdemucs` weights are derived from non-commercial `MUSDB18-HQ`) |
 | `stabilityai/stable-audio-open-1.0` (`AutoencoderOobleck`) | 44.1 kHz stereo continuous audio VAE | **Stability AI Community License** | **Excluded from package** (revenue/commercial restrictions) |
-| `TimbreWatermark` / `DiffErase` mel subtree / `REVMark` | Academic audio watermarks & attacks | **GPL-3.0 / Non-commercial** | **Excluded from package** |
+| `TimbreWatermark` / `DiffErase` mel subtree / `CtrlRegen` | Academic watermark attacks | **GPL-3.0 / CC-BY-NC-SA-4.0** | **Excluded from package** |
 
 ## Primary audio literature
 

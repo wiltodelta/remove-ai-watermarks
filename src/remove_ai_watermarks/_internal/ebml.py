@@ -23,7 +23,12 @@ _TAG_ID = 0x7373
 _SIMPLE_TAG_ID = 0x67C8
 _TAG_NAME_ID = 0x45A3
 _TAG_STRING_ID = 0x4487
+_ATTACHMENTS_ID = 0x1941A469
+_ATTACHED_FILE_ID = 0x61A7
+_FILE_MEDIA_TYPE_ID = 0x4660
+_FILE_DATA_ID = 0x465C
 _MAX_TAG_NAME_BYTES = 256
+_MAX_C2PA_ATTACHMENT_BYTES = 4 * 1024 * 1024
 
 
 def _vint_length(first: int, *, maximum: int) -> int | None:
@@ -138,6 +143,32 @@ def _simple_tag_payloads(
     return tuple(value for value in values if parse_tc260_aigc_json(value) is not None)
 
 
+_C2PA_ATTACHMENT_MIMES = frozenset({b"application/c2pa", b"application/x-c2pa-manifest-store"})
+
+
+def _iter_segment_children(stream: BinaryIO, file_size: int, target_id: int) -> Iterator[tuple[int, int]]:
+    """Yield (payload_start, element_end) for top-level Segment children matching ``target_id``."""
+    for element_id, payload_start, element_end in _iter_elements(stream, 0, file_size):
+        if element_id != _SEGMENT_ID:
+            continue
+        for child_id, child_start, child_end in _iter_elements(stream, payload_start, element_end):
+            if child_id == target_id:
+                yield child_start, child_end
+
+
+def _attached_c2pa_span(stream: BinaryIO, start: int, end: int) -> tuple[int, int] | None:
+    mime: bytes | None = None
+    data_span: tuple[int, int] | None = None
+    for f_id, f_start, f_end in _iter_elements(stream, start, end):
+        if f_id == _FILE_MEDIA_TYPE_ID:
+            mime = _read_bounded(stream, f_start, f_end, _MAX_TAG_NAME_BYTES)
+        elif f_id == _FILE_DATA_ID:
+            data_span = (f_start, f_end)
+    if mime is not None and mime.strip(b"\x00").lower() in _C2PA_ATTACHMENT_MIMES and data_span is not None:
+        return data_span
+    return None
+
+
 def tc260_aigc_payloads(path: str | Path) -> tuple[bytes, ...]:
     """Read validated TC260 values from Matroska/WebM ``SimpleTag`` entries."""
     found: list[bytes] = []
@@ -146,19 +177,56 @@ def tc260_aigc_payloads(path: str | Path) -> tuple[bytes, ...]:
             if stream.read(4) != EBML_MAGIC:
                 return ()
             stream.seek(0, 2)
-            file_size = stream.tell()
-            for element_id, payload_start, element_end in _iter_elements(stream, 0, file_size):
-                if element_id != _SEGMENT_ID:
-                    continue
-                for child_id, child_start, child_end in _iter_elements(stream, payload_start, element_end):
-                    if child_id != _TAGS_ID:
+            for child_start, child_end in _iter_segment_children(stream, stream.tell(), _TAGS_ID):
+                for tag_id, tag_start, tag_end in _iter_elements(stream, child_start, child_end):
+                    if tag_id != _TAG_ID:
                         continue
-                    for tag_id, tag_start, tag_end in _iter_elements(stream, child_start, child_end):
-                        if tag_id != _TAG_ID:
-                            continue
-                        for simple_id, simple_start, simple_end in _iter_elements(stream, tag_start, tag_end):
-                            if simple_id == _SIMPLE_TAG_ID:
-                                found.extend(_simple_tag_payloads(stream, simple_start, simple_end))
+                    for simple_id, simple_start, simple_end in _iter_elements(stream, tag_start, tag_end):
+                        if simple_id == _SIMPLE_TAG_ID:
+                            found.extend(_simple_tag_payloads(stream, simple_start, simple_end))
     except OSError:
         return ()
     return tuple(found)
+
+
+def c2pa_attachment_payloads(path: str | Path) -> tuple[bytes, ...]:
+    """Read C2PA manifest attachments (application/c2pa) from Matroska/WebM files."""
+    found: list[bytes] = []
+    try:
+        with open(path, "rb") as stream:
+            if stream.read(4) != EBML_MAGIC:
+                return ()
+            stream.seek(0, 2)
+            for child_start, child_end in _iter_segment_children(stream, stream.tell(), _ATTACHMENTS_ID):
+                for att_id, att_start, att_end in _iter_elements(stream, child_start, child_end):
+                    if att_id != _ATTACHED_FILE_ID:
+                        continue
+                    span = _attached_c2pa_span(stream, att_start, att_end)
+                    if span is not None:
+                        blob = _read_bounded(stream, span[0], span[1], _MAX_C2PA_ATTACHMENT_BYTES)
+                        if blob is not None:
+                            found.append(blob)
+    except OSError:
+        return ()
+    return tuple(found)
+
+
+def attachment_ordinals(path: str | Path) -> tuple[int, tuple[int, ...]]:
+    """Return ``(total_attachments, c2pa_ordinals)`` for Matroska ``AttachedFile`` streams."""
+    ordinals: list[int] = []
+    ordinal = 0
+    try:
+        with open(path, "rb") as stream:
+            if stream.read(4) != EBML_MAGIC:
+                return 0, ()
+            stream.seek(0, 2)
+            for child_start, child_end in _iter_segment_children(stream, stream.tell(), _ATTACHMENTS_ID):
+                for att_id, att_start, att_end in _iter_elements(stream, child_start, child_end):
+                    if att_id != _ATTACHED_FILE_ID:
+                        continue
+                    if _attached_c2pa_span(stream, att_start, att_end) is not None:
+                        ordinals.append(ordinal)
+                    ordinal += 1
+    except OSError:
+        return 0, ()
+    return ordinal, tuple(ordinals)

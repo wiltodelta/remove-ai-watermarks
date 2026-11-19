@@ -439,6 +439,11 @@ def _scan_head_impl(image_path: Path, size: int) -> bytes:
         head += _png_late_metadata(image_path, size)
     elif head[:4] == b"RIFF" and head[8:12] in _RIFF_LATE_SCAN_FORMS and len(head) == size:
         head += _riff_late_metadata(image_path, size)
+    elif head[:4] == b"\x1aE\xdf\xa3":
+        from remove_ai_watermarks._internal.ebml import c2pa_attachment_payloads
+
+        for blob in c2pa_attachment_payloads(image_path):
+            head += blob
     head += _decoder_visible_text(image_path, head)
     return head
 
@@ -1509,6 +1514,22 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
         (sei_scan is None or not sei_scan.has_parsed_tracks) and KLING_SEI_TAG in app_scan
     ):
         result.setdefault("kling_sei", "Kling AI encoder tag (H.264 SEI kling-ai)")
+    if sei_scan is not None and sei_scan.ai_sei_spans:
+        result.setdefault("ai_sei", "AI provenance payload in H.264/HEVC SEI")
+    if isobmff.is_isobmff(app_scan[:8]) and re.search(rb"urn:c2pa:", app_scan, re.IGNORECASE):
+        result.setdefault("c2pa_manifest", "fMP4 C2PA emsg segment provenance (urn:c2pa:)")
+
+    from remove_ai_watermarks._internal.ebml import EBML_MAGIC, c2pa_attachment_payloads
+
+    if app_scan[:4] == EBML_MAGIC and (c2pa_blobs := c2pa_attachment_payloads(image_path)):
+        from remove_ai_watermarks._internal.c2pa import parse_c2pa_chunk
+
+        for blob in c2pa_blobs:
+            mkv_c2pa: dict[str, Any] = {}
+            parse_c2pa_chunk(blob, mkv_c2pa)
+            for key, val in mkv_c2pa.items():
+                if key not in {"timestamps", "timestamp"}:
+                    result.setdefault(key, str(val))
 
     # xAI / Grok signature pair in EXIF or an equivalent container-native field.
     if xai_signature(image_path):
@@ -1540,10 +1561,16 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
     """
     import subprocess
 
+    from remove_ai_watermarks._internal.ebml import attachment_ordinals
     from remove_ai_watermarks.video_encoding import atomic_video_output
     from remove_ai_watermarks.video_tools import require_video_tool
 
     ffmpeg = require_video_tool("ffmpeg")
+    total_attachments, c2pa_ords = attachment_ordinals(source_path)
+    attachment_exclusions: list[str] = []
+    for ord_idx in c2pa_ords:
+        attachment_exclusions.extend(["-map", f"-0:t:{ord_idx}"])
+    kept_attachment_tags = ["-map_metadata:s:t", "0:s:t"] if total_attachments > len(c2pa_ords) else []
 
     cmd = [
         ffmpeg,
@@ -1554,8 +1581,10 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
         str(source_path),
         "-map",
         "0",
+        *attachment_exclusions,
         "-map_metadata",
         "-1",
+        *kept_attachment_tags,
         "-map_chapters",
         "-1",
         "-c",

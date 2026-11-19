@@ -39,6 +39,8 @@ class AudioStreamInfo:
     duration: Fraction | None
     format_name: str = ""
     channel_layout: str | None = None
+    sample_fmt: str | None = None
+    bits_per_raw_sample: int | None = None
 
 
 def is_available() -> bool:
@@ -71,7 +73,8 @@ def probe_audio(source: Path, *, stream: int = 0) -> AudioStreamInfo:
     if stream < 0:
         raise ValueError("Audio stream ordinal must be nonnegative")
     entries = (
-        "stream=index,codec_name,sample_rate,channels,channel_layout,time_base,start_pts,start_time,duration_ts,duration:"
+        "stream=index,codec_name,sample_fmt,bits_per_raw_sample,sample_rate,channels,channel_layout,"
+        "time_base,start_pts,start_time,duration_ts,duration:"
         "stream_tags=:format=format_name:format_tags="
     )
     command = [
@@ -111,6 +114,9 @@ def probe_audio(source: Path, *, stream: int = 0) -> AudioStreamInfo:
                 start = int(raw["start_pts"]) * time_base
             if raw.get("duration_ts") not in (None, "N/A"):
                 duration = int(raw["duration_ts"]) * time_base
+        raw_bits = raw.get("bits_per_raw_sample")
+        bits_per_raw = int(raw_bits) if str(raw_bits).isdigit() and int(raw_bits) > 0 else None
+        raw_fmt = raw.get("sample_fmt")
         return AudioStreamInfo(
             int(raw["index"]),
             rate,
@@ -120,6 +126,8 @@ def probe_audio(source: Path, *, stream: int = 0) -> AudioStreamInfo:
             duration,
             str(payload["format"]["format_name"]),
             raw.get("channel_layout") or {1: "mono", 2: "stereo"}.get(channels),
+            str(raw_fmt) if raw_fmt not in (None, "", "N/A") else None,
+            bits_per_raw,
         )
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise ValueError(f"No readable audio stream {stream} in {source}") from exc
@@ -212,10 +220,24 @@ def read_audio(
 _MP3_RATES = frozenset({8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000})
 
 
+def _source_pcm_bit_depth(info: AudioStreamInfo) -> int | None:
+    if info.codec in {"pcm_s16le", "pcm_s16be"} or (
+        info.sample_fmt in {"s16", "s16p"} and info.bits_per_raw_sample in (None, 16)
+    ):
+        return 16
+    if info.codec in {"pcm_s24le", "pcm_s24be"} or info.bits_per_raw_sample == 24:
+        return 24
+    return None
+
+
 def _audio_codec_args(suffix: str, info: AudioStreamInfo, *, bitexact: bool) -> list[str]:
+    pcm_depth = None if bitexact else _source_pcm_bit_depth(info)
     if suffix == ".wav":
-        return ["-c:a", "pcm_f32le", "-rf64", "never" if bitexact else "auto"]
+        wav_codec = {16: "pcm_s16le", 24: "pcm_s24le"}.get(pcm_depth or 32, "pcm_f32le")
+        return ["-c:a", wav_codec, "-rf64", "never" if bitexact else "auto"]
     if suffix == ".flac":
+        if pcm_depth == 16:
+            return ["-c:a", "flac", "-sample_fmt", "s16"]
         return ["-c:a", "flac", "-sample_fmt", "s32"]
     if suffix == ".m4a":
         return ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]

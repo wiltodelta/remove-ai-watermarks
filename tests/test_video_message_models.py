@@ -128,3 +128,63 @@ def test_bad_frames_never_reach_the_network(fault):
     network = SimpleNamespace(detect=lambda *a, **kw: pytest.fail("Invalid frames reached the network"))
     with pytest.raises(ValueError, match="finite TxHxWx3"):
         models.decode_logits(models.VideoMessageDecoder("videoseal", network), frames)
+
+
+def test_chunkyseal_network_architecture_and_raw_slice_loader(tmp_path, monkeypatch):
+    import struct
+    import zlib
+
+    torch = pytest.importorskip("torch")
+    net = models._build_chunkyseal_network()
+    state = net.detector.state_dict()
+    assert len(state) == 381
+    keys = list(state)
+    assert keys[0] == "convnext.downsample_layers.0.0.weight"
+    assert tuple(state[keys[0]].shape) == (362, 3, 4, 4)
+    assert keys[-2] == "pixel_decoder.linear.weight"
+    assert tuple(state[keys[-2]].shape) == (1025, 2896)
+    assert keys[-1] == "pixel_decoder.linear.bias"
+    assert tuple(state[keys[-1]].shape) == (1025,)
+
+    frames = np.full((2, 32, 48, 3), 0.25, dtype=np.float32)
+    decoded = models.decode_logits(models.VideoMessageDecoder("chunkyseal", net), frames)
+    assert decoded.shape == (2, 1024)
+    assert np.isfinite(decoded).all()
+
+    # Build a synthetic PK\x03\x04 + PK\x07\x08 uncompressed slice for a 2-tensor stub detector
+    class TinyDetector(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = torch.nn.Linear(4, 3)
+
+    tiny = TinyDetector()
+    expected_w = np.arange(12, dtype="<f4").reshape(3, 4)
+    expected_b = np.array([-1.5, 0.5, 2.5], dtype="<f4")
+    slice_buf = bytearray()
+    for idx, payload_arr in enumerate((expected_w, expected_b)):
+        fname = f"checkpoint/data/{models._CHUNKYSEAL_FIRST_STORAGE_KEY + idx}".encode()
+        raw_bytes = payload_arr.tobytes()
+        crc = zlib.crc32(raw_bytes) & 0xFFFFFFFF
+        hdr = struct.pack("<4sHHHHHIIIHH", b"PK\x03\x04", 0, 0x0808, 0, 0, 0, 0, 0, 0, len(fname), 4)
+        desc = struct.pack("<4sIII", b"PK\x07\x08", crc, len(raw_bytes), len(raw_bytes))
+        slice_buf.extend(hdr + fname + b"ABCD" + raw_bytes + desc)
+
+    slice_path = tmp_path / "chunkyseal.slice.pth"
+    slice_path.write_bytes(bytes(slice_buf))
+    assert models._peek_zip_entry_name(slice_path) == "checkpoint/data/228"
+    models._load_chunkyseal_slice(slice_path, tiny)
+    np.testing.assert_array_equal(tiny.linear.weight.detach().numpy(), expected_w)
+    np.testing.assert_array_equal(tiny.linear.bias.detach().numpy(), expected_b)
+
+    # Corrupting a single byte in the tensor payload must trip the per-entry CRC32 guard
+    bad_buf = bytearray(slice_buf)
+    bad_buf[-20] ^= 0xFF
+    bad_path = tmp_path / "corrupt.slice.pth"
+    bad_path.write_bytes(bytes(bad_buf))
+    with pytest.raises(RuntimeError, match="Corrupted ZIP data descriptor"):
+        models._load_chunkyseal_slice(bad_path, TinyDetector())
+
+    # Central-directory digest mismatch must abort before downloading the slice
+    monkeypatch.setattr(models, "_fetch_range_bytes", lambda _u, s, e: b"x" * (e - s + 1))
+    with pytest.raises(RuntimeError, match="central directory differs"):
+        models._download_chunkyseal_detector_slice("https://example.invalid/ckpt", tmp_path / "staged")

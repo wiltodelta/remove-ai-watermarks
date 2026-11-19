@@ -662,15 +662,17 @@ serialization. EnCodec bandwidth is ignored, `vocoder_device` must remain `"cpu"
 and `auto` never selects it. Saved-output local decoder checks remain mandatory
 unless explicitly forced; native-provider candidates remain unverified.
 
-Explicit `method="dac"` uses the `audio-codec` extra and fixed CPU FP32
+Explicit `method="dac"` uses the `audio-codec` extra and fixed FP32
 3-codebook 44.1 kHz Descript Audio Codec (`descript/dac_44khz` at revision
-`c1bc521685adf9cfe247bc39a5ca58917eda1ac4`, MIT weights). It shares the 30-second
-and 16-million-value bounds, mono/stereo layout checks, raw mid/side stereo with
-stem RMS preservation, rational half-open resampling around 44.1 kHz (preserving
-full 22.05 kHz bandwidth), and bitexact WAV serialization. EnCodec bandwidth is
-ignored, `vocoder_device` must remain `"cpu"`, and `auto` selects DAC only when
-pre-strip metadata identifies ElevenLabs or Google SynthID (never falling back to
-`encodec` on Google SynthID if DAC is absent or the layout exceeds stereo).
+`c1bc521685adf9cfe247bc39a5ca58917eda1ac4`, MIT weights) on `vocoder_device`
+(`"cpu"`, `"mps"`, or `"cuda"`). It supports mono, raw mid/side stereo with stem
+RMS preservation, and tagged `5.1` / `7.1` surround stem decomposition (`FL/FR`
+M/S, `FC` mono, `<120 Hz` Butterworth LFE, surround M/S pairs), rational
+half-open resampling around 44.1 kHz (preserving full 22.05 kHz bandwidth), and
+overlap-window streaming on tracks over 30 seconds. EnCodec bandwidth is
+ignored, and `auto` selects DAC automatically when pre-strip metadata or an
+explicit `vendor` cohort (`"suno"`, `"udio"`, `"elevenlabs"`, `"google"`, etc.)
+asserts a wideband AI audio generator.
 
 `remove_video_audio(source, output, stream=0, force=False, verify=True)` processes
 one selected audio track into MKV/MOV with float PCM, or MP4 with lossy AAC
@@ -732,6 +734,9 @@ For normal product integration, use the complete locally verifiable pipeline:
 result = raiw.remove_video_all("input.mp4", "clean.mp4")
 if result.remaining_metadata:
     raise RuntimeError(f"AI metadata remains: {result.remaining_metadata}")
+
+# User-directed video region erasing (supports inclusive frame_range=(start, end)):
+erased = raiw.remove_video_region("input.mp4", "erased.mp4", regions=[(20, 20, 140, 44)], frame_range=(0, 96))
 ```
 
 The default removes one stable supported visible provider mark when present,
@@ -1163,11 +1168,18 @@ report = raiw.identify_video_message("input.mp4", reference_hex=encoder_message_
 result = raiw.remove_video_message(
     "input.mp4", "processed.mp4", reference_hex=encoder_message_hex, scheme="pixelseal"
 )
+presence = raiw.detect_video_watermark_presence("input.mp4", scheme="chunkyseal")
 ```
 
-The reference is an independently known 256-bit encoder message, represented
-by 64 hex digits. Never infer it from the file being checked. The API compares
-that target under pinned public weights; it does not detect unknown messages,
+`detect_video_watermark_presence` inspects channel-0 detection probability and
+cross-frame payload sign consistency (`256` bits for `videoseal`/`pixelseal`,
+`1024` bits for `chunkyseal`) without requiring a known reference hex key,
+returning `VideoWatermarkPresenceReport`.
+
+The reference is an independently known encoder message: 64 hex digits (`256`
+bits) for `scheme="videoseal"` or `"pixelseal"`, or 256 hex digits (`1024` bits)
+for `scheme="chunkyseal"`. Never infer it from the file being checked. The API
+compares that target under pinned public weights; it does not detect unknown messages,
 classify AI origin, or certify provider deployments or complete erasure.
 `VideoMessageReport` binds `source`, `sha256`, `scheme`, `reference_hex`, and
 `matched|not_matched|unverified` status to a reading over every decoded frame,

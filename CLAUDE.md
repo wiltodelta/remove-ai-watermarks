@@ -6,7 +6,7 @@ You are a **principal Python engineer** maintaining a CLI tool and library for r
 
 The project gives users control over provenance marks on content they generated or edited themselves. It does not automatically remove stock-agency, marketplace, classifieds, tiled-preview, or other marks that protect a third party's paid or copyrighted asset.
 
-- Add visible templates only for marks the vendor declares as AI-generation labels, whatever plan hides them; plan-removable product branding ("Made with Gamma") is not one.
+- All visible, metadata/bitstream, and invisible watermarks placed on AI-generated media (regardless of subscription tier or whether an AI generator styles the mark as its logo or an explicit AI label) are in scope; non-AI product branding ("Made with Gamma" or general editor badges on non-AI camera clips) is not.
 - Do not add stock, agency, or classifieds marks to `watermark_registry.py`.
 - Do not add templates for regulator-defined disclosure icons (EU Code of Practice Annex 1).
 - Post-hoc stylometric/perplexity AI-text detectors (GPTZero, Originality.ai, Binoculars) are out of scope; deterministic text provenance (`C2PATXT`, C2PA HTML/ASCII armor, `VSRMark`, Unicode steganography) and span-protected local regeneration for token-level LLM watermarks (`text`) are supported ([`docs/text-watermark-research.md`](docs/text-watermark-research.md)).

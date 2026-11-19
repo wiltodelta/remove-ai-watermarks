@@ -60,9 +60,10 @@ removal.
 | Remove visible marks, AI metadata, and opt-in video/audio invisible marks | `video all` | Depends on `--invisible` |
 | Strip AI metadata from video | `video metadata` | No |
 | Remove a registered visible AI mark from video | `video visible` | No |
+| Erase user-specified `(x, y, w, h)` regions across video frames | `video erase` / `erase` | No |
 | Process a directory of videos | `video batch` | Depends on mode |
-| Inspect and disrupt a known public VideoSeal/PixelSeal message (experimental) | `video message` | Optional |
-| Regenerate video pixels (`--profile auto`, calibrated SynthID, Seedance, or native CUDA `Wan 2.1`) | `video invisible` | Recommended |
+| Detect or disrupt public VideoSeal/PixelSeal/ChunkySeal video marks | `video message` (`detect` / `identify` / `remove`) | Optional |
+| Regenerate video pixels (`--profile auto`, calibrated SynthID, Seedance, or `Wan 2.1` on CUDA/MPS) | `video invisible` | Recommended |
 | Identify C2PA text/HTML wrappers, `VSRMark`, and Unicode steganography | `text identify` | No |
 | Strip C2PA text/HTML wrappers, `VSRMark`, and Unicode steganography | `text metadata` | No |
 | Regenerate unlocked prose for best-effort token-watermark removal | `text invisible` | Recommended |
@@ -236,8 +237,8 @@ without re-encoding and is allowed to reach its natural end; the video stream
 is transcoded because its pixels change. By default, a guarded optical-flow
 pass motion-aligns the preceding accepted fill and blends it only when the
 nearby source context agrees; use `--no-temporal-consistency` to disable it.
-The encoder preserves supported
-8-bit source chroma sampling, color tags, and MP4/MOV track timescale instead
+The encoder preserves supported 8-bit and 10-bit HDR (`yuv420p10le`, `bt2020nc`,
+`smpte2084`/`arib-std-b67`) source chroma sampling, color tags, and MP4/MOV track timescale instead
 of relying on ffmpeg's implicit raw-BGR defaults. Variable frame intervals are
 preserved through a timestamped in-memory NUT bridge instead of being flattened
 to the average frame rate. Non-zero source start timestamps are retained

@@ -741,3 +741,222 @@ def test_schema_v2_gates_four_layer_video_quality_multistream_perceptual_and_ext
     assert ext_report["counts"] == {"total": 1, "passed": 1, "failed": 0, "unavailable": 0}
     assert ext_report["results"][0]["selected_method"] == "external"
     assert ext_report["results"][0]["perceptual"]["mr_stft_loss"] == pytest.approx(0.0, abs=1e-5)
+
+
+def test_benchmark_v3_parity_and_runtime_safety_gates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pathlib
+    import shutil
+    import wave
+
+    import numpy as np
+
+    from remove_ai_watermarks import audio, video_invisible, video_quality
+    from remove_ai_watermarks._internal.audio_quality import AudioFidelity, audio_quality_passed
+    from remove_ai_watermarks.video_encoding import VideoEncodeProfile
+
+    # 1. _check_outcome parity: byte-identical external clean passes skipped_clean;
+    #    clean-to-positive false acquisition fails control_stays_positive.
+    assert bench._check_outcome(
+        "skipped_clean",
+        skipped=False,
+        verified_removed=None,
+        quality_passed=True,
+        before_status="not_detected",
+        byte_identical=True,
+    )
+    assert not bench._check_outcome(
+        "skipped_clean",
+        skipped=False,
+        verified_removed=None,
+        quality_passed=True,
+        before_status="not_detected",
+        byte_identical=False,
+    )
+    assert not bench._check_outcome(
+        "control_stays_positive",
+        skipped=False,
+        verified_removed=False,
+        quality_passed=True,
+        before_status="not_detected",
+    )
+    assert bench._check_outcome(
+        "control_stays_positive",
+        skipped=False,
+        verified_removed=False,
+        quality_passed=True,
+        before_status="detected",
+    )
+
+    # 2. _normalize_video_quality sets lossless_pixels=True when source_psnr_db is inf
+    norm_vq = bench._normalize_video_quality({"source_psnr_db": float("inf"), "source_ssim": 1.0})
+    assert norm_vq["source_psnr_db"] is None
+    assert norm_vq["lossless_pixels"] is True
+    assert bench.video_messages._quality_passes("codec", norm_vq) is True
+
+    # 3. Runtime audio Side/Mid drift gate + video worst_window_ssim gate
+    base_fid = AudioFidelity(
+        frames=16000,
+        rms_error=0.01,
+        max_abs_error=0.05,
+        snr_db=25.0,
+        peak_amplitude=0.8,
+        samples_above_full_scale=0,
+        source_rms=0.2,
+        output_rms=0.2,
+        source_peak=0.8,
+        max_side_mid_drift_db=7.5,
+    )
+    assert audio_quality_passed(base_fid, lossy=False) is False
+    assert audio_quality_passed(base_fid, lossy=True) is True
+
+    good_vq = {
+        "source_psnr_db": 28.0,
+        "source_ssim": 0.90,
+        "source_color_ssim": 0.88,
+        "min_frame_ssim": 0.72,
+        "worst_window_ssim": 0.82,
+        "temporal_residual_ratio": 1.1,
+    }
+    assert video_quality.video_quality_passed(good_vq) is True
+    assert video_quality.video_quality_passed({**good_vq, "worst_window_ssim": 0.55}) is False
+
+    # 4. 10-bit / PQ HDR fail-safe guard in video_invisible.regenerate_video_candidate
+    hdr_src = tmp_path / "hdr10.mp4"
+    hdr_src.write_bytes(b"hdr")
+    monkeypatch.setattr(video_invisible, "_probe_video", lambda _p: (1280, 720, 24.0))
+    monkeypatch.setattr(
+        video_invisible,
+        "load_video_vae_runtime",
+        lambda **_kw: SimpleNamespace(model="m", requested_device="cpu", resolved_device="cpu", vae=object()),
+    )
+    monkeypatch.setattr(
+        video_invisible,
+        "probe_video_encode_profile",
+        lambda _p: VideoEncodeProfile(
+            pixel_format="yuv420p",
+            color_transfer="smpte2084",
+            source_pixel_format="yuv420p10le",
+            component_depth=10,
+        ),
+    )
+    with pytest.raises(RuntimeError, match="SDR 8-bit input only"):
+        video_invisible.regenerate_video_candidate(hdr_src, tmp_path / "hdr_out.mp4", device="cpu", model="m")
+
+    # 5. Mastered -0.05 dBFS source with filter overshoot > 1.0 writes FLAC cleanly without ValueError
+    monkeypatch.undo()
+    sr = 16000
+    t = np.arange(sr, dtype=np.float32) / sr
+    # Square-ish harmonic wave near 0.985 whose 1.0-1.5 kHz band-stop Gibbs ring overshoots > 1.01
+    loud = np.clip(0.95 * np.sin(2 * np.pi * 950.0 * t) + 0.35 * np.sin(2 * np.pi * 1250.0 * t), -0.99, 0.99).astype(
+        np.float32
+    )
+    pcm_loud = np.clip(np.rint(loud * 32767.0), -32768, 32767).astype("<i2")
+    loud_wav = tmp_path / "loud_master.wav"
+    with wave.open(str(loud_wav), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(pcm_loud.tobytes())
+    out_flac = tmp_path / "loud_clean.flac"
+    res_flac = audio.remove_audio_invisible(
+        loud_wav,
+        out_flac,
+        method="spectral",
+        scheme="audioseal",
+        force=True,
+        allow_unverified=True,
+        verify=False,
+    )
+    assert res_flac.output == out_flac
+    assert res_flac.quality_passed is True
+    assert res_flac.fidelity is not None
+    assert res_flac.fidelity.peak_amplitude <= 1.0
+
+    # 6. Manifest bandwidth_kbps parsing + external video_all_4layer and video_audio_all_streams scoring
+    ext_dir2 = tmp_path / "ext_v3"
+    ext_dir2.mkdir()
+    ext_4l = ext_dir2 / "ext-4l.mp4"
+    ext_ms = ext_dir2 / "ext-ms.mp4"
+    src_4l = tmp_path / "src_4l.mp4"
+    for p in (src_4l, ext_4l, ext_ms):
+        shutil.copyfile(loud_wav, p)  # valid 1-stream audio container for probe_audio / measure_fidelity
+
+    monkeypatch.setattr(
+        bench.video_audio,
+        "stream_inventory",
+        lambda _p: [{"index": 0, "codec_type": "audio"}],
+    )
+    monkeypatch.setattr(
+        bench.audio,
+        "identify_audio",
+        lambda p, **_kw: SimpleNamespace(
+            watermark_status="detected" if pathlib.Path(p).resolve() == src_4l.resolve() else "not_detected",
+            detections=(),
+            stream=bench.audio_io.probe_audio(p),
+        ),
+    )
+    monkeypatch.setattr(
+        bench.audio,
+        "verification_outcome",
+        lambda b, a: b.watermark_status == "detected" and a.watermark_status == "not_detected",
+    )
+    monkeypatch.setattr(
+        bench.video,
+        "identify_video",
+        lambda p: SimpleNamespace(
+            has_ai_metadata=pathlib.Path(p).resolve() == src_4l.resolve(),
+            visible_mark="kling" if pathlib.Path(p).resolve() == src_4l.resolve() else None,
+        ),
+    )
+    monkeypatch.setattr(
+        bench.video_messages,
+        "identify_video_message",
+        lambda p, **_kw: SimpleNamespace(
+            status="matched" if pathlib.Path(p).resolve() == src_4l.resolve() else "not_matched",
+            sha256=sha256_file(p),
+        ),
+    )
+    monkeypatch.setattr(bench.video_quality, "delivered_geometry", lambda _p: (320, 240, 24.0))
+    monkeypatch.setattr(bench.video_quality, "measure_video_fidelity", lambda *_a, **_kw: dict(good_vq))
+
+    v3_manifest = _write_manifest(
+        tmp_path / "v3_manifest.jsonl",
+        [
+            {
+                "schema_version": 2,
+                "case_id": "ext-ms",
+                "surface": "video_audio_all_streams",
+                "scheme": "audioseal",
+                "method": "encodec",
+                "bandwidth_kbps": 6,
+                "source_path": str(src_4l),
+                "source_sha256": sha256_file(src_4l),
+                "output_suffix": ".mp4",
+                "expected_outcome": "verified_removed",
+            },
+            {
+                "schema_version": 2,
+                "case_id": "ext-4l",
+                "surface": "video_all_4layer",
+                "scheme": "audioseal",
+                "reference_hex": "aa" * 32,
+                "source_path": str(src_4l),
+                "source_sha256": sha256_file(src_4l),
+                "output_suffix": ".mp4",
+                "expected_outcome": "verified_removed",
+            },
+        ],
+    )
+    loaded_cases = bench.load_manifest(v3_manifest)
+    assert loaded_cases[0].bandwidth_kbps == 6.0
+    v3_report = bench.run_removal_benchmark(
+        v3_manifest,
+        work_dir=tmp_path / "v3_work",
+        output_json=tmp_path / "v3_report.json",
+        external_outputs_dir=ext_dir2,
+        strict=True,
+    )
+    assert v3_report["counts"] == {"total": 2, "passed": 2, "failed": 0, "unavailable": 0}

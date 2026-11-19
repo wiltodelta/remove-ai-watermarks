@@ -24,14 +24,19 @@ log = logging.getLogger(__name__)
 
 _FFMPEG_STDERR_LIMIT = 64 * 1024
 _FFMPEG_STDERR_TRUNCATION = b"\n...[ffmpeg stderr truncated]...\n"
-_PIXEL_FORMATS = frozenset({"yuv420p", "yuv422p", "yuv444p"})
+HIGH_BIT_DEPTH_PIXEL_FORMATS = frozenset({"yuv420p10le", "yuv422p10le", "yuv444p10le"})
+_PIXEL_FORMATS = frozenset({"yuv420p", "yuv422p", "yuv444p", *HIGH_BIT_DEPTH_PIXEL_FORMATS})
 _PIXEL_FORMAT_ALIASES = {
     "yuvj420p": "yuv420p",
     "yuvj422p": "yuv422p",
     "yuvj444p": "yuv444p",
+    "p010le": "yuv420p10le",
+    "yuv420p10be": "yuv420p10le",
+    "yuv422p10be": "yuv422p10le",
+    "yuv444p10be": "yuv444p10le",
 }
 _COLOR_RANGES = frozenset({"tv", "pc"})
-_COLOR_SPACES = frozenset({"bt709", "fcc", "bt470bg", "smpte170m", "smpte240m"})
+_COLOR_SPACES = frozenset({"bt709", "fcc", "bt470bg", "smpte170m", "smpte240m", "bt2020nc", "bt2020c"})
 _COLOR_TRANSFERS = frozenset(
     {
         "bt709",
@@ -367,8 +372,27 @@ def atomic_video_output(output: Path) -> Generator[Path]:
 
 
 def _video_codec_args(suffix: str, *, crf: int, profile: VideoEncodeProfile) -> list[str]:
+    high_depth = profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
     if suffix == ".webm":
-        return ["-c:v", "libvpx-vp9", "-crf", str(crf), "-b:v", "0"]
+        vp9_args = ["-c:v", "libvpx-vp9", "-crf", str(crf), "-b:v", "0"]
+        if high_depth:
+            vp9_args.extend(["-profile:v", "2"])
+        return vp9_args
+    if high_depth:
+        args = ["-c:v", "libx265", "-preset", "medium", "-crf", str(crf)]
+        if suffix in {".mp4", ".mov", ".m4v"}:
+            args.extend(["-tag:v", "hvc1"])
+        x265_params = ["log-level=error"]
+        if profile.color_primaries in {"bt2020", "bt709"}:
+            x265_params.append(f"colorprim={profile.color_primaries}")
+        if profile.color_transfer in {"smpte2084", "arib-std-b67", "bt709", "bt2020-10"}:
+            x265_params.append(f"transfer={profile.color_transfer}")
+        if profile.color_space in {"bt2020nc", "bt709"}:
+            x265_params.append(f"colormatrix={profile.color_space}")
+        if profile.color_range is not None:
+            x265_params.append(f"range={'full' if profile.color_range == 'pc' else 'limited'}")
+        args.extend(["-x265-params", ":".join(x265_params)])
+        return args
     args = ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
     x264_params: list[str] = []
     if profile.color_primaries == "bt709":
@@ -410,8 +434,9 @@ def raw_video_command(
     profile: VideoEncodeProfile,
     timestamped_input: bool = False,
     copy_input_timestamps: bool = False,
+    input_pix_fmt: str = "bgr24",
 ) -> list[str]:
-    """Build an ffmpeg command for BGR frames on standard input."""
+    """Build an ffmpeg command for BGR/BGR48LE frames on standard input."""
     ffmpeg = require_video_tool("ffmpeg")
     frame_input = (
         ["-f", "nut", "-i", "pipe:0"]
@@ -420,7 +445,7 @@ def raw_video_command(
             "-f",
             "rawvideo",
             "-pix_fmt",
-            "bgr24",
+            input_pix_fmt,
             "-s:v",
             f"{width}x{height}",
             "-r",

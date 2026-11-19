@@ -31,6 +31,7 @@ from remove_ai_watermarks._internal.constants import (
     AUDIO_EXTENSIONS,
     AUDIO_METHODS,
     AUDIO_SCHEMES,
+    AUDIO_VENDORS,
     AUDIO_VOCODER_DEVICES,
     DEFAULT_VIDEO_MESSAGE_LONG_SIDE,
     VIDEO_MESSAGE_DEVICES,
@@ -193,6 +194,11 @@ for _name, _description, _options in (
                 "enum": list(AUDIO_VOCODER_DEVICES),
                 "default": AUDIO_VOCODER_DEVICES[0],
             },
+            "vendor": {
+                "type": "string",
+                "enum": list(AUDIO_VENDORS),
+                "default": AUDIO_VENDORS[0],
+            },
             "bandwidth": {
                 "type": "integer",
                 "enum": list(AUDIO_BANDWIDTHS_KBPS),
@@ -226,7 +232,10 @@ for _action in ("identify", "remove"):
         "path": {"type": "string"},
         "reference": {
             "type": "string",
-            "description": "Independent encoder message, 64 hex digits. Never derive it from this input.",
+            "description": (
+                "Independent encoder message (64 hex digits for videoseal/pixelseal, "
+                "256 for chunkyseal). Never derive it from this input."
+            ),
         },
         "scheme": {
             "type": "string",
@@ -257,8 +266,11 @@ for _action in ("identify", "remove"):
     TOOLS.append(
         {
             "name": f"video_message_{_action}",
-            "description": "Experimental known-message correlation under pinned public VideoSeal or PixelSeal models. "
-            "Requires an independently known encoder message. Does not identify AI origin or unknown marks. "
+            "description": (
+                "Experimental known-message correlation under pinned public VideoSeal, "
+                "PixelSeal, or ChunkySeal models. "
+                "Requires an independently known encoder message. Does not identify AI origin or unknown marks. "
+            )
             + (
                 "Read-only, checks every decoded frame."
                 if _action == "identify"
@@ -409,7 +421,8 @@ def _validate_output_and_verify_flags(
     allow_audio_permissions: bool = False,
 ) -> list[str]:
     _require_distinct_output(source, output, message="'output' must differ from the source")
-    allow_unverified = allow_audio_permissions and bool(values.get("allow_unverified", False))
+    explicit_vendor = allow_audio_permissions and values.get("vendor") not in (None, AUDIO_VENDORS[0])
+    allow_unverified = allow_audio_permissions and (bool(values.get("allow_unverified", False)) or explicit_vendor)
     if not values["verify"] and not (values["force"] or allow_unverified):
         msg = (
             "Disabling verification requires force=true or allow_unverified=true"
@@ -451,6 +464,8 @@ def _audio_command(values: dict[str, Any], *, video: bool = False) -> tuple[list
             command.extend(["--bandwidth", str(values["bandwidth"])])
         if values["vocoder_device"] != AUDIO_VOCODER_DEVICES[0]:
             command.extend(["--vocoder-device", values["vocoder_device"]])
+        if values.get("vendor", AUDIO_VENDORS[0]) != AUDIO_VENDORS[0]:
+            command.extend(["--vendor", values["vendor"]])
     if values.get("all_streams"):
         command.append("--all-streams")
     if values["scheme"] != AUDIO_SCHEMES[0]:

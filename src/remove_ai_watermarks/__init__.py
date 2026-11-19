@@ -74,14 +74,17 @@ __all__ = [
     "TextWatermarkScore",
     "VideoAudioMultiStreamResult",
     "VideoAudioRemovalResult",
+    "VideoEraseResult",
     "VideoMessageRemovalResult",
     "VideoMessageReport",
     "VideoMessageVerificationIncomplete",
     "VideoWanExperimentalResult",
+    "VideoWatermarkPresenceReport",
     "VisibleRemovalResult",
     "__version__",
     "classify_source",
     "decode_stego_payloads",
+    "detect_video_watermark_presence",
     "encode_innamark",
     "identify_audio",
     "identify_text",
@@ -105,6 +108,7 @@ __all__ = [
     "remove_video_invisible",
     "remove_video_message",
     "remove_video_metadata",
+    "remove_video_region",
     "remove_video_seedance_experimental",
     "remove_video_visible",
     "remove_video_wan_experimental",
@@ -178,6 +182,7 @@ if TYPE_CHECKING:
         verify_text_rewrite_facts,
     )
     from remove_ai_watermarks.video import (
+        VideoEraseResult,
         VideoWanExperimentalResult,
         identify_video,
         inspect_video_metadata,
@@ -185,6 +190,7 @@ if TYPE_CHECKING:
         remove_video_batch,
         remove_video_invisible,
         remove_video_metadata,
+        remove_video_region,
         remove_video_seedance_experimental,
         remove_video_visible,
         remove_video_wan_experimental,
@@ -199,6 +205,8 @@ if TYPE_CHECKING:
         VideoMessageRemovalResult,
         VideoMessageReport,
         VideoMessageVerificationIncomplete,
+        VideoWatermarkPresenceReport,
+        detect_video_watermark_presence,
         identify_video_message,
         remove_video_message,
     )
@@ -258,6 +266,8 @@ def __getattr__(name: str) -> object:
         "VideoMessageReport",
         "VideoMessageRemovalResult",
         "VideoMessageVerificationIncomplete",
+        "VideoWatermarkPresenceReport",
+        "detect_video_watermark_presence",
         "identify_video_message",
         "remove_video_message",
     ):
@@ -294,6 +304,7 @@ def __getattr__(name: str) -> object:
 
         return getattr(text, name)
     if name in (
+        "VideoEraseResult",
         "VideoWanExperimentalResult",
         "identify_video",
         "inspect_video_metadata",
@@ -301,6 +312,7 @@ def __getattr__(name: str) -> object:
         "remove_video_batch",
         "remove_video_invisible",
         "remove_video_metadata",
+        "remove_video_region",
         "remove_video_seedance_experimental",
         "remove_video_visible",
         "remove_video_wan_experimental",

@@ -97,6 +97,7 @@ class IsobmffVideoSeiScan:
     has_parsed_tracks: bool
     kling_tag_offsets: tuple[int, ...] = ()
     unregistered_uuids: tuple[str, ...] = ()
+    ai_sei_spans: tuple[tuple[int, int], ...] = ()
 
 
 # TC260-PG-20257A stores an MP4/MOV label as an ``AIGC`` key in
@@ -562,8 +563,9 @@ def _scan_sei_rbsp(
     raw_file_offset: int,
     kling_offsets: set[int],
     uuids: set[str],
+    ai_sei_spans: set[tuple[int, int]] | None = None,
 ) -> None:
-    """Parse SEI messages in one NAL body and record Kling tag offsets + unregistered UUIDs."""
+    """Parse SEI messages in one NAL body and record Kling tag offsets, AI SEI spans, and UUIDs."""
     rbsp, raw_map = _unescape_rbsp_with_map(raw_sei)
     pos = 0
     limit = len(rbsp)
@@ -594,6 +596,26 @@ def _scan_sei_rbsp(
                     if raw_end - raw_start == len(KLING_SEI_TAG):
                         kling_offsets.add(raw_file_offset + raw_start)
                 found = msg.find(KLING_SEI_TAG, found + 1)
+            if ai_sei_spans is not None and payload_size > 16:
+                uuid_head = msg[:16]
+                is_ai_sei = uuid_head == C2PA_UUID
+                if not is_ai_sei and uuid_hex != _X264_SEI_UUID_HEX:
+                    body_lower = msg[16:].lower()
+                    is_ai_sei = (
+                        b"urn:c2pa:" in body_lower
+                        or (b"jumb" in body_lower and b"c2pa" in body_lower)
+                        or (b'"contentproducer"' in body_lower and b'"label"' in body_lower)
+                    )
+                if is_ai_sei:
+                    rbsp_body_start = pos
+                    rbsp_body_end = pos + payload_size
+                    if raw_map is None:
+                        ai_sei_spans.add((raw_file_offset + rbsp_body_start, raw_file_offset + rbsp_body_end))
+                    else:
+                        raw_s = raw_map[rbsp_body_start]
+                        raw_e = raw_map[rbsp_body_end - 1] + 1
+                        if raw_e - raw_s == payload_size:
+                            ai_sei_spans.add((raw_file_offset + raw_s, raw_file_offset + raw_e))
         pos += payload_size
 
 
@@ -638,6 +660,7 @@ def _scan_video_stbl_sei(
     kling_offsets: set[int],
     uuids: set[str],
     *,
+    ai_sei_spans: set[tuple[int, int]] | None = None,
     stop_on_first_kling: bool = False,
 ) -> bool:
     """Walk one video track's sample table and scan only H.264/HEVC SEI NALs."""
@@ -727,7 +750,11 @@ def _scan_video_stbl_sei(
                         read_len = min(nal_len - hdr_len, _MAX_SEI_NAL_BYTES)
                         sei_file_off = nal_body_start + hdr_len
                         _scan_sei_rbsp(
-                            _pread_or_seek(stream, fd, sei_file_off, read_len), sei_file_off, kling_offsets, uuids
+                            _pread_or_seek(stream, fd, sei_file_off, read_len),
+                            sei_file_off,
+                            kling_offsets,
+                            uuids,
+                            ai_sei_spans=ai_sei_spans,
                         )
                         if stop_on_first_kling and kling_offsets:
                             return True
@@ -757,6 +784,7 @@ def _scan_stream_video_sei(
     all_tracks_parsed = True
     kling_offsets: set[int] = set()
     uuids: set[str] = set()
+    ai_sei_spans: set[tuple[int, int]] = set()
     for _start, end, box_type, payload in top_boxes:
         if box_type != b"moov":
             continue
@@ -797,6 +825,7 @@ def _scan_stream_video_sei(
                     file_size,
                     kling_offsets,
                     uuids,
+                    ai_sei_spans=ai_sei_spans,
                     stop_on_first_kling=stop_on_first_kling,
                 ):
                     parsed_tracks += 1
@@ -808,6 +837,7 @@ def _scan_stream_video_sei(
         has_parsed_tracks=parsed_tracks > 0 and all_tracks_parsed and not has_moof,
         kling_tag_offsets=tuple(sorted(kling_offsets)),
         unregistered_uuids=tuple(sorted(uuids)),
+        ai_sei_spans=tuple(sorted(ai_sei_spans)),
     )
 
 
@@ -972,6 +1002,11 @@ def heif_transform_applied(path: str | Path) -> bool:
     return False
 
 
+def _has_c2pa_emsg_marker(prefix: bytes) -> bool:
+    lowered = prefix.lower()
+    return b"urn:c2pa:" in lowered or (b"jumb" in lowered and b"c2pa" in lowered)
+
+
 def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024, strict: bool = False) -> bytes:
     """Concatenated payloads of top-level ``uuid`` / ``jumb`` boxes and bounded
     ``moov`` metadata items in an ISOBMFF file, found by seeking past ``mdat``.
@@ -1021,6 +1056,13 @@ def scan_c2pa_region(path: str | Path, *, max_total: int = 4 * 1024 * 1024, stri
                     to_read = min(pos + size - payload_off, max_total - len(collected))
                     if to_read > 0:
                         collected += f.read(to_read)
+                elif box_type == b"emsg":
+                    f.seek(payload_off)
+                    if _has_c2pa_emsg_marker(f.read(min(256, pos + size - payload_off))):
+                        f.seek(payload_off)
+                        to_read = min(pos + size - payload_off, max_total - len(collected))
+                        if to_read > 0:
+                            collected += f.read(to_read)
                 elif box_type == b"moov":
                     for (
                         item_type,
@@ -1114,6 +1156,10 @@ def _streaming_provenance_boxes(
                 targets.append((pos, payload_off, box_end))
         elif box_type == b"jumb":
             targets.append((pos, payload_off, box_end))
+        elif box_type == b"emsg":
+            stream.seek(payload_off)
+            if _has_c2pa_emsg_marker(stream.read(min(256, box_end - payload_off))):
+                targets.append((pos, payload_off, box_end))
         pos = box_end
     return targets
 
@@ -1237,6 +1283,8 @@ def strip_isobmff_media_file(
                 # and a 0x20 run cannot form an emulation-prevention sequence.
                 for offset in kling_sei_offsets:
                     _overwrite_range(temporary, offset, offset + len(KLING_SEI_TAG), byte=b" ")
+                for span_start, span_end in sei_scan.ai_sei_spans:
+                    _overwrite_range(temporary, span_start, span_end, byte=b" ")
             temporary.flush()
             os.fsync(temporary.fileno())
         shutil.copymode(source_path, temporary_path)
@@ -1250,7 +1298,7 @@ def strip_isobmff_media_file(
     # Every copy of the Kling tag is one tag, however many samples repeat it.
     return (
         len(targets),
-        len(blanked_key_spans) + bool(kling_sei_offsets) + len(audio_regions),
+        len(blanked_key_spans) + bool(kling_sei_offsets) + bool(sei_scan.ai_sei_spans) + len(audio_regions),
     )
 
 
@@ -1300,6 +1348,8 @@ def strip_c2pa_boxes(data: bytes) -> tuple[bytes, int]:
             payload = data[payload_off:end]
             is_c2pa = len(payload) >= 16 and payload[:16] == C2PA_UUID
             provenance = is_c2pa or _has_ai_label_or_generator(payload)
+        elif box_type == b"emsg":
+            provenance = _has_c2pa_emsg_marker(data[payload_off : min(end, payload_off + 256)])
         if provenance:
             stripped += 1
             out.extend(_blank_box(data, start, end, payload_off))

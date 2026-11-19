@@ -23,8 +23,10 @@ import click
 from remove_ai_watermarks import __version__, image_io, watermark_registry
 from remove_ai_watermarks._internal.constants import (
     AUDIO_BANDWIDTHS_KBPS,
+    AUDIO_EXTENSIONS,
     AUDIO_METHODS,
     AUDIO_SCHEMES,
+    AUDIO_VENDORS,
     AUDIO_VOCODER_DEVICES,
     DEFAULT_VIDEO_MESSAGE_LONG_SIDE,
     SUPPORTED_FORMATS,
@@ -34,6 +36,7 @@ from remove_ai_watermarks._internal.constants import (
     VIDEO_MESSAGE_SCHEMES,
     AudioMethod,
     AudioScheme,
+    AudioVendor,
     VideoInvisibleProfile,
 )
 from remove_ai_watermarks._internal.utils import is_supported_format
@@ -290,9 +293,12 @@ _strength_option = click.option(
 # (no C2PA; the IPTC tag is a standard code), and an unknown or stripped manifest
 # also leaves the resolution-adaptive curve in charge -- this flag is the way to
 # name the cohort when the user knows what the file does not say.
+_IMAGE_VENDOR_CHOICES = ("auto", "openai", "google", "microsoft", "meta")
+_ALL_VENDOR_CHOICES = (*_IMAGE_VENDOR_CHOICES, *(v for v in AUDIO_VENDORS if v not in _IMAGE_VENDOR_CHOICES))
+
 _vendor_option = click.option(
     "--vendor",
-    type=click.Choice(["auto", "openai", "google", "microsoft", "meta"]),
+    type=click.Choice(list(_IMAGE_VENDOR_CHOICES)),
     default="auto",
     help=(
         "Strength cohort for the invisible-removal default, and it implies the scrub "
@@ -300,6 +306,18 @@ _vendor_option = click.option(
         "watermark is present. auto: derive from C2PA provenance, else "
         "resolution-adaptive. Set explicitly when the source is known but unreadable "
         "(e.g. meta for Muse Image Content Seal, which never carries C2PA)."
+    ),
+)
+_all_vendor_option = click.option(
+    "--vendor",
+    type=click.Choice(list(_ALL_VENDOR_CHOICES)),
+    default="auto",
+    help=(
+        "Known AI generator cohort (image: openai, google, microsoft, meta; "
+        "audio/video: google, elevenlabs, suno, udio, openai, cartesia, meta, "
+        "resemble, microsoft). Naming the cohort asserts the invisible mark is "
+        "present and runs the certified scrub even when provenance metadata was "
+        "already stripped."
     ),
 )
 
@@ -446,6 +464,13 @@ def _pixels_required(func: Callable[..., None]) -> Callable[..., None]:
         try:
             func(*args, **kwargs)
         except ImportError as exc:
+            src_arg = kwargs.get("source")
+            if isinstance(src_arg, Path):
+                from remove_ai_watermarks.text import TEXT_EXTENSIONS
+                from remove_ai_watermarks.video import VIDEO_EXTENSIONS
+
+                if src_arg.suffix.lower() in (*VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS, *TEXT_EXTENSIONS):
+                    raise
             from remove_ai_watermarks.optional_deps import pixels_available
 
             if pixels_available():
@@ -832,13 +857,34 @@ def _parse_region(spec: str) -> tuple[int, int, int, int]:
     return x, y, w, h
 
 
+def _parse_frame_range(spec: str | None) -> tuple[int, int] | None:
+    """Parse an inclusive 0-based ``START:END`` frame range."""
+    if spec is None or not spec.strip():
+        return None
+    parts = spec.strip().split(":")
+    if len(parts) != 2:
+        raise click.BadParameter(f"frames must be 'START:END' (0-based inclusive), got: {spec!r}")
+    try:
+        start_f, end_f = int(parts[0]), int(parts[1])
+    except ValueError as e:
+        raise click.BadParameter(f"frame indices must be integers: {spec!r}") from e
+    if start_f < 0 or end_f < start_f:
+        raise click.BadParameter(f"frame range must satisfy 0 <= START <= END: {spec!r}")
+    return start_f, end_f
+
+
 @main.command("erase")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--region", "regions", multiple=True, required=True, help="x,y,w,h box to erase (repeatable).")
+@click.option(
+    "--frames",
+    default=None,
+    help="Inclusive 0-based START:END frame range when erasing a video clip.",
+)
 @_output_option
 @click.option(
     "--backend",
-    type=click.Choice(["cv2", "migan", "lama"]),
+    type=click.Choice(["auto", "cv2", "migan", "lama"]),
     default="cv2",
     help="Inpaint backend. cv2: instant, no model download. migan: light ONNX MI-GAN, ~1 GB RAM, "
     "near-LaMa quality (extra 'migan'). lama: big-LaMa, best quality but ~4.7 GB RAM (extra 'lama').",
@@ -846,23 +892,48 @@ def _parse_region(spec: str) -> tuple[int, int, int, int]:
 @click.option("--inpaint-method", type=click.Choice(["telea", "ns"]), default="telea", help="cv2 inpaint method.")
 @click.option("--dilate", type=int, default=3, help="Grow the box by this many px before inpainting.")
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON output when erasing video.")
+@click.pass_context
 @_pixels_required
 def cmd_erase(
+    ctx: click.Context,
     source: Path,
     regions: tuple[str, ...],
+    frames: str | None,
     output: Path | None,
-    backend: Literal["cv2", "migan", "lama"],
+    backend: Literal["auto", "cv2", "migan", "lama"],
     inpaint_method: str,
     dilate: int,
     strip_metadata: bool,
+    as_json: bool,
 ) -> None:
-    """Erase arbitrary region(s) from an image via inpainting.
+    """Erase arbitrary region(s) from an image or video via inpainting.
 
     Universal and position-agnostic: removes any logo / watermark / object inside
     the boxes you pass, regardless of color or location. Runs on CPU. Use this
     for marks the dedicated ``visible`` registry does not cover.
     """
+    from remove_ai_watermarks.video import VIDEO_EXTENSIONS
+
+    if source.suffix.lower() in VIDEO_EXTENSIONS:
+        ctx.invoke(
+            cmd_video_erase,
+            source=source,
+            regions=regions,
+            frames=frames,
+            output=output,
+            backend=backend,
+            dilate=dilate,
+            temporal_consistency=True,
+            strip_metadata=strip_metadata,
+            as_json=as_json,
+        )
+        return
+    if frames is not None:
+        raise click.UsageError("--frames is only supported for video inputs")
+
     from remove_ai_watermarks.region_eraser import erase
+    from remove_ai_watermarks.watermark_registry import resolve_backend
 
     _banner()
     source = _validate_image(source)
@@ -870,19 +941,20 @@ def cmd_erase(
         output = source.with_stem(source.stem + "_clean")
 
     boxes = [_parse_region(r) for r in regions]
+    resolved_img_backend = resolve_backend(backend)
 
     image, alpha = image_io.read_bgr_and_alpha(source)
     if image is None:
         console.print(f"Error: Failed to read image: {source}")
         raise SystemExit(1)
     h, w = image.shape[:2]
-    console.print(f"  Input:  {source.name}  ({w}x{h})  {len(boxes)} region(s), backend={backend}")
+    console.print(f"  Input:  {source.name}  ({w}x{h})  {len(boxes)} region(s), backend={resolved_img_backend}")
 
     t0 = time.monotonic()
     method: Literal["telea", "ns"] = "ns" if inpaint_method == "ns" else "telea"
     try:
-        with console.status(f"Erasing ({backend})..."):
-            result = erase(image, boxes=boxes, backend=backend, dilate=dilate, cv2_method=method)
+        with console.status(f"Erasing ({resolved_img_backend})..."):
+            result = erase(image, boxes=boxes, backend=resolved_img_backend, dilate=dilate, cv2_method=method)
     except RuntimeError as e:
         console.print(f"  Error: {e}")
         raise SystemExit(1) from e
@@ -1145,11 +1217,21 @@ def cmd_audio() -> None:
 
 def _audio_method_options(func: Any) -> Any:
     func = click.option(
+        "--vendor",
+        type=click.Choice(list(AUDIO_VENDORS)),
+        default=AUDIO_VENDORS[0],
+        show_default=True,
+        help=(
+            "Known source vendor when metadata was stripped; selects a wideband profile (e.g. DAC) "
+            "and authorizes scrubbing without --allow-unverified."
+        ),
+    )(func)
+    func = click.option(
         "--vocoder-device",
         type=click.Choice(list(AUDIO_VOCODER_DEVICES)),
         default=AUDIO_VOCODER_DEVICES[0],
         show_default=True,
-        help="BigVGAN inference device; other methods require the CPU default.",
+        help="Neural audio inference device for BigVGAN, DAC, EnCodec, and combined; CPU-only profiles require cpu.",
     )(func)
     func = click.option(
         "--bandwidth",
@@ -1164,8 +1246,8 @@ def _audio_method_options(func: Any) -> Any:
         default=AUDIO_METHODS[0],
         show_default=True,
         help=(
-            "Select automatically, or choose spectral, EnCodec, combined, or experimental full-track "
-            "BigVGAN, CPU Mimi, CPU FocalCodec, or CPU 44.1 kHz DAC (no SynthID decoder)."
+            "Select automatically, or choose spectral, EnCodec, combined, or full-track "
+            "BigVGAN, experimental CPU Mimi / CPU FocalCodec, or 44.1 kHz DAC (no SynthID decoder)."
         ),
     )(func)
 
@@ -1361,6 +1443,7 @@ def cmd_audio_invisible(
     method: AudioMethod,
     bandwidth: str,
     vocoder_device: Literal["cpu", "mps", "cuda"],
+    vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
     """Apply an audio processing profile, keeping verification explicit."""
@@ -1382,6 +1465,7 @@ def cmd_audio_invisible(
             method=method,
             bandwidth_kbps=float(bandwidth),
             vocoder_device=vocoder_device,
+            vendor=vendor,
             scheme=scheme,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as exc:
@@ -1468,6 +1552,7 @@ def cmd_audio_all(
     method: AudioMethod,
     bandwidth: str,
     vocoder_device: Literal["cpu", "mps", "cuda"],
+    vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
     """Remove AI metadata and optionally clean compatible audio watermarks."""
@@ -1490,6 +1575,7 @@ def cmd_audio_all(
             bandwidth_kbps=float(bandwidth),
             scheme=scheme,
             vocoder_device=vocoder_device,
+            vendor=vendor,
             keep_standard=keep_standard,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as exc:
@@ -1566,6 +1652,7 @@ def cmd_audio_batch(
     method: AudioMethod,
     bandwidth: str,
     vocoder_device: Literal["cpu", "mps", "cuda"],
+    vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
     """Process every supported audio file in a directory."""
@@ -1588,6 +1675,7 @@ def cmd_audio_batch(
             bandwidth_kbps=float(bandwidth),
             scheme=scheme,
             vocoder_device=vocoder_device,
+            vendor=vendor,
             keep_standard=keep_standard,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as exc:
@@ -1709,6 +1797,13 @@ def _video_invisible_options(f: Any) -> Any:
 def _video_audio_invisible_options(f: Any) -> Any:
     """Apply optional multi-stream audio-watermark options to video all / video batch."""
     f = click.option(
+        "--audio-vendor",
+        type=click.Choice(list(AUDIO_VENDORS)),
+        default=AUDIO_VENDORS[0],
+        show_default=True,
+        help="Known audio vendor when metadata was stripped; enables wideband audio scrubbing.",
+    )(f)
+    f = click.option(
         "--audio-stream",
         "audio_streams",
         type=click.IntRange(min=0),
@@ -1754,7 +1849,9 @@ def cmd_video_message() -> None:
 
 def _video_message_options(func: Any) -> Any:
     func = click.option(
-        "--reference", required=True, help="64 hex digits known independently from the encoder, not this file's decode."
+        "--reference",
+        required=True,
+        help="Independent encoder message hex (64 hex digits for videoseal/pixelseal, 256 for chunkyseal).",
     )(func)
     return click.option(
         "--scheme", type=click.Choice(list(VIDEO_MESSAGE_SCHEMES)), default=VIDEO_MESSAGE_SCHEMES[0], show_default=True
@@ -1766,7 +1863,7 @@ def _video_message_options(func: Any) -> Any:
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--json", "as_json", is_flag=True, help="Emit hash-bound known-message evidence as JSON.")
 def cmd_video_message_identify(
-    source: Path, reference: str, scheme: Literal["videoseal", "pixelseal"], as_json: bool
+    source: Path, reference: str, scheme: Literal["videoseal", "pixelseal", "chunkyseal"], as_json: bool
 ) -> None:
     """Compare all video frames with an independently known encoder message."""
     from dataclasses import asdict
@@ -1781,6 +1878,39 @@ def cmd_video_message_identify(
         click.echo(json.dumps(asdict(report), indent=2, default=str))
     else:
         console.print(f"  Public {scheme} known message: {report.status}")
+        for caveat in report.caveats:
+            console.print(f"  - {caveat}")
+
+
+@cmd_video_message.command("detect")
+@click.option(
+    "--scheme",
+    type=click.Choice(list(VIDEO_MESSAGE_SCHEMES)),
+    default=VIDEO_MESSAGE_SCHEMES[0],
+    show_default=True,
+)
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Emit blind presence evidence as JSON.")
+def cmd_video_message_detect(
+    source: Path,
+    scheme: Literal["videoseal", "pixelseal", "chunkyseal"],
+    as_json: bool,
+) -> None:
+    """Check a video for blind VideoSeal, PixelSeal, or ChunkySeal presence without a known hex key."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.video_messages import detect_video_watermark_presence
+
+    try:
+        report = detect_video_watermark_presence(source, scheme=scheme)
+    except (OSError, ImportError, RuntimeError, ValueError) as exc:
+        _verification_error(exc, as_json=as_json)
+    if as_json:
+        click.echo(json.dumps(asdict(report), indent=2, default=str))
+    else:
+        console.print(f"  Public {scheme} blind presence: {report.status}")
+        if report.decoded_hex is not None:
+            console.print(f"  Recovered payload hex: {report.decoded_hex}")
         for caveat in report.caveats:
             console.print(f"  - {caveat}")
 
@@ -1812,7 +1942,7 @@ def cmd_video_message_remove(
     source: Path,
     output: Path | None,
     reference: str,
-    scheme: Literal["videoseal", "pixelseal"],
+    scheme: Literal["videoseal", "pixelseal", "chunkyseal"],
     method: Literal["auto", "codec", "vae"],
     noise_std: float | None,
     long_side: int,
@@ -1909,6 +2039,7 @@ def cmd_video_audio(
     method: AudioMethod,
     bandwidth: str,
     vocoder_device: Literal["cpu", "mps", "cuda"],
+    vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
     """Process one or all audio tracks while preserving encoded video and untouched tracks."""
@@ -1931,6 +2062,7 @@ def cmd_video_audio(
                 method=method,
                 bandwidth_kbps=float(bandwidth),
                 vocoder_device=vocoder_device,
+                vendor=vendor,
                 scheme=scheme,
                 streams=target_streams or None,
             )
@@ -1947,6 +2079,7 @@ def cmd_video_audio(
                 method=method,
                 bandwidth_kbps=float(bandwidth),
                 vocoder_device=vocoder_device,
+                vendor=vendor,
                 scheme=scheme,
             )
         )
@@ -2055,25 +2188,32 @@ def cmd_video_identify(
 @click.option("--remove", is_flag=True, help="Remove AI metadata.")
 @_video_output_option
 @click.option("--keep-standard/--remove-all", default=True, help="Keep standard metadata.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the metadata report or strip result as JSON.")
 def cmd_video_metadata(
     source: Path,
     check: bool,
     remove: bool,
     output: Path | None,
     keep_standard: bool,
+    as_json: bool,
 ) -> None:
     """Check or remove AI metadata without transcoding video streams."""
+    from dataclasses import asdict
+
     from remove_ai_watermarks.video import inspect_video_metadata, remove_video_metadata
 
-    _banner()
-    try:
-        report = inspect_video_metadata(source)
-    except (OSError, ValueError) as e:
-        raise click.ClickException(str(e)) from e
-
+    if not as_json:
+        _banner()
     if check or not remove:
-        _print_metadata_report(source, report.has_ai_metadata, report.markers)
-
+        try:
+            report = inspect_video_metadata(source)
+        except (OSError, ValueError) as e:
+            raise click.ClickException(str(e)) from e
+        if as_json and not remove:
+            click.echo(json.dumps(asdict(report), indent=2, default=str))
+            return
+        if not as_json:
+            _print_metadata_report(source, report.has_ai_metadata, report.markers)
         if not remove:
             return
 
@@ -2082,6 +2222,11 @@ def cmd_video_metadata(
     except (OSError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if result.remaining:
+            raise SystemExit(1)
+        return
     if result.remaining:
         console.print(f"  FAILED: {len(result.remaining)} AI metadata marker(s) survived in {result.output}")
         console.print(f"    still present: {', '.join(sorted(result.remaining))}")
@@ -2143,6 +2288,7 @@ def _print_video_audio_status(
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_video_output_option
 @_video_invisible_options
+@click.option("--json", "as_json", is_flag=True, help="Emit the regeneration result as JSON.")
 def cmd_video_invisible(
     source: Path,
     output: Path | None,
@@ -2156,12 +2302,16 @@ def cmd_video_invisible(
     batch_size: int,
     seed: int,
     device: str,
+    as_json: bool,
 ) -> None:
     """Regenerate video pixels with an explicitly selected profile."""
+    from dataclasses import asdict
+
     from remove_ai_watermarks.video import remove_video_invisible
 
-    _banner()
-    console.print(f"  Regenerating {source.name} with the {profile} profile...")
+    if not as_json:
+        _banner()
+        console.print(f"  Regenerating {source.name} with the {profile} profile...")
     try:
         result = remove_video_invisible(
             source,
@@ -2179,6 +2329,11 @@ def cmd_video_invisible(
     except (OSError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if result.remaining_metadata:
+            raise SystemExit(1)
+        return
     if result.remaining_metadata:
         console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
         raise SystemExit(1)
@@ -2195,6 +2350,7 @@ def cmd_video_invisible(
 @_video_output_option
 @_video_visible_options
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from the transcoded output.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the visible removal result as JSON.")
 def cmd_video_visible(
     source: Path,
     output: Path | None,
@@ -2202,12 +2358,16 @@ def cmd_video_visible(
     backend: str,
     temporal_consistency: bool,
     strip_metadata: bool,
+    as_json: bool,
 ) -> None:
     """Remove a temporally stable visible AI wordmark from video."""
+    from dataclasses import asdict
+
     from remove_ai_watermarks.video import remove_video_visible
 
-    _banner()
-    console.print(f"  Scanning {source.name} for a temporally stable {mark} mark...")
+    if not as_json:
+        _banner()
+        console.print(f"  Scanning {source.name} for a temporally stable {mark} mark...")
     try:
         result = remove_video_visible(
             source,
@@ -2220,6 +2380,13 @@ def cmd_video_visible(
     except (OSError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if result.output is None:
+            raise SystemExit(EXIT_NO_VISIBLE_MARK)
+        if result.remaining_metadata:
+            raise SystemExit(1)
+        return
     if result.output is None:
         console.print(f"  No stable {mark} watermark detected; no output written")
         raise SystemExit(EXIT_NO_VISIBLE_MARK)
@@ -2229,6 +2396,79 @@ def cmd_video_visible(
     console.print(
         f"  Removed {result.mark} watermark from "
         f"{result.removed_frames}/{result.total_frames} frames -> {result.output}"
+    )
+    _print_video_audio_unverified()
+
+
+@cmd_video.command("erase")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--region", "regions", multiple=True, required=True, help="x,y,w,h box to erase (repeatable).")
+@click.option(
+    "--frames",
+    default=None,
+    help="Inclusive 0-based START:END frame range (default: all frames).",
+)
+@_video_output_option
+@click.option(
+    "--backend",
+    type=click.Choice(["auto", "cv2", "migan", "lama"]),
+    default="auto",
+    show_default=True,
+    help="Inpaint backend for unrecovered core pixels.",
+)
+@click.option("--dilate", type=click.IntRange(min=0), default=3, show_default=True, help="Grow each box in pixels.")
+@click.option(
+    "--temporal-consistency/--no-temporal-consistency",
+    default=True,
+    show_default=True,
+    help="Enable multi-frame YCrCb unblending, optical-flow clean-plate recovery, and temporal stabilization.",
+)
+@click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from the transcoded output.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the result as JSON.")
+def cmd_video_erase(
+    source: Path,
+    regions: tuple[str, ...],
+    frames: str | None,
+    output: Path | None,
+    backend: str,
+    dilate: int,
+    temporal_consistency: bool,
+    strip_metadata: bool,
+    as_json: bool,
+) -> None:
+    """Erase user-directed (x,y,w,h) region(s) from a video across all or selected frames."""
+    from dataclasses import asdict
+
+    from remove_ai_watermarks.video import remove_video_region
+
+    boxes = [_parse_region(r) for r in regions]
+    parsed_frames = _parse_frame_range(frames)
+    if not as_json:
+        _banner()
+        console.print(f"  Erasing {len(boxes)} region(s) from {source.name}...")
+    try:
+        result = remove_video_region(
+            source,
+            output,
+            regions=boxes,
+            frame_range=parsed_frames,
+            backend=backend,
+            dilate=dilate,
+            strip_metadata=strip_metadata,
+            temporal_consistency=temporal_consistency,
+        )
+    except (OSError, ImportError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        return
+    if result.remaining_metadata:
+        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
+        raise SystemExit(1)
+    console.print(
+        f"  Erased {len(result.regions)} region(s) across "
+        f"{result.erased_frames}/{result.total_frames} frames -> {result.output}"
     )
     _print_video_audio_unverified()
 
@@ -2244,6 +2484,7 @@ def cmd_video_visible(
 )
 @_video_invisible_options
 @_video_audio_invisible_options
+@click.option("--json", "as_json", is_flag=True, help="Emit the complete video cleaning result as JSON.")
 def cmd_video_all(
     source: Path,
     output: Path | None,
@@ -2269,19 +2510,24 @@ def cmd_video_all(
     audio_allow_positive: bool,
     audio_allow_quality_override: bool,
     audio_streams: tuple[int, ...],
+    audio_vendor: AudioVendor,
+    as_json: bool,
 ) -> None:
     """Remove stable visible marks, AI metadata, and optional pixel/audio marks from video."""
+    from dataclasses import asdict
+
     from remove_ai_watermarks.video import remove_video_all
 
-    _banner()
-    stage_parts = ["visible marks"]
-    if invisible:
-        stage_parts.append(profile)
-    if audio_invisible:
-        stage_parts.append(f"audio ({audio_scheme})")
-    stage_parts.append("verified AI metadata")
-    stages = " + ".join(stage_parts)
-    console.print(f"  Cleaning {source.name}: {stages}...")
+    if not as_json:
+        _banner()
+        stage_parts = ["visible marks"]
+        if invisible:
+            stage_parts.append(profile)
+        if audio_invisible or audio_vendor != "auto":
+            stage_parts.append(f"audio ({audio_scheme})")
+        stage_parts.append("verified AI metadata")
+        stages = " + ".join(stage_parts)
+        console.print(f"  Cleaning {source.name}: {stages}...")
     try:
         result = remove_video_all(
             source,
@@ -2306,10 +2552,17 @@ def cmd_video_all(
             audio_allow_unverified=audio_allow_unverified,
             audio_allow_positive=audio_allow_positive,
             audio_allow_quality_override=audio_allow_quality_override,
+            audio_vendor=audio_vendor,
             audio_streams=audio_streams or None,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
+
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if result.remaining_metadata:
+            raise SystemExit(1)
+        return
 
     if result.remaining_metadata:
         console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
@@ -2360,6 +2613,7 @@ def cmd_video_all(
 )
 @_video_invisible_options
 @_video_audio_invisible_options
+@click.option("--json", "as_json", is_flag=True, help="Emit the video batch summary as JSON.")
 def cmd_video_batch(
     directory: Path,
     output_dir: Path | None,
@@ -2386,12 +2640,17 @@ def cmd_video_batch(
     audio_allow_positive: bool,
     audio_allow_quality_override: bool,
     audio_streams: tuple[int, ...],
+    audio_vendor: AudioVendor,
+    as_json: bool,
 ) -> None:
     """Process every supported video in a directory."""
+    from dataclasses import asdict
+
     from remove_ai_watermarks.video import remove_video_batch
 
-    _banner()
-    console.print(f"  Processing video directory {directory} in {mode} mode...")
+    if not as_json:
+        _banner()
+        console.print(f"  Processing video directory {directory} in {mode} mode...")
     try:
         result = remove_video_batch(
             directory,
@@ -2417,10 +2676,19 @@ def cmd_video_batch(
             audio_allow_unverified=audio_allow_unverified,
             audio_allow_positive=audio_allow_positive,
             audio_allow_quality_override=audio_allow_quality_override,
+            audio_vendor=audio_vendor,
             audio_streams=audio_streams or None,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
+
+    if as_json:
+        click.echo(json.dumps(asdict(result), indent=2, default=str))
+        if not result.items:
+            raise SystemExit(EXIT_NOTHING_PROCESSED)
+        if result.failed:
+            raise SystemExit(1)
+        return
 
     if not result.items:
         console.print(f"  No supported videos found in {directory}; nothing was processed")
@@ -2674,6 +2942,33 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
     from dataclasses import asdict
 
     from remove_ai_watermarks.identify import identify
+    from remove_ai_watermarks.text import TEXT_EXTENSIONS
+    from remove_ai_watermarks.video import VIDEO_EXTENSIONS
+
+    suffix = source.suffix.lower()
+    if suffix in VIDEO_EXTENSIONS:
+        ctx.invoke(
+            cmd_video_identify,
+            source=source,
+            no_visible=no_visible,
+            audio=not no_visible,
+            audio_scheme="auto",
+            as_json=as_json,
+        )
+        return
+    if suffix in AUDIO_EXTENSIONS:
+        ctx.invoke(
+            cmd_audio_identify,
+            source=source,
+            check_invisible=not no_visible,
+            stream=0,
+            as_json=as_json,
+            scheme="auto",
+        )
+        return
+    if suffix in TEXT_EXTENSIONS:
+        ctx.invoke(cmd_text_identify, source=source, as_json=as_json)
+        return
 
     source = _validate_image(source)
     report = identify(source, check_visible=not no_visible, check_invisible=not no_visible)
@@ -2780,7 +3075,7 @@ def cmd_classify_source(source: Path, as_json: bool) -> None:
 @_visible_backend_option
 @_visible_sensitivity_option
 @_strength_option
-@_vendor_option
+@_all_vendor_option
 @_pipeline_option
 @_seed_option
 @_hf_token_option
@@ -2829,8 +3124,82 @@ def cmd_all(
 
     If invisible watermark deps are not installed, skips step 2 with a warning.
     """
+    from remove_ai_watermarks.text import TEXT_EXTENSIONS
+    from remove_ai_watermarks.video import VIDEO_EXTENSIONS
+
+    suffix = source.suffix.lower()
+    if suffix in VIDEO_EXTENSIONS:
+        mapped_audio_vendor: AudioVendor = vendor if vendor in AUDIO_VENDORS else "auto"  # type: ignore[assignment]
+        ctx.invoke(
+            cmd_video_all,
+            source=source,
+            output=output,
+            mark="auto",
+            backend=backend,
+            temporal_consistency=True,
+            invisible=bool(force or vendor not in (None, "auto")),
+            profile="auto",
+            quality="delivery",
+            noise_std=DEFAULT_VIDEO_SYNTHID_NOISE_STD,
+            long_side=DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
+            fps=DEFAULT_VIDEO_SYNTHID_FPS,
+            keep_fps=True,
+            temporal_stabilize=True,
+            batch_size=4,
+            seed=seed or 0,
+            device="auto",
+            audio_invisible=True,
+            audio_scheme="auto",
+            audio_method="auto",
+            audio_force=force,
+            audio_allow_unverified=False,
+            audio_allow_positive=False,
+            audio_allow_quality_override=False,
+            audio_streams=(),
+            audio_vendor=mapped_audio_vendor,
+            as_json=False,
+        )
+        return
+    if suffix in AUDIO_EXTENSIONS:
+        mapped_vendor: AudioVendor = vendor if vendor in AUDIO_VENDORS else "auto"  # type: ignore[assignment]
+        ctx.invoke(
+            cmd_audio_all,
+            source=source,
+            output=output,
+            invisible=True,
+            force=force,
+            allow_unverified=False,
+            allow_positive=False,
+            allow_quality_override=False,
+            verify=True,
+            stream=0,
+            keep_standard=True,
+            as_json=False,
+            method="auto",
+            bandwidth=str(AUDIO_BANDWIDTHS_KBPS[-1]),
+            vocoder_device="cpu",
+            vendor=mapped_vendor,
+            scheme="auto",
+        )
+        return
+    if suffix in TEXT_EXTENSIONS:
+        ctx.invoke(
+            cmd_text_all,
+            source=source,
+            output=output,
+            invisible=force,
+            allow_partial=False,
+            rewriter_backend="transformers",
+            rewriter_model="",
+            seed=seed or 0,
+            as_json=False,
+        )
+        return
+
     _banner()
     source = _validate_image(source)
+    if vendor is not None and vendor not in _IMAGE_VENDOR_CHOICES:
+        raise click.UsageError(f"--vendor {vendor} is only supported for audio or video inputs")
 
     if output is None:
         output = source.with_stem(source.stem + "_clean")

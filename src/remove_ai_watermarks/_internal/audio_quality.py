@@ -73,7 +73,9 @@ def audio_quality_passed(fidelity: AudioFidelity, *, lossy: bool = False) -> boo
         )
     ):
         return False
-    if fidelity.max_side_mid_drift_db is not None and not isfinite(fidelity.max_side_mid_drift_db):
+    if fidelity.max_side_mid_drift_db is not None and (
+        not isfinite(fidelity.max_side_mid_drift_db) or abs(fidelity.max_side_mid_drift_db) > (9.0 if lossy else 6.0)
+    ):
         return False
     if fidelity.source_rms >= 1e-3 and fidelity.output_rms < max(1e-5, fidelity.source_rms * 0.005):
         return False

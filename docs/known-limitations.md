@@ -629,10 +629,10 @@ supported AI provenance metadata without transcoding streams.
 
 `video visible` and `remove_video_visible` additionally support the moving
 Sora 2 mascot with or without its wordmark, the current Veo four-point diamond, the legacy
-`Veo` text, the Seedance boxed `AI` label, the fixed Doubao `豆包AI生成`
+`Veo` text, the top-left Dreamina rounded `AI` badge, the Seedance boxed `AI` label, the fixed Doubao `豆包AI生成`
 label, the fixed `Dola AI` text, the Hailuo AI
-MINIMAX/Hailuo AI composite label, and the bottom-right Kling AI `KLING AI` or
-`KlingAI` label with its version suffix. Detection requires a recurring visual
+MINIMAX/Hailuo AI composite label, the Vidu Q3 wordmark, the Alibaba Wan corner mark, and the bottom-right Kling AI `KLING AI` or
+`KlingAI` label with its version suffix (`video erase` / `remove_video_region` handles user-specified `(x, y, w, h)` regions). Detection requires a recurring visual
 candidate across adjacent frames. Fixed-mark candidates must remain anchored rather than
 drifting with a scene object. Kling AI also requires a bright low-saturation
 candidate near the expected frame edge. Provider provenance can recover

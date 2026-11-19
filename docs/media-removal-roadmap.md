@@ -1,10 +1,11 @@
 # Real video and audio removal roadmap
 
 Updated: 2026-11-18. This execution contract defines how `remove-ai-watermarks`
-maintains best-in-class open-source coverage across visible, container/bitstream,
-audio-waveform, and video-pixel AI provenance marks on content the user owns or
-generated. Third-party stock, marketplace, classifieds, non-AI plan branding,
-and EU Annex 1 regulatory icons remain outside [project scope](legal-and-safety.md).
+achieves and verifies market-leading coverage across visible, container/bitstream,
+audio-waveform, and video-pixel AI watermarks on user-generated or user-edited
+content across all AI generators (free and paid tiers alike). Third-party stock,
+marketplace, classifieds, non-AI editor branding on human footage, and EU Annex 1
+regulatory icons remain outside [project scope](legal-and-safety.md).
 
 Companion references: [methods, libraries, and licenses](media-removal-research.md),
 [provider verifiers](media-provider-verifiers.md), [sample corpus](media-sample-corpus.md),
@@ -14,16 +15,16 @@ Companion references: [methods, libraries, and licenses](media-removal-research.
 ## Four-layer decoupled architecture
 
 Every audio and video file is inspected and cleaned across four independent
-layers so that container tags, bitstream SEI markers, visible overlays, video
+layers so that container tags, bitstream SEI/OBU markers, visible overlays, video
 pixel marks, and per-track audio marks are never conflated:
 
 ```mermaid
 flowchart LR
-    A["Input MP4 / MOV / M4V / MKV / Audio"] --> B["Layer 1: Container & Bitstream SEI<br/>C2PA, XMP, TC260 AIGC, stbl H.264/HEVC SEI"]
-    B --> C["Layer 2: Visible Video Marks<br/>Clean-donor flow recovery + LaMa/MI-GAN + temporal blend"]
-    C --> D["Layer 3: Invisible Video Pixels<br/>CUDA 3D Wan 2.1 / 2D VAE + VideoSeal/PixelSeal gates"]
-    D --> E["Layer 4: Per-Stream Invisible Audio<br/>Vendor-aware DAC / EnCodec M/S / Spectral + perceptual gates"]
-    E --> F["Atomic Verification & Publication<br/>Packet/PTS invariants + local decoders + quality gates"]
+    A["Input MP4 / MOV / M4V / MKV / WebM / Audio"] --> B["Layer 1: Container & Bitstream<br/>C2PA 2.4, fMP4 emsg, TC260 AIGC, H.264/HEVC SEI, AV1 OBU"]
+    B --> C["Layer 2: Visible Video Marks & Erase<br/>Multi-frame YCbCr alpha unblending + clean-donor flow + core MI-GAN/LaMa"]
+    C --> D["Layer 3: Invisible Video Pixels<br/>Text-encoder-free 3D Wan 2.1 (MPS/CUDA) + VideoSeal 1.0 / PixelSeal / ChunkySeal"]
+    D --> E["Layer 4: Per-Stream Studio Audio<br/>Vendor/force-aware DAC / SNAC / BigVGAN-Mel + surround stem routing"]
+    E --> F["Atomic Verification & Publication<br/>Packet/PTS/HDR invariants + local decoders + runtime quality gates"]
 ```
 
 ## Outcome and promotion contract
@@ -35,47 +36,48 @@ Promotion of any default or `auto`-routed audio/video mechanism requires:
    provider-oracle operating points are enforced by tests against
    [`data/evaluations/`](../data/evaluations/) (`video-synthid-oracle.csv`,
    `video-wan-oracle.csv`, `audio-synthid-oracle.csv`).
-2. **Matched controls**: Every positive removal claim requires a positive
-   untouched source and a positive matched codec/resampling control on the same
-   verifier, plus clean controls that remain negative.
+2. **Matched controls & independent generations**: Every positive removal claim
+   requires a positive untouched source and a positive matched codec/resampling
+   control on the same verifier, plus clean controls that remain negative;
+   denominators count independent generations rather than format derivatives.
 3. **Final-container verification**: Audio and video verdicts, exact frame/sample
    clocks, untouched sibling packet hashes, and multi-track stream coverage are
-   checked on the final muxed container rather than intermediate buffers.
-4. **Perceptual and worst-window quality gates**: Audio gates check SNR,
-   clipping, active-window RMS (`worst_window_rms_ratio`), stereo Side/Mid
-   drift, and phase-invariant `MR-STFT` / `64-band log-Mel` distances; video
-   gates check `source_psnr_db`, `min_frame_psnr_db`, grayscale `source_ssim`,
-   3-channel `source_color_ssim`, `min_frame_ssim`, 12-frame `worst_window_ssim`,
-   and motion-compensated `temporal_residual_ratio`.
+   checked on the final muxed container through a unified saved-file evaluator
+   shared by internal runs and `--external-outputs-dir` competitor runs.
+4. **Runtime and benchmark quality gates**: Runtime `audio_quality_passed`
+   enforces energy retention, full-scale peak/clipping bounds, active-window RMS
+   (`worst_window_rms_ratio`), and stereo `max_side_mid_drift_db` while the
+   benchmark additionally scores phase-invariant `MR-STFT` and `64-band log-Mel`
+   distances; runtime `video_quality_passed` enforces `source_psnr_db`,
+   `source_ssim`, `source_color_ssim`, `min_frame_ssim`, 12-frame
+   `worst_window_ssim`, and motion-compensated `temporal_residual_ratio`.
 5. **Permissive open-source supply chain**: Shipped runtime dependencies and
    pinned weights use permissive licenses (`MIT`, `Apache-2.0`, `BSD`, or
    documented `CC-BY-4.0` opt-in). Non-commercial (`NTU S-Lab 1.0`,
-   `Stability Community License`, `CC-BY-NC`) and `GPL-3.0` packages are never
+   `Stability Community License`, `MUSDB18-HQ` weights, `CC-BY-NC`, `OpenRAIL` /
+   ARR-capped, `NVIDIA Open Model License`) and `GPL`/`AGPL` packages are never
    added to `pyproject.toml`; external tools are compared out-of-process via
    `scripts/media_removal_benchmark.py --external-outputs-dir`.
 
-## Priority matrix
+## Six-phase global master plan
 
-| Tier | Deliverable | Status | Verification / exit gate |
+| Phase | Deliverable | Status | Verification / exit gate |
 | --- | --- | --- | --- |
-| **P0.1** | Fail-closed Google SynthID audio `auto` routing (`adaptive_auto_profiles` -> `("dac",)` when DAC is unavailable/multichannel; pre-strip vendor metadata preserved across `remove_video_all` stages) | **Shipped** | `tests/test_audio.py`, `tests/test_video_audio.py`; zero silent fallback to `encodec` on Google SynthID |
-| **P0.2** | Data-backed oracle certification for `DAC` (`FIXED_QUANTIZERS=3`) and `Wan 2.1` (`strength=0.38`, `193/17` causal windows) on publication-cleared fixtures | **Shipped** | `data/evaluations/audio-synthid-oracle.csv`, `data/evaluations/video-wan-oracle.csv`, contract tests in `test_audio_dac.py` and `test_video_wan.py` |
-| **P0.3** | Benchmark Schema v2: 4-layer visual quality gate (`source_color_ssim`, `min_frame_ssim`, `worst_window_ssim`), all-stream perceptual audio scoring, stereo 48 kHz music carrier, and `--external-outputs-dir` competitor comparator | **Shipped** | `scripts/media_removal_benchmark.py --builtin-suite --strict`, `tests/test_media_removal_benchmark.py`, `tests/test_video_fidelity_probe.py` |
-| **P1.1** | Structural ISO-BMFF `stbl` H.264/HEVC `SEI user_data_unregistered` parser (`scan_isobmff_video_sei`) scoping Kling SEI detection and scrubbing strictly to video SEI NALs across the entire file | **Shipped** | `tests/test_video.py` (`framemd5` bit-exactness + late-file SEI detection + zero audio/slice byte mutation) |
-| **P1.2** | Clean-donor optical-flow background propagation (`recover_unobscured_background`) with verified-context local-affine flow before `fill()` on moving/intermittent visible video marks | **Shipped** | `tests/test_video_temporal.py` (`> 6 dB` MSE reduction over single-frame inpainting on moving marks; hard scene-cut rejection) |
-| **P1.3** | Full-bandwidth 48 kHz native stereo music codec (`facebook/encodec_48khz`, MIT) and high-capacity public video message parity (`ChunkySeal`, MIT) | **Next** | Paired 48 kHz stereo music perceptual benchmark vs `DAC` (`MR-STFT`, `Mel`, Side/Mid drift) and pinned local receiver round-trip |
-| **P1.4** | Expanded visible AI-video mark templates (`Runway`, `Luma Dream Machine`, `Pika`, `PixVerse`, `Wan`) from publication-cleared native exports | **Next** | Positive TPR on native exports + zero false positives on clean negative video controls |
-| **P2.1** | Fast temporal latent bottleneck (`TAEHV` Apache-2.0 / lightweight flow-guided 2D-to-3D adapter) for Apple Silicon MPS and consumer GPUs (`< 16 GiB`) | **Planned** | Close the `720p @ 24 fps` fidelity gap between `synthid` (`512 @ 12 fps`) and H100 `wan21-*` on `lite-003` and `VideoSeal 1.0` |
-| **P2.2** | Out-of-process head-to-head benchmark run against `ShadowMarkDefense`, `pagedMark`, and `watermarks-remover` using `--external-outputs-dir` | **Planned** | Reproducible Markdown/JSON comparison across `AudioSeal`, `WavMark`, `Perth`, `VideoSeal 1.0`, and 4-layer clips |
-| **P3** | Codec-trained latent audio/video robustness cohort (`NeuMark`, `DeltaMark`, `CRAW`) and held-out provider re-audits (`cartesia-api`, `resemble-api`, `openai-web`, `meta-web`) | **Research** | Held-out multi-generation survival/removal table without tuning parameters against live provider quota |
+| **Foundation (P0-P1.2)** | Fail-closed SynthID audio `auto` routing; oracle certification manifests (`DAC`, `Wan 2.1`); structural ISO-BMFF `stbl` H.264/HEVC SEI parser; clean-donor optical-flow background propagation (`recover_unobscured_background`) | **Shipped** | `tests/test_audio_dac.py`, `tests/test_video_wan.py`, `tests/test_video.py`, `tests/test_video_temporal.py` |
+| **Phase 0** | Unified delivered-file evaluator (`Benchmark v3` across all 4-layer & multi-stream surfaces + `skipped_clean` / `control_stays_positive` / `bandwidth_kbps` parity); `ChunkySeal` (`1024`-bit `ConvNeXtV2` + `PixelDecoder`, MIT); runtime `max_side_mid_drift_db` & `worst_window_ssim` gates, lossless `.flac`/`.wav` `0.999` peak guard, and 10-bit HDR fail-safe in `video_invisible.py` | **Shipped** | `scripts/media_removal_benchmark.py --builtin-suite --strict`, `tests/test_video_message_models.py`, `tests/test_media_removal_benchmark.py` |
+| **Phase 1** | Studio 44.1/48 kHz audio generation 2: `DAC 44.1k` benchmarked against `BigVGAN v2 + Mel-bottleneck`, `plain-bigvgan`, and `encodec48 (6k)` on 48 kHz stereo music & 16 kHz speech (`DAC` won across all axes); image-aligned `--vendor` / `--audio-vendor` / `--force` contract; `cpu`/`mps`/`cuda` audio acceleration; `5.1`/`7.1` stem decomposition & `16/24-bit` PCM preservation | **Shipped** | `tests/test_audio_dac.py`, `tests/test_av_roadmap_features.py`, zero `0 dBFS` FLAC clipping |
+| **Phase 2** | Visible video v2 & `video erase`: self-calibrated multi-frame `YCrCb` reverse alpha unblending (`PyrLK + RANSAC` affine donor median, `+20.50 dB` ROI PSNR over Telea) + `donor_radius=12` clean-plate flow + `CUDA`/`CoreML` `MI-GAN`/`LaMa`; `dreamina` & `wan` video detectors (`10` marks) + multi-region support; `video erase --region --frames` (`remove_video_region`) | **Shipped** | `tests/test_visible_examples.py` (`10/10` video marks `90/90` frames), `tests/test_av_roadmap_features.py` |
+| **Phase 3** | Memory-efficient `Wan 2.1 1.3B` & blind presence detection: CPU `UMT5-XXL` prompt offload (`~3.4 GiB` accelerator footprint vs `~14.8 GiB`), explicit `mps` support, 5-min `1080p` streaming budget, and blind `VideoSeal`/`PixelSeal`/`ChunkySeal` (`1024`-bit) presence detection (`video message detect` / `detect_video_watermark_presence`) | **Shipped** | `tests/test_video_wan.py`, `tests/test_av_roadmap_features.py` |
+| **Phase 4** | Professional 10-bit HDR & container pipeline: end-to-end 16-bit `bgr48le` / `yuv420p10le`, `bt2020nc`, `smpte2084`, `arib-std-b67`, `libx265` `hvc1` & 10-bit `VP9`; selective lossless scrubbing of fMP4 `emsg`, MKV `application/c2pa` attachments (preserving fonts/cover art), and H.264/HEVC AI `SEI`; `.mkv` & `.m4v` unified in `remove_video_all` | **Shipped** | `tests/test_av_roadmap_features.py`, `tests/test_video.py`, `tests/test_metadata.py` |
+| **Phase 5** | Unified multimodal UX & ecosystem: top-level `identify` / `all` / `erase` auto-dispatch across image/video/audio/text, `--json` across all `video *` commands, native `RAIWCleanAudio` (`AUDIO`) & `RAIWCleanVideo` (`IMAGE` + `fps` + `AUDIO`) tensor nodes in `ComfyUI-remove-ai-watermarks`, and `Clean video` / `Clean audio` / `Audio` tabs in `raiw-hf-space` | **Shipped** | `tests/test_av_roadmap_features.py`, `ComfyUI` (`34/34`), `raiw-hf-space` (`13/13` + rendered UI verification) |
 
 ## Video tranche
 
 Current video qualification separates container/SEI signals (`Kling` H.264 SEI
 and `Dreamina` / `BytePlus` C2PA exports, which clear losslessly via
 `remove_video_metadata`) from pixel-embedded watermarks (`Google Veo SynthID`,
-consumer `CapCut Seedance`, and `Meta VideoSeal` / `PixelSeal`). Zero-noise
-posterior-mode round trips (`CogVideoX`, `VidTok` FSQ, zero-noise
+consumer `CapCut Seedance`, and `Meta VideoSeal 1.0` / `PixelSeal` / `ChunkySeal`).
+Zero-noise posterior-mode round trips (`CogVideoX`, `VidTok` FSQ, zero-noise
 `AutoencoderKLWan`) retained pixel marks against matched silent controls and
 serve strictly as structural baselines, whereas `wan21-synthid-experimental`
 (`strength=0.38`) and `wan21-seedance-experimental` (`strength=0.12`) cleared
@@ -87,8 +89,8 @@ experiment records remain in the
 
 1. Local container, C2PA, TC260, and structural `stbl` H.264/HEVC SEI inspection.
 2. Compatible pinned local decoders (`AudioSeal` 16/24/48 kHz, `WavMark`,
-   `Perth v1`, experimental `SilentCipher`, `VideoSeal 0.0/1.0`, `PixelSeal`),
-   calibrated on marked and clean controls.
+   `Perth v1`, experimental `SilentCipher`, `VideoSeal 1.0` 256-bit, `PixelSeal`
+   256-bit, `ChunkySeal` 1024-bit), calibrated on marked and clean controls.
 3. Official provider watermark APIs (`elevenlabs-api`, `cartesia-api`,
    `resemble-api`) where documented, otherwise authorized provider web surfaces
    (`gemini-web`, `meta-web`, `kling-web`, `cartesia-web`, `microsoft-web`,

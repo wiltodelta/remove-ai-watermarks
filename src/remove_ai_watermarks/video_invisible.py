@@ -418,6 +418,17 @@ def regenerate_video_candidate(
     resolved_device = runtime.resolved_device
     vae = runtime.vae
 
+    encode_profile = probe_video_encode_profile(source)
+    comp_depth = getattr(encode_profile, "component_depth", None)
+    color_trc = getattr(encode_profile, "color_transfer", None)
+    if (comp_depth or 0) > 8 or color_trc in {"smpte2084", "arib-std-b67"}:
+        source_format = getattr(encode_profile, "source_pixel_format", None) or "unknown pixel format"
+        raise RuntimeError(
+            "Invisible video regeneration currently supports SDR 8-bit input only; "
+            f"refusing to silently reduce {source_format} / "
+            f"{color_trc or 'unknown transfer'} to 8-bit SDR"
+        )
+
     with staged_video_output(output) as (encoded_video, temporary_output):
         process = start_raw_video_encoder(
             raw_video_command(
@@ -426,7 +437,7 @@ def regenerate_video_candidate(
                 height=size[1],
                 fps=effective_fps,
                 crf=18,
-                profile=probe_video_encode_profile(source),
+                profile=encode_profile,
             )
         )
         frame_pipe = process.stdin

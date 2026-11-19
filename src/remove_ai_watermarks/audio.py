@@ -46,10 +46,12 @@ from remove_ai_watermarks._internal.constants import (
     AUDIO_LOSSY_OUTPUT_EXTENSIONS,
     AUDIO_METHODS,
     AUDIO_OUTPUT_EXTENSIONS,
+    AUDIO_VENDORS,
     AUDIO_VOCODER_DEVICES,
     AudioMethod,
     AudioProfile,
     AudioScheme,
+    AudioVendor,
 )
 from remove_ai_watermarks._internal.constants import (
     AUDIO_PROFILES as AUDIO_PROFILES,
@@ -734,14 +736,27 @@ def require_audio_profile_runtime(method: AudioProfile) -> None:
     _require_base_audio_runtime(method)
 
 
+_SURROUND_51_LAYOUTS: frozenset[str] = frozenset({"5.1", "5.1(side)"})
+_SURROUND_71_LAYOUTS: frozenset[str] = frozenset({"7.1", "7.1(wide)", "7.1(wide-side)"})
+
+
 def _is_mono_or_stereo(info: audio_io.AudioStreamInfo) -> bool:
     return info.channel_layout in {"mono", "stereo"} and info.channels in (1, 2)
 
 
+def _is_tagged_surround(info: audio_io.AudioStreamInfo) -> bool:
+    return (info.channels == 6 and info.channel_layout in _SURROUND_51_LAYOUTS) or (
+        info.channels == 8 and info.channel_layout in _SURROUND_71_LAYOUTS
+    )
+
+
 def validate_audio_stream_for_profile(info: audio_io.AudioStreamInfo, method: AudioProfile) -> None:
     """Validate channel layout and bounded full-track limits for a selected audio profile."""
-    if method in {"bigvgan", "mimi", "focalcodec", "dac"} and not _is_mono_or_stereo(info):
-        label = {"bigvgan": "BigVGAN", "mimi": "Mimi", "focalcodec": "FocalCodec", "dac": "DAC"}[method]
+    if method == "dac":
+        if not (_is_mono_or_stereo(info) or _is_tagged_surround(info)):
+            raise ValueError("DAC requires a mono or stereo (or tagged 5.1/7.1) channel layout")
+    elif method in {"bigvgan", "mimi", "focalcodec"} and not _is_mono_or_stereo(info):
+        label = {"bigvgan": "BigVGAN", "mimi": "Mimi", "focalcodec": "FocalCodec"}[method]
         raise ValueError(f"{label} requires a mono or stereo channel layout")
     if method in {"bigvgan", "mimi"} and info.duration is not None:
         label = "BigVGAN" if method == "bigvgan" else "Mimi"
@@ -750,14 +765,39 @@ def validate_audio_stream_for_profile(info: audio_io.AudioStreamInfo, method: Au
             raise ValueError(f"{label} full-track processing is limited to 30 seconds and 16000000 sample values")
 
 
-def adaptive_auto_profiles(scheme: AudioScheme, before: AudioProvenanceReport) -> tuple[AudioProfile, ...]:
-    """Select minimal-distortion candidate profiles matched to detected schemes and vendor metadata."""
-    vendor = _audio_metadata_vendor(before.metadata_markers)
-    if vendor is not None:
-        can_use_dac = _is_mono_or_stereo(before.stream) and audio_dac.is_available()
-        if vendor == "elevenlabs":
+def normalize_audio_vendor(vendor: str | None) -> str | None:
+    if vendor in (None, "auto"):
+        return None
+    if vendor not in AUDIO_VENDORS:
+        expected = ", ".join(AUDIO_VENDORS)
+        raise ValueError(f"Audio vendor must be one of: {expected}")
+    return vendor
+
+
+_normalize_audio_vendor = normalize_audio_vendor
+
+
+def adaptive_auto_profiles(
+    scheme: AudioScheme,
+    before: AudioProvenanceReport,
+    *,
+    vendor: str | None = None,
+) -> tuple[AudioProfile, ...]:
+    """Select minimal-distortion candidate profiles matched to detected schemes and vendor cohorts."""
+    explicit_vendor = _normalize_audio_vendor(vendor)
+    resolved_vendor = explicit_vendor or _audio_metadata_vendor(before.metadata_markers)
+    if resolved_vendor is not None:
+        can_use_dac = (
+            _is_mono_or_stereo(before.stream) or _is_tagged_surround(before.stream)
+        ) and audio_dac.is_available()
+        if resolved_vendor in {"google", "google_synthid"}:
+            return ("dac", "combined") if can_use_dac else ("dac",)
+        if resolved_vendor in {"elevenlabs", "suno", "udio", "openai", "cartesia", "microsoft"}:
             return ("dac", "encodec", "combined") if can_use_dac else ("encodec", "combined")
-        return ("dac", "combined") if can_use_dac else ("dac",)
+        if resolved_vendor == "meta":
+            return ("spectral", "dac", "combined") if can_use_dac else ("spectral", "combined")
+        if resolved_vendor == "resemble":
+            return ("dac", "spectral", "combined") if can_use_dac else ("spectral", "combined")
     if scheme not in {"all", "auto"} or before.watermark_status != "detected":
         return _AUTO_PROFILES[scheme]
     detected = {item.scheme for item in before.detections if item.status == "detected"}
@@ -795,16 +835,18 @@ def validate_audio_arguments(
     bandwidth_kbps: float,
     vocoder_device: Literal["cpu", "mps", "cuda"],
     allow_unverified: bool = False,
+    vendor: str | None = None,
 ) -> tuple[AudioProfile, ...]:
     """Validate public audio processing arguments without requiring audio runtime dependencies."""
-    if not verify and not (force or allow_unverified):
+    explicit_vendor = _normalize_audio_vendor(vendor)
+    if not verify and not (force or allow_unverified or explicit_vendor is not None):
         raise ValueError("Disabling verification requires force=True or allow_unverified=True")
     if method not in AUDIO_METHODS:
         raise ValueError("Audio method must be auto, spectral, encodec, combined, bigvgan, mimi, focalcodec, or dac")
     if vocoder_device not in AUDIO_VOCODER_DEVICES:
         raise ValueError("Vocoder device must be cpu, mps, or cuda")
-    if vocoder_device != "cpu" and method != "bigvgan":
-        raise ValueError("A non-CPU vocoder device requires method=bigvgan")
+    if vocoder_device != "cpu" and method in {"spectral", "mimi", "focalcodec"}:
+        raise ValueError("A non-CPU vocoder device requires method=bigvgan, dac, encodec, combined, or auto")
     if scheme not in _AUTO_PROFILES:
         raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
     if method in {"auto", "encodec", "combined"} and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
@@ -821,6 +863,7 @@ def resolve_audio_profiles(
     bandwidth_kbps: float,
     vocoder_device: Literal["cpu", "mps", "cuda"],
     allow_unverified: bool = False,
+    vendor: str | None = None,
 ) -> tuple[AudioProfile, ...]:
     """Validate public audio processing arguments and return candidate profiles."""
     profiles = validate_audio_arguments(
@@ -831,6 +874,7 @@ def resolve_audio_profiles(
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
         allow_unverified=allow_unverified,
+        vendor=vendor,
     )
     _require_base_audio_runtime(method)
     return profiles
@@ -850,6 +894,7 @@ def remove_audio_invisible(
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
+    vendor: AudioVendor | None = None,
 ) -> AudioRemovalResult:
     """Process audio and publish only a fully checked negative by default.
 
@@ -870,6 +915,8 @@ def remove_audio_invisible(
     44.1 kHz DAC); BigVGAN retains its selected device. Codec reconstruction
     does not guarantee voice identity.
     """
+    explicit_vendor = _normalize_audio_vendor(vendor)
+    eff_allow_unverified = allow_unverified or explicit_vendor is not None
     profiles = resolve_audio_profiles(
         method=method,
         scheme=scheme,
@@ -877,15 +924,16 @@ def remove_audio_invisible(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
-        allow_unverified=allow_unverified,
+        allow_unverified=eff_allow_unverified,
+        vendor=vendor,
     )
     target, original = Path(output).expanduser(), Path(source).expanduser().resolve()
     if target.resolve() == original or (target.exists() and target.samefile(original)):
         raise ValueError("Audio output must differ from the source")
     before = identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
     if method == "auto":
-        profiles = adaptive_auto_profiles(scheme, before)
-    eff_unverified = force or allow_unverified
+        profiles = adaptive_auto_profiles(scheme, before, vendor=explicit_vendor)
+    eff_unverified = force or eff_allow_unverified
     if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
         profile = profiles[0]
         return AudioRemovalResult(
@@ -899,7 +947,9 @@ def remove_audio_invisible(
             {},
             method=profile,
             bandwidth_kbps=bandwidth_kbps if profile in {"encodec", "combined"} else None,
-            vocoder_device=vocoder_device if profile in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
+            vocoder_device=vocoder_device
+            if profile in {"bigvgan", "mimi", "focalcodec", "dac", "encodec", "combined"}
+            else None,
         )
     if not verify or before.watermark_status != "detected" or (not eff_unverified and _missing_decoder_reason(before)):
         profiles = profiles[:1]
@@ -918,7 +968,7 @@ def remove_audio_invisible(
                 scheme=scheme,
                 _before=before,
                 vocoder_device=vocoder_device,
-                allow_unverified=allow_unverified and is_last,
+                allow_unverified=eff_allow_unverified and is_last,
                 allow_positive=allow_positive and is_last,
                 allow_quality_override=allow_quality_override and is_last,
             )
@@ -996,31 +1046,64 @@ def _remove_audio_profile(
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     count = 0
+    source_exceeded_full_scale = False
 
     def inputs() -> Generator[NDArray[Any], None, None]:
-        nonlocal count
+        nonlocal count, source_exceeded_full_scale
+        import numpy as np
+
         reader = audio_io.read_audio(before.source, before.stream, chunk_frames=before.stream.sample_rate * 8)
         try:
             for frames in reader:
                 count += len(frames)
+                if not source_exceeded_full_scale and frames.size and float(np.max(np.abs(frames))) > 1.0:
+                    source_exceeded_full_scale = True
                 yield frames
         finally:
             close = getattr(reader, "close", None)
             if callable(close):
                 close()
 
+    def _guard_full_scale(chunks: Iterator[NDArray[Any]]) -> Generator[NDArray[Any], None, None]:
+        import numpy as np
+
+        for chunk in chunks:
+            arr = np.asarray(chunk, dtype=np.float32)
+            if not source_exceeded_full_scale and arr.size:
+                peak = float(np.max(np.abs(arr)))
+                if bool(np.isfinite(peak)) and 0.9999 < peak <= 1.35:
+                    arr = (arr * (0.9999 / peak)).astype(np.float32, copy=False)
+            yield arr
+
     with staged_sibling(target) as staged:
         transformed: Iterator[NDArray[Any]] = inputs()
         if method in {"spectral", "combined"}:
             transformed = audio_spectral.filter_audio_chunks(transformed, before.stream.sample_rate)
         if neural:
-            stereo_mode: Literal["independent", "ms"] = "ms" if before.stream.channels == 2 else "independent"
-            transformed = audio_codec.resynthesize_chunks(
-                transformed,
-                before.stream.sample_rate,
-                bandwidth_kbps=bandwidth_kbps,
-                stereo_mode=stereo_mode,
-            )
+            if _is_tagged_surround(before.stream):
+                transformed = _encodec_surround_track(
+                    transformed,
+                    before.stream.sample_rate,
+                    bandwidth_kbps=bandwidth_kbps,
+                    device=vocoder_device,
+                )
+            else:
+                stereo_mode: Literal["independent", "ms"] = "ms" if before.stream.channels == 2 else "independent"
+                if vocoder_device == "cpu":
+                    transformed = audio_codec.resynthesize_chunks(
+                        transformed,
+                        before.stream.sample_rate,
+                        bandwidth_kbps=bandwidth_kbps,
+                        stereo_mode=stereo_mode,
+                    )
+                else:
+                    transformed = audio_codec.resynthesize_chunks(
+                        transformed,
+                        before.stream.sample_rate,
+                        bandwidth_kbps=bandwidth_kbps,
+                        stereo_mode=stereo_mode,
+                        device=vocoder_device,
+                    )
         if method == "bigvgan":
             transformed = _vocode_full_track(transformed, before.stream.sample_rate, vocoder_device)
         if method == "mimi":
@@ -1028,11 +1111,11 @@ def _remove_audio_profile(
         if method == "focalcodec":
             transformed = _focalcodec_full_track(transformed, before.stream.sample_rate)
         if method == "dac":
-            transformed = _dac_full_track(transformed, before.stream.sample_rate)
+            transformed = _dac_full_track(transformed, before.stream.sample_rate, vocoder_device)
         frames_written = audio_io.write_audio(
             before.stream,
             staged,
-            transformed,
+            _guard_full_scale(transformed),
             bitexact=method in {"bigvgan", "mimi", "focalcodec", "dac"} and staged.suffix.lower() == ".wav",
         )
         if frames_written != count:
@@ -1119,13 +1202,91 @@ def _focalcodec_full_track(chunks: Iterator[NDArray[Any]], sample_rate: int) -> 
     )
 
 
-def _dac_full_track(chunks: Iterator[NDArray[Any]], sample_rate: int) -> Iterator[NDArray[Any]]:
-    """Apply the explicit experimental CPU 44.1 kHz DAC profile across short or long tracks."""
+def _lowpass_lfe_channel(lfe: NDArray[Any], sample_rate: int) -> NDArray[Any]:
+    """Strip out-of-band watermark energy (>120 Hz) from LFE while preserving subwoofer bass."""
+    import numpy as np
+
+    signal: Any = import_module("scipy.signal")
+    arr = np.asarray(lfe, dtype=np.float64)
+    if arr.shape[0] <= 16 or sample_rate <= 300:
+        return arr.astype(np.float32)
+    sos = np.asarray(signal.butter(4, 120.0, btype="lowpass", fs=sample_rate, output="sos"), dtype=np.float64)
+    pad = min(3 * (2 * len(sos) + 1), arr.shape[0] - 1)
+    filtered = np.asarray(signal.sosfiltfilt(sos, arr, axis=0, padlen=pad), dtype=np.float64)
+    return filtered.astype(np.float32)
+
+
+def _transform_surround_stems(
+    samples: NDArray[Any],
+    sample_rate: int,
+    stem_fn: Callable[[NDArray[Any]], NDArray[Any]],
+) -> NDArray[Any]:
+    """Decompose 5.1 (6ch) or 7.1 (8ch) into FL/FR, FC, LFE (<120 Hz), and surround M/S pairs."""
+    import numpy as np
+
+    ch = samples.shape[1]
+    if ch in (1, 2):
+        return np.asarray(stem_fn(samples), dtype=np.float32)
+    if ch not in (6, 8):
+        raise ValueError("Surround stem decomposition requires 6 (5.1) or 8 (7.1) channels")
+    fl_fr = np.asarray(stem_fn(samples[:, 0:2]), dtype=np.float32)
+    fc = np.asarray(stem_fn(samples[:, 2:3]), dtype=np.float32)
+    lfe = _lowpass_lfe_channel(samples[:, 3:4], sample_rate)
+    sur1 = np.asarray(stem_fn(samples[:, 4:6]), dtype=np.float32)
+    if ch == 6:
+        return np.concatenate((fl_fr, fc, lfe, sur1), axis=1).astype(np.float32, copy=False)
+    sur2 = np.asarray(stem_fn(samples[:, 6:8]), dtype=np.float32)
+    return np.concatenate((fl_fr, fc, lfe, sur1, sur2), axis=1).astype(np.float32, copy=False)
+
+
+def _encodec_surround_track(
+    chunks: Iterator[NDArray[Any]],
+    sample_rate: int,
+    *,
+    bandwidth_kbps: float,
+    device: str = "cpu",
+) -> Iterator[NDArray[Any]]:
+    """Apply M/S EnCodec across tagged 5.1 or 7.1 surround stems."""
+
+    def _stem(part: NDArray[Any]) -> NDArray[Any]:
+        mode: Literal["independent", "ms"] = "ms" if part.shape[1] == 2 else "independent"
+        if device == "cpu":
+            return audio_codec.resynthesize(part, sample_rate, bandwidth_kbps=bandwidth_kbps, stereo_mode=mode)
+        return audio_codec.resynthesize(
+            part,
+            sample_rate,
+            bandwidth_kbps=bandwidth_kbps,
+            stereo_mode=mode,
+            device=device,
+        )
+
+    yield from _stream_neural_track(
+        chunks,
+        sample_rate,
+        "EnCodec",
+        lambda samples: _transform_surround_stems(samples, sample_rate, _stem),
+        allow_surround=True,
+    )
+
+
+def _dac_full_track(
+    chunks: Iterator[NDArray[Any]],
+    sample_rate: int,
+    device: str = "cpu",
+) -> Iterator[NDArray[Any]]:
+    """Apply the 44.1 kHz DAC profile across mono, stereo, 5.1, or 7.1 tracks on the selected device."""
+
+    def _stem(part: NDArray[Any]) -> NDArray[Any]:
+        if device == "cpu":
+            return audio_dac.resynthesize(part, sample_rate, local_files_only=False)
+        return audio_dac.resynthesize(part, sample_rate, local_files_only=False, device=device)
+
     yield from _stream_neural_track(
         chunks,
         sample_rate,
         "DAC",
-        lambda samples: audio_dac.resynthesize(samples, sample_rate, local_files_only=False),
+        lambda samples: _transform_surround_stems(samples, sample_rate, _stem),
+        allow_surround=True,
     )
 
 
@@ -1134,12 +1295,15 @@ def _stream_neural_track(
     sample_rate: int,
     label: str,
     transform: Callable[[NDArray[Any]], NDArray[Any]],
+    *,
+    allow_surround: bool = False,
 ) -> Iterator[NDArray[Any]]:
     """Run single-pass resynthesis up to 30 s, and raised-cosine overlap windows on longer audio."""
     from collections import deque
 
     import numpy as np
 
+    allowed_channels = (1, 2, 6, 8) if allow_surround else (1, 2)
     pending: deque[NDArray[Any]] = deque()
     buffered_frames = 0
     channels: int | None = None
@@ -1154,7 +1318,7 @@ def _stream_neural_track(
         except StopIteration:
             eof = True
             return False
-        if chunk.ndim != 2 or chunk.shape[1] not in (1, 2):
+        if chunk.ndim != 2 or chunk.shape[1] not in allowed_channels:
             raise ValueError(f"{label} processing requires mono or stereo")
         if channels is None:
             channels = int(chunk.shape[1])
@@ -1341,11 +1505,14 @@ def remove_audio_all(
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
+    vendor: AudioVendor | None = None,
 ) -> AudioAllResult:
     """Remove AI metadata and optionally process compatible invisible audio watermarks.
 
-    When ``include_invisible=False`` (default), strips AI metadata losslessly without
-    re-encoding audio packets. When ``include_invisible=True``, inspects compatible
+    When ``include_invisible=False`` (default) and no explicit ``vendor`` cohort is
+    supplied, strips AI metadata losslessly without re-encoding audio packets. Naming
+    an explicit ``vendor`` cohort implies running the invisible waveform stage just
+    like ``--vendor`` on images. When ``include_invisible=True``, inspects compatible
     audio watermark decoders (default ``scheme="auto"`` across installed public models)
     and removes detected marks; if no compatible source-positive mark is found and
     ``force=False``, falls back to lossless metadata stripping when the output container
@@ -1353,7 +1520,8 @@ def remove_audio_all(
     requested), always delivering a metadata-clean output file.
     """
     source_path = _audio_source(source)
-    if not include_invisible:
+    explicit_vendor = _normalize_audio_vendor(vendor)
+    if not (include_invisible or explicit_vendor is not None):
         meta_res = remove_audio_metadata(source_path, output, keep_standard=keep_standard)
         return AudioAllResult(
             source=source_path,
@@ -1371,7 +1539,8 @@ def remove_audio_all(
         force=force,
         bandwidth_kbps=bandwidth_kbps,
         vocoder_device=vocoder_device,
-        allow_unverified=allow_unverified,
+        allow_unverified=allow_unverified or explicit_vendor is not None,
+        vendor=vendor,
     )
     if output is not None:
         target = Path(output).expanduser()
@@ -1398,6 +1567,7 @@ def remove_audio_all(
         allow_unverified=allow_unverified,
         allow_positive=allow_positive,
         allow_quality_override=allow_quality_override,
+        vendor=vendor,
     )
     detected_metadata = dict(inv_res.before.metadata_markers)
     if not inv_res.skipped and inv_res.output is not None:
@@ -1454,6 +1624,7 @@ def remove_audio_batch(
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
+    vendor: AudioVendor | None = None,
 ) -> AudioBatchSummary:
     """Process every supported audio file in one directory sequentially."""
     directory_path = Path(directory).expanduser()
@@ -1463,9 +1634,11 @@ def remove_audio_batch(
         raise ValueError(f"Audio batch source must be a directory: {directory_path}")
     if mode not in {"all", "metadata"}:
         raise ValueError("Unsupported audio batch mode; expected all or metadata")
-    if include_invisible and mode != "all":
+    explicit_vendor = _normalize_audio_vendor(vendor)
+    eff_invisible = include_invisible or explicit_vendor is not None
+    if eff_invisible and mode != "all":
         raise ValueError("The invisible audio stage is available only in all mode")
-    if include_invisible:
+    if eff_invisible:
         resolve_audio_profiles(
             method=method,
             scheme=scheme,
@@ -1473,7 +1646,8 @@ def remove_audio_batch(
             force=force,
             bandwidth_kbps=bandwidth_kbps,
             vocoder_device=vocoder_device,
-            allow_unverified=allow_unverified,
+            allow_unverified=allow_unverified or explicit_vendor is not None,
+            vendor=vendor,
         )
 
     output_path = (
@@ -1495,7 +1669,7 @@ def remove_audio_batch(
     for source_path in sources:
         suffix = (
             source_path.suffix
-            if (not include_invisible or source_path.suffix.lower() in AUDIO_OUTPUT_EXTENSIONS)
+            if (not eff_invisible or source_path.suffix.lower() in AUDIO_OUTPUT_EXTENSIONS)
             else ".wav"
         )
         item_output = output_path / f"{source_path.stem}{suffix}"
@@ -1504,7 +1678,7 @@ def remove_audio_batch(
                 all_res = remove_audio_all(
                     source_path,
                     item_output,
-                    include_invisible=include_invisible,
+                    include_invisible=eff_invisible,
                     force=force,
                     verify=verify,
                     method=method,
@@ -1515,6 +1689,7 @@ def remove_audio_batch(
                     allow_unverified=allow_unverified,
                     allow_positive=allow_positive,
                     allow_quality_override=allow_quality_override,
+                    vendor=vendor,
                 )
                 if all_res.remaining_metadata:
                     raise RuntimeError(

@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, get_args
 
 from remove_ai_watermarks._internal._generated_c2pa_soft_bindings import C2PA_SOFT_BINDING_ROWS
 
 AudioScheme = Literal["audioseal", "wavmark", "perth", "silentcipher", "silentcipher16", "all", "auto"]
 AudioProfile = Literal["spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac"]
 AudioMethod = Literal["auto", "spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac"]
+AudioVendor = Literal[
+    "auto",
+    "google",
+    "elevenlabs",
+    "suno",
+    "udio",
+    "openai",
+    "cartesia",
+    "meta",
+    "resemble",
+    "microsoft",
+]
+AUDIO_VENDORS: tuple[AudioVendor, ...] = get_args(AudioVendor)
 AUDIO_SCHEMES: tuple[AudioScheme, ...] = (
     "audioseal",
     "wavmark",
@@ -50,7 +63,11 @@ VIDEO_INVISIBLE_PROFILES: tuple[VideoInvisibleProfile, ...] = (
 )
 
 DEFAULT_VIDEO_MESSAGE_LONG_SIDE = 512
-VIDEO_MESSAGE_SCHEMES: tuple[Literal["videoseal", "pixelseal"], ...] = ("videoseal", "pixelseal")
+VIDEO_MESSAGE_SCHEMES: tuple[Literal["videoseal", "pixelseal", "chunkyseal"], ...] = (
+    "videoseal",
+    "pixelseal",
+    "chunkyseal",
+)
 VIDEO_MESSAGE_METHODS: tuple[Literal["auto", "codec", "vae"], ...] = ("auto", "codec", "vae")
 VIDEO_MESSAGE_DEVICES: tuple[Literal["auto", "cpu", "cuda", "mps"], ...] = ("auto", "cpu", "cuda", "mps")
 

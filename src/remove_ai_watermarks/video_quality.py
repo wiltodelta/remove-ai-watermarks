@@ -198,9 +198,10 @@ def video_quality_passed(
     min_ssim: float = 0.75,
     min_color_ssim: float = 0.70,
     min_frame_ssim: float = 0.60,
+    min_window_ssim: float = 0.65,
     max_temporal_residual_ratio: float = 2.5,
 ) -> bool:
-    """Evaluate model-free delivered video fidelity including chroma and worst-frame floors."""
+    """Evaluate model-free delivered video fidelity including chroma, window, and worst-frame floors."""
     if not isinstance(quality, dict):
         return False
     raw_psnr = quality.get("source_psnr_db")
@@ -215,11 +216,13 @@ def video_quality_passed(
     ssim = float(raw_ssim)
     raw_color = quality.get("source_color_ssim", ssim)
     raw_min_f = quality.get("min_frame_ssim", ssim)
+    raw_win_s = quality.get("worst_window_ssim", ssim)
     raw_trr = quality.get("temporal_residual_ratio")
-    if raw_color is None or raw_min_f is None or raw_trr is None:
+    if raw_color is None or raw_min_f is None or raw_win_s is None or raw_trr is None:
         return False
     color_ssim = float(raw_color)
     frame_ssim = float(raw_min_f)
+    win_ssim = float(raw_win_s)
     trr = float(raw_trr)
     return (
         psnr_ok
@@ -228,6 +231,8 @@ def video_quality_passed(
         and color_ssim >= min_color_ssim
         and math.isfinite(frame_ssim)
         and frame_ssim >= min_frame_ssim
+        and math.isfinite(win_ssim)
+        and win_ssim >= min_window_ssim
         and math.isfinite(trr)
         and trr <= max_temporal_residual_ratio
     )

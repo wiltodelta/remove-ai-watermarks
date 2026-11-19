@@ -230,7 +230,14 @@ def _get_session(name: str, repo_id: str, filename: str, label: str) -> object:
         logger.warning("Downloading %s model %s from %s failed: %s", label, filename, repo_id, exc)
         raise
     logger.info("Loading %s model: %s", label, model_path)
-    session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    available = set(getattr(ort, "get_available_providers", lambda: ["CPUExecutionProvider"])())
+    preferred = [p for p in ("CUDAExecutionProvider", "CPUExecutionProvider") if p in available] or [
+        "CPUExecutionProvider"
+    ]
+    try:
+        session = ort.InferenceSession(model_path, providers=preferred)
+    except Exception:
+        session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
     _sessions[name] = session
     return session
 

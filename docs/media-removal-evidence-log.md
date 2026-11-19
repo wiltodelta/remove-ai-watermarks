@@ -112,7 +112,14 @@ verdicts across all source-positive native Google audio tracks (including
 `google-gemini-omni-flash-api`, certified in
 [`data/evaluations/audio-synthid-oracle.csv`](../data/evaluations/audio-synthid-oracle.csv))
 and cleared `elevenlabs-api` across multi-window native MP3 exports while
-preserving `22.05 kHz` stereo bandwidth.
+preserving `22.05 kHz` stereo bandwidth. A follow-up 48 kHz stereo music
+comparison across `AudioSeal` and `WavMark` carriers measured `DAC` (`44.1 kHz`,
+`q=3`: both `verified=True`, `MR-STFT 1.11-1.12`, `Mel 4.06-4.19 dB`,
+`Side/Mid drift 0.21-0.54 dB`) ahead of `facebook/encodec_48khz` (`6 kbps`: both
+`verified=True`, `MR-STFT 1.99`, `Mel 4.15-4.26 dB`, `Side/Mid drift 2.40-2.95 dB`;
+`12 kbps` and `24 kbps` retained `AudioSeal`) and far ahead of `24 kHz`
+`encodec` (`6 kbps`: retained `AudioSeal`, `Mel 18.50-18.59 dB`), keeping `DAC`
+as the studio neural-codec baseline entering Phase 1.
 
 ### Video tranche
 
@@ -151,3 +158,28 @@ removal on production `VideoSeal v4` (`Muse Image 1`); and authenticated
 `kling-web` runs across native Kling MP4 and PNG exports proved that Kling's
 `"Invisible watermark"` row on MP4 reads the H.264 `kling-ai` SEI tag (`Detected
 -> Not detected` under lossless `remove_video_metadata` alone).
+
+In the Phase 1-3 audio/video architecture pass (2026-11-18):
+- **48 kHz Stereo Music & 16 kHz Speech Bottleneck Benchmark**: across paired 48 kHz
+  stereo music (`AudioSeal`, `WavMark`) and 16 kHz speech (`Perth`) carriers,
+  3-codebook `DAC 44.1 kHz` (`--method dac`, `cpu`/`mps`/`cuda`) achieved `verified=True`
+  across all three schemes with the lowest spectral distortion (`MR-STFT = 1.1098`,
+  `Mel L1 = 4.289 dB`, `Side/Mid drift = 0.208 dB` on 48 kHz music) and ~100x faster
+  Apple Silicon `mps` runtime than `BigVGAN v2` (`plain-bigvgan` `MR-STFT = 1.3093` and
+  pre-warped `bigvgan-mel` `MR-STFT = 1.6349` both retained `Perth` on 16 kHz speech;
+  `encodec48` 6 kbps scored `MR-STFT = 1.9863`, `Side/Mid drift = 2.398 dB`). Tagged
+  `5.1` and `7.1` surround stem decomposition (`FL/FR` M/S, `FC` mono, `<120 Hz`
+  Butterworth LFE, surround M/S pairs) and 16/24-bit PCM sample-format preservation
+  shipped on the neural audio path alongside `--vendor` cohort routing.
+- **Self-Calibrated Multi-Frame `YCrCb` Reverse Alpha Unblending**: chaining stepwise
+  `PyrLK + RANSAC` affine transforms across moving context rings to form median donor
+  references (`estimate_clip_alpha_matte` + `unblend_ycbcr_roi` in `video_temporal.py`)
+  achieved `Alpha MAE = 0.0010` and `36.98 dB` ROI PSNR (`+20.50 dB` over spatial Telea's
+  `16.48 dB`) while leaving 100% of clean background pixels inside the detection box
+  untouched. `dreamina` and `wan` visible video detectors (`10` registered video marks
+  total), user-directed `video erase --region --frames`, 10-bit HDR (`yuv420p10le`,
+  `bt2020nc`, `smpte2084`/`arib-std-b67`) preservation, fMP4 `emsg` + H.264/HEVC AI SEI +
+  Matroska `application/c2pa` attachment scrubbing, blind `VideoSeal`/`PixelSeal`/`ChunkySeal`
+  (`1024`-bit) presence detection (`video message detect`), and CPU prompt-offloaded
+  `Wan 2.1` (`~3.4 GiB` accelerator footprint, `cuda` and explicit `mps`, up to 5-minute
+  1080p streaming budget) all shipped with unit and integration coverage.

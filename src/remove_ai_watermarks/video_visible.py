@@ -41,8 +41,9 @@ from PIL import Image, ImageDraw, ImageFont
 from remove_ai_watermarks._internal.tc260_producers import producer_codes_for_mark, producer_for_code
 from remove_ai_watermarks._internal.tc260_producers import tc260_producer_in as tc260_producer_in
 from remove_ai_watermarks.video import VIDEO_VISIBLE_MARKS
-from remove_ai_watermarks.video_decode import open_video_capture
+from remove_ai_watermarks.video_decode import open_video_capture, open_video_capture_16bit
 from remove_ai_watermarks.video_encoding import (
+    HIGH_BIT_DEPTH_PIXEL_FORMATS,
     abort_raw_video_encoder,
     finish_raw_video_encoder,
     mux_encoded_video,
@@ -52,9 +53,16 @@ from remove_ai_watermarks.video_encoding import (
     staged_video_output,
     start_raw_video_encoder,
 )
-from remove_ai_watermarks.video_temporal import recover_unobscured_background, stabilize_filled_frame
+from remove_ai_watermarks.video_temporal import (
+    ClipAlphaMatte,
+    estimate_clip_alpha_matte,
+    recover_unobscured_background,
+    stabilize_filled_frame,
+    unblend_ycbcr_roi,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from numpy.typing import NDArray
@@ -99,6 +107,10 @@ _HAILUO_MIN_WHITE_FRACTION = 0.02
 # floors sit between the two with margin on both sides.
 _VIDU_WEAK_CONFIDENCE = 0.52
 _VIDU_STRONG_CONFIDENCE = 0.58
+_DREAMINA_WEAK_CONFIDENCE = 0.40
+_DREAMINA_STRONG_CONFIDENCE = 0.45
+_WAN_WEAK_CONFIDENCE = 0.50
+_WAN_STRONG_CONFIDENCE = 0.56
 _MIN_STABLE_FRAMES = 5
 _MIN_VEO_STABLE_FRAMES = 12
 _MIN_FIXED_MARK_STABLE_FRAMES = 12
@@ -376,6 +388,41 @@ def _doubao_template() -> NDArray[Any]:
     return _asset_template("doubao_alpha.png")
 
 
+def _wan_template() -> NDArray[Any]:
+    return _asset_template("wan_alpha.png")
+
+
+@lru_cache(maxsize=1)
+def _dreamina_template() -> NDArray[Any]:
+    """Return a synthetic rounded-box + italic AI silhouette for Dreamina's top-left badge."""
+    w, h = 216, 164
+    canvas = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(canvas)
+    draw.rounded_rectangle((6, 6, w - 7, h - 7), radius=48, outline=255, width=8)
+    txt = Image.new("L", (160, 110), 0)
+    ImageDraw.Draw(txt).text((18, 8), "AI", font=_scalable_default_font(82), fill=255, stroke_width=2, stroke_fill=255)
+    txt_arr = _crop_nonzero(np.asarray(txt, dtype=np.uint8))
+    th, tw = txt_arr.shape[:2]
+    shear = -0.24
+    extra = round(abs(shear) * th)
+    sheared = cv2.warpAffine(
+        txt_arr,
+        np.float32([[1.0, shear, extra], [0.0, 1.0, 0.0]]),
+        (tw + extra, th),
+        flags=cv2.INTER_LINEAR,
+    )
+    sheared = _crop_nonzero(sheared)
+    target_h = 72
+    target_w = max(1, round(sheared.shape[1] * target_h / sheared.shape[0]))
+    glyph = cv2.resize(sheared, (target_w, target_h), interpolation=cv2.INTER_AREA)
+    gx = (w - target_w) // 2 + 2
+    gy = (h - target_h) // 2 + 2
+    out = np.asarray(canvas, dtype=np.uint8).copy()
+    out[gy : gy + target_h, gx : gx + target_w] = np.maximum(out[gy : gy + target_h, gx : gx + target_w], glyph)
+    return _crop_nonzero(out)
+
+
+@lru_cache(maxsize=1)
 def _template_sources() -> dict[str, NDArray[Any]]:
     """Return every immutable synthetic template by detector-local key."""
     sora_word, sora_icon = _sora_templates()
@@ -385,10 +432,12 @@ def _template_sources() -> dict[str, NDArray[Any]]:
         "sora-icon": sora_icon,
         "veo-diamond": veo_diamond,
         "veo-text": veo_text,
+        "dreamina": _dreamina_template(),
         "seedance": _seedance_template(),
         "dola": _dola_template(),
         "hailuo": _hailuo_template(),
         "vidu": _vidu_template(),
+        "wan": _wan_template(),
         "kling-logo": _kling_logo_template(),
         # The Doubao video mark is the same "豆包AI生成" run the image engine
         # matches (its synthetic alpha asset), bottom-right on video frames.
@@ -664,6 +713,100 @@ def _detect_fixed_mark(
             frame_height=frame_height,
         ),
     )
+
+
+def detect_dreamina_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate Dreamina's top-left rounded-box italic AI badge."""
+    if image_bgr.size == 0:
+        return FrameLocalization(frame_index, 0.0, None)
+    frame_height, frame_width = image_bgr.shape[:2]
+    gray = (prepared or _prepare_frame(image_bgr)).gray
+    short = min(frame_height, frame_width)
+    roi_w = min(frame_width, max(24, round(short * 0.12)))
+    roi_h = min(frame_height, max(20, round(short * 0.10)))
+    roi = gray[:roi_h, :roi_w]
+    tmpl_base = _template_sources()["dreamina"]
+    feat_cache: dict[int, NDArray[Any]] = {}
+    best_conf = 0.0
+    best_region: Region | None = None
+    for rel_h in (0.030, 0.034, 0.038, 0.042, 0.046):
+        th = max(12, round(short * rel_h))
+        tw = max(14, round(tmpl_base.shape[1] * th / tmpl_base.shape[0]))
+        if th >= roi_h or tw >= roi_w:
+            continue
+        kernel_size = max(3, round(th * 0.18) | 1)
+        _tmpl, t_feat = _resized_template_feature("dreamina", tw, th, kernel_size)
+        feat = feat_cache.get(kernel_size)
+        if feat is None:
+            feat = cv2.morphologyEx(roi, cv2.MORPH_TOPHAT, np.ones((kernel_size, kernel_size), np.uint8))
+            feat_cache[kernel_size] = feat
+        scores = cv2.matchTemplate(feat, t_feat, cv2.TM_CCOEFF_NORMED)
+        _, conf, _, loc = cv2.minMaxLoc(scores)
+        x, y = loc
+        patch = feat[y : y + th, x : x + tw]
+        if patch.size == 0 or int(patch.max()) < 6:
+            continue
+        if not (short * 0.006 <= x <= short * 0.035 and short * 0.006 <= y <= short * 0.035):
+            continue
+        if conf > best_conf:
+            best_conf = float(conf)
+            best_region = (x, y, tw, th)
+    return FrameLocalization(frame_index, best_conf, best_region)
+
+
+def detect_wan_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate Alibaba Wan's bottom-right logo + AIGenerated badge."""
+    if image_bgr.size == 0:
+        return FrameLocalization(frame_index, 0.0, None)
+    frame_height, frame_width = image_bgr.shape[:2]
+    prep = prepared or _prepare_frame(image_bgr)
+    gray, scale = prep.normalized_gray, prep.normalized_scale
+    nh, nw = gray.shape[:2]
+    nshort = min(nh, nw)
+    sx, sy = round(nw * 0.72), round(nh * 0.84)
+    roi = gray[sy:, sx:]
+    tmpl_base = _template_sources()["wan"]
+    feat_cache: dict[int, NDArray[Any]] = {}
+    best_conf = 0.0
+    best_region: Region | None = None
+    for rel_h in tuple(v / 1000 for v in range(36, 65, 4)):
+        th = max(10, round(nshort * rel_h))
+        tw = max(14, round(tmpl_base.shape[1] * th / tmpl_base.shape[0]))
+        if th >= roi.shape[0] or tw >= roi.shape[1]:
+            continue
+        kernel_size = max(3, round(th * 0.22) | 1)
+        _tmpl, t_feat = _resized_template_feature("wan", tw, th, kernel_size)
+        feat = feat_cache.get(kernel_size)
+        if feat is None:
+            feat = cv2.morphologyEx(roi, cv2.MORPH_TOPHAT, np.ones((kernel_size, kernel_size), np.uint8))
+            feat_cache[kernel_size] = feat
+        scores = cv2.matchTemplate(feat, t_feat, cv2.TM_CCOEFF_NORMED)
+        _, conf, _, loc = cv2.minMaxLoc(scores)
+        x, y = sx + loc[0], sy + loc[1]
+        patch = feat[loc[1] : loc[1] + th, loc[0] : loc[0] + tw]
+        if patch.size == 0 or int(patch.max()) < 8:
+            continue
+        if (nw - (x + tw)) > nshort * 0.025 or (nh - (y + th)) > nshort * 0.025:
+            continue
+        if conf > best_conf:
+            best_conf = float(conf)
+            best_region = _restore_region(
+                (x, y, tw, th),
+                scale=scale,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+    return FrameLocalization(frame_index, best_conf, best_region)
 
 
 def detect_seedance_frame(
@@ -1092,6 +1235,16 @@ VISIBLE_MARK_POLICIES: dict[str, VisibleMarkPolicy] = {
         padding_fraction=0.18,
         mask_style="veo",
     ),
+    "dreamina": VisibleMarkPolicy(
+        weak_floor=_DREAMINA_WEAK_CONFIDENCE,
+        strong_floor=_DREAMINA_STRONG_CONFIDENCE,
+        transition_floor=0.34,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.80,
+        padding_fraction=0.12,
+        mask_style="box",
+    ),
     "seedance": VisibleMarkPolicy(
         # One floor at either trust level: provenance still gates the run acceptance
         # inside the arbiter, but the confidence bar does not move.
@@ -1155,6 +1308,16 @@ VISIBLE_MARK_POLICIES: dict[str, VisibleMarkPolicy] = {
         mask_style="box",
         # No provenance_weak_floor: a ShengShu TC260 label confirms the vendor
         # (has_vidu_video_provenance) but does not lower the measured bar.
+    ),
+    "wan": VisibleMarkPolicy(
+        weak_floor=_WAN_WEAK_CONFIDENCE,
+        strong_floor=_WAN_STRONG_CONFIDENCE,
+        transition_floor=0.42,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.80,
+        padding_fraction=0.12,
+        mask_style="box",
     ),
     "kling": VisibleMarkPolicy(
         weak_floor=_KLING_WEAK_CONFIDENCE,
@@ -1372,22 +1535,18 @@ def scan_video_marks(
     Timestamp probing is optional because identification never encodes frames.
     Removal keeps it enabled so variable and non-zero-start timing is preserved.
     """
-    detectors = dict(
-        zip(
-            VIDEO_VISIBLE_MARKS,
-            (
-                detect_sora_frame,
-                detect_veo_frame,
-                detect_seedance_frame,
-                detect_doubao_frame,
-                detect_dola_frame,
-                detect_hailuo_frame,
-                detect_vidu_frame,
-                detect_kling_frame,
-            ),
-            strict=True,
-        )
-    )
+    detectors = {
+        "sora": detect_sora_frame,
+        "veo": detect_veo_frame,
+        "dreamina": detect_dreamina_frame,
+        "seedance": detect_seedance_frame,
+        "doubao": detect_doubao_frame,
+        "dola": detect_dola_frame,
+        "hailuo": detect_hailuo_frame,
+        "vidu": detect_vidu_frame,
+        "wan": detect_wan_frame,
+        "kling": detect_kling_frame,
+    }
     unsupported = sorted(set(marks) - detectors.keys())
     if unsupported:
         raise ValueError(f"Unsupported visible video mark: {', '.join(unsupported)}")
@@ -1469,28 +1628,30 @@ class _TimestampedNutWriter:
         height: int,
         time_base: Fraction,
         start_pts: int = 0,
+        pix_fmt: str = "bgr24",
     ) -> None:
         import av
 
         self._av = av
         self._time_base = time_base
         self._start_pts = start_pts
+        self._pix_fmt = pix_fmt
         self._origin: float | None = None
         self._container = av.open(pipe, mode="w", format="nut")
         self._stream = self._container.add_stream("rawvideo", rate=None)
         self._stream.width = width
         self._stream.height = height
-        self._stream.pix_fmt = "bgr24"
+        self._stream.pix_fmt = pix_fmt
         self._stream.time_base = time_base
         self._stream.codec_context.time_base = time_base
 
     def write(self, frame_bgr: NDArray[Any], timestamp: float) -> None:
-        """Mux one contiguous BGR frame at its source timeline timestamp."""
+        """Mux one contiguous BGR/BGR48LE frame at its source timeline timestamp."""
         if self._origin is None:
             self._origin = timestamp
         frame = self._av.VideoFrame.from_ndarray(
             np.ascontiguousarray(frame_bgr),
-            format="bgr24",
+            format=self._pix_fmt,
         )
         frame.pts = self._start_pts + round((timestamp - self._origin) / float(self._time_base))
         frame.time_base = self._time_base
@@ -1504,17 +1665,132 @@ class _TimestampedNutWriter:
         self._container.close()
 
 
+def _normalize_frame_regions(entry: Region | Sequence[Region] | None) -> tuple[Region, ...]:
+    if entry is None:
+        return ()
+    if len(entry) == 4 and all(isinstance(v, int) for v in entry):
+        return (entry,)  # type: ignore[return-value]
+    return tuple(entry)  # type: ignore[arg-type]
+
+
+def _masks_for_regions(
+    frame_bgr: NDArray[Any],
+    frame_regions: tuple[Region, ...],
+    *,
+    padding_fraction: float,
+    mask_style: Literal["box", "veo"],
+    dilate_px: int | None = None,
+) -> NDArray[Any] | None:
+    if not frame_regions:
+        return None
+    height, width = frame_bgr.shape[:2]
+    if dilate_px is not None:
+        from remove_ai_watermarks.region_eraser import boxes_to_mask
+
+        return boxes_to_mask((height, width), list(frame_regions), dilate=max(0, int(dilate_px)))
+    combined = np.zeros((height, width), dtype=np.uint8)
+    for reg in frame_regions:
+        combined = np.maximum(
+            combined,
+            _mask_for_region(frame_bgr, reg, padding_fraction=padding_fraction, mask_style=mask_style),
+        )
+    return combined
+
+
+def _precalibrate_stationary_mattes(
+    source: Path,
+    normalized_regions: list[tuple[Region, ...]],
+    *,
+    width: int,
+    height: int,
+    padding_fraction: float,
+    dilate_px: int | None = None,
+) -> tuple[ClipAlphaMatte, ...]:
+    """Estimate self-calibrated YCrCb alpha mattes for fixed watermark/erase boxes."""
+    max_regs = max((len(regs) for regs in normalized_regions), default=0)
+    if max_regs == 0:
+        return ()
+
+    candidate_bounds: list[tuple[tuple[int, int, int, int], list[int]]] = []
+    for slot in range(max_regs):
+        slot_frames = [idx for idx, regs in enumerate(normalized_regions) if len(regs) > slot]
+        if len(slot_frames) < 12:
+            continue
+        first_reg = normalized_regions[slot_frames[0]][slot]
+        anchored = [idx for idx in slot_frames if _region_iou(normalized_regions[idx][slot], first_reg) >= 0.85]
+        if len(anchored) < 12:
+            continue
+        xs0 = [normalized_regions[idx][slot][0] for idx in anchored]
+        ys0 = [normalized_regions[idx][slot][1] for idx in anchored]
+        xs1 = [normalized_regions[idx][slot][0] + normalized_regions[idx][slot][2] for idx in anchored]
+        ys1 = [normalized_regions[idx][slot][1] + normalized_regions[idx][slot][3] for idx in anchored]
+        med_h = int(np.median([normalized_regions[idx][slot][3] for idx in anchored]))
+        pad = max(0, int(dilate_px)) if dilate_px is not None else max(4, round(med_h * padding_fraction))
+        bounds = (
+            max(0, min(xs0) - pad),
+            max(0, min(ys0) - pad),
+            min(width, max(xs1) + pad),
+            min(height, max(ys1) + pad),
+        )
+        candidate_bounds.append((bounds, anchored))
+
+    if not candidate_bounds:
+        return ()
+
+    max_samples = 36
+    slot_samples: list[list[int]] = []
+    union_indices: set[int] = set()
+    for _bounds, anchored in candidate_bounds:
+        if len(anchored) > max_samples:
+            step_idx = np.linspace(0, len(anchored) - 1, max_samples, dtype=int)
+            picked = [anchored[int(i)] for i in step_idx]
+        else:
+            picked = list(anchored)
+        slot_samples.append(picked)
+        union_indices.update(picked)
+    max_needed = max(union_indices)
+
+    decoded_by_idx: dict[int, NDArray[Any]] = {}
+    cap = open_video_capture(source)
+    if not cap.isOpened():
+        return ()
+    has_grab = hasattr(cap, "grab") and hasattr(cap, "retrieve")
+    try:
+        for idx in range(max_needed + 1):
+            if has_grab and idx not in union_indices:
+                if not cap.grab():
+                    break
+                continue
+            ok, raw = cap.read()
+            if not ok or raw is None:
+                break
+            if idx in union_indices:
+                decoded_by_idx[idx] = raw
+    finally:
+        cap.release()
+
+    mattes: list[ClipAlphaMatte] = []
+    for (bounds, _anchored), picked in zip(candidate_bounds, slot_samples, strict=True):
+        seq = [decoded_by_idx[i] for i in picked if i in decoded_by_idx]
+        matte = estimate_clip_alpha_matte(seq, bounds)
+        if matte is not None:
+            mattes.append(matte)
+    return tuple(mattes)
+
+
 def encode_clean_video(
     source: Path,
     output: Path,
     scan: VideoScan,
-    regions: list[Region | None],
+    regions: Sequence[Region | Sequence[Region] | None],
     *,
     backend: Backend,
     strip_metadata: bool,
     padding_fraction: float = 0.28,
     mask_style: Literal["box", "veo"] = "box",
     temporal_consistency: bool = True,
+    dilate_px: int | None = None,
+    allow_unmasked_donors: bool = True,
 ) -> int:
     """Decode again, fill accepted regions, and atomically encode with complete audio."""
     from remove_ai_watermarks.watermark_registry import fill, resolve_backend
@@ -1522,15 +1798,30 @@ def encode_clean_video(
     if len(regions) != len(scan.detections):
         raise ValueError("Temporal localization count does not match the scanned frame count")
 
+    normalized_regions = [_normalize_frame_regions(item) for item in regions]
+
     with staged_video_output(output) as (encoded_video, temporary_output):
         profile = probe_video_encode_profile(source)
-        if (profile.component_depth or 0) > 8 or profile.color_transfer in _HDR_TRANSFERS:
+        high_depth = profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
+        if ((profile.component_depth or 0) > 8 or profile.color_transfer in _HDR_TRANSFERS) and not high_depth:
             source_format = profile.source_pixel_format or "unknown pixel format"
             raise RuntimeError(
                 "Visible video removal currently supports SDR 8-bit input only; "
                 f"refusing to silently reduce {source_format} / "
                 f"{profile.color_transfer or 'unknown transfer'} to 8-bit SDR"
             )
+        clip_mattes = (
+            _precalibrate_stationary_mattes(
+                source,
+                normalized_regions,
+                width=scan.width,
+                height=scan.height,
+                padding_fraction=padding_fraction,
+                dilate_px=dilate_px,
+            )
+            if temporal_consistency and not high_depth
+            else ()
+        )
         time_base = _timestamp_time_base(profile.time_base)
         preserve_start_offset = profile.start_pts not in (None, 0)
         timestamped_input = preserve_start_offset or _timestamps_are_variable(scan, time_base=time_base)
@@ -1539,6 +1830,7 @@ def encode_clean_video(
                 profile,
                 time_base=f"{time_base.numerator}/{time_base.denominator}",
             )
+        raw_pix_fmt = "bgr48le" if high_depth else "bgr24"
         process = start_raw_video_encoder(
             raw_video_command(
                 encoded_video,
@@ -1549,11 +1841,16 @@ def encode_clean_video(
                 profile=profile,
                 timestamped_input=timestamped_input,
                 copy_input_timestamps=preserve_start_offset,
+                input_pix_fmt=raw_pix_fmt,
             )
         )
         frame_pipe = process.stdin
 
-        capture = open_video_capture(source)
+        capture: Any = (
+            open_video_capture_16bit(source, width=scan.width, height=scan.height)
+            if high_depth
+            else open_video_capture(source)
+        )
         if not capture.isOpened():
             abort_raw_video_encoder(process)
             raise RuntimeError(f"OpenCV could not reopen video for removal: {source}")
@@ -1572,9 +1869,11 @@ def encode_clean_video(
                     height=scan.height,
                     time_base=time_base,
                     start_pts=profile.start_pts or 0,
+                    pix_fmt=raw_pix_fmt,
                 )
-            donor_radius = 4 if temporal_consistency else 0
-            total_frames = len(regions)
+            eff_temporal = temporal_consistency and not high_depth
+            donor_radius = 12 if eff_temporal else 0
+            total_frames = len(normalized_regions)
             window: deque[tuple[int, NDArray[Any], NDArray[Any] | None]] = deque()
             next_decode = 0
 
@@ -1583,16 +1882,13 @@ def encode_clean_video(
                 ok, raw = capture.read()
                 if not ok:
                     raise RuntimeError(f"Video ended while reading frame {next_decode}: {source}")
-                reg = regions[next_decode]
-                m = (
-                    _mask_for_region(
-                        raw,
-                        reg,
-                        padding_fraction=padding_fraction,
-                        mask_style=mask_style,
-                    )
-                    if reg is not None
-                    else None
+                f_regs = normalized_regions[next_decode]
+                m = _masks_for_regions(
+                    raw,
+                    f_regs,
+                    padding_fraction=padding_fraction,
+                    mask_style=mask_style,
+                    dilate_px=dilate_px,
                 )
                 window.append((next_decode, raw, m))
                 next_decode += 1
@@ -1609,19 +1905,38 @@ def encode_clean_video(
                 stage_mask: NDArray[Any] | None = None
                 if mask is not None:
                     working_mask = mask
-                    if temporal_consistency and len(window) > 1:
+                    for matte in clip_mattes:
+                        stage_source, working_mask = unblend_ycbcr_roi(stage_source, working_mask, matte)
+                    if eff_temporal and len(window) > 1 and np.any(working_mask > 0):
+                        cur_regs = normalized_regions[frame_index]
                         donors = [
                             (d_src, d_mask)
-                            for d_idx, d_src, d_mask in sorted(window, key=lambda it: abs(it[0] - frame_index))
-                            if d_idx != frame_index
-                        ]
-                        stage_source, working_mask = recover_unobscured_background(source_frame, mask, donors)
+                            for d_idx, d_src, d_mask in sorted(
+                                window,
+                                key=lambda it: (
+                                    0
+                                    if (
+                                        it[2] is None
+                                        or not cur_regs
+                                        or all(
+                                            _region_iou(dr, cr) < 0.25
+                                            for dr in normalized_regions[it[0]]
+                                            for cr in cur_regs
+                                        )
+                                    )
+                                    else 1,
+                                    abs(it[0] - frame_index),
+                                ),
+                            )
+                            if d_idx != frame_index and (allow_unmasked_donors or d_mask is not None)
+                        ][:8]
+                        stage_source, working_mask = recover_unobscured_background(stage_source, working_mask, donors)
                     frame = stage_source
                     if np.any(working_mask > 0):
                         stage_mask = working_mask
                         frame = fill(stage_source, working_mask, backend=resolved_backend)
                         if (
-                            temporal_consistency
+                            eff_temporal
                             and previous_source is not None
                             and previous_cleaned is not None
                             and previous_mask is not None
@@ -1707,15 +2022,31 @@ def has_doubao_video_provenance(markers: dict[str, str]) -> bool:
     return tc260_producer_in(markers.get("aigc_producer", ""), producer_codes_for_mark("doubao"))
 
 
+def has_dreamina_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether C2PA or TC260 provenance identifies ByteDance Dreamina / Jimeng."""
+    if has_bytedance_video_provenance(markers):
+        return True
+    if tc260_producer_in(markers.get("aigc_producer", ""), producer_codes_for_mark("dreamina")):
+        return True
+    return "dreamina" in markers.get("claim_generator", "").casefold()
+
+
+def has_wan_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether a TC260 label names Alibaba Tongyi (Wan) as the producer."""
+    return tc260_producer_in(markers.get("aigc_producer", ""), producer_codes_for_mark("wan"))
+
+
 # Tokens of the C2PA issuer each mark's own vendor signs with, compared casefolded.
 _VIDEO_MARK_ISSUER_TOKENS: dict[str, tuple[str, ...]] = {
     "sora": ("openai",),
     "veo": ("google",),
+    "dreamina": ("bytedance", "byteplus", "spring (sg)", "dreamina"),
     "seedance": ("bytedance", "byteplus", "spring (sg)"),
     "doubao": ("bytedance", "byteplus", "spring (sg)"),
     "dola": ("bytedance", "byteplus", "spring (sg)"),
     "hailuo": ("minimax",),
     "vidu": ("shengshu", "vidu"),
+    "wan": ("alibaba", "tongyi", "wan"),
     "kling": ("kling", "kuaishou"),
 }
 
@@ -1725,11 +2056,13 @@ def confirms_video_provenance(mark: str, markers: dict[str, str]) -> bool:
     confirms = {
         "sora": has_sora_provenance,
         "veo": has_veo_provenance,
+        "dreamina": has_dreamina_video_provenance,
         "seedance": has_bytedance_video_provenance,
         "doubao": has_doubao_video_provenance,
         "dola": has_bytedance_video_provenance,
         "hailuo": has_hailuo_video_provenance,
         "vidu": has_vidu_video_provenance,
+        "wan": has_wan_video_provenance,
     }.get(mark)
     return bool(confirms and confirms(markers))
 
@@ -1760,7 +2093,7 @@ def contradicts_video_provenance(mark: str, markers: dict[str, str]) -> bool:
         row = producer_for_code(producer)
         if row is None:
             return True
-        if mark in {"seedance", "dola"}:
+        if mark in {"dreamina", "seedance", "dola"}:
             return row.vendor != "ByteDance"
         return mark not in (row.image_mark, row.video_mark)
     from remove_ai_watermarks._internal.c2pa import c2pa_credential_level

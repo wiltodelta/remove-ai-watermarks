@@ -28,7 +28,9 @@ TC260_PRODUCERS = (
     # YOYO JPEG exports; USCC independently verified in Honor's privacy statement.
     Tc260Producer("honor", ("91440300MA5G49LC9K",), "Honor", image_platform="Honor"),
     Tc260Producer("doubao", ("91110102MACQD9K640", "doubao"), "ByteDance", "doubao", "doubao", "ByteDance Doubao"),
-    Tc260Producer("jimeng", ("9144030008867405X2",), "ByteDance", "jimeng", video_platform="ByteDance Dreamina"),
+    Tc260Producer(
+        "jimeng", ("9144030008867405X2",), "ByteDance", "jimeng", "dreamina", video_platform="ByteDance Dreamina"
+    ),
     Tc260Producer(
         "volcengine",
         ("91110108MA01R70K8D",),
@@ -39,7 +41,9 @@ TC260_PRODUCERS = (
     Tc260Producer("qwen", ("91440101MA9Y9T4H7A",), "Alibaba", "qwen", video_platform="Alibaba Cloud Qwen"),
     # Tongyi Yunqi (Hangzhou), owned by Alibaba Cloud and Tongyi Lab, signs
     # both Wan and HappyHorse exports, not just one model.
-    Tc260Producer("wan", ("91330106MA2CFLDG4R",), "Alibaba", "wan", video_platform="Alibaba Tongyi (Wan, HappyHorse)"),
+    Tc260Producer(
+        "wan", ("91330106MA2CFLDG4R",), "Alibaba", "wan", "wan", video_platform="Alibaba Tongyi (Wan, HappyHorse)"
+    ),
     # Kling 3.0 Turbo served by Higgsfield (2026-09-24) writes the bare "kling".
     Tc260Producer("kling", ("91110108335469089C", "kling"), "Kuaishou", "kling", "kling", "Kuaishou Kling AI"),
     Tc260Producer(

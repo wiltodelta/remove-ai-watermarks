@@ -1265,7 +1265,18 @@ class TestVideoProvenanceApi:
         assert report.visible_mark == "sora"
         assert report.visible_detected_frames == 5
         assert report.total_frames == 5
-        assert tuple(VIDEO_VISIBLE_MARKS) == ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
+        assert tuple(VIDEO_VISIBLE_MARKS) == (
+            "sora",
+            "veo",
+            "dreamina",
+            "seedance",
+            "doubao",
+            "dola",
+            "hailuo",
+            "vidu",
+            "wan",
+            "kling",
+        )
 
     def test_reports_unknown_instead_of_clean(self, tmp_path: Path):
         from remove_ai_watermarks.video import identify_video
@@ -3265,7 +3276,18 @@ class TestVideoVisibleApi:
         )
 
         def fake_scan(_source: Path, marks: tuple[str, ...]):
-            assert marks == ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
+            assert marks == (
+                "sora",
+                "veo",
+                "dreamina",
+                "seedance",
+                "doubao",
+                "dola",
+                "hailuo",
+                "vidu",
+                "wan",
+                "kling",
+            )
             return {
                 "sora": sora_scan,
                 "veo": sora_scan,
@@ -3485,7 +3507,7 @@ class TestVideoVisibleCli:
 
         assert result.exit_code == 0, result.output
         assert "temporally stable" in result.output
-        assert "auto|sora|veo|seedance|doubao|dola|hailuo|vidu|kling" in result.output
+        assert "auto|sora|veo|dreamina|seedance|doubao|dola|hailuo|vidu|wan|kling" in result.output
         assert "--temporal-consistency" in result.output
 
     def test_reports_removed_frames(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

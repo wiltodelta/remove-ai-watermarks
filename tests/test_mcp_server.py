@@ -451,7 +451,7 @@ def test_legacy_audio_and_video_message_tools_stay_in_lockstep_with_cli_catalog_
         "focalcodec",
         "dac",
     )
-    assert tuple(video_messages.VIDEO_MESSAGE_SCHEMES) == ("videoseal", "pixelseal")
+    assert tuple(video_messages.VIDEO_MESSAGE_SCHEMES) == ("videoseal", "pixelseal", "chunkyseal")
     assert tuple(video_messages.VIDEO_MESSAGE_METHODS) == ("auto", "codec", "vae")
 
     catalog = {op["id"]: op for op in integration.operation_catalog()}

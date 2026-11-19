@@ -274,6 +274,12 @@ def _video_mark_frame(key: str, w: int, h: int) -> np.ndarray:
         tw = max(1, round(tmpl.shape[1] * th / tmpl.shape[0]))
         x, y = w - tw - int(0.045 * w), h - th - int(0.045 * h)
         return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 250)
+    elif key == "dreamina":
+        tmpl = templates["dreamina"]
+        th = max(12, round(short * 0.038))
+        tw = max(14, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = round(short * 0.0185), round(short * 0.0185)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 250)
     elif key == "seedance":
         tmpl, scale, x, y = templates["seedance"], 0.095, int(w * 0.74), int(h * 0.80)
     elif key == "doubao":
@@ -289,6 +295,12 @@ def _video_mark_frame(key: str, w: int, h: int) -> np.ndarray:
         th = max(8, round(short * 0.046))
         tw = max(1, round(tmpl.shape[1] * th / tmpl.shape[0]))
         x, y = w - tw - round(short * 0.029), h - th - round(short * 0.033)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 250)
+    elif key == "wan":
+        tmpl = templates["wan"]
+        th = max(12, round(short * 0.048))
+        tw = max(16, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = w - tw - round(short * 0.015), h - th - round(short * 0.015)
         return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 250)
     elif key == "kling":
         # The FULL mark: swirl logo left of the text run, flush against the

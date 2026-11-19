@@ -53,17 +53,19 @@ pill detector; the generic pill shape does not attribute LiblibAI on its own.
 | --- | --- | --- | --- |
 | `sora` | Sora 2 mascot, with or without the wordmark | Moves among frame positions | Requires a temporally recurring visual match; mascot-only matches also require complete-shape correlation, which rejects a measured Veo-diamond cross-match. The older Sora Turbo corner swirl is a different unsupported mark. OpenAI discontinued the Sora app on 2026-04-26 and the Sora API on 2026-09-24, so this covers existing exports only. |
 | `veo` | Current four-point diamond and legacy `Veo` text | Fixed bottom-right corner | Uses separate silhouettes and requires a recurring match; a valid C2PA AI claim from another vendor (Google on a Sora match, for example) vetoes a mark its own vendor does not also confirm. Provenance alone does not create a visual detection. Learned fill is preferable on structured backgrounds. |
+| `dreamina` | Rounded-box italic `AI` badge | Fixed top-left corner | Calibrated across 8 native ByteDance Dreamina video exports (`720p`-`1088p`, max score `0.66`-`0.69` vs `<= 0.38` across 61 non-Dreamina videos). Requires an anchored recurring run at `>= 0.44` with a strong frame at `>= 0.56` unless ByteDance Dreamina C2PA or Jimeng TC260 provenance confirms the vendor. |
 | `seedance` | Boxed `AI` label | Fixed bottom-right corner | Requires an anchored recurring match; the full localized box is filled because a thinner synthetic shape mask leaves the real translucent rim behind. |
 | `doubao` | `豆包AI生成` text run | Fixed bottom-right corner | Reuses the image engine's synthetic alpha as the template; a stable run of at least 12 frames at confidence >=0.35 is required. Without Doubao TC260 confirmation, the run also needs a strong anchor at >=0.55. |
 | `dola` | `Dola AI` text | Fixed bottom-right corner | Requires an anchored recurring match; ByteDance or BytePlus provenance can relax only an existing visual run. |
 | `hailuo` | `MINIMAX \| hailuo AI` composite label | Fixed lower edge | Uses a synthetic waveform, text, separator, and ring silhouette; the complete recurring label box is filled. A TC260 label naming MiniMax as producer can relax only an existing stable run. |
 | `vidu` | Vidu two-loop logo and `Vidu AI` wordmark | Fixed bottom-right corner | Provisional: one real Vidu Q3 export (0.72 per frame at 480-1080p, 0.60 at 360p; the 956 other local videos at most 0.41). Requires an anchored recurring run at >=0.52 with a strong frame at >=0.58. A ShengShu TC260 label confirms the vendor without lowering the bar. |
+| `wan` | Alibaba Wan logo and `Wan` wordmark | Fixed bottom-right corner | Reuses `wan_alpha.png` (`<= 0.365` across 61 non-Wan videos); requires an anchored recurring run hugging the bottom-right corner at `>= 0.48` with a strong frame at `>= 0.56`. Alibaba Tongyi TC260 (`91330106MA2CFLDG4R`) confirms the vendor. |
 | `kling` | Kling AI swirl, `KLING AI` or `KlingAI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font and capitalization variants, an edge gate, a white-label gate, and anchored temporal recurrence. It also scores the Vidu wordmark, so `vidu` is checked first, and a TC260 label naming a non-Kling producer vetoes the match. |
 
 `video identify`, `video visible`, and `video all` share this registry and the
 same temporal arbiter. It is separate from the image registry because selection
 is made over a sequence rather than one raster. The default `auto` mode scans
-all eight entries in one decode pass and selects the first temporally stable
+all ten entries in one decode pass and selects the first temporally stable
 match in table order, subject to the Veo/Sora overlap exception above; an
 explicit mark restricts the scan to that row.
 Accepted fills are motion-aligned across adjacent frames by default. The prior

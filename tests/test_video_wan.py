@@ -66,9 +66,12 @@ def _source_mp4(
 
 def test_cuda_device_guard_rejects_non_cuda_and_missing_gpu(monkeypatch):
     pytest.importorskip("torch")
-    with pytest.raises(ValueError, match="device='auto' or device='cuda'"):
+    with pytest.raises(ValueError, match="device='auto', 'cuda', or 'mps'"):
         wan.resolve_wan_device("cpu")
-    with pytest.raises(ValueError, match="device='auto' or device='cuda'"):
+    monkeypatch.setattr("torch.backends.mps.is_available", lambda: True)
+    assert wan.resolve_wan_device("mps") == "mps"
+    monkeypatch.setattr("torch.backends.mps.is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="MPS is unavailable"):
         wan.resolve_wan_device("mps")
     monkeypatch.setattr("torch.cuda.is_available", lambda: False)
     with pytest.raises(RuntimeError, match="NVIDIA CUDA GPU"):

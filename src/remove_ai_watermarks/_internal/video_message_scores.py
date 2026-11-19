@@ -17,6 +17,12 @@ if TYPE_CHECKING:
 AGGREGATIONS = ("avg", "squared_avg", "l1norm_avg", "l2norm_avg")
 WINDOW_FRAMES = 12
 THRESHOLD = 0.9
+SCHEME_MESSAGE_BITS: dict[str, int] = {
+    "videoseal": 256,
+    "pixelseal": 256,
+    "chunkyseal": 1024,
+}
+SUPPORTED_MESSAGE_BITS = frozenset(SCHEME_MESSAGE_BITS.values())
 
 
 @dataclass(frozen=True)
@@ -43,10 +49,13 @@ class VideoMessageReading:
         return self.max_bit_accuracy >= THRESHOLD
 
 
-def reference_bits(reference_hex: str) -> tuple[int, ...]:
-    """Parse exactly 256 independently known bits, represented by 64 hex digits."""
-    if len(reference_hex) != 64 or any(char not in "0123456789abcdefABCDEF" for char in reference_hex):
-        raise ValueError("The independent reference must contain exactly 64 hexadecimal digits")
+def reference_bits(reference_hex: str, *, num_bits: int = 256) -> tuple[int, ...]:
+    """Parse independently known message bits from their exact hexadecimal representation."""
+    if num_bits not in SUPPORTED_MESSAGE_BITS:
+        raise ValueError(f"Unsupported video message bit width: {num_bits}")
+    expected_digits = num_bits // 4
+    if len(reference_hex) != expected_digits or any(char not in "0123456789abcdefABCDEF" for char in reference_hex):
+        raise ValueError(f"The independent reference must contain exactly {expected_digits} hexadecimal digits")
     return tuple(int(bit) for byte in bytes.fromhex(reference_hex) for bit in format(byte, "08b"))
 
 
@@ -56,11 +65,13 @@ class MessageAccumulator:
     def __init__(self, expected: Sequence[int]) -> None:
         import numpy as np
 
-        if len(expected) != 256 or any(bit not in (0, 1) for bit in expected):
-            raise ValueError("An independently known 256-bit reference is required")
+        num_bits = len(expected)
+        if num_bits not in SUPPORTED_MESSAGE_BITS or any(bit not in (0, 1) for bit in expected):
+            raise ValueError("An independently known 256-bit or 1024-bit reference is required")
+        self._num_bits = num_bits
         self._expected = np.asarray(expected, dtype=np.bool_)
-        self._sums: NDArray[Any] = np.zeros((4, 256), dtype=np.float64)
-        self._pending: NDArray[Any] = np.empty((0, 4, 256), dtype=np.float64)
+        self._sums: NDArray[Any] = np.zeros((4, num_bits), dtype=np.float64)
+        self._pending: NDArray[Any] = np.empty((0, 4, num_bits), dtype=np.float64)
         self._count = 0
         self._next_start = 0
         self._frame_max = 0.0
@@ -108,7 +119,7 @@ class MessageAccumulator:
         import numpy as np
 
         counts = np.count_nonzero((sums > 0) == self._expected[None], axis=1).tolist()
-        return {name: count / 256 for name, count in zip(AGGREGATIONS, counts, strict=True)}
+        return {name: count / self._num_bits for name, count in zip(AGGREGATIONS, counts, strict=True)}
 
     def update(self, logits: object) -> None:
         """Check a nonempty, sequential batch; invalid checks cannot become negatives."""
@@ -120,14 +131,14 @@ class MessageAccumulator:
         # caller that catches the error and tries to finalize a valid prefix.
         self._closed = True
         values = np.asarray(logits, dtype=np.float64)
-        if values.ndim != 2 or values.shape[1] != 256 or not len(values) or not np.isfinite(values).all():
+        if values.ndim != 2 or values.shape[1] != self._num_bits or not len(values) or not np.isfinite(values).all():
             raise RuntimeError("Video message decoder returned invalid raw logits")
         terms = self._weighted_terms(values)
         self._sums += self._sum_terms(terms)
         if not np.isfinite(self._sums).all():
             raise RuntimeError("Video message accumulation returned nonfinite values")
         matches = np.count_nonzero((values > 0) == self._expected[None], axis=1)
-        self._frame_max = max(self._frame_max, int(matches.max()) / 256)
+        self._frame_max = max(self._frame_max, int(matches.max()) / self._num_bits)
         self._count += len(values)
         remaining = np.concatenate((self._pending, terms), axis=0)
         while len(remaining) >= WINDOW_FRAMES:

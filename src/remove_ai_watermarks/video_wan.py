@@ -52,7 +52,7 @@ WAN21_DEFAULT_CHUNK_FRAMES = 193
 WAN21_DEFAULT_OVERLAP_FRAMES = 17
 WAN21_AUTO_MAX_FRAME_PIXELS = 1280 * 720
 WAN21_MAX_FRAME_PIXELS = 1920 * 1080
-WAN21_MAX_TOTAL_PIXEL_FRAMES = 600 * 1280 * 720
+WAN21_MAX_TOTAL_PIXEL_FRAMES = 7200 * 1920 * 1080
 WAN21_MIN_CUDA_VRAM_BYTES = 16 * 1024**3
 WAN21_DEFAULT_PROMPT = "High fidelity natural video, sharp details, accurate motion, clean cinematic lighting."
 WAN21_DEFAULT_NEGATIVE_PROMPT = (
@@ -95,28 +95,35 @@ def is_available() -> bool:
 
 
 def resolve_wan_device(requested: str) -> str:
-    """Resolve native Ampere-or-newer NVIDIA BF16 CUDA execution for 3D Wan 2.1 diffusion."""
-    if requested not in {"auto", "cuda"}:
-        raise ValueError("Wan 2.1 3D video diffusion requires device='auto' or device='cuda'")
+    """Resolve native Ampere-or-newer NVIDIA BF16 CUDA or Apple Silicon MPS for 3D Wan 2.1."""
+    if requested not in {"auto", "cuda", "mps"}:
+        raise ValueError("Wan 2.1 3D video diffusion requires device='auto', 'cuda', or 'mps'")
     import torch
 
+    if requested == "mps":
+        if not torch.backends.mps.is_available():
+            raise RuntimeError("Wan 2.1 3D video diffusion requested MPS, but Apple Silicon MPS is unavailable")
+        return "mps"
     if getattr(torch.version, "hip", None) or not torch.cuda.is_available():
-        raise RuntimeError("Wan 2.1 3D video diffusion requires an NVIDIA CUDA GPU")
+        raise RuntimeError("Wan 2.1 3D video diffusion requires an NVIDIA CUDA GPU (or explicit device='mps')")
     if not torch.cuda.is_bf16_supported(including_emulation=False):
         raise RuntimeError("Wan 2.1 3D video diffusion requires a BF16-capable NVIDIA CUDA GPU (Ampere or newer)")
     return "cuda"
 
 
 def load_video_wan_runtime(*, device: str = "auto", local_files_only: bool = False) -> VideoWanRuntime:
-    """Load the pinned Wan 2.1 1.3B video-to-video pipeline on CUDA and cache prompt embeddings."""
+    """Load pinned Wan 2.1 1.3B V2V, encoding prompt on CPU first so UMT5-XXL never occupies VRAM/MPS."""
     if not is_available():
         raise RuntimeError("Wan 2.1 video processing requires 'remove-ai-watermarks[video,diffusion]'")
     resolved = resolve_wan_device(device)
+    import gc
+
     import torch
     from diffusers.models.autoencoders.autoencoder_kl_wan import AutoencoderKLWan
     from diffusers.pipelines.wan.pipeline_wan_video2video import WanVideoToVideoPipeline
     from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
 
+    dit_dtype = torch.float16 if resolved == "mps" else torch.bfloat16
     vae = AutoencoderKLWan.from_pretrained(
         WAN21_MODEL_ID,
         subfolder="vae",
@@ -130,30 +137,35 @@ def load_video_wan_runtime(*, device: str = "auto", local_files_only: bool = Fal
         WAN21_MODEL_ID,
         revision=WAN21_MODEL_REVISION,
         vae=vae,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=dit_dtype,
         local_files_only=local_files_only,
     )
     pipe.scheduler = UniPCMultistepScheduler.from_config(
         pipe.scheduler.config,
         flow_shift=WAN21_FLOW_SHIFT,
     )
-    pipe.to(resolved)
-    pipe.set_progress_bar_config(disable=True)
+    # Encode static prompt on CPU and release the 9.4 GB UMT5-XXL text encoder BEFORE moving DiT+VAE to GPU/MPS!
     prompt_embeds = None
     if hasattr(pipe, "encode_prompt") and WAN21_GUIDANCE_SCALE <= 1.0:
         with torch.inference_mode():
-            prompt_embeds, _ = pipe.encode_prompt(
+            cpu_embeds, _ = pipe.encode_prompt(
                 prompt=WAN21_DEFAULT_PROMPT,
-                device=torch.device(resolved),
+                device=torch.device("cpu"),
                 num_videos_per_prompt=1,
                 do_classifier_free_guidance=False,
             )
+            prompt_embeds = cpu_embeds.to(device=resolved, dtype=dit_dtype)
         if hasattr(pipe, "text_encoder"):
             pipe.text_encoder = None
         if hasattr(pipe, "tokenizer"):
             pipe.tokenizer = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        gc.collect()
+    pipe.to(resolved)
+    pipe.set_progress_bar_config(disable=True)
+    if resolved == "cuda" and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif resolved == "mps" and hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+        torch.mps.empty_cache()
     log.info("Loaded pinned Wan 2.1 %s@%s on %s", WAN21_MODEL_ID, WAN21_MODEL_REVISION, resolved)
     return VideoWanRuntime(
         model=WAN21_MODEL_ID,
@@ -194,7 +206,7 @@ def can_run_wan_on_source(
     for_auto: bool = False,
 ) -> bool:
     """Return whether source, device, VRAM, and runtime satisfy Wan 2.1 eligibility."""
-    if source.suffix.lower() not in WAN_SUPPORTED_EXTENSIONS or device not in {"auto", "cuda"}:
+    if source.suffix.lower() not in WAN_SUPPORTED_EXTENSIONS or device not in {"auto", "cuda", "mps"}:
         return False
     if runtime is not None:
         if not isinstance(runtime, VideoWanRuntime):
@@ -267,7 +279,8 @@ def _run_wan_window(
     if pad_t:
         pil_frames.extend([pil_frames[-1]] * pad_t)
 
-    generator = torch.Generator(device=runtime.resolved_device).manual_seed(seed)
+    gen_device = "cpu" if runtime.resolved_device == "mps" else runtime.resolved_device
+    generator = torch.Generator(device=gen_device).manual_seed(seed)
     call_kwargs: dict[str, Any] = {
         "video": pil_frames,
         "height": target_h,
@@ -409,8 +422,8 @@ def regenerate_wan_experimental(
         raise ValueError("profile must be wan21-synthid-experimental or wan21-seedance-experimental")
     if quality not in {"delivery", "master"}:
         raise ValueError("quality must be delivery or master")
-    if device not in {"auto", "cuda"}:
-        raise ValueError("Wan 2.1 3D video diffusion requires device='auto' or device='cuda'")
+    if device not in {"auto", "cuda", "mps"}:
+        raise ValueError("Wan 2.1 3D video diffusion requires device='auto', 'cuda', or 'mps'")
     _validate_wan_window_args(chunk_frames, overlap_frames)
     if runtime is not None and (runtime.model != WAN21_MODEL_ID or runtime.revision != WAN21_MODEL_REVISION):
         raise ValueError("The supplied Wan 2.1 runtime does not match the pinned model and revision")

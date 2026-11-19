@@ -81,3 +81,72 @@ def open_video_capture(source: Path) -> Any:
         return capture
     log.info("Using PyAV because OpenCV could not open video: %s", source)
     return fallback
+
+
+class _FFmpeg16BitCapture:
+    """Stream 16-bit BGR48LE frames from ffmpeg for high-bit-depth / HDR sources."""
+
+    def __init__(self, source: Path, width: int, height: int) -> None:
+        import subprocess
+        import tempfile
+
+        from remove_ai_watermarks.video_tools import require_video_tool
+
+        self._width = int(width)
+        self._height = int(height)
+        self._frame_bytes = self._width * self._height * 6
+        self._stderr = tempfile.TemporaryFile(mode="w+b")  # noqa: SIM115 - capture owns the lifetime
+        cmd = [
+            require_video_tool("ffmpeg"),
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr48le",
+            "pipe:1",
+        ]
+        self._proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=self._stderr,
+        )
+        self._closed = False
+
+    def isOpened(self) -> bool:
+        return not self._closed and self._proc.stdout is not None
+
+    def read(self) -> tuple[bool, NDArray[Any] | None]:
+        import numpy as np
+
+        if self._closed or self._proc.stdout is None:
+            return False, None
+        raw = self._proc.stdout.read(self._frame_bytes)
+        if not raw:
+            return False, None
+        if len(raw) != self._frame_bytes:
+            raise RuntimeError("Incomplete 16-bit BGR48LE frame read from ffmpeg")
+        frame = np.frombuffer(raw, dtype="<u2").reshape(self._height, self._width, 3).copy()
+        return True, frame
+
+    def release(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._proc.stdout is not None:
+            self._proc.stdout.close()
+        if self._proc.poll() is None:
+            self._proc.kill()
+        self._proc.wait()
+        self._stderr.close()
+
+
+def open_video_capture_16bit(source: Path, *, width: int, height: int) -> _FFmpeg16BitCapture:
+    """Open a 16-bit BGR48LE frame reader for 10-bit/12-bit/HDR video pipelines."""
+    return _FFmpeg16BitCapture(source, width=width, height=height)

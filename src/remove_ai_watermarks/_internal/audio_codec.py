@@ -38,11 +38,18 @@ def is_available() -> bool:
     )
 
 
-@lru_cache(maxsize=1)
-def load_pinned_model() -> Any:
-    """Load the CPU model only after validating the full official checkpoint hash."""
+@lru_cache(maxsize=3)
+def load_pinned_model(device: str = "cpu") -> Any:
+    """Load the EnCodec model on the requested device only after validating checkpoint hashes."""
+    if device not in {"cpu", "mps", "cuda"}:
+        raise ValueError("EnCodec device must be cpu, mps, or cuda")
     if not is_available():
         raise ImportError("Neural audio processing requires remove-ai-watermarks[audio-codec]")
+    torch = import_module("torch")
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("Requested EnCodec MPS device is unavailable")
+    if device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("Requested EnCodec CUDA device is unavailable")
     hub = import_module("huggingface_hub")
     checkpoint: Path | None = None
     for filename, expected in (("config.json", CONFIG_SHA256), (CHECKPOINT_FILENAME, CHECKPOINT_SHA256)):
@@ -67,7 +74,7 @@ def load_pinned_model() -> Any:
     )
     if any(loading.get(key) for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")):
         raise RuntimeError(f"Pinned EnCodec checkpoint did not load completely: {loading}")
-    return model.to("cpu").train(False)
+    return model.to(device).train(False)
 
 
 def resynthesize(
@@ -76,6 +83,7 @@ def resynthesize(
     bandwidth_kbps: float,
     *,
     stereo_mode: Literal["independent", "ms"] = "independent",
+    device: str = "cpu",
 ) -> NDArray[Any]:
     """Resynthesize channels independently or in Mid/Side stereo, trimming only padding."""
     import numpy as np
@@ -108,9 +116,9 @@ def resynthesize(
         )
 
     with _MODEL_LOCK, torch.inference_mode():
-        model = load_pinned_model()
+        model = load_pinned_model() if device == "cpu" else load_pinned_model(device)
         native = resample(codec_in, sample_rate, 24000)
-        inputs = torch.from_numpy(np.ascontiguousarray(native.T)).unsqueeze(1)
+        inputs = torch.from_numpy(np.ascontiguousarray(native.T)).unsqueeze(1).to(device)
         reconstructed = model(inputs, bandwidth=bandwidth_kbps).audio_values.squeeze(1).cpu().numpy().T
         delivered = resample(reconstructed, 24000, sample_rate)
     if delivered.shape[0] < len(array) or delivered.shape[1] != array.shape[1]:
@@ -133,6 +141,7 @@ def resynthesize_chunks(
     *,
     bandwidth_kbps: float = 24.0,
     stereo_mode: Literal["independent", "ms"] = "independent",
+    device: str = "cpu",
 ) -> Iterator[NDArray[Any]]:
     """Use bounded neighboring context; preserve central samples and channel order."""
     if bandwidth_kbps not in BANDWIDTHS_KBPS or sample_rate <= 0:
@@ -141,6 +150,8 @@ def resynthesize_chunks(
         raise ValueError("EnCodec stereo_mode must be independent or ms")
 
     def process(samples: NDArray[Any]) -> NDArray[Any]:
-        return resynthesize(samples, sample_rate, bandwidth_kbps, stereo_mode=stereo_mode)
+        if device == "cpu":
+            return resynthesize(samples, sample_rate, bandwidth_kbps, stereo_mode=stereo_mode)
+        return resynthesize(samples, sample_rate, bandwidth_kbps, stereo_mode=stereo_mode, device=device)
 
     yield from transform_chunks(chunks, process, context_frames=sample_rate * CONTEXT_SECONDS)

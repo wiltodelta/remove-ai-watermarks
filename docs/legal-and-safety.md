@@ -46,10 +46,13 @@ It also does not add templates for regulator-defined disclosure icons, such as
 the EU icons in Annex 1 of the Code of Practice on marking and labelling of
 AI-generated content, which deployers use to disclose deepfakes.
 
-It does not remove product branding that a paid plan of the same product turns
-off, such as the "Made with Gamma" badge. A visible mark stays in scope when its
-vendor describes it as identifying AI-generated content, whichever plan turns it
-off: the Gemini sparkle, or the
+It does not remove general non-AI product branding on human-authored assets, such
+as the "Made with Gamma" slide badge or a generic timeline-editor watermark on
+ordinary camera footage. All visible, container/bitstream, and invisible
+watermarks placed on AI-generated outputs (including free-tier and paid-tier AI
+image, video, avatar, lip-sync, dubbing, and audio generators, whether styled as
+a generator wordmark/logo or an explicit AI badge) are in scope, including the
+Gemini sparkle and the
 [visible watermark](https://support.google.com/gemininotebook/answer/16213268)
 that Gemini Notebook, formerly NotebookLM, adds to generated images and videos.
 

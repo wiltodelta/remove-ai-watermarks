@@ -31,21 +31,27 @@ from remove_ai_watermarks.video_synthid import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from remove_ai_watermarks._internal.constants import AudioMethod, AudioScheme, WanExperimentalProfile
+    from remove_ai_watermarks._internal.constants import (
+        AudioMethod,
+        AudioScheme,
+        AudioVendor,
+        WanExperimentalProfile,
+    )
     from remove_ai_watermarks.audio import AudioProvenanceReport
     from remove_ai_watermarks.video_invisible import RegenerationMetrics, VideoVaeRuntime
     from remove_ai_watermarks.video_visible import VideoScan
     from remove_ai_watermarks.video_wan import VideoWanRuntime
 
 VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".flv"})
-VIDEO_VISIBLE_MARKS = ("sora", "veo", "seedance", "doubao", "dola", "hailuo", "vidu", "kling")
+VIDEO_VISIBLE_MARKS = ("sora", "veo", "dreamina", "seedance", "doubao", "dola", "hailuo", "vidu", "wan", "kling")
 _EXPECTED_VIDEO_MARKS = f"{', '.join(('auto', *VIDEO_VISIBLE_MARKS[:-1]))}, or {VIDEO_VISIBLE_MARKS[-1]}"
 _ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = ISOBMFF_VIDEO_EXTENSIONS
 _EBML_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".webm", ".mkv"})
 _RIFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".avi"})
 _FLV_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".flv"})
-_REGENERATED_VIDEO_EXTENSIONS: frozenset[str] = _ISOBMFF_VIDEO_EXTENSIONS
+_REGENERATED_VIDEO_EXTENSIONS: frozenset[str] = frozenset({*_ISOBMFF_VIDEO_EXTENSIONS, ".mkv"})
 _EXPECTED_REGENERATED_VIDEO_EXTENSIONS = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
+_EXPECTED_WAN_VIDEO_EXTENSIONS = ", ".join(sorted(_ISOBMFF_VIDEO_EXTENSIONS))
 
 
 def _require_video_runtime() -> None:
@@ -132,6 +138,20 @@ class VideoVisibleResult(_VideoAudioBoundary):
     total_frames: int
     detected_frames: int
     removed_frames: int
+    remaining_metadata: dict[str, str]
+
+
+@dataclass(frozen=True)
+class VideoEraseResult(_VideoAudioBoundary):
+    """Result of user-directed rectangular region removal on video frames."""
+
+    source: Path
+    output: Path
+    regions: tuple[tuple[int, int, int, int], ...]
+    total_frames: int
+    erased_frames: int
+    frame_range: tuple[int, int] | None
+    backend: str
     remaining_metadata: dict[str, str]
 
 
@@ -732,6 +752,123 @@ def remove_video_visible(
     )
 
 
+def remove_video_region(
+    source: str | Path,
+    output: str | Path | None = None,
+    *,
+    regions: Sequence[tuple[int, int, int, int]],
+    frame_range: tuple[int, int] | None = None,
+    backend: str = "cv2",
+    dilate: int = 3,
+    strip_metadata: bool = True,
+    temporal_consistency: bool = True,
+) -> VideoEraseResult:
+    """Erase user-specified (x, y, w, h) region(s) across all or a slice of video frames."""
+    import cv2
+
+    from remove_ai_watermarks.metadata import get_ai_metadata
+    from remove_ai_watermarks.video_decode import open_video_capture
+    from remove_ai_watermarks.video_encoding import probe_video_timestamps
+    from remove_ai_watermarks.video_visible import FrameLocalization, VideoScan, encode_clean_video
+    from remove_ai_watermarks.watermark_registry import Backend, resolve_backend
+
+    if not regions:
+        raise ValueError("At least one (x, y, w, h) region is required")
+    if dilate < 0:
+        raise ValueError("dilate must be nonnegative")
+    source_path = _video_source(source)
+    output_path = _video_output(source_path, output, operation="video region erase")
+    resolved_backend = resolve_backend(cast("Backend", backend))
+    _require_video_runtime()
+
+    boxes: list[tuple[int, int, int, int]] = []
+    for box in regions:
+        if len(box) != 4:
+            raise ValueError("Each region must be an (x, y, w, h) 4-tuple")
+        bx, by, bw, bh = (int(v) for v in box)
+        if bw <= 0 or bh <= 0:
+            raise ValueError("Region width and height must be positive")
+        boxes.append((bx, by, bw, bh))
+
+    capture = open_video_capture(source_path)
+    if not capture.isOpened():
+        raise RuntimeError(f"OpenCV could not decode video: {source_path}")
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = float(capture.get(cv2.CAP_PROP_FPS))
+    total_frames = 0
+    raw_timestamps: list[float] = []
+    try:
+        if width <= 0 or height <= 0 or fps <= 0:
+            raise RuntimeError(f"Video metadata is missing geometry or frame rate: {source_path}")
+        while True:
+            ok = capture.grab()
+            if not ok:
+                break
+            raw_timestamps.append(float(capture.get(cv2.CAP_PROP_POS_MSEC)) / 1000.0)
+            total_frames += 1
+    finally:
+        capture.release()
+    if total_frames == 0:
+        raise RuntimeError(f"Video contains no readable frames: {source_path}")
+
+    clipped_boxes: list[tuple[int, int, int, int]] = []
+    for bx, by, bw, bh in boxes:
+        x0 = max(0, bx)
+        y0 = max(0, by)
+        x1 = min(width, bx + bw)
+        y1 = min(height, by + bh)
+        if x1 <= x0 or y1 <= y0:
+            raise ValueError(f"Region {(bx, by, bw, bh)} lies completely outside {width}x{height} video frame")
+        clipped_boxes.append((x0, y0, x1 - x0, y1 - y0))
+
+    norm_range: tuple[int, int] | None = None
+    if frame_range is not None:
+        start_f, end_f = int(frame_range[0]), int(frame_range[1])
+        if start_f < 0 or end_f < start_f or start_f >= total_frames:
+            raise ValueError(f"Invalid frame_range {(start_f, end_f)} for {total_frames}-frame video")
+        norm_range = (start_f, min(end_f, total_frames - 1))
+
+    probed_ts = probe_video_timestamps(source_path)
+    shared_ts = probed_ts if len(probed_ts) == total_frames else tuple(raw_timestamps)
+    tuple_boxes = tuple(clipped_boxes)
+    frame_entries: list[tuple[int, int, int, int] | tuple[tuple[int, int, int, int], ...] | None] = []
+    detections: list[FrameLocalization] = []
+    for idx in range(total_frames):
+        in_slice = norm_range is None or (norm_range[0] <= idx <= norm_range[1])
+        detections.append(FrameLocalization(idx, 1.0 if in_slice else 0.0, tuple_boxes[0] if in_slice else None))
+        if not in_slice:
+            frame_entries.append(None)
+        elif len(tuple_boxes) == 1:
+            frame_entries.append(tuple_boxes[0])
+        else:
+            frame_entries.append(tuple_boxes)
+
+    scan = VideoScan(width=width, height=height, fps=fps, detections=tuple(detections), timestamps=shared_ts)
+    erased_frames = encode_clean_video(
+        source_path,
+        output_path,
+        scan,
+        frame_entries,
+        backend=cast("Backend", resolved_backend),
+        strip_metadata=strip_metadata,
+        temporal_consistency=temporal_consistency,
+        dilate_px=dilate,
+        allow_unmasked_donors=False,
+    )
+    remaining = get_ai_metadata(output_path) if strip_metadata else {}
+    return VideoEraseResult(
+        source=source_path,
+        output=output_path,
+        regions=tuple_boxes,
+        total_frames=total_frames,
+        erased_frames=erased_frames,
+        frame_range=norm_range,
+        backend=resolved_backend,
+        remaining_metadata=remaining,
+    )
+
+
 _BYTEDANCE_FALLBACK_TOKENS: tuple[str, ...] = (
     "bytedance",
     "byteplus",
@@ -770,7 +907,7 @@ def _is_bytedance_video_provenance(
     metadata_markers: dict[str, str],
     visible_mark: str | None = None,
 ) -> bool:
-    if visible_mark in {"seedance", "doubao", "dola"}:
+    if visible_mark in {"dreamina", "seedance", "doubao", "dola"}:
         return True
     if not metadata_markers:
         return False
@@ -826,14 +963,16 @@ def _resolve_video_invisible_profile(
         if not can_wan and (seed != 0 or source_path.suffix.lower() != ".mp4"):
             resolved = "synthid"
         else:
-            if visible_mark in {"seedance", "doubao", "dola"}:
-                is_bytedance = True
-            else:
-                from remove_ai_watermarks.metadata import get_ai_metadata
+            from remove_ai_watermarks.metadata import get_ai_metadata
 
-                markers = detected_metadata if detected_metadata is not None else get_ai_metadata(source_path)
-                is_bytedance = _is_bytedance_video_provenance(markers, visible_mark)
-            if is_bytedance:
+            markers = (
+                detected_metadata
+                if detected_metadata is not None
+                else (
+                    {} if visible_mark in {"dreamina", "seedance", "doubao", "dola"} else get_ai_metadata(source_path)
+                )
+            )
+            if _is_bytedance_video_provenance(markers, visible_mark):
                 resolved = "wan21-seedance-experimental" if can_wan else "seedance-experimental"
             else:
                 resolved = "wan21-synthid-experimental" if can_wan else "synthid"
@@ -918,6 +1057,7 @@ def remove_video_all(
     audio_allow_unverified: bool = False,
     audio_allow_positive: bool = False,
     audio_allow_quality_override: bool = False,
+    audio_vendor: AudioVendor | None = None,
     audio_streams: Sequence[int] | None = None,
     _invisible_runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _detected_metadata: dict[str, str] | None = None,
@@ -959,15 +1099,19 @@ def remove_video_all(
     if (
         include_invisible
         and invisible_profile in WAN_EXPERIMENTAL_PROFILES
-        and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS
+        and source_path.suffix.lower() not in _ISOBMFF_VIDEO_EXTENSIONS
     ):
-        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
+        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_WAN_VIDEO_EXTENSIONS}")
     if include_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         raise ValueError(f"Video SynthID regeneration requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
+    from remove_ai_watermarks.audio import normalize_audio_vendor
+
     preflight_befores: tuple[AudioProvenanceReport, ...] = ()
-    if include_audio_invisible:
-        if source_path.suffix.lower() not in {".mp4", ".mov", ".mkv"}:
-            raise ValueError("Video audio watermark processing requires MP4, MOV, or MKV input")
+    explicit_audio_vendor = normalize_audio_vendor(audio_vendor)
+    eff_include_audio_invisible = include_audio_invisible or explicit_audio_vendor is not None
+    if eff_include_audio_invisible:
+        if source_path.suffix.lower() not in {".mp4", ".mov", ".m4v", ".mkv"}:
+            raise ValueError("Video audio watermark processing requires MP4, MOV, M4V, or MKV input")
         from remove_ai_watermarks import video_audio as _video_audio_mod
 
         preflight_befores = _video_audio_mod.preflight_video_audio_workload(
@@ -981,6 +1125,7 @@ def remove_video_all(
             allow_unverified=audio_allow_unverified,
             allow_positive=audio_allow_positive,
             allow_quality_override=audio_allow_quality_override,
+            vendor=audio_vendor,
             streams=audio_streams,
             _metadata_markers=_detected_metadata,
         )
@@ -995,7 +1140,9 @@ def remove_video_all(
         atomic_video_output(output_path) as staged_final,
         TemporaryDirectory(prefix=f".{source_path.stem}-video-all-", dir=source_path.parent) as temp_dir,
     ):
-        stage_target = Path(temp_dir) / f"visual-final{source_path.suffix}" if include_audio_invisible else staged_final
+        stage_target = (
+            Path(temp_dir) / f"visual-final{source_path.suffix}" if eff_include_audio_invisible else staged_final
+        )
         visible_output = Path(temp_dir) / f"visible{source_path.suffix}" if include_invisible else stage_target
         visible_result = remove_video_visible(
             source_path,
@@ -1057,7 +1204,7 @@ def remove_video_all(
         else:
             remaining_metadata = visible_result.remaining_metadata
 
-        if include_audio_invisible:
+        if eff_include_audio_invisible:
             from remove_ai_watermarks import video_audio
 
             streams = video_audio.stream_inventory(stage_target)
@@ -1088,6 +1235,7 @@ def remove_video_all(
                     allow_unverified=audio_allow_unverified,
                     allow_positive=audio_allow_positive,
                     allow_quality_override=audio_allow_quality_override,
+                    vendor=audio_vendor,
                     streams=audio_streams,
                     _befores=reusable_befores,
                     _metadata_markers=detected_metadata,
@@ -1186,6 +1334,7 @@ def remove_video_batch(
     audio_allow_unverified: bool = False,
     audio_allow_positive: bool = False,
     audio_allow_quality_override: bool = False,
+    audio_vendor: AudioVendor | None = None,
     audio_streams: Sequence[int] | None = None,
 ) -> VideoBatchResult:
     """Process every supported video in one directory.
@@ -1222,11 +1371,15 @@ def remove_video_batch(
         raise ValueError(f"Unsupported visible video mark; expected {_EXPECTED_VIDEO_MARKS}")
     if backend not in {"auto", "cv2", "migan", "lama"}:
         raise ValueError("Unsupported fill backend; expected auto, cv2, migan, or lama")
+    from remove_ai_watermarks.audio import normalize_audio_vendor
+
+    explicit_batch_vendor = normalize_audio_vendor(audio_vendor)
+    eff_batch_audio_invisible = include_audio_invisible or explicit_batch_vendor is not None
     if include_invisible and mode != "all":
         raise ValueError("The invisible video stage is available only in all mode")
-    if include_audio_invisible and mode != "all":
+    if eff_batch_audio_invisible and mode != "all":
         raise ValueError("The audio watermark stage is available only in all mode")
-    if include_audio_invisible:
+    if eff_batch_audio_invisible:
         from remove_ai_watermarks import audio as _audio_mod
 
         _audio_mod.validate_audio_arguments(
@@ -1236,7 +1389,8 @@ def remove_video_batch(
             force=audio_force,
             bandwidth_kbps=audio_bandwidth_kbps,
             vocoder_device=audio_vocoder_device,
-            allow_unverified=audio_allow_unverified,
+            allow_unverified=audio_allow_unverified or explicit_batch_vendor is not None,
+            vendor=audio_vendor,
         )
     if mode != "metadata":
         _require_video_runtime()
@@ -1292,9 +1446,12 @@ def remove_video_batch(
                             lazy_getter = _get_batch_runtime
                     else:
                         needs_wan = invisible_profile in WAN_EXPERIMENTAL_PROFILES
-                        allowed_exts = (
-                            {".mp4"} if invisible_profile == "seedance-experimental" else _REGENERATED_VIDEO_EXTENSIONS
-                        )
+                        if invisible_profile == "seedance-experimental":
+                            allowed_exts = {".mp4"}
+                        elif needs_wan:
+                            allowed_exts = _ISOBMFF_VIDEO_EXTENSIONS
+                        else:
+                            allowed_exts = _REGENERATED_VIDEO_EXTENSIONS
                         if source_path.suffix.lower() in allowed_exts:
                             selected_runtime = _get_batch_runtime("wan" if needs_wan else "vae")
                 all_result = remove_video_all(
@@ -1324,6 +1481,7 @@ def remove_video_batch(
                     audio_allow_unverified=audio_allow_unverified,
                     audio_allow_positive=audio_allow_positive,
                     audio_allow_quality_override=audio_allow_quality_override,
+                    audio_vendor=audio_vendor,
                     audio_streams=audio_streams,
                     _invisible_runtime=selected_runtime,
                     _runtime_getter=lazy_getter,
@@ -1580,8 +1738,8 @@ def remove_video_wan_experimental(
     from remove_ai_watermarks.metadata import get_ai_metadata
 
     source_path = _video_source(source)
-    if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
-        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
+    if source_path.suffix.lower() not in _ISOBMFF_VIDEO_EXTENSIONS:
+        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_WAN_VIDEO_EXTENSIONS}")
     if profile not in WAN_EXPERIMENTAL_PROFILES:
         raise ValueError("profile must be wan21-synthid-experimental or wan21-seedance-experimental")
     if quality not in {"delivery", "master"}:

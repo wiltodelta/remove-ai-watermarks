@@ -718,20 +718,20 @@ The profile accepts SDR 8-bit MP4 with even dimensions and handles visible
 labels as a separate input-preparation concern.
 
 [`video_wan.py`](../src/remove_ai_watermarks/video_wan.py) packages the optional
-BF16 NVIDIA CUDA-only 3D causal video diffusion profiles (`wan21-synthid-experimental` at
-`strength=0.38` and `wan21-seedance-experimental` at `strength=0.12`), exposed
+3D causal video diffusion profiles (`wan21-synthid-experimental` at
+`strength=0.38` and `wan21-seedance-experimental` at `strength=0.12` on BF16 NVIDIA CUDA and explicit Apple Silicon `mps`), exposed
 through `remove_video_wan_experimental` and the shared `profile` /
 `invisible_profile` selectors (`VideoWanExperimentalResult`, which carries
 explicit `strength` alongside the compatible `noise_std` mirror). It verifies
 hardware BF16 NVIDIA CUDA capability (`torch.version.hip` excluded,
-`torch.cuda.is_bf16_supported(including_emulation=False)`) and enforces
+`torch.cuda.is_bf16_supported(including_emulation=False)`) or explicit `mps` availability and enforces
 `WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
-(`600 * 1280 * 720`) before frame decoding, loads pinned
+(`7200 * 1920 * 1080`, 5 minutes at 1080p24) before frame decoding, loads pinned
 Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers@0fad780a534b6463e45facd96134c9f345acfa5b`
-(`licenses/wan/NOTICE.txt`) with an FP32 tiled/sliced `AutoencoderKLWan`, BF16
+(`licenses/wan/NOTICE.txt`) with an FP32 tiled/sliced `AutoencoderKLWan`, BF16/FP16
 `WanVideoToVideoPipeline`, and `UniPCMultistepScheduler(flow_shift=3.0, 20 steps,
-guidance_scale=1.0)`, pre-encodes `WAN21_DEFAULT_PROMPT` once into cached
-`prompt_embeds` and releases `text_encoder` / `tokenizer` before 3D denoising,
+guidance_scale=1.0)`, pre-encodes `WAN21_DEFAULT_PROMPT` on CPU into cached
+`prompt_embeds` and releases the `9.4 GB` `UMT5-XXL` `text_encoder` / `tokenizer` *before* moving the DiT + VAE onto `cuda`/`mps` (`~3.4 GiB` accelerator footprint),
 and streams `_stream_wan_windows` (`chunk_frames=193` / `overlap_frames=17`
 raised-cosine temporal crossfades with symmetric 16-pixel reflection padding and
 `4k+1` tail-frame causal padding) directly into `_finalize_experimental_output`
@@ -4113,9 +4113,10 @@ For a diffusion change:
 
 ## Known public video messages
 
-`video_messages.py` exposes explicit VideoSeal and PixelSeal correlation and
-removal APIs (`DEFAULT_VIDEO_MESSAGE_LONG_SIDE = 512`). It requires an
-independent 256-bit reference. PyAV decodes every frame in bounded batches,
+`video_messages.py` exposes explicit VideoSeal, PixelSeal, and ChunkySeal
+correlation and removal APIs (`DEFAULT_VIDEO_MESSAGE_LONG_SIDE = 512`). It
+requires an independent 256-bit (`videoseal`, `pixelseal`) or 1024-bit
+(`chunkyseal`) reference. PyAV decodes every frame in bounded batches,
 applies right-angle display rotation, and verifies complete frame counts against
 `probe_video_timestamps` (`ffprobe` packet timestamps) independently of OpenCV
 container metadata. Inspection binds the input hash before and after decoding.
@@ -4124,8 +4125,11 @@ failures propagate.
 
 `_internal/video_message_models.py` validates content-addressed assets before
 loading. PixelSeal strictly replaces only detector weights in the verified
-VideoSeal JIT graph, with `weights_only=True`; the handle exposes decoding,
-not the incompatible embedding graph. Official-source raw-logit parity is
+VideoSeal JIT graph, with `weights_only=True`; ChunkySeal verifies the archive
+central directory SHA-256, downloads only the contiguous `3.10 GB` `detector.*`
+ZIP64 slice (`a546154b...`) with per-entry CRC-32 validation and zero pickle
+execution, and instantiates the 1024-bit `ConvNeXtV2` + `PixelDecoder` graph in
+PyTorch; the handle exposes decoding, not the embedding graph. Official-source raw-logit parity is
 retained with the local evaluation. `_internal/video_message_scores.py` streams
 float64 sums for four aggregations, every-frame accuracy, and stride-1 12-frame
 sliding windows including a context-completed tail. Failed updates poison the

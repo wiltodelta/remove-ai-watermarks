@@ -142,3 +142,30 @@ def test_thirty_six_frames_produce_twenty_five_sliding_windows_and_catch_boundar
     crossing = next(w for w in report.windows if (w.start_frame, w.end_frame) == (6, 18))
     assert min(crossing.scores.values()) == 1.0
     assert report.target_matched is True
+
+
+def test_chunkyseal_1024_bit_reference_and_accumulator_parity():
+    ref_1024 = reference_bits("5a" * 128, num_bits=1024)
+    assert len(ref_1024) == 1024
+    assert ref_1024[:8] == (0, 1, 0, 1, 1, 0, 1, 0)
+    with pytest.raises(ValueError, match="256 hexadecimal"):
+        reference_bits("5a" * 32, num_bits=1024)
+    with pytest.raises(ValueError, match="Unsupported video message bit width"):
+        reference_bits("5a" * 16, num_bits=128)
+
+    sign_1024 = np.asarray(ref_1024, dtype=np.float64) * 2.0 - 1.0
+    values = np.tile(sign_1024, (14, 1))
+    values[:, :102] *= -1.0  # 922 / 1024 = 0.900390625 >= 0.9
+    report_pos = inspect(values, ref_1024)
+    assert report_pos.max_bit_accuracy == 922 / 1024
+    assert report_pos.target_matched is True
+
+    values_neg = np.tile(sign_1024, (14, 1))
+    values_neg[:, :103] *= -1.0  # 921 / 1024 = 0.8994140625 < 0.9
+    report_neg = inspect(values_neg, ref_1024)
+    assert report_neg.max_bit_accuracy == 921 / 1024
+    assert report_neg.target_matched is False
+
+    acc_1024 = MessageAccumulator(ref_1024)
+    with pytest.raises(RuntimeError, match="invalid raw logits"):
+        acc_1024.update(np.ones((2, 256), dtype=np.float64))

@@ -37,10 +37,9 @@ case, no captured corpus) -- see `openart_engine.py`'s module docstring.
 remove-ai-watermarks erase image.png --region 1640,1930,400,100 -o clean.png
 ```
 
-Region is `x,y,width,height`. Repeat `--region` for more boxes. Backends:
-`cv2`, `migan`, `lama`. `erase` has no `auto` backend; `visible`, `all`,
-`batch` and the video commands do. Use this only with a user-supplied box on
-content they own.
+Region is `x,y,width,height`. Repeat `--region` for more boxes, and pass
+`--frames START:END` for video clips. Backends: `auto`, `cv2`, `migan`, `lama`.
+Use this only with a user-supplied box on content they own.
 
 ```bash
 remove-ai-watermarks classify-source image.png
@@ -88,7 +87,16 @@ Vendor cohorts: `auto`, `openai`, `google`, `microsoft`, `meta`. `auto` derives
 the strength from C2PA provenance and falls back to a resolution curve. Naming a
 cohort asserts the watermark IS present, so it also runs the scrub without a
 local signal, exactly like `--force`. Set it only when the USER says where the
-file came from. `--vendor` is on `invisible`, `all` and `batch`.
+file came from. Image cohorts apply to `invisible` and `batch`; multimodal `all`
+accepts the full audio/video superset below.
+
+Audio vendor cohorts: `auto`, `google`, `elevenlabs`, `suno`, `udio`, `openai`,
+`cartesia`, `meta`, `resemble`, `microsoft`. Naming an audio cohort on `all`,
+`audio invisible`, `audio all`, `audio batch`, `video audio` (`--vendor`), or
+`video all` / `video batch` (`--audio-vendor`) asserts the waveform mark is
+present, selects the certified wideband `dac` profile when metadata was already
+stripped, and runs without needing `--allow-unverified` while keeping the audio
+integrity gate active.
 
 Meta Muse Image exports can retain standalone IPTC metadata, but that generic
 code does not identify Meta or detect Content Seal in pixels. `--vendor meta`
@@ -141,12 +149,13 @@ remove-ai-watermarks video metadata input.mp4 --check
 remove-ai-watermarks video metadata input.mp4 --remove -o clean.mp4
 remove-ai-watermarks video visible input.mp4 -o clean.mp4
 remove-ai-watermarks video visible input.mp4 --mark veo -o clean.mp4
+remove-ai-watermarks video erase input.mp4 --region 10,10,120,40 --frames 0:48 -o clean.mp4
 remove-ai-watermarks video invisible input.mp4 -o clean.mp4
 remove-ai-watermarks video batch ./videos --mode all
 ```
 
-Video mark keys: `sora`, `veo`, `seedance`, `doubao`, `dola`, `hailuo`,
-`vidu`, `kling`; `vidu` is new (since CLI 0.43.0). Default `--mark auto` picks the first temporally stable match in that
+Video mark keys: `sora`, `veo`, `dreamina`, `seedance`, `doubao`, `dola`, `hailuo`,
+`vidu`, `wan`, `kling`. Default `--mark auto` picks the first temporally stable match in that
 order.
 
 `video invisible` and `video all --invisible` accept MP4, MOV, and M4V only.
@@ -277,15 +286,15 @@ EnCodec bandwidth does not apply, and `auto` excludes this method. Default
 verification still requires a clean saved-output check before publication and
 reports `quality_passed`.
 
-`--method dac` selects a separate experimental 44.1 kHz Descript Audio Codec
-profile (`descript/dac_44khz`, MIT weights) fixed at 3 codebooks on CPU FP32
-with the `audio-codec` extra (since CLI 0.63.0). It runs single-pass
-resynthesis up to 30 seconds and raised-cosine overlap-window streaming on
-longer mono/stereo audio (`> 30 s`), with raw mid/side stereo, stem RMS
-preservation, bitexact WAV encoding, and rational half-open native clock while
-preserving full 22.05 kHz bandwidth. Keep `--vocoder-device cpu`; EnCodec
-bandwidth does not apply, and `auto` selects this method only when pre-strip
-metadata identifies ElevenLabs or Google SynthID.
+`--method dac` selects the 44.1 kHz Descript Audio Codec profile
+(`descript/dac_44khz`, MIT weights) fixed at 3 codebooks on FP32 with the
+`audio-codec` extra (since CLI 0.63.0). It runs single-pass resynthesis up to
+30 seconds and raised-cosine overlap-window streaming on longer audio (`> 30 s`),
+supporting mono, raw mid/side stereo, and tagged `5.1`/`7.1` surround stem
+decomposition with `<120 Hz` LFE filtering while preserving full 22.05 kHz
+bandwidth. `--vocoder-device` accepts `cpu` (default), `mps`, or `cuda`; EnCodec
+bandwidth does not apply, and `auto` selects `dac` when pre-strip metadata or an
+explicit `--vendor` cohort identifies a wideband AI audio generator.
 
 `--allow-unverified` permits processing without a local source-positive decoder match (or with `--no-verify`) while keeping the audio SNR/RMS/window integrity gate active (`--allow-positive` permits a still-positive final candidate; `--allow-quality-override` overrides the integrity gate; `--force` enables all three).
 `--method spectral --allow-unverified --no-verify` only needs the `audio` extra. Other
@@ -376,9 +385,12 @@ never touch the image, so they are not a no-signal verdict.
 
 ## Public video model messages
 
-`video message identify SOURCE --reference HEX --scheme videoseal|pixelseal --json`
-checks a caller-known 256-bit encoder message (64 hex digits). Never derive the
-reference from the tested input. `video message remove` uses the same options,
+`video message identify SOURCE --reference HEX --scheme videoseal|pixelseal|chunkyseal --json`
+checks a caller-known encoder message (`256`-bit / 64 hex digits for `videoseal`
+and `pixelseal`, or `1024`-bit / 256 hex digits for `chunkyseal`).
+`video message detect SOURCE --scheme videoseal|pixelseal|chunkyseal --json`
+performs a blind public-model presence check without requiring `--reference`. Never derive
+a verified removal reference circularly from the tested input. `video message remove` uses the same options,
 with `-o OUTPUT`, `--method auto|codec|vae`, `--long-side 512`, and
 `--device auto|cpu|cuda|mps`. Explicit `--noise-std` requires `--method vae`.
 

@@ -24,12 +24,18 @@ from remove_ai_watermarks._internal.constants import (
 from remove_ai_watermarks._internal.video_message_models import (
     VideoMessageScheme,
     decode_logits,
+    decode_presence_and_logits,
     load_detector,
 )
 from remove_ai_watermarks._internal.video_message_models import (
     is_available as _model_available,
 )
-from remove_ai_watermarks._internal.video_message_scores import MessageAccumulator, VideoMessageReading, reference_bits
+from remove_ai_watermarks._internal.video_message_scores import (
+    SCHEME_MESSAGE_BITS,
+    MessageAccumulator,
+    VideoMessageReading,
+    reference_bits,
+)
 from remove_ai_watermarks.optional_deps import module_available
 
 log = logging.getLogger(__name__)
@@ -45,6 +51,16 @@ _SCOPE = (
     "Only the first video stream is inspected. Audio is outside these checks.",
     "The receiver checks every decoded frame, four float64 aggregations, and sliding 12-frame windows.",
 )
+
+
+def _scope_for_scheme(scheme: VideoMessageScheme) -> tuple[str, ...]:
+    bits = SCHEME_MESSAGE_BITS[scheme]
+    return (
+        f"Correlation to the caller's independently known {bits}-bit encoder message, under the pinned public model.",
+        *_SCOPE[1:],
+    )
+
+
 _CODEC_MIN_PSNR_DB = 25.0
 _CODEC_MIN_SSIM = 0.75
 _VAE_MIN_PSNR_DB = 18.0
@@ -125,16 +141,17 @@ def identify_video_message(
     circular. Missing optional decoders remain unverified. Model, numerical,
     demux, and completeness errors propagate and never become negatives.
     """
-    bits = reference_bits(reference_hex)
     if scheme not in VIDEO_MESSAGE_SCHEMES:
-        raise ValueError("Video message scheme must be videoseal or pixelseal")
+        raise ValueError("Video message scheme must be videoseal, pixelseal, or chunkyseal")
+    bits = reference_bits(reference_hex, num_bits=SCHEME_MESSAGE_BITS[scheme])
+    scope = _scope_for_scheme(scheme)
     path = Path(source).expanduser().resolve()
     if not path.is_file():
         raise ValueError("Video source must be an existing file")
     digest = sha256_file(path)
     if not check_message:
         return VideoMessageReport(
-            path, digest, scheme, reference_hex.lower(), "unverified", None, (*_SCOPE, "Message decoding was skipped.")
+            path, digest, scheme, reference_hex.lower(), "unverified", None, (*scope, "Message decoding was skipped.")
         )
     if not is_available():
         return VideoMessageReport(
@@ -144,7 +161,7 @@ def identify_video_message(
             reference_hex.lower(),
             "unverified",
             None,
-            (*_SCOPE, "Local checks require remove-ai-watermarks[video-detect]."),
+            (*scope, "Local checks require remove-ai-watermarks[video-detect]."),
         )
     model = load_detector(scheme)
     accumulator = MessageAccumulator(bits)
@@ -155,7 +172,97 @@ def identify_video_message(
     if sha256_file(path) != digest:
         raise RuntimeError("Video source changed during message inspection")
     status = "matched" if reading.target_matched else "not_matched"
-    return VideoMessageReport(path, digest, scheme, reference_hex.lower(), status, reading)
+    return VideoMessageReport(path, digest, scheme, reference_hex.lower(), status, reading, scope)
+
+
+@dataclass(frozen=True)
+class VideoWatermarkPresenceReport:
+    """Blind public-model watermark presence and recovered payload report."""
+
+    source: Path
+    sha256: str
+    scheme: VideoMessageScheme
+    status: Literal["detected", "not_detected", "unverified"]
+    frames: int
+    mean_presence_prob: float | None
+    bit_sign_consistency: float | None
+    decoded_hex: str | None
+    caveats: tuple[str, ...] = ()
+
+
+def _bits_to_hex(bits: NDArray[Any]) -> str:
+    packed = bytearray()
+    for start in range(0, len(bits), 8):
+        byte_val = 0
+        for b in bits[start : start + 8]:
+            byte_val = (byte_val << 1) | int(bool(b))
+        packed.append(byte_val)
+    return bytes(packed).hex()
+
+
+def detect_video_watermark_presence(
+    source: str | Path,
+    *,
+    scheme: VideoMessageScheme = "videoseal",
+) -> VideoWatermarkPresenceReport:
+    """Inspect a video for blind VideoSeal, PixelSeal, or ChunkySeal presence without a known hex key."""
+    import numpy as np
+
+    if scheme not in VIDEO_MESSAGE_SCHEMES:
+        raise ValueError("Video message scheme must be videoseal, pixelseal, or chunkyseal")
+    path = Path(source).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError("Video source must be an existing file")
+    digest = sha256_file(path)
+    num_bits = SCHEME_MESSAGE_BITS[scheme]
+    caveats = (
+        f"Blind {scheme} presence check combines channel-0 probability and {num_bits}-bit cross-frame stability.",
+        "Covers only the pinned public model family; proprietary provider keys or SynthID remain unverified.",
+    )
+    if not is_available():
+        return VideoWatermarkPresenceReport(
+            path,
+            digest,
+            scheme,
+            "unverified",
+            0,
+            None,
+            None,
+            None,
+            (*caveats, "Local checks require remove-ai-watermarks[video-detect]."),
+        )
+    model = load_detector(scheme)
+    total_frames = 0
+    prob_sum = 0.0
+    logit_sum = np.zeros(num_bits, dtype=np.float64)
+    sign_sum = np.zeros(num_bits, dtype=np.float64)
+    with closing(_video_batches(path)) as batches:
+        for frames in batches:
+            pres, msg = decode_presence_and_logits(model, frames)
+            pres64 = np.clip(pres.astype(np.float64), -40.0, 40.0)
+            probs = 1.0 / (1.0 + np.exp(-pres64))
+            prob_sum += float(np.sum(probs))
+            msg64 = msg.astype(np.float64)
+            logit_sum += np.sum(msg64, axis=0)
+            sign_sum += np.sum(np.where(msg64 >= 0.0, 1.0, -1.0), axis=0)
+            total_frames += len(frames)
+    if sha256_file(path) != digest:
+        raise RuntimeError("Video source changed during presence inspection")
+    mean_prob = prob_sum / max(total_frames, 1)
+    consistency = float(np.mean(np.abs(sign_sum / max(total_frames, 1))))
+    detected = (mean_prob >= 0.70 and consistency >= 0.65) if total_frames >= 4 else (mean_prob >= 0.85)
+    recovered_hex = _bits_to_hex(logit_sum > 0.0) if detected else None
+    return VideoWatermarkPresenceReport(
+        path,
+        digest,
+        scheme,
+        "detected" if detected else "not_detected",
+        total_frames,
+        mean_prob,
+        consistency,
+        recovered_hex,
+        caveats,
+    )
 
 
 @dataclass(frozen=True)

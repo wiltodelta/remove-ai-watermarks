@@ -225,16 +225,26 @@ def test_cli_and_api_wire_dac_method(tmp_path, monkeypatch):
 
     assert all("dac" not in profiles for profiles in audio._AUTO_PROFILES.values())
     with pytest.raises(ValueError, match="method=bigvgan"):
-        audio.remove_audio_invisible(source, tmp_path / "out.wav", method="dac", vocoder_device="mps")
+        audio.remove_audio_invisible(source, tmp_path / "out.wav", method="spectral", vocoder_device="mps")
 
     seen = []
 
-    def fake_resynth(samples, sample_rate, *, local_files_only=False):
-        seen.append((samples.shape, sample_rate, local_files_only))
+    def fake_resynth(samples, sample_rate, *, local_files_only=False, device="cpu"):
+        seen.append((samples.shape, sample_rate, local_files_only, device))
         return samples
 
     monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
     monkeypatch.setattr(audio.audio_dac, "resynthesize", fake_resynth)
+    mps_res = audio.remove_audio_invisible(
+        source,
+        tmp_path / "out_mps.wav",
+        method="dac",
+        vocoder_device="mps",
+        allow_unverified=True,
+    )
+    assert mps_res.vocoder_device == "mps"
+    assert seen[-1][3] == "mps"
+    seen.clear()
     out = tmp_path / "out.wav"
     res = CliRunner().invoke(
         main,
@@ -256,7 +266,7 @@ def test_cli_and_api_wire_dac_method(tmp_path, monkeypatch):
     assert report["method"] == "dac"
     assert report["vocoder_device"] == "cpu"
     assert report["verified_removed"] is None
-    assert seen == [((4410, 2), 44100, False)]
+    assert seen == [((4410, 2), 44100, False, "cpu")]
     assert out.is_file()
 
 

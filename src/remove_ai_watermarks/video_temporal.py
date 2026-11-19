@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
+
 # OpenCV exposes incomplete types for optical-flow and remap operations.
 # Public signatures remain annotated while this third-party boundary is relaxed.
-# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false, reportCallIssue=false, reportArgumentType=false
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false, reportCallIssue=false, reportArgumentType=false, reportUnnecessaryComparison=false
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import cv2
@@ -604,3 +607,291 @@ def stabilize_regenerated_frames(
 # Public internal-use aliases keep fidelity measurements on the producer math.
 backward_motion_map = _backward_map
 motion_residual_energy = _motion_residual
+
+
+@dataclass(frozen=True)
+class ClipAlphaMatte:
+    """Self-calibrated YCrCb alpha/composite matte over a fixed bounding box."""
+
+    bounds: tuple[int, int, int, int]  # (x0, y0, x1, y1)
+    alpha_y: NDArray[Any]
+    alpha_c: NDArray[Any]
+    c_y: NDArray[Any]
+    c_cr: NDArray[Any]
+    c_cb: NDArray[Any]
+    calibrated: NDArray[Any]
+
+
+def estimate_clip_alpha_matte(
+    frames_bgr: Sequence[NDArray[Any]],
+    bounds: tuple[int, int, int, int],
+) -> ClipAlphaMatte | None:
+    """Self-calibrate (alpha, alpha*W) in YCrCb across moving frames via PyrLK+RANSAC warps.
+
+    Returns ``None`` when the sequence has fewer than 12 frames or lacks sufficient
+    background motion around ``bounds`` to identify per-pixel compositing parameters.
+    """
+    n_frames = len(frames_bgr)
+    if n_frames < 12:
+        return None
+    x0, y0, x1, y1 = bounds
+    height, width = frames_bgr[0].shape[:2]
+    x0, y0 = max(0, int(x0)), max(0, int(y0))
+    x1, y1 = min(width, int(x1)), min(height, int(y1))
+    rh_box, rw_box = y1 - y0, x1 - x0
+    if rh_box < 6 or rw_box < 6:
+        return None
+
+    ctx_pad = max(36, min(72, max(rh_box, rw_box)))
+    cx0, cy0 = max(0, x0 - ctx_pad), max(0, y0 - ctx_pad)
+    cx1, cy1 = min(width, x1 + ctx_pad), min(height, y1 + ctx_pad)
+    ch, cw = cy1 - cy0, cx1 - cx0
+    hx0, hy0 = x0 - cx0, y0 - cy0
+    hx1, hy1 = x1 - cx0, y1 - cy0
+
+    feat_mask = np.full((ch, cw), 255, dtype=np.uint8)
+    feat_mask[max(0, hy0 - 2) : min(ch, hy1 + 2), max(0, hx0 - 2) : min(cw, hx1 + 2)] = 0
+    ctx_bool = feat_mask > 0
+    if int(np.count_nonzero(ctx_bool)) < 256:
+        return None
+
+    gx_c = np.arange(cw, dtype=np.float32)[None, :]
+    gy_c = np.arange(ch, dtype=np.float32)[:, None]
+
+    crops_ycrcb = [
+        cv2.cvtColor(frame[cy0:cy1, cx0:cx1], cv2.COLOR_BGR2YCrCb).astype(np.float32) for frame in frames_bgr
+    ]
+    grays = [crop[:, :, 0].astype(np.uint8) for crop in crops_ycrcb]
+
+    step_mats: list[NDArray[Any] | None] = []
+    for k in range(n_frames - 1):
+        pts0 = cv2.goodFeaturesToTrack(
+            grays[k],
+            maxCorners=200,
+            qualityLevel=0.01,
+            minDistance=4,
+            mask=feat_mask,
+        )
+        if pts0 is None or len(pts0) < 8:
+            step_mats.append(None)
+            continue
+        pts1, st, _err = cv2.calcOpticalFlowPyrLK(
+            grays[k],
+            grays[k + 1],
+            pts0,
+            None,
+            winSize=(15, 15),
+            maxLevel=3,
+        )
+        ok = st.ravel() == 1
+        if int(np.count_nonzero(ok)) < 8:
+            step_mats.append(None)
+            continue
+        aff, inl = cv2.estimateAffinePartial2D(
+            pts0[ok],
+            pts1[ok],
+            method=cv2.RANSAC,
+            ransacReprojThreshold=1.5,
+        )
+        if aff is None or inl is None or int(np.count_nonzero(inl)) < 6:
+            step_mats.append(None)
+            continue
+        mat = np.eye(3, dtype=np.float64)
+        mat[:2, :] = aff
+        step_mats.append(mat)
+
+    def _chain_map(k_src: int, k_dst: int) -> NDArray[Any] | None:
+        mat = np.eye(3, dtype=np.float64)
+        if k_dst > k_src:
+            for j in range(k_src, k_dst):
+                sj = step_mats[j]
+                if sj is None:
+                    return None
+                mat = sj @ mat
+        else:
+            for j in range(k_src - 1, k_dst - 1, -1):
+                sj = step_mats[j]
+                if sj is None:
+                    return None
+                try:
+                    mat = np.linalg.inv(sj) @ mat
+                except np.linalg.LinAlgError:
+                    return None
+        return mat
+
+    alpha_hat = np.zeros((rh_box, rw_box), dtype=np.float32)
+    c_y = np.zeros((rh_box, rw_box), dtype=np.float32)
+    c_cr = np.zeros((rh_box, rw_box), dtype=np.float32)
+    c_cb = np.zeros((rh_box, rw_box), dtype=np.float32)
+    calibrated = np.zeros((rh_box, rw_box), dtype=bool)
+    support_crop = np.zeros((ch, cw), dtype=bool)
+    support_crop[hy0:hy1, hx0:hx1] = True
+
+    warps_by_frame: list[list[tuple[int, NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any]]]] = [
+        [] for _ in range(n_frames)
+    ]
+    for k in range(n_frames):
+        for delta in (-12, -9, -6, -4, -2, 2, 4, 6, 9, 12):
+            kd = k + delta
+            if kd < 0 or kd >= n_frames:
+                continue
+            mat = _chain_map(k, kd)
+            if mat is None or float(np.hypot(mat[0, 2], mat[1, 2])) < 4.0:
+                continue
+            map_x = (mat[0, 0] * gx_c + mat[0, 1] * gy_c + mat[0, 2]).astype(np.float32)
+            map_y = (mat[1, 0] * gx_c + mat[1, 1] * gy_c + mat[1, 2]).astype(np.float32)
+            in_b = (map_x >= 1.0) & (map_x <= cw - 2.0) & (map_y >= 1.0) & (map_y <= ch - 2.0)
+            ctx_in = ctx_bool & in_b
+            if int(np.count_nonzero(ctx_in)) < 128:
+                continue
+            warps_by_frame[k].append((kd, map_x, map_y, in_b, ctx_in))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        for _pass in range(3):
+            if _pass > 0:
+                dy = np.maximum(1.0 - alpha_hat, 0.20)
+                ac_d = cv2.GaussianBlur(alpha_hat, (3, 3), 0.7)
+                dc = np.maximum(1.0 - ac_d, 0.20)
+                act_dy = (alpha_hat >= 0.02) & (alpha_hat <= 0.78)
+                act_dc = (ac_d >= 0.02) & (ac_d <= 0.78)
+                donor_pool: list[NDArray[Any]] = []
+                for base_crop in crops_ycrcb:
+                    unblended = base_crop.copy()
+                    d_roi = unblended[hy0:hy1, hx0:hx1]
+                    d_roi[:, :, 0] = np.where(act_dy, (d_roi[:, :, 0] - c_y) / dy, d_roi[:, :, 0])
+                    d_roi[:, :, 1] = np.where(act_dc, (d_roi[:, :, 1] - c_cr) / dc, d_roi[:, :, 1])
+                    d_roi[:, :, 2] = np.where(act_dc, (d_roi[:, :, 2] - c_cb) / dc, d_roi[:, :, 2])
+                    donor_pool.append(unblended)
+            else:
+                donor_pool = crops_ycrcb
+            sup_u8 = support_crop.astype(np.uint8)
+
+            obs_list: list[NDArray[Any]] = []
+            ref_list: list[NDArray[Any]] = []
+            for k in range(n_frames):
+                cand_stack: list[NDArray[Any]] = []
+                cand_valid: list[NDArray[Any]] = []
+                for kd, map_x, map_y, in_b, ctx_in in warps_by_frame[k]:
+                    warped = cv2.remap(
+                        donor_pool[kd],
+                        map_x,
+                        map_y,
+                        interpolation=cv2.INTER_LINEAR,
+                        borderMode=cv2.BORDER_REFLECT,
+                    )
+                    ctx_err = float(np.mean(np.abs(crops_ycrcb[k][:, :, 0][ctx_in] - warped[:, :, 0][ctx_in])))
+                    if ctx_err > 9.0:
+                        continue
+                    warped_sup = (
+                        cv2.remap(
+                            sup_u8,
+                            map_x,
+                            map_y,
+                            interpolation=cv2.INTER_NEAREST,
+                            borderMode=cv2.BORDER_CONSTANT,
+                            borderValue=1,
+                        )
+                        > 0
+                    )
+                    v_px = in_b[hy0:hy1, hx0:hx1] & (~warped_sup[hy0:hy1, hx0:hx1] if _pass < 2 else True)
+                    cand_stack.append(warped[hy0:hy1, hx0:hx1])
+                    cand_valid.append(v_px)
+                if cand_stack:
+                    cs = np.stack(cand_stack, axis=0)
+                    cv_m = np.stack(cand_valid, axis=0)
+                    masked_cs = np.where(cv_m[..., None], cs, np.nan)
+                    obs_list.append(crops_ycrcb[k][hy0:hy1, hx0:hx1])
+                    ref_list.append(np.nanmedian(masked_cs, axis=0))
+
+            if len(obs_list) < 8:
+                return None
+            i_arr = np.stack(obs_list, axis=0)
+            b_arr = np.stack(ref_list, axis=0)
+            valid = np.isfinite(b_arr[..., 0])
+            cnt = np.sum(valid, axis=0)
+            denom_cnt = np.maximum(cnt, 1).astype(np.float32)
+            b_y = np.where(valid, b_arr[..., 0], 0.0)
+            i_y = np.where(valid, i_arr[..., 0], 0.0)
+            b_mean = np.sum(b_y, axis=0) / denom_cnt
+            i_mean = np.sum(i_y, axis=0) / denom_cnt
+            var_b = np.sum(valid * (b_y - b_mean[None, :, :]) ** 2, axis=0) / denom_cnt
+            cov_ib = np.sum(valid * (b_y - b_mean[None, :, :]) * (i_y - i_mean[None, :, :]), axis=0) / denom_cnt
+            calibrated = (cnt >= 6) & (var_b >= 25.0)
+            if float(np.mean(calibrated)) < 0.35:
+                return None
+            slope = np.where(calibrated, np.clip(cov_ib / np.maximum(var_b, 1e-3), 0.0, 1.0), 1.0)
+            a_raw = 1.0 - slope
+            cy_raw = np.clip(
+                np.nanmedian(np.where(valid, i_arr[..., 0] - slope[None, :, :] * b_arr[..., 0], np.nan), axis=0),
+                0.0,
+                255.0,
+            )
+            diff_med = np.nanmedian(np.where(valid, np.abs(i_arr[..., 0] - b_arr[..., 0]), np.nan), axis=0)
+            cy_raw = np.nan_to_num(cy_raw, nan=0.0)
+            diff_med = np.nan_to_num(diff_med, nan=0.0)
+            act = calibrated & (a_raw >= 0.02) & (diff_med >= 1.5)
+            alpha_hat = np.where(act, a_raw, 0.0).astype(np.float32)
+            c_y = np.where(act, cy_raw, 0.0).astype(np.float32)
+
+            ac = cv2.GaussianBlur(alpha_hat, (3, 3), 0.7)
+            ccr_raw = np.nanmedian(
+                np.where(valid, i_arr[..., 1] - (1.0 - ac[None, :, :]) * b_arr[..., 1], np.nan),
+                axis=0,
+            )
+            ccb_raw = np.nanmedian(
+                np.where(valid, i_arr[..., 2] - (1.0 - ac[None, :, :]) * b_arr[..., 2], np.nan),
+                axis=0,
+            )
+            c_cr = np.where(ac >= 0.02, np.nan_to_num(ccr_raw, nan=0.0), 0.0).astype(np.float32)
+            c_cb = np.where(ac >= 0.02, np.nan_to_num(ccb_raw, nan=0.0), 0.0).astype(np.float32)
+            support_crop[hy0:hy1, hx0:hx1] = (~calibrated) | (alpha_hat >= 0.04)
+
+    if not np.any(alpha_hat >= 0.02):
+        return None
+    alpha_c = cv2.GaussianBlur(alpha_hat, (3, 3), 0.7).astype(np.float32)
+    return ClipAlphaMatte(
+        bounds=(x0, y0, x1, y1),
+        alpha_y=alpha_hat,
+        alpha_c=alpha_c,
+        c_y=c_y,
+        c_cr=c_cr,
+        c_cb=c_cb,
+        calibrated=calibrated,
+    )
+
+
+def unblend_ycbcr_roi(
+    frame_bgr: NDArray[Any],
+    mask: NDArray[Any],
+    matte: ClipAlphaMatte,
+    *,
+    opaque_threshold: float = 0.72,
+) -> tuple[NDArray[Any], NDArray[Any]]:
+    """Algebraically invert translucent watermark pixels in YCrCb and shrink ``mask`` to opaque/uncalibrated core."""
+    x0, y0, x1, y1 = matte.bounds
+    out_bgr = frame_bgr.copy()
+    out_mask = mask.copy()
+    roi_mask = mask[y0:y1, x0:x1] > 0
+    if not np.any(roi_mask):
+        return out_bgr, out_mask
+
+    ycrcb = cv2.cvtColor(out_bgr[y0:y1, x0:x1], cv2.COLOR_BGR2YCrCb).astype(np.float32)
+    translucent_y = matte.calibrated & (matte.alpha_y >= 0.02) & (matte.alpha_y <= opaque_threshold)
+    translucent_c = matte.calibrated & (matte.alpha_c >= 0.02) & (matte.alpha_c <= opaque_threshold)
+    denom_y = np.maximum(1.0 - matte.alpha_y, max(0.15, 1.0 - opaque_threshold))
+    denom_c = np.maximum(1.0 - matte.alpha_c, max(0.15, 1.0 - opaque_threshold))
+
+    ycrcb[:, :, 0] = np.where(translucent_y, (ycrcb[:, :, 0] - matte.c_y) / denom_y, ycrcb[:, :, 0])
+    ycrcb[:, :, 1] = np.where(translucent_c, (ycrcb[:, :, 1] - matte.c_cr) / denom_c, ycrcb[:, :, 1])
+    ycrcb[:, :, 2] = np.where(translucent_c, (ycrcb[:, :, 2] - matte.c_cb) / denom_c, ycrcb[:, :, 2])
+    out_bgr[y0:y1, x0:x1] = cv2.cvtColor(np.clip(np.rint(ycrcb), 0, 255).astype(np.uint8), cv2.COLOR_YCrCb2BGR)
+
+    # Clear calibrated clean background (alpha < 0.02) AND calibrated translucent pixels (alpha <= opaque_threshold)!
+    solved = matte.calibrated & (matte.alpha_y <= opaque_threshold)
+    rem_roi = roi_mask & ~solved
+    if np.any(rem_roi):
+        kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        rem_roi = (cv2.dilate(rem_roi.astype(np.uint8) * 255, kern) > 0) & roi_mask
+    out_mask[y0:y1, x0:x1] = rem_roi.astype(np.uint8) * 255
+    return out_bgr, out_mask
