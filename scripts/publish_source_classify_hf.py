@@ -25,7 +25,7 @@ RETIRED_HUB_REPOS = (
     "wiltodelta/raiw-photo-classify",
 )
 CONFIG_FILE = "config.json"
-MODEL_FILE = "multi-provider-source-v7.npz"
+MODEL_FILE = "multi-provider-source-v8.npz"
 RETIRED_FILES = (
     "source-pipeline-mlp.npz",
     "openai-google-source-v1.npz",

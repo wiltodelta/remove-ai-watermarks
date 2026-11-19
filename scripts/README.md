@@ -51,7 +51,7 @@ explicitly names a tracked canonical result.
 | `visible_sheets.py` | Build blinded contact sheets for relaxation candidates. |
 | `watermark_benchmark_cohort.py` | Build the deterministic synthetic DWT-DCT and TrustMark cohort consumed by `watermark_benchmark.py`. |
 | `watermark_benchmark_real_cohort.py` | Build a publication-cleared, provider-paired and content-stratified real-image cohort. |
-| `publish_source_classify_hf.py` | Upload the derivative 10-provider source-pipeline model (`multi-provider-source-v7.npz`), `config.json`, and public card bundle (`README.md`, `metrics.json`, `infer.py`, `benchmark.py`, `demo.ipynb`) to Hugging Face `wiltodelta/raiw-source-classify`. Manual; the Action `publish-source-classify-hf.yml` is the write-token path. |
+| `publish_source_classify_hf.py` | Upload the derivative 10-provider source-pipeline model (`multi-provider-source-v8.npz`), `config.json`, and public card bundle (`README.md`, `metrics.json`, `infer.py`, `benchmark.py`, `demo.ipynb`) to Hugging Face `wiltodelta/raiw-source-classify`. Manual; the Action `publish-source-classify-hf.yml` is the write-token path. |
 | `verify_engine_selection_fixtures.py` | Verify hashes, dimensions, and prompt pairing in the tracked auto-engine content matrix. |
 
 ## Research and diagnostic prototypes

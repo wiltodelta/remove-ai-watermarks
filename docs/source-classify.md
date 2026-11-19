@@ -22,17 +22,19 @@ residuals + `128-d` phase-resolved modulo-8/16 sublattice and `8x8` DCT comb
 features + `144-d` Moisan periodic-plus-smooth spectral and period-comb profiles
 + `96-d` CFA/shot-noise/chromatic-aberration sensor cues + `32-d` codec and
 geometry regime features) together with an embedded weight-fp16 `ViT-S/16 @ 384`
-multi-task ONNX visual backbone (`onnxruntime` CPU, no PyTorch required) inside
-a single pickle-free `.npz` bundle (`multi-provider-source-v7.npz`,
+multi-task ONNX visual backbone (`59-d` RINE + Sub-Center ArcFace + `24x24`
+spatial patch and AIDE pools via `onnxruntime` CPU, no PyTorch required) inside
+a single pickle-free `.npz` bundle (`multi-provider-source-v8.npz`,
 `allow_pickle=False`). Two-tower `512-d` Regime-FiLM residual MLP trunks and
 packed `HistGradientBoosting` specialists drive regime-aware 10-provider
-acceptance and Stage-2 version attribution, an `82-d` open-set multimodal
-provider head (`10` providers vs `foreign_ai` and `real_non_ai`) recovers exact
-family attribution on transcoded outputs while keeping unseen generators as
-`unknown`, and a `67-d` open-world synthetic fusion head (paired with a
-conditional `672px` two-scale gray-zone pass for widescreen exports) combines the
-ViT visual representations, physics channels, regime indicators, and a `26-d`
-codec-invariant born-digital graphics score.
+acceptance and Stage-2 version attribution, a `195-d` 3-view open-set multimodal
+provider head (`10` providers vs `foreign_ai` and `real_non_ai`) and multimodal
+Stage-2 residual heads recover exact family and version attribution on native
+and transcoded outputs while keeping unseen generators as `unknown`, and a
+`106-d` open-world synthetic fusion head (paired with conditional `1:1`
+unresampled `384x384` native-tile passes for gray-zone and widescreen exports)
+combines the ViT visual/spatial representations, physics channels, regime
+indicators, and a `26-d` codec-invariant born-digital graphics score.
 
 It routes across all 10 canonical AI provider classes (`openai`, `google`,
 `bytedance`, `flux`, `stable_diffusion`, `meta`, `midjourney`, `ideogram`,
@@ -87,7 +89,7 @@ multimodal synthetic head still evaluates `synthetic_detected` and
 
 The first call downloads the exact pinned revision of
 [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify)
-(`multi-provider-source-v7.npz`, verified by SHA-256). Set
+(`multi-provider-source-v8.npz`, verified by SHA-256). Set
 `RAIW_SOURCE_CLASSIFY_WEIGHTS` to the `.npz` file itself or its parent directory
 for an offline deployment.
 

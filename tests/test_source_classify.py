@@ -886,13 +886,14 @@ def test_v5_joint_posterior_confidence_caps_ambiguous_attribution(tmp_path: Path
     assert res_exact_tie.synthetic_probability == pytest.approx(source_classify._sigmoid_scalar(4.0), abs=1e-6)
 
 
-def _build_minimal_const_vit28_onnx_bytes(
+def _build_minimal_const_vit_onnx_bytes(
     vit_vec: np.ndarray,
     *,
     r_chan_syn_slope: float = 0.0,
+    g_chan_col_slopes: dict[int, float] | None = None,
 ) -> bytes:
-    """Build a minimal valid dynamic-batch ONNX ModelProto (`[B, 3, 384, 384] -> [B, 28]`)."""
-    vals = np.asarray(vit_vec, dtype=np.float32).reshape(source_classify.VIT_OUT_DIM_V7)
+    """Build a minimal valid dynamic-batch ONNX ModelProto (`[B, 3, 384, 384] -> [B, D]`)."""
+    vals = np.asarray(vit_vec, dtype=np.float32).reshape(-1)
     d_out = len(vals)
 
     def _varint(val: int) -> bytes:
@@ -924,6 +925,9 @@ def _build_minimal_const_vit28_onnx_bytes(
 
     w_mat = np.zeros((3, d_out), dtype=np.float32)
     w_mat[0, 0] = float(r_chan_syn_slope)
+    if g_chan_col_slopes:
+        for col_i, slope_v in g_chan_col_slopes.items():
+            w_mat[1, col_i] = float(slope_v)
     init_w = _tensor_f32("w_zero", [3, d_out], [float(x) for x in w_mat.ravel().tolist()])
     init_b = _tensor_f32("b_vec", [d_out], [float(x) for x in vals.tolist()])
 
@@ -951,6 +955,68 @@ def _build_minimal_const_vit28_onnx_bytes(
     return _f_varint(1, 7) + _f_bytes(7, graph) + _f_bytes(8, _f_varint(2, 13))
 
 
+def _build_minimal_const_vit28_onnx_bytes(
+    vit_vec: np.ndarray,
+    *,
+    r_chan_syn_slope: float = 0.0,
+) -> bytes:
+    vals = np.asarray(vit_vec, dtype=np.float32).reshape(source_classify.VIT_OUT_DIM_V7)
+    return _build_minimal_const_vit_onnx_bytes(vals, r_chan_syn_slope=r_chan_syn_slope)
+
+
+def _write_synthetic_vit_npz(
+    path: Path,
+    *,
+    schema: str,
+    default_vit_vec: np.ndarray,
+    syn_in_dim: int,
+    vit_vec: np.ndarray | None = None,
+    det_winner: source_classify.ProviderClass = "flux",
+    attr_winner: source_classify.ProviderClass = "ideogram",
+    det_score: float = 1.0,
+    det_threshold: float = 3.0,
+    syn_threshold: float = 0.5,
+    syn_conf_scale: float = 1.0,
+    vit_attr_alpha: float = 0.0,
+    phys_veto_cap: float = 0.0,
+    phys_veto_syn_floor: float = -3.0,
+    extra_payload: dict[str, Any] | None = None,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    payload = _synthetic_v5_npz_payload(
+        det_winner=det_winner,
+        attr_winner=attr_winner,
+        det_score=det_score,
+        det_threshold=det_threshold,
+    )
+    onnx_bytes = _build_minimal_const_vit_onnx_bytes(default_vit_vec if vit_vec is None else vit_vec)
+    h_s = 8
+    syn_skip = np.zeros(syn_in_dim, dtype=np.float64)
+    syn_skip[0] = 1.0
+
+    payload["schema"] = np.asarray(schema)
+    payload["vit_onnx_bytes"] = np.frombuffer(onnx_bytes, dtype=np.uint8).copy()
+    payload["vit_attr_alpha"] = np.asarray(vit_attr_alpha, dtype=np.float64)
+    payload["phys_veto_cap"] = np.asarray(phys_veto_cap, dtype=np.float64)
+    payload["phys_veto_syn_floor"] = np.asarray(phys_veto_syn_floor, dtype=np.float64)
+    payload["syn_in_mean"] = np.zeros(syn_in_dim, dtype=np.float64)
+    payload["syn_in_scale"] = np.ones(syn_in_dim, dtype=np.float64)
+    payload["syn_w1"] = np.zeros((syn_in_dim, h_s), dtype=np.float64)
+    payload["syn_b1"] = np.zeros(h_s, dtype=np.float64)
+    payload["syn_ln_g"] = np.ones(h_s, dtype=np.float64)
+    payload["syn_ln_b"] = np.zeros(h_s, dtype=np.float64)
+    payload["syn_w2"] = np.zeros(h_s, dtype=np.float64)
+    payload["syn_b2"] = np.asarray(0.0, dtype=np.float64)
+    payload["syn_skip_w"] = syn_skip
+    payload["syn_threshold"] = np.asarray(syn_threshold, dtype=np.float64)
+    payload["syn_conf_scale"] = np.asarray(syn_conf_scale, dtype=np.float64)
+    if extra_payload:
+        payload.update(extra_payload)
+    _apply_npz_overrides(payload, overrides)
+    np.savez(path, **payload)
+    return path
+
+
 def _write_synthetic_v7_npz(
     path: Path,
     *,
@@ -967,56 +1033,49 @@ def _write_synthetic_v7_npz(
     overrides: dict[str, Any] | None = None,
 ) -> Path:
     """Create a minimal valid pickle-free `multi-provider-source-v7` `.npz` fixture."""
-    payload = _synthetic_v5_npz_payload(
+    default_v = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
+    default_v[0] = 2.4
+    return _write_synthetic_vit_npz(
+        path,
+        schema=source_classify.MODEL_SCHEMA_V7,
+        default_vit_vec=default_v,
+        syn_in_dim=source_classify.SYN_IN_DIM_V7,
+        vit_vec=vit_vec,
         det_winner=det_winner,
         attr_winner=attr_winner,
         det_score=det_score,
         det_threshold=det_threshold,
+        syn_threshold=syn_threshold,
+        syn_conf_scale=syn_conf_scale,
+        vit_attr_alpha=vit_attr_alpha,
+        phys_veto_cap=phys_veto_cap,
+        phys_veto_syn_floor=phys_veto_syn_floor,
+        overrides=overrides,
     )
-
-    if vit_vec is None:
-        vit_vec = np.zeros(source_classify.VIT_OUT_DIM_V7, dtype=np.float32)
-        vit_vec[0] = 2.4
-    onnx_bytes = _build_minimal_const_vit28_onnx_bytes(vit_vec)
-
-    d_s = source_classify.SYN_IN_DIM_V7
-    h_s = 8
-    syn_skip = np.zeros(d_s, dtype=np.float64)
-    syn_skip[0] = 1.0  # pass vit_syn_logit directly through skip connection
-
-    payload["schema"] = np.asarray(source_classify.MODEL_SCHEMA_V7)
-    payload["vit_onnx_bytes"] = np.frombuffer(onnx_bytes, dtype=np.uint8).copy()
-    payload["vit_attr_alpha"] = np.asarray(vit_attr_alpha, dtype=np.float64)
-    payload["phys_veto_cap"] = np.asarray(phys_veto_cap, dtype=np.float64)
-    payload["phys_veto_syn_floor"] = np.asarray(phys_veto_syn_floor, dtype=np.float64)
-    payload["syn_in_mean"] = np.zeros(d_s, dtype=np.float64)
-    payload["syn_in_scale"] = np.ones(d_s, dtype=np.float64)
-    payload["syn_w1"] = np.zeros((d_s, h_s), dtype=np.float64)
-    payload["syn_b1"] = np.zeros(h_s, dtype=np.float64)
-    payload["syn_ln_g"] = np.ones(h_s, dtype=np.float64)
-    payload["syn_ln_b"] = np.zeros(h_s, dtype=np.float64)
-    payload["syn_w2"] = np.zeros(h_s, dtype=np.float64)
-    payload["syn_b2"] = np.asarray(0.0, dtype=np.float64)
-    payload["syn_skip_w"] = syn_skip
-    payload["syn_threshold"] = np.asarray(syn_threshold, dtype=np.float64)
-    payload["syn_conf_scale"] = np.asarray(syn_conf_scale, dtype=np.float64)
-    _apply_npz_overrides(payload, overrides)
-
-    np.savez(path, **payload)
-    return path
 
 
 def install_stub_ort_if_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Provide a pure-NumPy ONNX Runtime stub for synthetic v7 fixtures when `--extra dev` omits `onnxruntime`."""
+    """Provide a pure-NumPy ONNX Runtime stub for synthetic v7/v8 fixtures when `--extra dev` omits `onnxruntime`."""
     import importlib.util
     import types
 
     if importlib.util.find_spec("onnxruntime") is not None:
         return
 
-    d_out = source_classify.VIT_OUT_DIM_V7
-    w_marker = b"\x42\x06w_zero\x4a\xd0\x02"
-    b_marker = b"\x42\x05b_vec\x4a\x70"
+    w_prefix = b"\x42\x06w_zero\x4a"
+    b_prefix = b"\x42\x05b_vec\x4a"
+
+    def _read_varint_slice(buf: bytes, pos: int) -> bytes:
+        val = 0
+        shift = 0
+        while True:
+            byte = buf[pos]
+            pos += 1
+            val |= (byte & 0x7F) << shift
+            if not (byte & 0x80):
+                break
+            shift += 7
+        return buf[pos : pos + val]
 
     class _StubSessionOptions:
         intra_op_num_threads: int = 0
@@ -1024,10 +1083,11 @@ def install_stub_ort_if_missing(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class _StubInferenceSession:
         def __init__(self, model_bytes: bytes, **_kwargs: Any) -> None:
-            wi = model_bytes.index(w_marker) + len(w_marker)
-            bi = model_bytes.index(b_marker) + len(b_marker)
-            self._w = np.frombuffer(model_bytes[wi : wi + 3 * d_out * 4], dtype="<f4").reshape(3, d_out).copy()
-            self._b = np.frombuffer(model_bytes[bi : bi + d_out * 4], dtype="<f4").reshape(d_out).copy()
+            w_raw = _read_varint_slice(model_bytes, model_bytes.index(w_prefix) + len(w_prefix))
+            b_raw = _read_varint_slice(model_bytes, model_bytes.index(b_prefix) + len(b_prefix))
+            self._b = np.frombuffer(b_raw, dtype="<f4").copy()
+            d_out = len(self._b)
+            self._w = np.frombuffer(w_raw, dtype="<f4").reshape(3, d_out).copy()
 
         def run(self, _outputs: list[str], feeds: dict[str, np.ndarray]) -> list[np.ndarray]:
             x = np.asarray(feeds["pixel_values"], dtype=np.float32)
@@ -1346,6 +1406,9 @@ def test_v7_open_world_foreign_ai_openset_mm_prov_and_widescreen_detail_pass(
     wide_arr[:, :, 0] = 250
     wide_arr[:, 480:928, 0] = 20  # center crop (`short_edge=440`) sees low R; left/right `672px` crops see high R
     wide_img = Image.fromarray(wide_arr, mode="RGB")
+    x_feat = source_classify.extract_512d_v4_features(wide_img)
+    assert x_feat is not None
+    monkeypatch.setattr(source_classify, "extract_512d_v4_features", lambda _im: x_feat)
 
     detail_2chw = source_classify.preprocess_vit_384_detail_2chw(wide_img, short_edge=672)
     assert detail_2chw.shape == (2, 3, 384, 384)
@@ -1382,3 +1445,303 @@ def test_v7_open_world_foreign_ai_openset_mm_prov_and_widescreen_detail_pass(
     assert res_no_ms.synthetic_detected is False
     assert res_with_ms.synthetic_detected is True
     assert res_with_ms.synthetic_probability > res_no_ms.synthetic_probability
+
+
+def _write_synthetic_v8_npz(
+    path: Path,
+    *,
+    vit_vec: np.ndarray | None = None,
+    det_winner: source_classify.ProviderClass = "flux",
+    attr_winner: source_classify.ProviderClass = "ideogram",
+    det_score: float = 1.0,
+    det_threshold: float = 3.0,
+    syn_threshold: float = 0.5,
+    syn_conf_scale: float = 1.0,
+    vit_attr_alpha: float = 0.0,
+    phys_veto_cap: float = 0.0,
+    phys_veto_syn_floor: float = -3.0,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    """Create a minimal valid pickle-free `multi-provider-source-v8` `.npz` fixture."""
+    default_v = np.zeros(source_classify.VIT_OUT_DIM_V8, dtype=np.float32)
+    default_v[0] = 2.2
+    default_v[55] = 0.90
+    return _write_synthetic_vit_npz(
+        path,
+        schema=source_classify.MODEL_SCHEMA_V8,
+        default_vit_vec=default_v,
+        syn_in_dim=source_classify.SYN_IN_DIM_V8,
+        vit_vec=vit_vec,
+        det_winner=det_winner,
+        attr_winner=attr_winner,
+        det_score=det_score,
+        det_threshold=det_threshold,
+        syn_threshold=0.5 if syn_threshold == 0.5 else syn_threshold,
+        syn_conf_scale=syn_conf_scale,
+        vit_attr_alpha=vit_attr_alpha,
+        phys_veto_cap=phys_veto_cap,
+        phys_veto_syn_floor=phys_veto_syn_floor,
+        extra_payload={
+            "foreign_phys_cap": np.asarray(2.20, dtype=np.float64),
+            "foreign_mm_floor": np.asarray(-0.80, dtype=np.float64),
+        },
+        overrides=overrides,
+    )
+
+
+def test_v8_native_2chw_modulo16_alignment_and_unresampled_pitch() -> None:
+    # Build a 1024x1024 image with sharp 16x16 alternating pixel-exact blocks (0 vs 240 in R).
+    # Any non-16-aligned crop or bilinear resampling would shift block boundaries or create intermediate grays!
+    yy, xx = np.meshgrid(np.arange(1024), np.arange(1024), indexing="ij")
+    checker16 = (((yy // 16) + (xx // 16)) % 2) * 240
+    arr = np.stack([checker16, np.full_like(checker16, 64), np.full_like(checker16, 128)], axis=-1).astype(np.uint8)
+    img_sq = Image.fromarray(arr, mode="RGB")
+
+    crops_2chw = source_classify.preprocess_vit_384_native_2chw(img_sq)
+    assert crops_2chw.shape == (2, 3, 384, 384)
+    assert crops_2chw.dtype == np.float32
+    assert np.all(np.isfinite(crops_2chw))
+
+    # Invert ImageNet normalization on R channel -> must recover exact {0, 240} values aligned on 16x16 cells!
+    r_u8 = np.round((crops_2chw[:, 0] * 0.229 + 0.485) * 255.0).astype(np.int32)
+    assert set(np.unique(r_u8).tolist()) == {0, 240}
+    # Every 16x16 ViT patch must have 0 internal variance because crop origin is snapped modulo 16!
+    patches = r_u8.reshape(2, 24, 16, 24, 16)
+    assert np.all(patches.std(axis=(2, 4)) == 0.0)
+
+    # Also verify near-384 (`390x410`) and sub-384 (`280x300` fallback) shapes
+    for w_sz, h_sz in ((390, 410), (768, 1344), (280, 300)):
+        im_var = Image.fromarray(np.zeros((h_sz, w_sz, 3), dtype=np.uint8), mode="RGB")
+        out_var = source_classify.preprocess_vit_384_native_2chw(im_var)
+        assert out_var.shape == (2, 3, 384, 384)
+        assert np.all(np.isfinite(out_var))
+
+
+def test_v8_spatial_syn_and_dual_view_mm_prov_feature_builders() -> None:
+    x_zero = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+    r_zero = np.zeros(source_classify.REGIME_DIM_V4, dtype=np.float64)
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    z_vec = np.zeros(n_cls + 1, dtype=np.float64)
+
+    # 1. Pure diagram/UI (`vit_gfx=+5.0`, `non_gfx_frac=0.05`) vs Social-UI AI post (`non_gfx_frac=0.65`)
+    v_pure_gfx = np.zeros(source_classify.VIT_OUT_DIM_V8, dtype=np.float64)
+    v_pure_gfx[13] = 5.0  # vit_gfx
+    v_pure_gfx[14] = 2.0  # dom_syn before graphics suppression
+    v_pure_gfx[55] = 0.05  # non_gfx_frac
+    s_gfx = source_classify.build_v8_syn_input_1d(x_zero, z_vec, -4.0, r_zero, v_pure_gfx)
+    assert s_gfx.shape == (source_classify.SYN_IN_DIM_V8,)
+    assert s_gfx[4] < -7.5  # dom_syn_clean strongly suppressed by vit_gfx
+    # interactions start at index 68: [gfx_score, max_gfx, pure_gfx_gate, social_photo_gate, inpaint_gate, agree]
+    assert s_gfx[70] == pytest.approx(5.0 * 0.30, abs=1e-6)  # pure_gfx_gate > 0
+
+    v_soc_ai = np.zeros(source_classify.VIT_OUT_DIM_V8, dtype=np.float64)
+    v_soc_ai[13] = 2.0
+    v_soc_ai[41] = 0.84  # max ArcFace prototype cosine similarity in [39:49]
+    v_soc_ai[49] = 4.2  # sp_top12
+    v_soc_ai[50] = 3.5  # sp_top48
+    v_soc_ai[53] = 2.5  # sp_contrast
+    v_soc_ai[55] = 0.65  # non_gfx_frac >= 0.35 -> pure_gfx_gate == 0!
+    v_soc_ai[56] = 3.8  # photo_region_syn
+    v_soc_ai[57] = -0.7  # sp_smooth (AIDE smooth patch pool)
+    v_soc_ai[58] = 1.9  # sp_tex (AIDE high-frequency patch pool)
+    s_soc = source_classify.build_v8_syn_input_1d(x_zero, z_vec, -2.0, r_zero, v_soc_ai)
+    assert s_soc[6] == pytest.approx(0.84, abs=1e-6)  # max_proto_sim
+    assert s_soc[7] == pytest.approx(2.6, abs=1e-6)  # sp_tex - sp_smooth
+    assert s_soc[70] == pytest.approx(0.0, abs=1e-9)  # pure_gfx_gate is zero when photo occupies 65%
+    assert s_soc[71] == pytest.approx(3.5 * 0.65, abs=1e-6)  # social_photo_gate
+    assert s_soc[72] == pytest.approx(4.2 * 2.5, abs=1e-6)  # inpaint_gate
+
+    # 2. Dual-view `build_v8_mm_prov_input_1d` (`195-d`): 1-view vs 3-view delta (logits + ArcFace prototypes)
+    d_vit = source_classify.VIT_OUT_DIM_V8
+    attr_0 = np.zeros(n_cls, dtype=np.float64)
+    p_1v = source_classify.build_v8_mm_prov_input_1d(attr_0, z_vec, -1.0, r_zero, v_soc_ai, vit_detail_2d=None)
+    assert p_1v.shape == (source_classify.MM_PROV_IN_DIM_V8,)
+    assert p_1v[22 + d_vit + d_vit + 22] == 0.0  # has_nat flag == 0
+
+    det2 = np.zeros((2, d_vit), dtype=np.float64)
+    g_idx = source_classify.ALL_PROVIDER_CLASSES.index("google")
+    det2[0, 1 + g_idx] = 6.0
+    det2[1, 1 + g_idx] = 2.0
+    det2[0, 39 + g_idx] = 0.91
+    det2[1, 39 + g_idx] = 0.65
+    p_3v = source_classify.build_v8_mm_prov_input_1d(attr_0, z_vec, -1.0, r_zero, v_soc_ai, vit_detail_2d=det2)
+    assert p_3v[22 + d_vit + d_vit + 22] == 1.0  # has_nat flag == 1
+    assert p_3v[22 + d_vit + 1 + g_idx] == pytest.approx(4.0, abs=1e-6)  # mean(6.0, 2.0)
+    assert p_3v[22 + d_vit + d_vit + g_idx] == pytest.approx(6.0, abs=1e-6)  # max(6.0, 2.0) - global(0.0)
+    assert p_3v[22 + d_vit + d_vit + 12 + g_idx] == pytest.approx(0.91 - v_soc_ai[39 + g_idx], abs=1e-6)
+
+
+def test_v8_dual_trigger_native_tiles_and_mm_stage2_head(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_stub_ort_if_missing(monkeypatch)
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    n_mm_out = n_cls + 2
+    d_mm = source_classify.MM_PROV_IN_DIM_V8
+    h_mm = 8
+    g_idx = source_classify.ALL_PROVIDER_CLASSES.index("google")
+
+    # Build a widescreen `1408x768` image:
+    # - Center strip (`480..928`) has low G (`20`), while lateral 1:1 native tiles have bright G (`250`).
+    # - Global pass ALREADY detects `synthetic_detected=True` (`vit_base[0]=1.8 >= syn_threshold=0.5`),
+    #   but global `google` logit (`vit_out[1 + g_idx]`) is weak on the center strip and strong on lateral 1:1 tiles!
+    rng = np.random.default_rng(20261118)
+    wide_arr = rng.integers(40, 100, size=(768, 1408, 3), dtype=np.uint8)
+    wide_arr[:, :, 1] = 250
+    wide_arr[:, 480:928, 1] = 15
+    wide_img = Image.fromarray(wide_arr, mode="RGB")
+    x_feat = source_classify.extract_512d_v4_features(wide_img)
+    assert x_feat is not None
+    monkeypatch.setattr(source_classify, "extract_512d_v4_features", lambda _im: x_feat)
+
+    d_vit = source_classify.VIT_OUT_DIM_V8
+    vit_base = np.zeros(d_vit, dtype=np.float32)
+    vit_base[0] = 1.8  # synthetic_detected=True on primary crop!
+    vit_base[1 + g_idx] = 0.2
+    vit_base[55] = 0.92
+    dyn_onnx = _build_minimal_const_vit_onnx_bytes(vit_base, g_chan_col_slopes={1 + g_idx: 3.5})
+
+    # `_MMProvHeadV8` reads native-tile mean `google` logit at index `22 + d_vit + 1 + g_idx`
+    mm_skip = np.zeros((d_mm, n_mm_out), dtype=np.float64)
+    mm_skip[22 + d_vit + 1 + g_idx, g_idx] = 1.0
+    mm_b2 = np.zeros(n_mm_out, dtype=np.float64)
+    mm_b2[n_cls] = -0.5
+    mm_b2[n_cls + 1] = -3.0
+
+    # Also attach a multimodal Stage-2 head (`mm_s2_google_*`) for `google` (`d_s2 = 2 + 1 + 102 = 105`)
+    d_s2 = 2 + 1 + 102
+    s2_b2 = np.array([-1.0, 1.4], dtype=np.float64)  # favors `google:gemini_3_pro_image`
+
+    base_overrides: dict[str, Any] = {
+        "vit_onnx_bytes": np.frombuffer(dyn_onnx, dtype=np.uint8).copy(),
+        "mm_prov_in_mean": np.zeros(d_mm, dtype=np.float64),
+        "mm_prov_in_scale": np.ones(d_mm, dtype=np.float64),
+        "mm_prov_w1": np.zeros((d_mm, h_mm), dtype=np.float64),
+        "mm_prov_b1": np.zeros(h_mm, dtype=np.float64),
+        "mm_prov_ln_g": np.ones(h_mm, dtype=np.float64),
+        "mm_prov_ln_b": np.zeros(h_mm, dtype=np.float64),
+        "mm_prov_w2": np.zeros((h_mm, n_mm_out), dtype=np.float64),
+        "mm_prov_b2": mm_b2,
+        "mm_prov_skip_w": mm_skip,
+        "mm_prov_thresholds": np.full(n_cls, 1.5, dtype=np.float64),
+        "mm_prov_min_gap": np.asarray(0.8, dtype=np.float64),
+        "mm_prov_conf_scale": np.asarray(1.0, dtype=np.float64),
+        "mm_prov_phys_beta": np.asarray(0.0, dtype=np.float64),
+        "nt_min_short_px": np.asarray(384, dtype=np.int64),
+        "nt_min_long_px": np.asarray(448, dtype=np.int64),
+        "nt_gray_lo": np.asarray(-2.4, dtype=np.float64),
+        "nt_gray_hi": np.asarray(0.0, dtype=np.float64),
+        "nt_gfx_ceil": np.asarray(0.5, dtype=np.float64),
+        "nt_min_photo_frac": np.asarray(0.22, dtype=np.float64),
+        "nt_detail_alpha": np.asarray(0.6, dtype=np.float64),
+        "nt_thr_offset": np.asarray(0.0, dtype=np.float64),
+        "nt_attr_enable": np.asarray(0, dtype=np.int64),
+        "nt_attr_min_short_px": np.asarray(448, dtype=np.int64),
+        "nt_attr_uncertain_gap": np.asarray(2.5, dtype=np.float64),
+        "mm_s2_classes": np.asarray(["google"], dtype="<U32"),
+        "mm_s2_google_subfamilies": np.asarray(["google:imagen_3", "google:gemini_3_pro_image"], dtype="<U48"),
+        "mm_s2_google_in_mean": np.zeros(d_s2, dtype=np.float64),
+        "mm_s2_google_in_scale": np.ones(d_s2, dtype=np.float64),
+        "mm_s2_google_w1": np.zeros((d_s2, 8), dtype=np.float64),
+        "mm_s2_google_b1": np.zeros(8, dtype=np.float64),
+        "mm_s2_google_w2": np.zeros((8, 2), dtype=np.float64),
+        "mm_s2_google_b2": s2_b2,
+        "mm_s2_google_skip_w": np.zeros((d_s2, 2), dtype=np.float64),
+        "mm_s2_google_blend_alpha": np.asarray(1.0, dtype=np.float64),
+        "mm_s2_google_min_prob_margin": np.asarray(0.10, dtype=np.float64),
+    }
+
+    # 1. With `nt_attr_enable=0`, Trigger B is off -> `synthetic_detected=True`, `label="unknown"`.
+    w_no_attr_nt = _write_synthetic_v8_npz(
+        tmp_path / "v8_no_attr_nt.npz",
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides=base_overrides,
+    )
+    res_no_nt = source_classify.classify_source(wide_img, weights_path=w_no_attr_nt)
+    assert res_no_nt.model_revision == source_classify.MODEL_SCHEMA_V8
+    assert res_no_nt.synthetic_detected is True
+    assert res_no_nt.label == "unknown"
+
+    # 2. With `nt_attr_enable=1`, Trigger B runs 1:1 native tiles on the detected synthetic widescreen image ->
+    #    recovers `label="google"` AND `version_subfamily="google:gemini_3_pro_image"`!
+    w_with_attr_nt = _write_synthetic_v8_npz(
+        tmp_path / "v8_with_attr_nt.npz",
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides={**base_overrides, "nt_attr_enable": np.asarray(1, dtype=np.int64)},
+    )
+    res_with_nt = source_classify.classify_source(wide_img, weights_path=w_with_attr_nt)
+    assert res_with_nt.synthetic_detected is True
+    assert res_with_nt.label == "google"
+    assert res_with_nt.version_subfamily == "google:gemini_3_pro_image"
+
+    # 3. Raising `mm_s2_google_min_prob_margin` above the softmax margin (`0.95`) abstains on `version_subfamily`
+    #    (`None`) while preserving `label="google"`!
+    w_s2_abstain = _write_synthetic_v8_npz(
+        tmp_path / "v8_s2_abstain.npz",
+        det_score=0.5,
+        det_threshold=3.0,
+        syn_threshold=0.5,
+        overrides={
+            **base_overrides,
+            "nt_attr_enable": np.asarray(1, dtype=np.int64),
+            "mm_s2_google_min_prob_margin": np.asarray(0.95, dtype=np.float64),
+        },
+    )
+    res_s2_abs = source_classify.classify_source(wide_img, weights_path=w_s2_abstain)
+    assert res_s2_abs.label == "google"
+    assert res_s2_abs.version_subfamily is None
+
+    # 4. Partial UI-chrome resilience in `_classify_v8_with_vit`:
+    #    When detail crop 0 is a valid AI photo crop (`vit_gfx=-1.0`, `non_gfx_frac=0.90`, `syn=+2.8`)
+    #    and detail crop 1 lands on pure UI chrome (`vit_gfx=+4.0`, `non_gfx_frac=0.04`),
+    #    `v8` keeps crop 0 instead of vetoing both crops!
+    v_prim_gray = np.zeros(source_classify.VIT_OUT_DIM_V8, dtype=np.float64)
+    v_prim_gray[0] = 0.20  # margin = 0.20 - 0.50 = -0.30 (in gray zone [-2.4, 0.0))
+    v_prim_gray[55] = 0.65
+    v_det_mixed = np.zeros((2, source_classify.VIT_OUT_DIM_V8), dtype=np.float64)
+    v_det_mixed[0, 0] = 2.8
+    v_det_mixed[0, 13] = -1.0
+    v_det_mixed[0, 55] = 0.90
+    v_det_mixed[1, 0] = -4.0
+    v_det_mixed[1, 13] = 4.5  # pure UI chrome footer
+    v_det_mixed[1, 55] = 0.04
+    res_partial_ui = source_classify.classify_source_features(
+        x_feat,
+        weights_path=w_no_attr_nt,
+        vit_features=v_prim_gray,
+        vit_detail_features=v_det_mixed,
+    )
+    assert res_partial_ui.synthetic_detected is True
+
+
+def test_v8_corrupted_bundle_validation(tmp_path: Path) -> None:
+    w_bad_onnx = _write_synthetic_v8_npz(
+        tmp_path / "v8_bad_onnx.npz",
+        overrides={"vit_onnx_bytes": np.zeros(8, dtype=np.uint8)},
+    )
+    with pytest.raises(ValueError, match="vit_onnx_bytes"):
+        source_classify._load_model_from_path(w_bad_onnx)
+
+    w_bad_nt = _write_synthetic_v8_npz(
+        tmp_path / "v8_bad_nt.npz",
+        overrides={
+            "nt_min_short_px": np.asarray(384, dtype=np.int64),
+            "nt_min_long_px": np.asarray(448, dtype=np.int64),
+            "nt_gray_lo": np.asarray(-2.0, dtype=np.float64),
+            "nt_gray_hi": np.asarray(0.0, dtype=np.float64),
+            "nt_gfx_ceil": np.asarray(0.5, dtype=np.float64),
+            "nt_min_photo_frac": np.asarray(0.2, dtype=np.float64),
+            "nt_detail_alpha": np.asarray(1.5, dtype=np.float64),
+            "nt_thr_offset": np.asarray(0.0, dtype=np.float64),
+            "nt_attr_enable": np.asarray(1, dtype=np.int64),
+            "nt_attr_min_short_px": np.asarray(448, dtype=np.int64),
+            "nt_attr_uncertain_gap": np.asarray(2.0, dtype=np.float64),
+        },
+    )
+    with pytest.raises(ValueError, match="native-tile"):
+        source_classify._load_model_from_path(w_bad_nt)

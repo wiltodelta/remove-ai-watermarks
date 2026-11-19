@@ -1800,13 +1800,37 @@ derived results influence detection.
 the opt-in 10-provider source-pipeline and synthetic-image classifier
 (`classify_source`, `resolve_weights_path`, and CLI command `classify-source`).
 By default it downloads `config.json` (for Hub download telemetry) and
-`multi-provider-source-v7.npz`
+`multi-provider-source-v8.npz`
 (`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
 or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
-runtime loading across four `.npz` bundle schemas:
+runtime loading across five `.npz` bundle schemas:
 
+- `multi-provider-source-v8` (`512-d` + embedded residual-adapted
+  `ViT-S/16 @ 384` `59-d` multi-layer + ArcFace + spatial weight-fp16 ONNX,
+  pinned default schema used by `multi-provider-source-v8.npz`,
+  `_SourceModelV8`): extends the embedded MIT `ViT-S/16 @ 384` ONNX graph
+  (`vit_onnx_bytes`) with a zero-initialized parallel residual token adapter
+  preserving the generalist `orig_syn` logit (`vit_out[0]`), a multi-layer `RINE`
+  intermediate token gate (`blocks.5/9/11`), an
+  L2-normalized `24-d` Sub-Center ArcFace embedding (`[15:39]`) plus `10`
+  per-provider prototype cosine similarities (`[39:49]`), a `24x24`
+  `SpatialPatchHead` (`top-12/48/144` graphics-masked synthetic means, LSE,
+  contrast, boundary TV, `non_gfx_fraction`, `photo_region_syn_logit`), and
+  `AIDE`-style smooth vs high-frequency patch pools (`[57:59]`,
+  `VIT_OUT_DIM_V8 = 59`). Inside `classify_source()`, `_eval_v5_core_state` runs
+  once per image, an anchored `106-d` `LayerNorm` + `SiLU` skip fusion head
+  (`_classify_v8_with_vit`) combines the `59-d` visual/spatial/prototype readout
+  with `512-d` physics/regime channels and born-digital graphics suppression,
+  and `preprocess_vit_384_native_2chw` extracts two unresampled `1:1`
+  modulo-16-aligned `384x384` native-pitch crops under a dual trigger
+  (`_NativeTileConfigV8`: Trigger A for photo-bearing binary gray zones resilient
+  to partial UI chrome, and Trigger B for zero-FPR attribution recovery on
+  already-detected synthetic images). A `195-d` dual-view open-set head
+  (`_MMProvHeadV8`) and optional per-provider multimodal Stage-2 heads
+  (`_MMStage2HeadV8` with low-margin `version_subfamily=None` abstention)
+  resolve provider and version subfamilies.
 - `multi-provider-source-v7` (`512-d` + embedded `ViT-S/16 @ 384` weight-fp16
-  ONNX, pinned default schema used by `multi-provider-source-v7.npz`,
+  ONNX, legacy schema used by `multi-provider-source-v7.npz`,
   `_SourceModelV7`): embeds the frozen MIT `ViT-S/16 @ 384` visual stem plus
   trained multi-task readout heads as a lazy header-loaded weight-fp16 ONNX graph
   (`vit_onnx_bytes` stored inside the pickle-free `.npz`, outputting `28-d`

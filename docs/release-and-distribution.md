@@ -86,7 +86,7 @@ scenario check for the demo surface.
 The Hugging Face **model** `wiltodelta/raiw-source-classify` is not part of that
 release fan-out. It is published separately with
 `.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
-derivative `multi-provider-source-v7.npz` artifact from the declared GitHub
+derivative `multi-provider-source-v8.npz` artifact from the declared GitHub
 model freeze, verifies its SHA-256, and uploads only that file plus the tracked
 `README.md`, `metrics.json`, `infer.py`, `benchmark.py`, and `demo.ipynb` under
 `docs/source-classify-hf/` and a

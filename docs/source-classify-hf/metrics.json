@@ -1,13 +1,13 @@
 {
   "claim": "abstaining 10-provider source-pipeline classification with version subfamily attribution and calibrated binary synthetic-image detection; not SynthID detection",
-  "schema": "multi-provider-source-v7",
-  "artifact_file": "multi-provider-source-v7.npz",
-  "artifact_sha256": "4faef51eea48f8194ee804fab1782c48d626384e115e2ef70884f8e8393d7eb1",
-  "artifact_size_mb": 55.53,
+  "schema": "multi-provider-source-v8",
+  "artifact_file": "multi-provider-source-v8.npz",
+  "artifact_sha256": "7e7a9ee708bc2d64b45b87829b2c45e487aed3936220fb09843267662c99e0da",
+  "artifact_size_mb": 57.8,
   "feature_dimension": 512,
-  "vit_output_dimension": 28,
-  "synthetic_fusion_dimension": 67,
-  "multimodal_provider_dimension": 82,
+  "vit_output_dimension": 59,
+  "synthetic_fusion_dimension": 106,
+  "multimodal_provider_dimension": 195,
   "stacked_stage2_dimension": 666,
   "classes": [
     "openai",
@@ -30,8 +30,8 @@
     "calibration_recomp_neg": 3011,
     "calibration_crop_resize_dev": 2972,
     "test": 10585,
-    "multimodal_v7_train_views": 14428,
-    "multimodal_v7_cal_views": 6694,
+    "multimodal_v8_train_views": 25877,
+    "multimodal_v8_cal_views": 7280,
     "sealed_foreign_eval_views": 84
   },
   "open_benchmark_v2_578": {
@@ -45,50 +45,51 @@
       "scanned_document": 0.0
     },
     "native_ai_total": 125,
-    "native_ai_synthetic_recall": 0.992,
-    "native_ai_provider_attribution": 0.712,
+    "native_ai_synthetic_recall": 0.984,
+    "native_ai_provider_attribution": 0.808,
     "arena_ai_total": 253,
-    "arena_ai_synthetic_recall": 0.8695652173913043,
-    "arena_ai_provider_attribution": 0.1857707509881423,
-    "overall_ai_recall": 0.91005291005291,
+    "arena_ai_synthetic_recall": 0.9011857707509882,
+    "arena_ai_provider_attribution": 0.23715415019762845,
+    "overall_ai_recall": 0.9285714285714286,
+    "overall_provider_attribution": 0.42592592592592593,
     "overall_precision": 1.0,
-    "median_cpu_ms": 328.9
+    "median_cpu_ms": 385.9
   },
   "sealed_foreign_openworld_eval": {
     "evaluated_views": 84,
-    "synthetic_recall": 0.6905,
-    "honest_unknown_abstention_rate": 0.9762
+    "synthetic_recall": 0.6786,
+    "honest_unknown_abstention_rate": 0.9643
   },
   "locked_internal_test_e2e_rgb": {
     "evaluated_parents": 4415,
     "supported_ai_parents": 2074,
     "real_non_ai_parents": 2341,
     "native": {
-      "synthetic_recall_supported_ai": 0.9754098360655737,
-      "exact_provider_recall_supported_ai": 0.9281581485053038,
+      "synthetic_recall_supported_ai": 0.97541,
+      "exact_provider_recall_supported_ai": 0.95178,
       "real_synthetic_fp": 2,
-      "real_synthetic_fpr": 0.0008543357539513029,
+      "real_synthetic_fpr": 0.00085,
       "real_provider_fp": 1,
       "real_provider_fpr": 0.00042716787697565144,
-      "roc_auc": 0.9994764413002544,
-      "pr_auc": 0.9994285151447234
+      "roc_auc": 0.999659,
+      "pr_auc": 0.999626
     },
     "arena_transcoded": {
-      "synthetic_recall_supported_ai": 0.654291224686596,
-      "exact_provider_recall_supported_ai": 0.2540983606557377,
-      "real_synthetic_fp": 20,
-      "real_synthetic_fpr": 0.00854335753951303,
-      "real_provider_fp": 4,
-      "roc_auc": 0.9739757136319278,
-      "pr_auc": 0.9720579688268834
+      "synthetic_recall_supported_ai": 0.79364,
+      "exact_provider_recall_supported_ai": 0.46962,
+      "real_synthetic_fp": 16,
+      "real_synthetic_fpr": 0.00683,
+      "real_provider_fp": 3,
+      "roc_auc": 0.984702,
+      "pr_auc": 0.984587
     }
   },
   "external_blind_selective_v8_e2e_rgb": {
     "evaluated_parents": 1512,
     "synthetic_fp": 4,
     "synthetic_fpr": 0.0026455026455026454,
-    "provider_fp": 0,
-    "provider_fpr": 0.0,
+    "provider_fp": 1,
+    "provider_fpr": 0.0006613756613756614,
     "by_domain": {
       "diagram": {
         "evaluated": 305,
@@ -104,14 +105,14 @@
       },
       "game_art": {
         "evaluated": 215,
-        "synthetic_fp": 4,
-        "synthetic_fpr": 0.018604651162790697,
-        "provider_fp": 0
+        "synthetic_fp": 2,
+        "synthetic_fpr": 0.009302325581395349,
+        "provider_fp": 1
       },
       "interface": {
         "evaluated": 327,
-        "synthetic_fp": 0,
-        "synthetic_fpr": 0.0,
+        "synthetic_fp": 1,
+        "synthetic_fpr": 0.0030581039755351682,
         "provider_fp": 0
       },
       "photo": {
@@ -122,8 +123,8 @@
       },
       "vector": {
         "evaluated": 332,
-        "synthetic_fp": 0,
-        "synthetic_fpr": 0.0,
+        "synthetic_fp": 1,
+        "synthetic_fpr": 0.0030120481927710845,
         "provider_fp": 0
       }
     }

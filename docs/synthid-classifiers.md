@@ -121,7 +121,7 @@ private corpus, including target-provider exports, photographs, and foreign
 generator negatives. The corpus itself is not published. That early 3-class
 MLP was subsequently superseded by the 10-provider `multi-provider-source-v3.npz`,
 `multi-provider-source-v4.npz`, `multi-provider-source-v5.npz`, `multi-provider-source-v6.npz`,
-and `multi-provider-source-v7.npz` ensembles (`docs/source-classify-hf/`),
+`multi-provider-source-v7.npz`, and `multi-provider-source-v8.npz` ensembles (`docs/source-classify-hf/`),
 derivative artifacts containing only learned parameters, normalization constants,
 tree arrays, labels, and abstention thresholds; they contain no images, paths,
 image hashes, embeddings, or training catalog.
