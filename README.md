@@ -77,8 +77,11 @@ rewriter and its packaged language checker. Local text regeneration also support
 optional Apple silicon MLX models through
 `remove-ai-watermarks[text-mlx]` and
 `--rewriter-backend mlx --rewriter-model /path/to/checkpoint`.
-Both backends share the same acceptance guards; model output still needs factual
-review. See the [text CLI](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md#identify-and-clean-text).
+An explicitly configured API rewriter is available through the
+[Python API](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md#optional-api-text-rewriter) with
+`remove-ai-watermarks[text-api]`. The same extra connects the CLI to a
+locally served Ollama model. Review generated prose for factual fidelity.
+See the [text CLI](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md#identify-and-clean-text).
 
 Experimental public VideoSeal, PixelSeal, and ChunkySeal video checks and processing
 use [`video message`](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md#public-model-video-messages-experimental).

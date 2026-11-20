@@ -4015,6 +4015,7 @@ dev = [
     { name = "packaging" },
     { name = "playwright" },
     { name = "portable-ffmpeg-full" },
+    { name = "py3langid" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -4084,6 +4085,9 @@ text = [
     { name = "tokenizers" },
     { name = "torch" },
     { name = "transformers" },
+]
+text-api = [
+    { name = "py3langid" },
 ]
 text-draft = [
     { name = "huggingface-hub" },
@@ -4186,6 +4190,7 @@ requires-dist = [
     { name = "py3langid", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'text-mlx'", specifier = "==0.4.0" },
     { name = "py3langid", marker = "extra == 'diffusion'", specifier = "==0.4.0" },
     { name = "py3langid", marker = "extra == 'text'", specifier = "==0.4.0" },
+    { name = "py3langid", marker = "extra == 'text-api'", specifier = "==0.4.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
@@ -4207,6 +4212,7 @@ requires-dist = [
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'source-classify'" },
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'visible'" },
     { name = "remove-ai-watermarks", extras = ["qwen-zimage", "lama"], marker = "extra == 'text-restoration'" },
+    { name = "remove-ai-watermarks", extras = ["text-api"], marker = "extra == 'dev'" },
     { name = "remove-ai-watermarks", extras = ["video"], marker = "extra == 'dev'" },
     { name = "remove-ai-watermarks", extras = ["video"], marker = "extra == 'video-detect'" },
     { name = "remove-ai-watermarks", extras = ["video", "video-detect", "heif", "detect", "trustmark", "text-restoration", "migan", "source-classify", "audio-detect", "audio-codec", "audio-vocoder", "audio-wavmark", "audio-perth", "audio-silentcipher", "text", "text-mlx"], marker = "extra == 'all'" },
@@ -4238,7 +4244,7 @@ requires-dist = [
     { name = "trustmark", marker = "extra == 'trustmark'", specifier = ">=0.9.2" },
     { name = "wavmark", marker = "extra == 'audio-wavmark'", specifier = "==0.0.3" },
 ]
-provides-extras = ["text", "text-mlx", "pixels", "heif", "visible", "video", "video-detect", "audio", "audio-detect", "audio-wavmark", "audio-perth", "audio-silentcipher", "audio-codec", "audio-vocoder", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "source-classify", "lama", "migan", "dev", "all"]
+provides-extras = ["text", "text-api", "text-mlx", "pixels", "heif", "visible", "video", "video-detect", "audio", "audio-detect", "audio-wavmark", "audio-perth", "audio-silentcipher", "audio-codec", "audio-vocoder", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "source-classify", "lama", "migan", "dev", "all"]
 
 [[package]]
 name = "requests"

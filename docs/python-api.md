@@ -1253,6 +1253,11 @@ File input/output preserves UTF-8 line-ending bytes (LF, CRLF and CR). Segmentat
 recognizes the same protected structures across those endings; rewritten prose
 can still change its own internal layout.
 
+Single-dollar inline math uses non-whitespace content at both delimiter edges,
+and its closing dollar must not be followed by a digit. This prevents currency
+pairs such as `$500` and `$1,750` from locking the intervening prose as math.
+Numeric expressions such as `$5 + 2$` and `\(x + 1\)` remain protected.
+
 `rewriter_backend="mlx"` selects optional local MLX generation on Apple silicon;
 install `remove-ai-watermarks[text-mlx]` and pass a compatible `rewriter_model`
 checkpoint path or Hugging Face ID. `device="auto"` uses the MLX default stream;
@@ -1267,16 +1272,76 @@ The combined API requires `include_invisible=True` for a nondefault backend, and
 a custom `rewriter` cannot also select MLX. No semantic judge is enabled by this
 choice, and larger models can still change qualifiers or facts.
 
+### Optional API text rewriter
+
+Local generation remains the default. Install `remove-ai-watermarks[text-api]`
+to use `build_text_api_rewriter` with an explicitly selected Chat Completions
+endpoint. This extra needs the packaged language checker, without Torch,
+Transformers or a provider SDK. The endpoint and model have no defaults; no
+credentials or other API settings are read from the environment.
+
+```python
+from getpass import getpass
+import remove_ai_watermarks as raiw
+
+rewriter = raiw.build_text_api_rewriter(
+    base_url="https://your-endpoint.example/v1",
+    model="your-compatible-model",
+    api_key=getpass("API key: "),  # Omit for an unauthenticated local endpoint.
+    max_completion_tokens=1024,
+    timeout=60.0,
+)
+result = raiw.remove_text_invisible("input.md", "output.md", rewriter=rewriter)
+```
+
+Construction makes no request. Each rewriter invocation sends one nonstreaming
+POST to `base_url + "/chat/completions"`, with the shared local prompt and
+masked factual spans. Technical spans remain protected by the outer library
+pipeline. The endpoint must honor the chosen token-limit field and return
+exactly one assistant text choice with `finish_reason="stop"`. The adapter
+sends `max_completion_tokens` by default. For an endpoint that expects
+`max_tokens`, pass `completion_token_field="max_tokens"`. The numeric limit
+still comes from `max_completion_tokens`. Truncation, refusals,
+tool calls, malformed replies and failed shared acceptance checks raise
+`RuntimeError`. A failed request never triggers a local or remote fallback.
+The adapter does not retry. An explicit outer `rewrite_validator` retains the
+existing three-invocation policy; a document can contain multiple prose
+clusters. Request count therefore depends on the text and caller policy.
+
+`max_completion_tokens` is a positive integer, and `timeout` is a positive
+finite number of seconds. The base URL must be HTTP(S), without embedded
+credentials, query or fragment. The optional key is sent only in the
+authorization header. Redirects are refused. Full request/response bodies are
+logged at INFO and failures at WARNING, with the configured key redacted.
+The adapter sends user prose to the configured service only when invoked.
+
+The same selected fact, placeholder, extent, script and language checks apply
+to built-in API and local generation. These heuristics do not establish full
+meaning preservation. Transport tests against a local HTTP server are not
+provider-model quality tests, and an API model may add its own watermark.
+An original detector becoming negative does not verify the absence of another
+provider's marking. No paid provider evaluation is implied by this API.
+Protocol: [Chat Completions reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
+
+### Text verification and acceptance
+
 For local calibration or testing when the deployment's watermark key is known,
 [`remove_ai_watermarks.text`](../src/remove_ai_watermarks/text.py) also provides
-keyed statistical scorers (`score_synthid_text`, `score_gumbel_text`,
+keyed statistical scorers (`score_synthid_text`, `score_synthid_threefry_text`, `score_gumbel_text`,
 `score_textgrain_text`, `score_textseal2_text`, `score_kgw_text`,
-`score_unigram_text`), selected numeral/entity/polarity/season/frequency verification
+`score_unigram_text`), selected numeral/entity/polarity/season/frequency and
+claim qualification checks
 (`verify_text_rewrite_facts`), covert steganography payload decoding
 (`decode_stego_payloads`), and deterministic wrapper encoders
 (`encode_c2patxt`, `encode_c2pa_ascii_armor`, `encode_vsrmark`,
 `encode_unicode_tags`, `encode_innamark`). See
 [text watermark and provenance research](text-watermark-research.md).
+
+Selected determiner-led affirmative English copular frames also reject a
+membership statement becoming a critical stance, or the reverse, for matching
+literal subject/object descriptions. Modality, negation, other grammar,
+different participant descriptions and mixed claims remain unresolved. This
+does not generally bind entities or establish equivalence.
 
 The deterministic cleaner recognizes the [published Windows AI text sequence](https://learn.microsoft.com/en-us/windows/ai/apis/text-watermarking)
 `U+200B U+034F U+2060 U+200B` as `windows_ai_text_watermark`. It removes complete
@@ -1284,6 +1349,22 @@ occurrences before classifying neighboring Unicode controls, preserving valid
 emoji and joining-script context. The sequence is forgeable, so this signal does
 not attribute the source to Microsoft. Tests cover synthetic published-format
 fixtures; actual Windows AI output has not been generated in this environment.
+
+The metadata cleaner preserves isolated `U+200B` between Thai word characters
+and inside recognized inline and fenced code. It also preserves paired
+`U+2060` word joiners around `U+00D7` or `U+00F7` between decimal digits.
+Recognized zero-width payloads take precedence over these context rules.
+
+The cleaner also retains `U+034F` when removing it would allow combining
+marks to reorder across its position. This preserves the ordering distinction
+described in [Unicode 17's layout controls](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-23/).
+The complete Windows AI sequence is removed before the check. Collation-only
+uses between ordinary letters are outside this rule.
+
+The metadata cleaner also retains single selectors in registered Unicode 17.0
+standardized VS1 through VS16 pairs. It removes unregistered BMP selectors
+outside the separate emoji presentation cases. Supplementary CJK selectors
+continue to use the existing ideograph context rule.
 
 The local rewriter raises `RuntimeError` after three attempts if every candidate
 hits the token budget without an EOS stop, severely collapses or expands a long
@@ -1324,6 +1405,10 @@ day` remain frequency facts rather than an additional duration measurement.
 Ambiguous `a second`/`a minute`, hyphenated compounds and compound-unit ratios are
 not interpreted by this indefinite-duration extension. It does not verify which
 event a duration modifies or preserve arbitrary conditional meaning.
+Numeric English compounds such as `four-week` and `two-hour` are separately
+recognized as complete measurements for hour/day/week/month/year. They can match
+ordinary `four weeks`/`two hours` forms while retaining values, units, bounds
+and occurrence counts. This does not interpret arbitrary hyphenated expressions.
 Selected English and Russian season mentions are also checked. Bare `spring`
 and `fall` remain ambiguous; they may match explicit seasonal counterparts but
 do not independently establish a season. A spring-to-autumn interval contributes
@@ -1336,9 +1421,23 @@ repeat counts retain their occurrence count, period and unit. For example,
 `every other day` may match `once every two days`, but cannot become `periodically`
 or `every day`. Whole recognized phrases are masked for both local backends;
 their internal numerals/units do not become unrelated quantity constraints.
+`annual` matches `yearly`/`annually`, and bare `per week`-style periods match
+their selected adverb aliases, including monetary rate wording. Frequency words
+inside hyphen-prefixed compounds such as `semi-annual` are excluded, rather than
+misread as annual recurrence. Unsupported compounds are not otherwise interpreted.
 The check preserves mention multiplicity conservatively. It does not convert
 calendar units, interpret arbitrary or bounded schedules, bind intervals to
 specific actors/events, or certify semantic equivalence.
+Selected explicit English type-coverage phrases (`each type`, `every appliance
+type`, `all appliance types`) share a conservative mention count and whole-phrase
+masking. Losing or inventing this selected coverage fails the local guard.
+The check does not bind types to entities, interpret arbitrary quantifiers,
+normalize every paraphrase, or certify universal semantic coverage. Adding an unsupported paper medium to a manual
+process and swapping explicit event/date assignments can also pass. The examined
+calibration pairs record these unresolved gaps. Full meaning review remains
+separate from this heuristic verifier. Examined work/residence, beneficiary
+class, goal/achievement, likelihood and urgency pairs also record current gaps;
+retaining names and numerical values does not establish those relationships.
 Consecutive recognized name words are masked as one span, so a name such as
 `Willow Creek` cannot be split by moving its component markers. The fact checker
 also requires those runs to remain contiguous, allowing case/whitespace changes.
@@ -1346,20 +1445,70 @@ This preserves recognized text, not the name's role or complete entity coverage.
 Selected `Mr.`, `Mrs.`, `Ms.`, `Dr.` and `Prof.` phrases include capitalized
 name words and initials even at sentence start. Native masking keeps the full
 honorific/name phrase in one marker for each occurrence, so the honorific period
-cannot leave the surname unprotected. The fact checker requires each recognized
+cannot leave the surname unprotected. Selected sentence/paragraph-initial ASCII
+name runs before an explicit appositive, such as `Robert Johnson, the curator`,
+are also masked as whole phrases and checked in full. Common leading function
+words and numeric words are excluded. This prevents a recognized first name
+being changed while only its surname survives. Single names, arbitrary initial
+name runs, initials and general entity/role resolution are outside this extension.
+The fact checker requires each recognized
 full phrase to remain contiguous, allowing case/whitespace changes; it does not
 require repeated mentions to survive a valid pronoun paraphrase or bind names
 to actions.
+The separate fact check recognizes some sentence-initial English actor
+appositions such as `the curator, a woman with a silver badge`. For selected
+actions, it rejects rewrites that make that same description a separate actor
+or recipient in an event involving the curator. It compares specific literal
+descriptions and action forms. Other appositions and general role or pronoun
+resolution remain outside the check.
+For selected English actions, the fact guard compares plans, attempts and
+completions when both versions name the same actor and object. A completed
+passive with an explicit actor can match an active clause. A separate shelter
+frame distinguishes seeking refuge from finding or taking it when the actor
+and any stated location match. Missing or ambiguous matches leave the phase
+undetermined.
+The guard also compares selected affirmative English `affect`, `impact` and
+`influence` clauses with matching factors, `how` effects and stated conditions.
+It flags a change between `may`, `might` or `could` and an assertion. For
+`can`, it flags only a contrast with an explicit assertion such as
+`directly influences`. Other expressions of likelihood and causal scope remain
+outside this check.
 Selected English/Russian approval, permission, responsibility, restriction and
 requirement cues must also survive. For example, available funding does not
 retain an explicit approval condition, and not performing repairs is different
 from having no repair responsibility or being forbidden to repair. These are
-selected literal categories, without actor, event or scope binding; unrecognized
+selected literal categories, without general actor, event or scope binding; unrecognized
 synonyms can cause conservative refusals. Additive idioms such as
 "not only" are excluded, and the checked Russian necessity construction accepts
 "registration is required" versus "access without registration is impossible".
+The English requirement family includes `essential tool` and `essential instrument`
+wording alongside `indispensable`, and still checks added or omitted requirements.
+One paired English exception distinguishes selected technical capability from
+permission: `A calculator allows students to calculate totals` can become
+`A calculator enables students to compute totals`. The sentence-initial technical
+subject, actor, functional action and bounded object must match, allowing only
+selected action/object aliases. Only the matching `allow`/`enable` cues are
+excluded from the constraint comparison. Human/policy permission, access verbs,
+explicit permission elsewhere and unmatched or repeated frames remain checked.
+The same bounded exception includes mechanical film advance when the action
+still captures the same scene repeatedly without manual rewinding.
+This does not establish general capability, authorization or object semantics.
 These checks do not establish qualifier scope or complete claim coverage. Curly
 apostrophes are normalized for English negation checks, including `mustn't`.
+Selected explicit English record-container expressions are also checked: a
+`communal notebook` or `shared ledger` cannot become `each tool has its own
+notebook`, or the reverse. Separate entries/pages in a shared book are distinct
+from separate books. This check abstains when either distribution is implicit,
+unrecognized or mixed; it does not bind records to particular people or tools,
+detect every omitted item, or certify full ownership/scope preservation.
+Selected explicit English signal directions are also compared: `a nod from the
+community` cannot become `a nod to the community`, including `a nod in return to
+the community`. The check recognizes selected group/owner descriptions with
+`nod`, `approval`, `permission` or `consent`. It compares the same literal signal
+and participant only when each has one explicit direction. Missing cues,
+different participant descriptions and mixed directions abstain. This does not
+establish general approval-actor or manner-to-event binding: retaining carefulness
+does not establish which action is performed carefully.
 Selected English/Russian numeric bounds and approximations must retain their
 kind and value: for example, `at least 20` can become `no fewer than 20`, but not
 `20`, `at most 20` or `more than 20`. Quantified `no fewer/more than` is a bound,
@@ -1368,6 +1517,16 @@ heuristic. It does not cover all range/number expressions or bind each quantity
 to its participant, and ambiguous words such as `around` can cause refusals.
 Reciprocal/superlative `one` idioms are excluded from approximation matching;
 explicit bounds such as `at least one` remain checked.
+Selected adjacent English percentage change phrases distinguish endpoints
+(`rose to 86%`) from change magnitudes (`rose by 86%` or
+`an increase in satisfaction of 86%`). The check rejects a role swap
+when the same normalized value has one recognized role on each side.
+Unrecognized and mixed roles abstain.
+Selected adjacent English `estimated N`, `estimated at N` and `estimate of N`
+forms retain a distinct estimate qualifier and the supported value/unit. An
+estimate cannot become an unqualified measured value or change its supported
+value/unit. Nonadjacent descriptions such as `the estimated cost was ...`, general
+forecast uncertainty and participant binding remain outside this check.
 Selected Russian cardinal forms and descending thousand/million/billion scales
 are normalized as whole values: `двадцать пять` and `25` agree, while changing
 the value or its supported bound is refused. The local writer masks those
@@ -1414,6 +1573,147 @@ without calling the validator. Protected-span fallback may call the rewriter and
 validator on individual prose fragments. `remove_text_all` accepts the callback
 only with `include_invisible=True`. No semantic judge is enabled by default.
 
+For full-document context, pass `document_rewriter` to
+`remove_text_invisible` or to `remove_text_all` with `include_invisible=True`.
+It receives one tuple of trimmed, unlocked input spans in document order and
+returns a list or tuple with one nonempty replacement per input span.
+Positions distinguish repeated passages. The library restores the original
+whitespace and protected content, checks protected structure before publication,
+and counts identical spans as retained. A fully unchanged or malformed draft
+raises `RuntimeError`. The document callback replaces passage generation and
+cannot be combined with `rewriter` or `rewrite_validator`. The caller chooses
+its model and fidelity policy.
+
+Pass `document_validator(source, candidate)` to review the entire assembled
+text with either generation path. It sees the originals of protected spans and
+runs before the destination is written. A literal `False` vetoes that draft
+even when `allow_partial=True`. An invalid verdict raises `TypeError`.
+
+With both document callbacks set, `document_repairer(original, rejected)`
+may offer one correction after a veto. Both arguments are tuples of trimmed,
+unlocked prose spans in document order. Return a list or tuple of replacements
+with the same shape, or return `None` to decline the repair. The library
+assembles the correction under the same protection rules, rejects an unchanged
+draft, and reviews the corrected document with the same validator. If the
+correction fails, the destination is left intact. Callers can use the
+validator's feedback to decide which drafts to repair.
+
+`document_refiner(original, accepted)` receives the trimmed unlocked spans of
+an accepted draft after any correction. Return replacements in the same order
+to request a final pass through the structural and document validator checks,
+or return `None` to keep the accepted draft. A refusal or exception leaves the
+destination intact. Pass both `document_rewriter` and `document_validator` when
+using a refiner.
+
+All document callbacks are skipped if there is no prose to regenerate.
+When combining metadata cleanup with regeneration, they operate on the
+metadata-cleaned text.
+
+For an explicitly configured Chat Completions endpoint, the optional
+`remove-ai-watermarks[text-api]` extra provides generation and repair
+callbacks. Supply a document reviewer separately:
+
+```python
+from remove_ai_watermarks import remove_text_invisible
+from remove_ai_watermarks.text_api import build_text_api_document_rewriters
+
+rewrite, repair = build_text_api_document_rewriters(
+    base_url="http://127.0.0.1:11434/v1",
+    model="your-compatible-model",
+    max_completion_tokens=2048,
+    completion_token_field="max_tokens",  # Ollama's Chat Completions field.
+)
+
+def process_document(input_path, output_path, review_document):
+    return remove_text_invisible(
+        input_path,
+        output_path,
+        document_rewriter=rewrite,
+        document_validator=review_document,
+        document_repairer=repair,
+    )
+```
+
+The endpoint receives unlocked prose in order as JSON. A repair request
+also includes the rejected prose. The endpoint receives the prose verbatim,
+including its facts. Both requests specify the expected number of prose
+slots. The adapter accepts that many strings in a JSON array, either
+directly or inside one `json` code block. The library keeps protected
+spans in the assembled document and the supplied reviewer
+owns factual and semantic acceptance. An accepted initial draft
+uses one POST. If the reviewer vetoes it, the configured correction adds
+at most one POST, excluding any requests the reviewer itself makes.
+Configuration, transport and credential handling match the passage API.
+
+For the opt-in strict residual strategy, pass the callback mapping from
+`build_text_api_strict_residual_rewriter`. It uses a fixed-length sentence
+response, checks a rejected draft for sentences to restore locally, and makes at
+most one second request for verbatim retained sentences. That second request
+uses `residual_seed` and temperature 0.4. Every replacement in the second
+request must differ from its source and pass the sentence fact check. The
+assembled document must pass the whole-document guard.
+
+```python
+from remove_ai_watermarks import remove_text_invisible
+from remove_ai_watermarks.text_api import build_text_api_strict_residual_rewriter
+
+callbacks = build_text_api_strict_residual_rewriter(
+    base_url="http://127.0.0.1:11434/v1",
+    model="qwen3:8b-q4_K_M",
+    seed=7291,
+    completion_token_field="max_tokens",
+)
+remove_text_invisible(input_path, output_path, **callbacks)
+```
+
+Set `rewrite_style="recast"` to ask the model to change sentence openings
+and clause structure in the initial draft. Repair requests still use
+the fidelity correction instruction. The default style is `"standard"`.
+Optional `temperature` and `seed` values pass through to the endpoint
+for both requests. Omit them to use the endpoint's sampling settings.
+Whether a seed makes output repeatable depends on the endpoint.
+
+Set `rewrite_style="sentence"` to send all sentences in one request while
+requiring one replacement per sentence in the same order. The adapter uses a
+lightweight English sentence splitter and restores the original separators.
+The caller still supplies the document reviewer.
+
+For an endpoint that supports array-shaped JSON Schema output, set
+`structured_output=True` to require a fixed-length array. Set
+`disable_reasoning=True` if the endpoint supports `reasoning_effort="none"`.
+Both settings apply to generation and correction. The adapter checks the reply
+locally and surfaces endpoint errors without retrying with different settings.
+
+
+For selected English loan-role reversals, an optional library helper can use a
+caller-owned local spaCy-compatible parser:
+
+```python
+from functools import partial
+
+import spacy
+
+from remove_ai_watermarks.text import remove_text_invisible
+from remove_ai_watermarks.text_roles import verify_text_rewrite_loan_roles
+
+parser = spacy.load("en_core_web_trf", exclude=["ner"])
+validator = partial(verify_text_rewrite_loan_roles, parser=parser)
+result = remove_text_invisible("input.txt", rewrite_validator=validator)
+```
+
+Install the compatible English parser and its model separately. The helper does
+not load or download a model, and the default text dependencies and processing
+policy are unchanged. Select it only for English prose; it does not detect the
+input language. It checks selected parsed `borrow`, `lend` and `loan`
+clauses, including active/passive converses, against exact participant lemmas
+and available item lemmas. It rejects missing/partial annotations and stale or
+truncated parse text. Parser errors propagate. Its `True` result means no
+supported reversal was found, not that meaning is preserved. Unmatched entities,
+unresolved pronouns, omitted objects, timing, modality and general claims remain
+outside this check. Lending does not establish ownership. Parser mistakes can
+still hide reversals. Examined model findings are in
+[`text-watermark-validation.md`](text-watermark-validation.md).
+
 Service placeholder allocation avoids literal marker strings already in the
 source, including inside locked code. User marker IDs are never parsed as
 integers. This preserves literal marker-shaped content without namespace collisions.
@@ -1435,6 +1735,18 @@ not the trained Bayesian detector or a provider's production detector. Threshold
 require calibration on matched marked and unmarked controls. Other named scorers
 are local keyed simulations, not evidence of compatibility with private provider
 implementations.
+
+`score_synthid_threefry_text(ids, key, eos_token_ids=..., alpha=0.01)`
+implements the [open single-key Threefry reference](https://github.com/google-deepmind/synthid-text/tree/72810caf309d51f5985dc871a4bce42c3d0cb54d)
+in standard-library Python. Pass continuation tokens from the matching tokenizer
+with the prompt removed. Set `ngram_len`, `depth`, `context_history_size` and
+the generation's EOS token IDs to match the reference settings.
+`SynthIDThreefryScore` reports the binomial upper-tail p-value, the numbers of
+scored positions, one bits and trials, and the decision at `alpha`. Empty or
+too-short sequences receive a p-value of 1.0. This scorer implements a distinct
+format from the historical sampling-table detector and the dual-key mode.
+Long histories and real text can violate the nominal independence assumption.
+Calibrate against matching controls before drawing a watermark conclusion.
 
 Selected adjacent physical measurements are checked as a multiset of normalized
 amount/unit pairs and masked as whole phrases by the local rewriters. This covers

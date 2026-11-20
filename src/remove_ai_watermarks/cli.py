@@ -16,7 +16,8 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, TypedDict
+from urllib.parse import urlsplit
 
 import click
 
@@ -2804,25 +2805,110 @@ def cmd_text_metadata(
     )
 
 
+_TextBackend = Literal["transformers", "mlx", "ollama"]
+
+
+class _TextRewriteOptions(TypedDict, total=False):
+    seed: int
+    allow_partial: bool
+    rewriter_backend: Literal["transformers", "mlx"]
+    rewriter_model: str
+    document_rewriter: Callable[[tuple[str, ...]], tuple[str, ...]]
+    document_validator: Callable[[str, str], bool]
+    document_repairer: Callable[[tuple[str, ...], tuple[str, ...]], tuple[str, ...] | None]
+    document_refiner: Callable[[tuple[str, ...], tuple[str, ...]], tuple[str, ...] | None]
+
+
+def _text_rewrite_options(
+    backend: _TextBackend,
+    model: str | None,
+    ollama_url: str | None,
+    seed: int,
+    allow_partial: bool,
+    strict_residual: bool,
+) -> _TextRewriteOptions:
+    from remove_ai_watermarks.text import DEFAULT_TEXT_REWRITER_MODEL, verify_text_rewrite_facts
+
+    if backend != "ollama":
+        if ollama_url is not None:
+            raise click.UsageError("--ollama-url requires --rewriter-backend ollama")
+        if strict_residual:
+            raise click.UsageError("--strict-residual requires --rewriter-backend ollama")
+        return {
+            "seed": seed,
+            "allow_partial": allow_partial,
+            "rewriter_backend": backend,
+            "rewriter_model": DEFAULT_TEXT_REWRITER_MODEL if model is None else model,
+        }
+    if not model or not model.strip():
+        raise click.UsageError("--rewriter-backend ollama requires an explicit --rewriter-model")
+    if strict_residual and allow_partial:
+        raise click.UsageError("--strict-residual cannot be combined with --allow-partial")
+    base_url = "http://127.0.0.1:11434/v1" if ollama_url is None else ollama_url
+    try:
+        parsed = urlsplit(base_url)
+    except ValueError:
+        raise click.UsageError("--ollama-url must be an HTTP URL on a loopback address") from None
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1"}:
+        raise click.UsageError("--ollama-url must be an HTTP URL on a loopback address")
+
+    from remove_ai_watermarks.text_api import build_text_api_document_rewriters, build_text_api_strict_residual_rewriter
+
+    limit_field = "max_tokens"
+    if strict_residual:
+        return {
+            **build_text_api_strict_residual_rewriter(
+                base_url=base_url, model=model, seed=seed, completion_token_field=limit_field
+            )
+        }
+    rewrite, _ = build_text_api_document_rewriters(
+        base_url=base_url,
+        model=model,
+        rewrite_style="sentence",
+        structured_output=True,
+        disable_reasoning=True,
+        max_completion_tokens=2048,
+        completion_token_field=limit_field,
+        timeout=185,
+        temperature=0,
+        seed=seed,
+    )
+
+    def rewrite_document(original: tuple[str, ...]) -> tuple[str, ...]:
+        candidate = rewrite(original)
+        if not allow_partial and any(left == right for left, right in zip(original, candidate, strict=True)):
+            raise RuntimeError("Local Ollama returned an unchanged prose span. Use --allow-partial to retain it.")
+        return candidate
+
+    return {"document_rewriter": rewrite_document, "document_validator": verify_text_rewrite_facts}
+
+
 @cmd_text.command("invisible")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_output_option
 @click.option("--seed", type=int, default=0, show_default=True)
 @click.option("--allow-partial", is_flag=True, help="Keep rejected prose unchanged and report partial regeneration.")
 @click.option(
-    "--rewriter-backend", type=click.Choice(["transformers", "mlx"]), default="transformers", show_default=True
+    "--rewriter-backend",
+    type=click.Choice(["transformers", "mlx", "ollama"]),
+    default="transformers",
+    show_default=True,
 )
-@click.option("--rewriter-model", help="Local checkpoint path or Hugging Face model ID for prose rewriting.")
+@click.option("--rewriter-model", help="Checkpoint path or model ID for the selected backend.")
+@click.option("--ollama-url", help="Local Ollama Chat Completions base URL (default: http://127.0.0.1:11434/v1).")
+@click.option("--strict-residual", is_flag=True, help="With Ollama, regenerate retained sentences in a second pass.")
 def cmd_text_invisible(
     source: Path,
     output: Path | None,
     seed: int,
     allow_partial: bool,
-    rewriter_backend: Literal["transformers", "mlx"],
+    rewriter_backend: _TextBackend,
     rewriter_model: str | None,
+    ollama_url: str | None,
+    strict_residual: bool,
 ) -> None:
     """Remove statistical token watermarks by regenerating unlocked prose spans."""
-    from remove_ai_watermarks.text import DEFAULT_TEXT_REWRITER_MODEL, remove_text_invisible
+    from remove_ai_watermarks.text import remove_text_invisible
 
     _banner()
     console.print(f"  Regenerating unlocked prose spans in {source.name} while locking code, math, and URLs...")
@@ -2830,10 +2916,7 @@ def cmd_text_invisible(
         result = remove_text_invisible(
             source,
             output,
-            seed=seed,
-            allow_partial=allow_partial,
-            rewriter_backend=rewriter_backend,
-            rewriter_model=rewriter_model if rewriter_model is not None else DEFAULT_TEXT_REWRITER_MODEL,
+            **_text_rewrite_options(rewriter_backend, rewriter_model, ollama_url, seed, allow_partial, strict_residual),
         )
     except (OSError, RuntimeError, UnicodeDecodeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -2860,24 +2943,33 @@ def cmd_text_invisible(
 @click.option("--seed", type=int, default=0, show_default=True)
 @click.option("--allow-partial", is_flag=True, help="Keep rejected prose unchanged and report partial regeneration.")
 @click.option(
-    "--rewriter-backend", type=click.Choice(["transformers", "mlx"]), default="transformers", show_default=True
+    "--rewriter-backend",
+    type=click.Choice(["transformers", "mlx", "ollama"]),
+    default="transformers",
+    show_default=True,
 )
-@click.option("--rewriter-model", help="Local checkpoint path or Hugging Face model ID for prose rewriting.")
+@click.option("--rewriter-model", help="Checkpoint path or model ID for the selected backend.")
+@click.option("--ollama-url", help="Local Ollama Chat Completions base URL (default: http://127.0.0.1:11434/v1).")
+@click.option("--strict-residual", is_flag=True, help="With Ollama, regenerate retained sentences in a second pass.")
 def cmd_text_all(
     source: Path,
     output: Path | None,
     invisible: bool,
     seed: int,
     allow_partial: bool,
-    rewriter_backend: Literal["transformers", "mlx"],
+    rewriter_backend: _TextBackend,
     rewriter_model: str | None,
+    ollama_url: str | None,
+    strict_residual: bool,
 ) -> None:
     """Strip deterministic text provenance and optionally regenerate prose spans."""
-    from remove_ai_watermarks.text import DEFAULT_TEXT_REWRITER_MODEL, remove_text_all
+    from remove_ai_watermarks.text import remove_text_all
 
     if allow_partial and not invisible:
         raise click.UsageError("--allow-partial requires --invisible")
-    if not invisible and (rewriter_backend != "transformers" or rewriter_model is not None):
+    if strict_residual and not invisible:
+        raise click.UsageError("--strict-residual requires --invisible")
+    if not invisible and (rewriter_backend != "transformers" or rewriter_model is not None or ollama_url is not None):
         raise click.UsageError("Rewriter backend/model options require --invisible")
     _banner()
     stages = (
@@ -2891,10 +2983,7 @@ def cmd_text_all(
             source,
             output,
             include_invisible=invisible,
-            seed=seed,
-            allow_partial=allow_partial,
-            rewriter_backend=rewriter_backend,
-            rewriter_model=rewriter_model if rewriter_model is not None else DEFAULT_TEXT_REWRITER_MODEL,
+            **_text_rewrite_options(rewriter_backend, rewriter_model, ollama_url, seed, allow_partial, strict_residual),
         )
     except (OSError, RuntimeError, UnicodeDecodeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -3185,11 +3274,7 @@ def cmd_all(
             source=source,
             output=output,
             invisible=force,
-            allow_partial=False,
-            rewriter_backend="transformers",
-            rewriter_model="",
             seed=seed or 0,
-            as_json=False,
         )
         return
 

@@ -318,6 +318,69 @@ def validate_freshrace_assets(
     }
 
 
+def validate_canonical_assets(
+    source: Path,
+    tokenizer: Path,
+    reference_path: Path,
+    reference: dict[str, Any],
+    vocab_size: int,
+    *,
+    mode: object,
+) -> dict[str, Any]:
+    """Bind a selected published canonical map to the declared Llama bridge.
+
+    Call after complete submission-tree verification. This checks the selected
+    map and reference-tokenizer compatibility, not its unavailable build history.
+    It does not enable weighted detection in the plain-only replay command.
+    """
+    if not isinstance(mode, str) or mode not in {"alnum", "sense"}:
+        raise ValueError("Canonical replay requires a declared alnum or sense mode")
+    if type(vocab_size) is not int or vocab_size < 2:
+        raise ValueError("Canonical model vocabulary must be a positive integer")
+    validate_reference_tokenizer(tokenizer, reference_path, reference)
+    payload = json.loads(reference_path.read_bytes())
+    ids = set(payload["model"]["vocab"].values()) | {row["id"] for row in payload["added_tokens"]}
+    if ids != set(range(vocab_size)):
+        raise ValueError("Canonical reference vocabulary differs from generation")
+    path = source / "src/lm_wm_tools/watermarks/assets/canon_maps.npz"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("Published canonical asset is unavailable or a symlink")
+    np: Any = importlib.import_module("numpy")
+    try:
+        with np.load(path, allow_pickle=False) as archive:
+            fields = set(archive.files)
+            base = {"vocab_size", "space", "lowsp", "lower", "alnum", "stem"}
+            if fields not in (base, base | {"sense"}) or mode not in fields:
+                raise ValueError("Unexpected canonical asset arrays")
+            size, table = archive["vocab_size"], archive[mode]
+    except (OSError, ValueError, KeyError) as error:
+        raise ValueError("Invalid canonical asset archive") from error
+    if (
+        size.shape != ()
+        or size.dtype.kind not in "iu"
+        or int(size) != vocab_size
+        or table.shape != (vocab_size,)
+        or table.dtype.kind not in "iu"
+        or np.any(table < 0)
+        or np.any(table >= vocab_size)
+        or np.any(table > np.arange(vocab_size))
+        or not np.array_equal(table[table], table)
+        or not np.any(table != np.arange(vocab_size))
+    ):
+        raise ValueError("Invalid or inactive canonical map")
+    return {
+        "reference_tokenizer_sha256": sha(reference_path),
+        "tokenizer_sha256": sha(tokenizer / "tokenizer.json"),
+        "canonical_tokenizer_equal": True,
+        "vocab_size": vocab_size,
+        "mode": mode,
+        "changed_token_ids": int(np.count_nonzero(table != np.arange(vocab_size))),
+        "canonical_asset_sha256": sha(path),
+        "embedded_tokenizer_metadata": None,
+        "reference_basis": "Declared Llama evaluation reference; asset-build tokenizer identity is not embedded",
+    }
+
+
 def validate_provenance(generation: dict[str, Any], proof: dict[str, Any]) -> None:
     row = proof["submission"]
     tree_based = row.get("kind") == "baseline"

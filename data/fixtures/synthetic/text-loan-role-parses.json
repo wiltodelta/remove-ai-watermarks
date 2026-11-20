@@ -1,0 +1,265 @@
+{
+  "provenance": "Handwritten synthetic English loan-role cases with frozen en_core_web_trf 3.8.0 dependency annotations. Annotation schema is lemma/POS/dependency/head-index. These examined unit fixtures measure role-rule behavior on supplied parses, not parser accuracy or general semantic equivalence. No model is required to replay them. Uncovered-return and unmatched-compound-actors intentionally have no supported matching loan-role contradiction. A case may explicitly identify another frozen parser model for an alternative dependency attachment.",
+  "model_source": "https://github.com/explosion/spacy-models/releases/tag/en_core_web_trf-3.8.0",
+  "model_wheel_sha256": "272a31e9d8530d1e075351d30a462d7e80e31da23574f1b274e200f3fff35bf5",
+  "cases": [
+    {
+      "id": "active-converse",
+      "source": "Residents borrow tools from volunteers.",
+      "candidate": "Volunteers lend tools to residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 tool/NOUN/dobj/1 from/ADP/prep/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 lend/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "active-reversal",
+      "source": "Residents borrow tools from volunteers.",
+      "candidate": "Residents lend tools to volunteers.",
+      "no_selected_reversal": false,
+      "source_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 tool/NOUN/dobj/1 from/ADP/prep/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 lend/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "ditransitive",
+      "source": "Volunteers lend residents tools.",
+      "candidate": "Residents borrow tools from volunteers.",
+      "no_selected_reversal": true,
+      "source_parse": "volunteer/NOUN/nsubj/1 lend/VERB/ROOT/1 resident/NOUN/dative/1 tool/NOUN/dobj/1 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 tool/NOUN/dobj/1 from/ADP/prep/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "item-passive",
+      "source": "Tools are borrowed by residents from volunteers.",
+      "candidate": "Tools are lent to residents by volunteers.",
+      "no_selected_reversal": true,
+      "source_parse": "tool/NOUN/nsubjpass/2 be/AUX/auxpass/2 borrow/VERB/ROOT/2 by/ADP/agent/2 resident/NOUN/pobj/3 from/ADP/prep/2 volunteer/NOUN/pobj/5 ./PUNCT/punct/2",
+      "candidate_parse": "tool/NOUN/nsubjpass/2 be/AUX/auxpass/2 lend/VERB/ROOT/2 to/ADP/dative/2 resident/NOUN/pobj/3 by/ADP/agent/2 volunteer/NOUN/pobj/5 ./PUNCT/punct/2"
+    },
+    {
+      "id": "recipient-passive",
+      "source": "Residents are lent tools by volunteers.",
+      "candidate": "Volunteers lend tools to residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubjpass/2 be/AUX/auxpass/2 lend/VERB/ROOT/2 tool/NOUN/dobj/2 by/ADP/agent/2 volunteer/NOUN/pobj/4 ./PUNCT/punct/2",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 lend/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "recipient-passive-reversed",
+      "source": "Residents are lent tools by volunteers.",
+      "candidate": "Volunteers borrow tools from residents.",
+      "no_selected_reversal": false,
+      "source_parse": "resident/NOUN/nsubjpass/2 be/AUX/auxpass/2 lend/VERB/ROOT/2 tool/NOUN/dobj/2 by/ADP/agent/2 volunteer/NOUN/pobj/4 ./PUNCT/punct/2",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 borrow/VERB/ROOT/1 tool/NOUN/dobj/1 from/ADP/prep/1 resident/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "recipient-past",
+      "source": "Residents were lent tools by volunteers.",
+      "candidate": "Residents borrowed tools from volunteers.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubjpass/2 be/AUX/auxpass/2 lend/VERB/ROOT/2 tool/NOUN/dobj/2 by/ADP/agent/2 volunteer/NOUN/pobj/4 ./PUNCT/punct/2",
+      "candidate_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 tool/NOUN/dobj/1 from/ADP/prep/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "coordinated-borrowers",
+      "source": "Residents and visitors borrow tools from volunteers.",
+      "candidate": "Volunteers lend tools to residents and visitors.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/3 and/CCONJ/cc/0 visitor/NOUN/conj/0 borrow/VERB/ROOT/3 tool/NOUN/dobj/3 from/ADP/prep/3 volunteer/NOUN/pobj/5 ./PUNCT/punct/3",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 lend/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 and/CCONJ/cc/4 visitor/NOUN/conj/4 ./PUNCT/punct/1"
+    },
+    {
+      "id": "coordinated-reversal",
+      "source": "Residents and visitors borrow tools from volunteers.",
+      "candidate": "Residents and volunteers borrow tools from visitors.",
+      "no_selected_reversal": false,
+      "source_parse": "resident/NOUN/nsubj/3 and/CCONJ/cc/0 visitor/NOUN/conj/0 borrow/VERB/ROOT/3 tool/NOUN/dobj/3 from/ADP/prep/3 volunteer/NOUN/pobj/5 ./PUNCT/punct/3",
+      "candidate_parse": "resident/NOUN/nsubj/3 and/CCONJ/cc/0 volunteer/NOUN/conj/0 borrow/VERB/ROOT/3 tool/NOUN/dobj/3 from/ADP/prep/3 visitor/NOUN/pobj/5 ./PUNCT/punct/3"
+    },
+    {
+      "id": "coordinated-verbs",
+      "source": "Residents browse and borrow tools from volunteers.",
+      "candidate": "Volunteers lend tools to residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/1 browse/VERB/ROOT/1 and/CCONJ/cc/1 borrow/VERB/conj/1 tool/NOUN/dobj/3 from/ADP/prep/3 volunteer/NOUN/pobj/5 ./PUNCT/punct/1",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 lend/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "controlled-reversal",
+      "source": "Others browse and borrow tools.",
+      "candidate": "Others are happy to lend tools.",
+      "no_selected_reversal": false,
+      "source_parse": "other/NOUN/nsubj/1 browse/VERB/ROOT/1 and/CCONJ/cc/1 borrow/VERB/conj/1 tool/NOUN/dobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "other/NOUN/nsubj/1 be/AUX/ROOT/1 happy/ADJ/acomp/1 to/PART/aux/4 lend/VERB/xcomp/2 tool/NOUN/dobj/4 ./PUNCT/punct/1"
+    },
+    {
+      "id": "controlled-converse",
+      "source": "Residents are happy to borrow tools from volunteers.",
+      "candidate": "Volunteers are willing to lend tools to residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/1 be/AUX/ROOT/1 happy/ADJ/acomp/1 to/PART/aux/4 borrow/VERB/xcomp/2 tool/NOUN/dobj/4 from/ADP/prep/4 volunteer/NOUN/pobj/6 ./PUNCT/punct/1",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 be/AUX/ROOT/1 willing/ADJ/acomp/1 to/PART/aux/4 lend/VERB/xcomp/2 tool/NOUN/dobj/4 to/ADP/dative/4 resident/NOUN/pobj/6 ./PUNCT/punct/1"
+    },
+    {
+      "id": "negative-converse",
+      "source": "Residents do not borrow tools from volunteers.",
+      "candidate": "Volunteers do not lend tools to residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/3 do/AUX/aux/3 not/PART/neg/3 borrow/VERB/ROOT/3 tool/NOUN/dobj/3 from/ADP/prep/3 volunteer/NOUN/pobj/5 ./PUNCT/punct/3",
+      "candidate_parse": "volunteer/NOUN/nsubj/3 do/AUX/aux/3 not/PART/neg/3 lend/VERB/ROOT/3 tool/NOUN/dobj/3 to/ADP/dative/3 resident/NOUN/pobj/5 ./PUNCT/punct/3"
+    },
+    {
+      "id": "negative-reversal",
+      "source": "Residents do not borrow tools from volunteers.",
+      "candidate": "Residents do not lend tools to volunteers.",
+      "no_selected_reversal": false,
+      "source_parse": "resident/NOUN/nsubj/3 do/AUX/aux/3 not/PART/neg/3 borrow/VERB/ROOT/3 tool/NOUN/dobj/3 from/ADP/prep/3 volunteer/NOUN/pobj/5 ./PUNCT/punct/3",
+      "candidate_parse": "resident/NOUN/nsubj/3 do/AUX/aux/3 not/PART/neg/3 lend/VERB/ROOT/3 tool/NOUN/dobj/3 to/ADP/dative/3 volunteer/NOUN/pobj/5 ./PUNCT/punct/3"
+    },
+    {
+      "id": "past-negative",
+      "source": "Residents did not borrow tools from volunteers.",
+      "candidate": "Volunteers did not lend tools to residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/3 do/AUX/aux/3 not/PART/neg/3 borrow/VERB/ROOT/3 tool/NOUN/dobj/3 from/ADP/prep/3 volunteer/NOUN/pobj/5 ./PUNCT/punct/3",
+      "candidate_parse": "volunteer/NOUN/nsubj/3 do/AUX/aux/3 not/PART/neg/3 lend/VERB/ROOT/3 tool/NOUN/dobj/3 to/ADP/prep/3 resident/NOUN/pobj/5 ./PUNCT/punct/3"
+    },
+    {
+      "id": "relative-clause",
+      "source": "Residents that volunteers know borrow tools from volunteers.",
+      "candidate": "Volunteers that residents know lend tools to residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/4 that/PRON/dobj/3 volunteer/NOUN/nsubj/3 know/VERB/relcl/0 borrow/VERB/ROOT/4 tool/NOUN/dobj/4 from/ADP/prep/4 volunteer/NOUN/pobj/6 ./PUNCT/punct/4",
+      "candidate_parse": "volunteer/NOUN/nsubj/4 that/PRON/dobj/3 resident/NOUN/nsubj/3 know/VERB/relcl/0 lend/VERB/ROOT/4 tool/NOUN/dobj/4 to/ADP/prep/4 resident/NOUN/pobj/6 ./PUNCT/punct/4"
+    },
+    {
+      "id": "compound-actors",
+      "source": "Garden society volunteers lend tools to village residents.",
+      "candidate": "Village residents borrow tools from garden society volunteers.",
+      "no_selected_reversal": true,
+      "source_parse": "garden/NOUN/compound/1 society/NOUN/compound/2 volunteer/NOUN/nsubj/3 lend/VERB/ROOT/3 tool/NOUN/dobj/3 to/ADP/dative/3 village/NOUN/compound/7 resident/NOUN/pobj/5 ./PUNCT/punct/3",
+      "candidate_parse": "village/NOUN/compound/1 resident/NOUN/nsubj/2 borrow/VERB/ROOT/2 tool/NOUN/dobj/2 from/ADP/prep/2 garden/NOUN/compound/6 society/NOUN/compound/7 volunteer/NOUN/pobj/4 ./PUNCT/punct/2"
+    },
+    {
+      "id": "named-converse",
+      "source": "Alice borrows books from Bob.",
+      "candidate": "Bob lends books to Alice.",
+      "no_selected_reversal": true,
+      "source_parse": "Alice/PROPN/nsubj/1 borrow/VERB/ROOT/1 book/NOUN/dobj/1 from/ADP/prep/1 Bob/PROPN/pobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "Bob/PROPN/nsubj/1 lend/VERB/ROOT/1 book/NOUN/dobj/1 to/ADP/dative/1 Alice/PROPN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "named-reversal",
+      "source": "Alice borrows books from Bob.",
+      "candidate": "Alice lends books to Bob.",
+      "no_selected_reversal": false,
+      "source_parse": "Alice/PROPN/nsubj/1 borrow/VERB/ROOT/1 book/NOUN/dobj/1 from/ADP/prep/1 Bob/PROPN/pobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "Alice/PROPN/nsubj/1 lend/VERB/ROOT/1 book/NOUN/dobj/1 to/ADP/dative/1 Bob/PROPN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "coordinated-lenders",
+      "source": "Alice borrows tools from Bob and Carol.",
+      "candidate": "Bob and Carol lend tools to Alice.",
+      "no_selected_reversal": true,
+      "source_parse": "Alice/PROPN/nsubj/1 borrow/VERB/ROOT/1 tool/NOUN/dobj/1 from/ADP/prep/1 Bob/PROPN/pobj/3 and/CCONJ/cc/4 Carol/PROPN/conj/4 ./PUNCT/punct/1",
+      "candidate_parse": "Bob/PROPN/nsubj/3 and/CCONJ/cc/0 Carol/PROPN/conj/0 lend/VERB/ROOT/3 tool/NOUN/dobj/3 to/ADP/dative/3 Alice/PROPN/pobj/5 ./PUNCT/punct/3"
+    },
+    {
+      "id": "loan-verb",
+      "source": "Volunteers loan tools to residents.",
+      "candidate": "Residents borrow tools from volunteers.",
+      "no_selected_reversal": true,
+      "source_parse": "volunteer/NOUN/nsubj/1 loan/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 tool/NOUN/dobj/1 from/ADP/prep/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "both-directions",
+      "source": "Residents borrow forks from volunteers and lend shovels to visitors.",
+      "candidate": "Residents lend forks to volunteers and borrow shovels from visitors.",
+      "no_selected_reversal": false,
+      "source_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 fork/NOUN/dobj/1 from/ADP/prep/1 volunteer/NOUN/pobj/3 and/CCONJ/cc/1 lend/VERB/conj/1 shovel/NOUN/dobj/6 to/ADP/dative/6 visitor/NOUN/pobj/8 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 lend/VERB/ROOT/1 fork/NOUN/dobj/1 to/ADP/dative/1 volunteer/NOUN/pobj/3 and/CCONJ/cc/1 borrow/VERB/conj/1 shovel/NOUN/dobj/6 from/ADP/prep/6 visitor/NOUN/pobj/8 ./PUNCT/punct/1"
+    },
+    {
+      "id": "uncovered-return",
+      "source": "Residents return tools.",
+      "candidate": "Volunteers return tools.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/1 return/VERB/ROOT/1 tool/NOUN/dobj/1 ./PUNCT/punct/1",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 return/VERB/ROOT/1 tool/NOUN/dobj/1 ./PUNCT/punct/1"
+    },
+    {
+      "id": "item-scoped-reversal",
+      "source": "Residents borrow forks and lend shovels.",
+      "candidate": "Residents borrow shovels and lend forks.",
+      "no_selected_reversal": false,
+      "source_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 fork/NOUN/dobj/1 and/CCONJ/cc/1 lend/VERB/conj/1 shovel/NOUN/dobj/4 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 shovel/NOUN/dobj/1 and/CCONJ/cc/1 lend/VERB/conj/1 fork/NOUN/dobj/4 ./PUNCT/punct/1"
+    },
+    {
+      "id": "loan-reversal",
+      "source": "Volunteers loaned tools to residents.",
+      "candidate": "Residents loaned tools to volunteers.",
+      "no_selected_reversal": false,
+      "source_parse": "volunteer/NOUN/nsubj/1 loan/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 loan/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "passive-agent-reversal",
+      "source": "Tools are borrowed by residents.",
+      "candidate": "Tools are lent by residents.",
+      "no_selected_reversal": false,
+      "source_parse": "tool/NOUN/nsubjpass/2 be/AUX/auxpass/2 borrow/VERB/ROOT/2 by/ADP/agent/2 resident/NOUN/pobj/3 ./PUNCT/punct/2",
+      "candidate_parse": "tool/NOUN/nsubjpass/2 be/AUX/auxpass/2 lend/VERB/ROOT/2 by/ADP/agent/2 resident/NOUN/pobj/3 ./PUNCT/punct/2"
+    },
+    {
+      "id": "dative-reversal",
+      "source": "Volunteers lend residents tools.",
+      "candidate": "Residents lend volunteers tools.",
+      "no_selected_reversal": false,
+      "source_parse": "volunteer/NOUN/nsubj/1 lend/VERB/ROOT/1 resident/NOUN/dative/1 tool/NOUN/dobj/1 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 lend/VERB/ROOT/1 volunteer/NOUN/dative/1 tool/NOUN/dobj/1 ./PUNCT/punct/1"
+    },
+    {
+      "id": "object-preposition-reversal",
+      "source": "Alice borrows a garden fork from Bob.",
+      "candidate": "Carol borrows a garden fork from Alice.",
+      "no_selected_reversal": false,
+      "source_parse": "Alice/PROPN/nsubj/1 borrow/VERB/ROOT/1 a/DET/det/4 garden/NOUN/compound/4 fork/NOUN/dobj/1 from/ADP/prep/1 Bob/PROPN/pobj/5 ./PUNCT/punct/1",
+      "candidate_parse": "Carol/PROPN/nsubj/1 borrow/VERB/ROOT/1 a/DET/det/4 garden/NOUN/compound/4 fork/NOUN/dobj/1 from/ADP/prep/1 Alice/PROPN/pobj/5 ./PUNCT/punct/1"
+    },
+    {
+      "id": "unmatched-compound-actors",
+      "source": "Village residents borrow tools.",
+      "candidate": "City residents lend tools.",
+      "no_selected_reversal": true,
+      "source_parse": "village/NOUN/compound/1 resident/NOUN/nsubj/2 borrow/VERB/ROOT/2 tool/NOUN/dobj/2 ./PUNCT/punct/2",
+      "candidate_parse": "city/NOUN/compound/1 resident/NOUN/nsubj/2 lend/VERB/ROOT/2 tool/NOUN/dobj/2 ./PUNCT/punct/2"
+    },
+    {
+      "id": "multi-event-converse",
+      "source": "Residents borrow forks from volunteers and lend shovels to visitors.",
+      "candidate": "Volunteers lend forks to residents, and visitors borrow shovels from residents.",
+      "no_selected_reversal": true,
+      "source_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 fork/NOUN/dobj/1 from/ADP/prep/1 volunteer/NOUN/pobj/3 and/CCONJ/cc/1 lend/VERB/conj/1 shovel/NOUN/dobj/6 to/ADP/dative/6 visitor/NOUN/pobj/8 ./PUNCT/punct/1",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 lend/VERB/ROOT/1 fork/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 ,/PUNCT/punct/1 and/CCONJ/cc/1 visitor/NOUN/nsubj/8 borrow/VERB/conj/1 shovel/NOUN/dobj/8 from/ADP/prep/8 resident/NOUN/pobj/10 ./PUNCT/punct/8"
+    },
+    {
+      "id": "present-loan-reversal",
+      "source": "Volunteers loan tools to residents.",
+      "candidate": "Residents loan tools to volunteers.",
+      "no_selected_reversal": false,
+      "source_parse": "volunteer/NOUN/nsubj/1 loan/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 resident/NOUN/pobj/3 ./PUNCT/punct/1",
+      "candidate_parse": "resident/NOUN/nsubj/1 loan/VERB/ROOT/1 tool/NOUN/dobj/1 to/ADP/dative/1 volunteer/NOUN/pobj/3 ./PUNCT/punct/1"
+    },
+    {
+      "id": "noun-attached-source-preposition",
+      "source": "Residents borrow forks from volunteers and lend shovels to visitors.",
+      "candidate": "Volunteers borrow forks from staff and lend shovels to visitors.",
+      "no_selected_reversal": false,
+      "model_source": "https://github.com/explosion/spacy-models/releases/tag/en_core_web_sm-3.8.0",
+      "model_wheel_sha256": "1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85",
+      "source_parse": "resident/NOUN/nsubj/1 borrow/VERB/ROOT/1 fork/NOUN/dobj/1 from/ADP/prep/2 volunteer/NOUN/pobj/3 and/CCONJ/cc/1 lend/VERB/conj/1 shovel/NOUN/dobj/6 to/ADP/prep/6 visitor/NOUN/pobj/8 ./PUNCT/punct/1",
+      "candidate_parse": "volunteer/NOUN/nsubj/1 borrow/VERB/ROOT/1 fork/NOUN/dobj/1 from/ADP/prep/1 staff/NOUN/pobj/3 and/CCONJ/cc/1 lend/VERB/conj/1 shovel/NOUN/dobj/6 to/ADP/prep/6 visitor/NOUN/pobj/8 ./PUNCT/punct/1"
+    }
+  ]
+}

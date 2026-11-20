@@ -5,6 +5,7 @@
     "anthropic": "https://support.claude.com/en/articles/16266773-how-claude-marks-ai-generated-content",
     "openai": "https://help.openai.com/en/articles/8912793-provenance-signals-in-openai-generated-content",
     "google": "https://deepmind.google/models/synthid/",
+    "google_synthid_threefry": "https://github.com/google-deepmind/synthid-text/tree/72810caf309d51f5985dc871a4bce42c3d0cb54d",
     "markllm": "https://github.com/THU-BPM/MarkLLM/tree/0a4fe8c642b31b8a8c4993615b1c70a0c300d918",
     "textseal": "https://github.com/facebookresearch/textseal",
     "alimark": "https://github.com/imethanlee/AliMark",
@@ -12,7 +13,11 @@
     "automark": "https://github.com/eth-sri/automark",
     "hf_transformers": "https://github.com/huggingface/transformers",
     "microsoft": "https://learn.microsoft.com/en-us/windows/ai/apis/text-watermarking",
-    "dipper": "https://github.com/martiansideofthemoon/ai-detection-paraphrases/tree/95f3e2cb5e239929a1fc4bed26bf93f2c368da31"
+    "dipper": "https://github.com/martiansideofthemoon/ai-detection-paraphrases/tree/95f3e2cb5e239929a1fc4bed26bf93f2c368da31",
+    "samark": "https://github.com/Z1zs/SAMark",
+    "swan": "https://github.com/amazon-science/SWAN",
+    "openstamp": "https://github.com/mb-14/openstamp",
+    "semfield": "https://github.com/declare-lab/SemField"
   },
   "provider_cases": [
     {
@@ -21,8 +26,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -30,8 +36,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -39,8 +46,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -48,8 +56,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -57,8 +66,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -66,8 +76,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed. Amazon Bedrock rollout may take additional days.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -75,8 +86,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -84,8 +96,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -93,8 +106,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -102,8 +116,39 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed. Amazon Bedrock rollout may take additional days.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Opus 4.6",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "api_model_id": null,
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed. Non-default temperature, top_p or top_k may make text marking unreliable. Amazon Bedrock rollout may take additional days.",
+      "source_checked_on": "2026-11-17"
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Opus 4.5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "api_model_id": null,
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed. Non-default temperature, top_p or top_k may make text marking unreliable. Amazon Bedrock rollout may take additional days.",
+      "source_checked_on": "2026-11-17"
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Opus 3",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "api_model_id": null,
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking is not confirmed by the table. Non-default temperature, top_p or top_k may make text marking unreliable.",
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -111,8 +156,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -120,8 +166,9 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -129,8 +176,19 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Default sampling parameters required for reliable Sonnet 4.6 marking.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed. Non-default temperature, top_p or top_k may make text marking unreliable. Amazon Bedrock rollout may take additional days.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Sonnet 4.5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "api_model_id": null,
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed. Non-default temperature, top_p or top_k may make text marking unreliable. Amazon Bedrock rollout may take additional days.",
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "anthropic",
@@ -138,8 +196,19 @@
       "scheme": "SynthID-family",
       "test_status": "blocked_detector_access",
       "source": "anthropic",
-      "conditions": "Supported first-party and cloud output; private detector required.",
-      "api_model_id": null
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed.",
+      "api_model_id": null,
+      "source_checked_on": "2026-11-17"
+    },
+    {
+      "provider": "anthropic",
+      "model": "Claude Haiku 4.5",
+      "scheme": "SynthID-family",
+      "test_status": "blocked_detector_access",
+      "source": "anthropic",
+      "api_model_id": null,
+      "conditions": "First-party text marking listed; private detector required. Cloud partner text marking listed. Non-default temperature, top_p or top_k may make text marking unreliable. Amazon Bedrock rollout may take additional days.",
+      "source_checked_on": "2026-11-17"
     },
     {
       "provider": "openai",
@@ -173,6 +242,14 @@
     }
   ],
   "reference_cases": [
+    {
+      "scheme": "SynthID-Text Threefry single-key",
+      "adapter": "native_threefry_frequentist",
+      "source": "google_synthid_threefry",
+      "module": "remove_ai_watermarks.text.score_synthid_threefry_text",
+      "status": "detector_conformance_only",
+      "scope": "Random123 known answers and open-author single-key bit counts, repeated-context and EOS masks, and binomial-tail controls. Separate from historical table scoring, dual-key speculative decoding, or production-provider verification."
+    },
     {
       "scheme": "KGW",
       "adapter": "markllm_logits_cpu",
@@ -241,7 +318,23 @@
       "adapter": "markllm_logits_cpu",
       "source": "markllm",
       "module": "watermark.exp.EXP",
-      "status": "see_retained_reference_run_reports"
+      "status": "see_retained_reference_run_reports",
+      "additional_reference_replays": [
+        {
+          "kind": "original_author_qwen05_exp_source_control_cohort",
+          "source_model": "Qwen/Qwen2.5-0.5B-Instruct",
+          "source_model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+          "author_revision": "0a4fe8c642b31b8a8c4993615b1c70a0c300d918",
+          "marked_sources": 10,
+          "clean_controls": 10,
+          "qualified_pairs": 10,
+          "threshold": 0.0001,
+          "summary_sha256": "3ac838daed9875e615aac164bf8171753ff986e9b5d8ce4f63851e916d1d7ee4",
+          "source_cases_sha256": "aee6768b3f86640693c179345891f2738828f3b343b7d4bbdf7b625764bfd157",
+          "protocol_sha256": "e4b6e29efe2871631a41e90a5fdb22f7fd8b0dd7f824623ff6c22b8450a9d52a",
+          "scope": "Fresh fixed CPU source/control pairs with original author EXP/BaseWatermark methods. Explicit prompt, raw continuation slicing and sampling adapters. Independent integer-shape gamma survival replay, not population FPR, private-provider coverage or exact Ada training implementation/key parity. No rewrite/quality/removal result."
+        }
+      ]
     },
     {
       "scheme": "EXPGumbel",
@@ -272,6 +365,305 @@
       "status": "see_retained_reference_run_reports",
       "additional_adapters": [
         "hf_synthid"
+      ],
+      "additional_reference_replays": [
+        {
+          "kind": "published_curated_source_control_replay",
+          "observed_on": "2026-11-17",
+          "source_url": "https://github.com/krllagent/text-watermark-roundtrip/blob/161cf58b2545f2277b8c615e28098423575bb3c4/results/quality-synthid-corpus-curated-v1.json",
+          "source_corpus_sha256": "17f3d71eef3fca9aa61cc19f5a8000d433450b81617bf5a79078572c8d294231",
+          "tokenizer_model": "Qwen/Qwen2.5-14B-Instruct",
+          "tokenizer_revision": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+          "tokenizer_files_proof_sha256": "d7c3817fdede3e8d10614a866cc2a32ff6ecac75662d51221eba19df2fe6cafd",
+          "library_text_module_sha256": "317c64c0dd5bd1136f5295926f9a8a32873e8a8d158bd7ef1c645c47422e067d",
+          "reference_replay_report_sha256": "ef4689f9c7ed439a3b1d29c834192af9d493edff7c46f13061011885852af4ef",
+          "marked_texts": 10,
+          "clean_controls": 10,
+          "exact_cpu_sampling_table_verified": true,
+          "full_context_masks_and_g_values_match": true,
+          "native_default_complete_outputs": 0,
+          "inline_fact_format_complete_outputs": 0,
+          "scope": "Published curated frozen-input qualification, not fresh generator or provider execution, independent population FPR, uncurated source quality or a successful-removal claim. Native complete-output refusals have no after score. This adds a reference corpus, not a new commercial model coverage count.",
+          "rewriter_followups": [
+            {
+              "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+              "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+              "model_file_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+              "initial_library_text_module_sha256": "317c64c0dd5bd1136f5295926f9a8a32873e8a8d158bd7ef1c645c47422e067d",
+              "initial_native_and_inline_trial_count": 20,
+              "initial_complete_outputs": 0,
+              "initial_protocol_sha256": "44a3e37585454d4fa04092d10c4ffb8282a2e852c98cce0bb6e37872845af7b8",
+              "corrected_library_text_module_sha256": "90aa846dd1df35d35fbc4f6f5baa6323d6885a0c950384a8be3c118c80e9526e",
+              "corrective_protocol_sha256": "d2da214003eb6b4477d66a19ccadda876a95f86980f385424df91a2f2330dc47",
+              "corrective_source_count": 1,
+              "corrective_complete_outputs": 2,
+              "review_sha256": "ed630e55836c9459e51af415e3b4350e0bb588373a18b123e53ab5012272a767",
+              "after_score_report_sha256": "ec8df0b905bbcd6b7ec4dfb274d88d509059535c55f4a2180282f7ab442e00c1",
+              "outcomes": [
+                {
+                  "variant": "native",
+                  "after_text_sha256": "93f58e83294de9040809185657af0f2eea6d52991ba56916d891edb6e6abd009",
+                  "mean_g": 0.5109439124487004,
+                  "detected_at_published_threshold": true,
+                  "quality_equivalent": null,
+                  "faithful_removal_credited": false
+                },
+                {
+                  "variant": "inline",
+                  "after_text_sha256": "7ca86be5345174a10ba46317d57c5f2ca5493f69d467f44a81e609dc741e59bb",
+                  "mean_g": 0.5055937643282897,
+                  "detected_at_published_threshold": false,
+                  "quality_equivalent": false,
+                  "faithful_removal_credited": false
+                }
+              ],
+              "production_default_changed": false,
+              "scope": "Full frozen corpus under initial core followed by one known false-refusal source under the corrected paired capability guard. The corrective rerun is not a new independent cohort or an all-source retest. Source/control traces reproduce; no private-provider coverage or faithful-removal success."
+            },
+            {
+              "strategy": "source_bound_nominal_predicate_and_identified_field_ablation",
+              "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+              "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+              "library_text_module_sha256": "90aa846dd1df35d35fbc4f6f5baa6323d6885a0c950384a8be3c118c80e9526e",
+              "source_count": 10,
+              "phases": [
+                {
+                  "phase": "visible_bundles",
+                  "protocol_sha256": "bf01622a9761d251db59293e8e1cbbd1d6f2044ba2fb0db0016816ad9f3193b7",
+                  "results_sha256": "73e6e3d2730aa1e782c6575d166268d3bf7e894b69d794782f415600a3fa8f26",
+                  "variants": [
+                    {
+                      "variant": "inline_nominal",
+                      "documents": 10,
+                      "complete_outputs": 1,
+                      "generation_calls": 48,
+                      "accepted_intermediate_candidates": 18,
+                      "field_restorations": 0
+                    },
+                    {
+                      "variant": "inline_predicate",
+                      "documents": 10,
+                      "complete_outputs": 0,
+                      "generation_calls": 42,
+                      "accepted_intermediate_candidates": 10,
+                      "field_restorations": 0
+                    }
+                  ]
+                },
+                {
+                  "phase": "identified_fields",
+                  "protocol_sha256": "915638d4d14061cc8e33075c6c9cc4ea9211cfe0222b736626890edee024ef8e",
+                  "results_sha256": "02344b6ecce00e8e41c1b7c84cd5fea17183d65cc6c0bd324622d6d68f524425",
+                  "variants": [
+                    {
+                      "variant": "tagged_nominal",
+                      "documents": 10,
+                      "complete_outputs": 0,
+                      "generation_calls": 36,
+                      "accepted_intermediate_candidates": 5,
+                      "field_restorations": 0
+                    },
+                    {
+                      "variant": "tagged_predicate",
+                      "documents": 10,
+                      "complete_outputs": 0,
+                      "generation_calls": 31,
+                      "accepted_intermediate_candidates": 1,
+                      "field_restorations": 0
+                    }
+                  ]
+                },
+                {
+                  "phase": "compact_fields",
+                  "protocol_sha256": "96c977df0e006694d05b56eb0a73023377d70f157e8a80642e912d716b002889",
+                  "results_sha256": "154a4450393850d0fa142bbe627e5a0435a7992e0220a4078423bc85c914022a",
+                  "variants": [
+                    {
+                      "variant": "compact_nominal",
+                      "documents": 10,
+                      "complete_outputs": 0,
+                      "generation_calls": 32,
+                      "accepted_intermediate_candidates": 2,
+                      "field_restorations": 0
+                    },
+                    {
+                      "variant": "compact_predicate",
+                      "documents": 10,
+                      "complete_outputs": 0,
+                      "generation_calls": 35,
+                      "accepted_intermediate_candidates": 3,
+                      "field_restorations": 0
+                    }
+                  ]
+                }
+              ],
+              "after_score_report_sha256": "863654da49fe491e2091bc68c4be7050af3c2812c682a4521a6015f352dab50c",
+              "quality_review_sha256": "cc177fd1b09c86bcd3c387e87680c3578988247d9149d1932c158c67840d4c93",
+              "complete_output_count": 1,
+              "complete_output_quality_equivalent": false,
+              "complete_output_detected_at_published_threshold": true,
+              "faithful_removal_credited": false,
+              "production_default_changed": false,
+              "scope": "Three adaptive phases on all ten reused curated English development sources, before new keyed after feedback. Sixty evaluations are not sixty independent sources/models. No fresh author generation, parser accuracy, population FPR, private-provider coverage, cost parity or market rank."
+            },
+            {
+              "strategy": "native_dense_mistral_family_and_currency_segmentation_correction",
+              "rewriter_repo": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+              "rewriter_revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+              "model_file_proof_sha256": "864768dc68dc453540d0a888b119c9849d89bea508094142f233c1fd7f4ca8f5",
+              "initial_library_text_module_sha256": "90aa846dd1df35d35fbc4f6f5baa6323d6885a0c950384a8be3c118c80e9526e",
+              "initial_protocol_sha256": "5adb4e96149ea22ec0fd67cc67bae47fcb5b7e80afcd9f52148c02de7c36f13c",
+              "source_count": 10,
+              "initial_complete_outputs": 1,
+              "initial_review_sha256": "a47c84f4f1b6692ff68a29a33a718bf88edb99fb4e26d9f3054624cfb6595954",
+              "initial_after_score_report_sha256": "41130473bb37122cd74092c6206543702bd408f3dd71b97139a82348bec09586",
+              "initial_outcome": {
+                "mean_g": 0.5137196631996037,
+                "detected_at_published_threshold": true,
+                "quality_equivalent": false,
+                "faithful_removal_credited": false
+              },
+              "corrected_library_text_module_sha256": "b9be3ec96567607bb597f08868757ba786bcf4fb5b13d9165ade4d34db306bcc",
+              "corrective_protocol_sha256": "6d64164dc11f7ebd69e372a9edff0affe95dea539ee2c1c4cc4c20e112ba9baf",
+              "corrective_known_source_count": 1,
+              "corrective_complete_outputs": 0,
+              "corrective_prefix_comparison_sha256": "6b0a8c8f1dab78e30b2f5c0a03e239608a6e6cc5ecd59fa8006b4091d229511e",
+              "corrective_source_control_replay_sha256": "16590eac8557d56586f47708887b3bc2ec075bf740406681750fe42f8a4c933f",
+              "production_default_changed": false,
+              "scope": "Fixed examined curated development corpus with unchanged native library prompt/sampler/guards, followed by one known-source dollar-boundary fix rerun. No new held-out or commercial-provider coverage, successful faithful removal, model numerical parity or market-ranking claim."
+            },
+            {
+              "strategy": "selected_duration_frequency_normalization_and_numeric_style_ablation",
+              "rewriter_repo": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+              "rewriter_revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+              "library_before_sha256": "b9be3ec96567607bb597f08868757ba786bcf4fb5b13d9165ade4d34db306bcc",
+              "library_after_sha256": "d1d108bc33e6e445ced73ec6d40c12164d49d2107410e04f5e65d11b65e418ec",
+              "known_source_native_protocol_sha256": "51fad7ba0fc7d8bb4a540c499406ddf51a0554dee3bee5a24222325c5704da71",
+              "known_source_native_count": 3,
+              "known_source_native_complete_outputs": 0,
+              "known_candidate_replay_sha256": "de6de4e2634a14ac4ef3a2fc28ca1f6b9fb015ace098b55a230b423532d08874",
+              "mutation_report_sha256": "952b79b7aefa95b47695199ccd525e88a168ff56c30ca011ec3cb0f6d63104aa",
+              "fidelity_comparison_sha256": "316a9c42e5d8bb437c7724e6f7212fa731c2bf5bfb03878381450cbeb8445980",
+              "numeric_plan_sha256": "5ff38ef0e11055beb8bb02ad803bc5c587e3a0fe2594d27781e694bff086df92",
+              "numeric_protocol_sha256": "b917d54ff81e2c1e138b86c9816ffd8ef697a0c12cd196410df2f8b60735293e",
+              "numeric_source_count": 10,
+              "numeric_complete_outputs": 9,
+              "numeric_identity_refusals": 1,
+              "numeric_review_sha256": "981c4c5e4559682c7bdf72df47879fc196a7a1fcff18c29bac96d360c7d5479b",
+              "numeric_explicit_value_review_sha256": "e343290780f3f608dd5215ca7773ab522602f8c51395cf8167eb0ad98da6f40d",
+              "numeric_after_score_report_sha256": "756706dd2bd53d69fd9a88b5de566ebf34cb18fe087b21c2cbd4b24bb3096a58",
+              "numeric_detected_outputs": 9,
+              "faithful_removal_credited": false,
+              "production_default_changed": false,
+              "scope": "Known curated development inputs. Native reruns target known parser gaps. Numeric outputs use explicit partial mode and preserve unchanged clusters. No new provider coverage, holdout, market ranking or production adoption."
+            },
+            {
+              "strategy": "selected_initial_appositive_name_masking_and_identity_guard",
+              "rewriter_repo": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+              "rewriter_revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+              "before_library_text_module_sha256": "d1d108bc33e6e445ced73ec6d40c12164d49d2107410e04f5e65d11b65e418ec",
+              "generation_library_text_module_sha256": "5e45dc86b4df6b0a8e4aecf47c723e0a2a1a76dc7364afe4c03a1d5977d4ccfb",
+              "final_library_text_module_sha256": "7f280241fcc5402fc066a472f1b770eb8134b015e7a47f27873b636d9f6983f4",
+              "native_protocol_sha256": "5059affcd637d8616b72ee9ef21ba1334ebfa9758269f44fc4b591c7e9538033",
+              "source_count": 1,
+              "complete_outputs": 0,
+              "whole_name_marker_survives_all_three_failed_cluster_attempts": true,
+              "first_generation_matches_preceding_trial": true,
+              "name_guard_proof_sha256": "89cdca36bf512723ef6eef359ee6f24a06efab6f783d7a43a2afcb1584cbe316",
+              "mutation_report_sha256": "92c395d4adc38ce722b4751c0062b8a1a7162ab019d0dbd15d634f20ff660c58",
+              "final_trace_replay_sha256": "28b32f5b63809419f36c1dde7a07480d83aa6238fe6aa42321b29bca969d2026",
+              "final_source_control_replay_sha256": "c7696fd714d3e09740d9f1922d7e842e0b30056cc2a333751d2b4f54f1f914ce",
+              "fidelity_comparison_sha256": "d0323029f2dc28a709c6d2acd97402a65c99f77897d1d3ef75749b4f630ea353",
+              "faithful_removal_credited": false,
+              "production_default_changed": false,
+              "scope": "Known-source targeted development rerun and a separately checked CR-only correction. No full output, after score, private provider, holdout or successful removal."
+            },
+            {
+              "strategy": "native_dense_qwen27_curated_cohort",
+              "rewriter_repo": "mlx-community/Qwen3.8-27B-4bit",
+              "rewriter_revision": "b935172e4bb5dcd0543774a34748fb92422e3027",
+              "library_text_module_sha256": "7f280241fcc5402fc066a472f1b770eb8134b015e7a47f27873b636d9f6983f4",
+              "model_file_proof_sha256": "c8257775966d24a825444480e0ab38917d583c32a054bf207168733a32976aa6",
+              "previous_model_identity_proof_sha256": "91eca8c0c17ee3a979c8a5174676270695c376c97375d8910d7293e2cf43e635",
+              "protocol_sha256": "7ba846426b62f61503ec3e655a6f38358641bf478df2b896add4574ce59ba36e",
+              "source_count": 10,
+              "complete_outputs": 1,
+              "review_sha256": "1cbe62e2764d79efedf366e1a9901c8bda7cb512a5840c3a225ccb92b2868078",
+              "after_score_report_sha256": "b80dc7a5149221efea75ca6911d8cc5e3b36aac602a65adb97ff8f79ef8a1793",
+              "outcome": {
+                "trial": "native:doc-07",
+                "mean_g": 0.5075715604801477,
+                "detected_at_published_threshold": false,
+                "quality_equivalent": false,
+                "faithful_removal_credited": false
+              },
+              "production_default_changed": false,
+              "scope": "All ten examined curated sources under unchanged native library settings. The complete output weakens each-type coverage and initial-success wording. This extends an already examined model, not a new provider, holdout, original-model parity or market-leadership claim."
+            },
+            {
+              "strategy": "dense_qwen27_thinking_low_author_sampling_completed_phase",
+              "rewriter_repo": "mlx-community/Qwen3.8-27B-4bit",
+              "rewriter_revision": "b935172e4bb5dcd0543774a34748fb92422e3027",
+              "library_text_module_sha256": "7f280241fcc5402fc066a472f1b770eb8134b015e7a47f27873b636d9f6983f4",
+              "protocol_sha256": "3142be42bb1206297be12c67f852fc09d73cf59dc7e2a7ad5759f11f7620bf74",
+              "phase_summary_sha256": "dedfebcb487d14937462f9ae1bf0ca0e14206be2bda9609cb5368d056ba74084",
+              "review_sha256": "43d6bb78419067fe717b67801b358e66d2bc1bcba2f1e85245664f451b0ed479",
+              "after_score_report_sha256": "b9be884c5deca4619ee4f8ae1b886d30beffc8291c50b472be7b0892c522d78e",
+              "source_count": 10,
+              "complete_outputs": 1,
+              "refused_after_native_acceptance_checks": 9,
+              "generation_count": 75,
+              "finish_reasons": {
+                "stop": 75
+              },
+              "final_projection_present": 75,
+              "guard_replay_all_match": true,
+              "complete_outcomes": [
+                {
+                  "trial": "thinking_low_author_sampling:doc-10",
+                  "mean_g": 0.510087116001834,
+                  "detected_at_published_threshold": true,
+                  "quality_equivalent": false,
+                  "faithful_removal_credited": false
+                }
+              ],
+              "faithful_removal_count": 0,
+              "production_default_changed": false,
+              "scope": "Completed first mode only. Readable-source second mode is now complete and recorded separately. Native library factory/guards with explicitly adapted thinking template, author sampler and final-channel projection, not an unchanged default backend or cost-equivalent comparison."
+            },
+            {
+              "strategy": "dense_qwen27_thinking_low_readable_source_completed_phase",
+              "rewriter_repo": "mlx-community/Qwen3.8-27B-4bit",
+              "rewriter_revision": "b935172e4bb5dcd0543774a34748fb92422e3027",
+              "library_text_module_sha256": "7f280241fcc5402fc066a472f1b770eb8134b015e7a47f27873b636d9f6983f4",
+              "protocol_sha256": "3142be42bb1206297be12c67f852fc09d73cf59dc7e2a7ad5759f11f7620bf74",
+              "phase_summary_sha256": "488910458d825b18a9dbe25743d49ff669dd9781ea31d48f1bbf790212fa7b20",
+              "cohort_summary_sha256": "f714f68ba6c76a897687f37353b6e172dd95a26d0bb25346f7fbd6f0ab40d1bc",
+              "review_sha256": "2bc6c4d5e61687a141d122b5f69681a0adb4fc64597e7ed1143187373eaddc34",
+              "after_score_report_sha256": "280497745ca47af1acb5257f837462651aca47a8f2124fd039ecec0f93d3a1c9",
+              "source_count": 10,
+              "complete_outputs": 1,
+              "refused_after_native_acceptance_checks": 9,
+              "generation_count": 57,
+              "finish_reasons": {
+                "stop": 57
+              },
+              "guard_replay_all_match": true,
+              "complete_outcomes": [
+                {
+                  "trial": "thinking_low_visible_source:doc-10",
+                  "mean_g": 0.5017711171662126,
+                  "detected_at_published_threshold": false,
+                  "quality_equivalent": false,
+                  "faithful_removal_credited": false
+                }
+              ],
+              "faithful_removal_count": 0,
+              "production_default_changed": false,
+              "scope": "Completed readable-source thinking mode, using an explicit empty factual-mask adapter while retaining original acceptance checks and technical span protection. Same fixed corpus and author sampler/projection as the first mode, not a native default or isolated mask-only cost comparison."
+            }
+          ]
+        }
       ]
     },
     {
@@ -361,7 +753,7 @@
       "adapter": "automark_submission_reference",
       "source": "automark",
       "status": "partial_submission_reference_coverage",
-      "reason": "Exact candidates 001 through 025 have author generator/detector source-control evidence through declared smaller local HF bridges. The inventory records latest strict-library refusals and earlier below-threshold outputs with meaning changes, including separate frequency and indefinite-duration follow-ups. Other source states have not been rerun on each guard revision. Shared controls and duplicate source texts are not independent trials. Remaining source states are unexecuted. This is neither verified faithful removal, native vLLM/paper-model parity, calibrated FPR nor complete AutoMark/provider coverage.",
+      "reason": "Every enumerated candidate source state and declared baseline now has unchanged-author generator/detector execution through pinned smaller local bridges, including required entropy/logprob/top-row signals. The TextSeal baseline fails exact generation/tokenizer round-trip qualification before rewriting; execution is not qualification. The inventory retains per-state strict-library refusals, retained marks, earlier below-threshold outputs with meaning changes, and separately hashed guard follow-ups. Source states have not all been rerun on every guard revision. Shared controls and duplicate source texts are not independent trials. This remains incomplete qualified removal coverage: neither verified faithful removal, native vLLM/paper-model parity, calibrated FPR nor commercial provider-model coverage is established.",
       "inventory": "data/evaluations/text-watermark/automark-variants.json"
     },
     {
@@ -392,7 +784,7 @@
       "adapter": "automark_selected_reference",
       "source": "automark",
       "status": "author_reference_positive_control_and_library_refusal",
-      "reason": "Pinned selected-package author generator and detector ran on local synthetic text with research-owned keys. HF MPS float32 model logits feed unchanged CPU author processors; stochastic sampling is retained after passthrough steps. Text vocabulary compatibility was checked against the author-pinned tokenizer, with unsupported IDs forbidden. Independent detection confirmed the marked source and negative control; default strict library rewriting refused full output. This is not native vLLM/paper-model parity, production FPR calibration, provider-model watermark coverage or successful removal. Differently packaged submission candidates remain unexecuted. A pinned Qwen3.5-9B MLX follow-up returned full outputs, but both remained detected by fresh unchanged author detectors; returned output did not establish complete fidelity. This adds a remover-model experiment, not provider or differently packaged submission coverage.",
+      "reason": "Pinned selected-package author generator and detector ran on local synthetic text with research-owned keys. HF MPS float32 model logits feed unchanged CPU author processors; stochastic sampling is retained after passthrough steps. Text vocabulary compatibility was checked against the author-pinned tokenizer, with unsupported IDs forbidden. Independent detection confirmed the marked source and negative control; default strict library rewriting refused full output. This is not native vLLM/paper-model parity, production FPR calibration, provider-model watermark coverage or successful removal. Differently packaged submission candidates have their own exact-source records in the submission inventory; selected-package results do not substitute for those proofs. A pinned Qwen3.5-9B MLX follow-up returned full outputs, but both remained detected by fresh unchanged author detectors; returned output did not establish complete fidelity. This adds a remover-model experiment, not provider or differently packaged submission coverage.",
       "script": "scripts/benchmark_automark_reference.py"
     },
     {
@@ -400,7 +792,7 @@
       "adapter": "automark_selected_reference",
       "source": "automark",
       "status": "author_reference_positive_control_and_library_refusal",
-      "reason": "Pinned selected-package author generator and detector ran on local synthetic text with research-owned keys. HF MPS float32 model logits feed unchanged CPU author processors; stochastic sampling is retained after passthrough steps. Text vocabulary compatibility was checked against the author-pinned tokenizer, with unsupported IDs forbidden. Independent detection confirmed the marked source and negative control; default strict library rewriting refused full output. This is not native vLLM/paper-model parity, production FPR calibration, provider-model watermark coverage or successful removal. Differently packaged submission candidates remain unexecuted. A pinned Qwen3.5-9B MLX follow-up returned full outputs, but both remained detected by fresh unchanged author detectors; returned output did not establish complete fidelity. This adds a remover-model experiment, not provider or differently packaged submission coverage.",
+      "reason": "Pinned selected-package author generator and detector ran on local synthetic text with research-owned keys. HF MPS float32 model logits feed unchanged CPU author processors; stochastic sampling is retained after passthrough steps. Text vocabulary compatibility was checked against the author-pinned tokenizer, with unsupported IDs forbidden. Independent detection confirmed the marked source and negative control; default strict library rewriting refused full output. This is not native vLLM/paper-model parity, production FPR calibration, provider-model watermark coverage or successful removal. Differently packaged submission candidates have their own exact-source records in the submission inventory; selected-package results do not substitute for those proofs. A pinned Qwen3.5-9B MLX follow-up returned full outputs, but both remained detected by fresh unchanged author detectors; returned output did not establish complete fidelity. This adds a remover-model experiment, not provider or differently packaged submission coverage.",
       "script": "scripts/benchmark_automark_reference.py"
     },
     {
@@ -410,9 +802,518 @@
       "status": "published_source_control_replay_and_library_refusal",
       "reason": "Pinned author numerical functions replay public author-declared GPT-2 XL completions and saved DIPPER outputs, with original prefix and exact GPT-2 tokenization checks. Matched-window and full-text diagnostics are recorded separately. Selected saved DIPPER outputs retain the diagnostic signal or change facts; fresh strict library runs refused the preselected source texts. This does not reproduce the original generation checkpoints, run DIPPER inference, calibrate production FPR, or establish private-provider removal.",
       "script": "scripts/benchmark_dipper_reference.py"
+    },
+    {
+      "scheme": "SAMark",
+      "source": "samark",
+      "module": "samark_detect",
+      "adapter": null,
+      "status": "pending_author_reference_execution",
+      "paper": "https://arxiv.org/abs/2605.25796v3",
+      "reviewed_on": "2026-11-17",
+      "source_revision": "e098bd347ba936c3e9335db6f24632fd0c319141",
+      "scope": "Primary paper and declared repository inventory reviewed only. No qualified author generation/detection, library removal or semantic-preservation result.",
+      "license_inventory_observation": "No file named LICENSE/COPYING in retained full tree; code reuse has not been cleared.",
+      "paper_statistic": {
+        "scope": "Algorithm 2 from supplied cosine responses only. Python and an independent NumPy implementation agree on fixed synthetic controls. Reversal leaves the response statistic invariant. Text encoding, key derivation, author detector execution, threshold calibration on real data and removal remain separate.",
+        "implementation": "src/remove_ai_watermarks/_internal/samark.py",
+        "tests": "tests/test_text_samark.py"
+      }
+    },
+    {
+      "scheme": "SWAN",
+      "source": "swan",
+      "module": "detection.detect_end_to_end",
+      "adapter": null,
+      "status": "blocked_license_clearance",
+      "paper": "https://arxiv.org/abs/2605.04305v1",
+      "reviewed_on": "2026-11-17",
+      "source_revision": "2ca0c2071c8d0c6bb3739b2b2bcfb34cfe63eb2a",
+      "scope": "Pinned source and explicit noncommercial license reviewed. Permission for execution or redistribution in this product-oriented evaluation has not been established. No author code executed, no licensed code or reference text imported into the package, and no generator/detector or removal qualification. Independent AMR-parser research is separate and cannot count as SWAN execution.",
+      "license": "CC-BY-NC-4.0",
+      "license_source": "https://github.com/amazon-science/SWAN/blob/2ca0c2071c8d0c6bb3739b2b2bcfb34cfe63eb2a/LICENSE",
+      "license_sha256": "db2e35513dbadcdc67f5819a3bfee2777786538dd3531620cd5fbd4b6ed6e538"
+    },
+    {
+      "scheme": "OpenStamp",
+      "source": "openstamp",
+      "module": "src.openstamp.OpenStamp",
+      "adapter": null,
+      "status": "partial_library_removal_evaluation",
+      "paper": "https://arxiv.org/abs/2608.27899v1",
+      "reviewed_on": "2026-11-17",
+      "source_revision": "dd95dced1ee3898c40deb6ef44f124c4633df23d",
+      "scope": "Original author source/control generation and detection plus complete strict native-library evaluation for the released SmolLM2 and Mistral checkpoints. No faithful removal credited in either cohort. Other released checkpoints and private providers remain unverified.",
+      "published_model_candidates": [
+        {
+          "model": "openstamp/phi-4-openstamp-L250-delta1.0-gamma0.25",
+          "revision": "c8cd00ad8b6aace5153d39e5b3c01a3189eb74dc",
+          "test_status": "pending_generator_detector_qualification",
+          "scope": "Public metadata and declared detection-artifact filenames inspected; weights not executed."
+        },
+        {
+          "model": "openstamp/olmo-3-1025-7b-openstamp-L253-delta1.0-gamma0.25",
+          "revision": "b31ce8c9aba288ebf488277ee691ca3dbd69cf8b",
+          "test_status": "pending_generator_detector_qualification",
+          "scope": "Public metadata and declared detection-artifact filenames inspected; weights not executed."
+        },
+        {
+          "model": "openstamp/smollm2-1.7b-openstamp-L254-delta1.0-gamma0.25",
+          "revision": "87e44a63b0e8fa95bd26feac2d00dd95110a2950",
+          "test_status": "completed_native_library_rewrite_no_faithful_removal",
+          "scope": "Every marked continuation from the qualified single-checkpoint source cohort. Native library factory/guard/default sampler and seed, observation only. Complete visible-text reviews frozen before author after scores. Malformed/truncated sources retained; indeterminate meaning receives no credit. One literal article insertion preserves visible meaning but remains marked. Both negative after decisions lose or add facts. Illustrative zero is not calibrated population FPR or provider verification. No successful faithful removal, market leadership, default-model change or deployment.",
+          "artifact_preflight": {
+            "base_model": "HuggingFaceTB/SmolLM2-1.7B",
+            "base_revision": "effd688a12921b4cc83e3312b6feb579f70f9c71",
+            "base_revision_scope": "Independently pinned named base; author model card does not specify a base revision.",
+            "common_tensor_count": 218,
+            "unchanged_tensor_count": 217,
+            "changed_tensor_names": [
+              "model.embed_tokens.weight"
+            ],
+            "tie_word_embeddings": true,
+            "lm_head_separately_serialized": false,
+            "selector_dtype": "bfloat16",
+            "selector_shape": [
+              254,
+              2048
+            ],
+            "unchanged_author_head_reconstruction": {
+              "device": "cpu",
+              "dtype": "torch.bfloat16",
+              "equal_elements": 100663294,
+              "total_elements": 100663296,
+              "max_abs_error": 0.00048828125,
+              "exact_match": false
+            },
+            "discrepant_head_coordinate_diagnostic": {
+              "scope": "Exact rational sums of the selected BF16 selector components and independently rounded staged BF16 operations. Does not establish original training-device behavior.",
+              "coordinates": [
+                {
+                  "row": 2524,
+                  "column": 1837,
+                  "selected_components": 62,
+                  "base": -0.04443359375,
+                  "exact_dot_rational": "10452991/268435456",
+                  "exact_dot_float": 0.0389404259622097,
+                  "rounded_exact_bf16_dot": 0.038818359375,
+                  "dot_rounding": {
+                    "bits": 15647,
+                    "distance": "32767/268435456"
+                  },
+                  "expected_after_separate_bf16_add": -0.005615234375,
+                  "final_rounding": {
+                    "bits": 48056,
+                    "distance": "0"
+                  },
+                  "cpu_author_value": -0.005615234375,
+                  "published_value": -0.00537109375,
+                  "cpu_equals_exact_staged_rounding": true,
+                  "published_equals_exact_staged_rounding": false
+                },
+                {
+                  "row": 34415,
+                  "column": 1990,
+                  "selected_components": 72,
+                  "base": -0.027587890625,
+                  "exact_dot_rational": "-14450689/268435456",
+                  "exact_dot_float": -0.0538330115377903,
+                  "rounded_exact_bf16_dot": -0.053955078125,
+                  "dot_rounding": {
+                    "bits": 48477,
+                    "distance": "32767/268435456"
+                  },
+                  "expected_after_separate_bf16_add": -0.08154296875,
+                  "final_rounding": {
+                    "bits": 48551,
+                    "distance": "0"
+                  },
+                  "cpu_author_value": -0.08154296875,
+                  "published_value": -0.0810546875,
+                  "cpu_equals_exact_staged_rounding": true,
+                  "published_equals_exact_staged_rounding": false
+                }
+              ],
+              "exact_rounding_controls": "Fixed binary-fraction controls pass; removing even-mantissa tie preference fails an actual function-mutation check."
+            },
+            "released_head_constructor_preflight": {
+              "author_constructor": "OpenStamp.from_augmented(..., mode=Mode.Generate)",
+              "published_tied_embedding_copied_exactly": true,
+              "actual_copy_noop_mutation_killed": true,
+              "scope": "Real released head tensors in a minimal tied-weight container, not a full language-model forward pass or source/control generation.",
+              "future_reference_path": "Use published head as an explicitly labeled original-author path; do not claim CPU from_config reconstruction exactly matches it."
+            },
+            "tokenizer_preflight": {
+              "structural_equivalence_after_merge_pair_serialization_conversion": true,
+              "pad_token_difference": "Released tokenizer defines endoftext as padding; base tokenizer initially has no pad token. Original author loader sets missing pad token to EOS.",
+              "config_equivalence_scope": "Raw model configurations differ in dtype serialization, explicit head_dim/mlp_bias defaults and transformers version; inference equivalence not yet tested."
+            }
+          },
+          "native_source_control_qualification": {
+            "marked_count": 10,
+            "clean_count": 10,
+            "all_scored": true,
+            "illustrative_threshold": 0.0,
+            "all_paired_controls_separated_at_illustrative_zero": true,
+            "max_absolute_score_replay_error": 0.0,
+            "source_score_ranges": {
+              "clean": [
+                -0.2929292917251587,
+                -0.12121212482452393
+              ],
+              "marked": [
+                0.10101009905338287,
+                0.27272728085517883
+              ]
+            },
+            "protocol_sha256": "5caa341a6569929fe0204a95e551d135d2d7ef5c1a0738837f73b1653aed3a9d",
+            "scores_sha256": "b4c1415bd207406e9240b63e98b8b99f1ea228f5473fad859687039f7f6fa62e",
+            "generation_records_sha256": "07fbb12b70680e153020af727c3f6255ce7f17074d914058957c11677d65ae72",
+            "summary_sha256": "18845ed73d33edb4e93c09c6e5fc56781c30ec0dc1a348485bb6d036c3bf2815",
+            "runtime": {
+              "versions": {
+                "torch": "2.14.1",
+                "transformers": "5.13.1",
+                "numpy": "2.1.3",
+                "accelerate": "1.13.0",
+                "tqdm": "4.66.5",
+                "safetensors": "0.8.0"
+              },
+              "model_class": "transformers.models.llama.modeling_llama.LlamaForCausalLM",
+              "device": "cpu",
+              "dtype": "torch.bfloat16",
+              "all_serialized_base_tensors_equal": true,
+              "tied_weights": true,
+              "pad_token_id": 0,
+              "eos_token_id": 0
+            },
+            "library_removal_result": "complete_no_faithful_removal_credited",
+            "reproduction_parameters": {
+              "author_revision": "dd95dced1ee3898c40deb6ef44f124c4633df23d",
+              "author_functions": [
+                "src.utils.load_model",
+                "scripts.generate_samples.generate_continuations",
+                "src.openstamp.OpenStamp.from_augmented",
+                "src.openstamp.OpenStamp.score_text_batch"
+              ],
+              "source_corpus_url": "https://github.com/krllagent/text-watermark-roundtrip/blob/161cf58b2545f2277b8c615e28098423575bb3c4/results/quality-synthid-corpus-curated-v1.json",
+              "source_corpus_sha256": "17f3d71eef3fca9aa61cc19f5a8000d433450b81617bf5a79078572c8d294231",
+              "source_document_field": "documents[].marked.text",
+              "ordered_document_ids": [
+                "doc-01",
+                "doc-02",
+                "doc-03",
+                "doc-04",
+                "doc-05",
+                "doc-06",
+                "doc-07",
+                "doc-08",
+                "doc-09",
+                "doc-10"
+              ],
+              "prefix_tokens": 50,
+              "prefix_encoding_add_special_tokens": false,
+              "generation_seed_reset_per_condition": 42,
+              "generation_options": {
+                "temperature": 1.0,
+                "top_p": 1.0,
+                "top_k": 0,
+                "do_sample": true,
+                "max_new_tokens": 200,
+                "min_new_tokens": 200
+              },
+              "generation_batch_size": 1,
+              "generation_decode_skip_special_tokens": true,
+              "scored_text": "decoded continuation only, as returned by the original author function",
+              "cpu_threads": 2,
+              "head_path": "Load released shared embedding as augmented head, original from_augmented Generate, restore original base shared embedding before original from_augmented Detect.",
+              "bf16_accumulation": "Preserve original BF16 log-probability sums and difference, divided by float32 eligible-position count.",
+              "published_threshold_scope": "Zero is an illustrative author example, not calibrated population false-positive rate.",
+              "adapters": [
+                "Fixed fifty-token prefixes from the ten cleared fictional reports replace original dataset loading. No new instruction prompt.",
+                "Original author loader with local paths and no quantization, followed by explicit CPU placement.",
+                "Each clean/marked condition starts from seed42; paired-seed reset is explicit and not original end-to-end PRNG-order parity.",
+                "Original from_augmented with the published head replaces nonexact CPU from_config reconstruction, as a separately labeled author API path.",
+                "Restore original tied embedding before the unchanged author detector reads continuation-only decoded text."
+              ]
+            }
+          },
+          "library_rewrite_evaluation": {
+            "rewriter_model": "mlx-community/Qwen3.8-27B-4bit",
+            "rewriter_revision": "b935172e4bb5dcd0543774a34748fb92422e3027",
+            "library_sha256": "2b4c8745b98b2c1d2da37f3eb4d3a5ffccc9310448730b7dcd34f96ff711e899",
+            "source_count": 10,
+            "complete_outputs": 7,
+            "refused_or_runtime_error": 3,
+            "quality_equivalent": 1,
+            "quality_not_equivalent": 3,
+            "quality_indeterminate": 3,
+            "below_illustrative_threshold": 2,
+            "faithful_removal_count": 0,
+            "protocol_sha256": "fb3c803b314638f280f33f89a0b970d6081bf8e77222e4e060695b097a0c05f4",
+            "review_sha256": "2dcb7a0cfea5f74745a90e00de825a01104a69c1ecf048dd03d41be41ae08035",
+            "after_scores_sha256": "774e2b1f041c4af9673ed7ba9b1f765ad857d81c571c5e3b86fac104103c4670",
+            "outcomes": [
+              {
+                "trial": "native:doc-01",
+                "original_source_score": 0.10101009905338287,
+                "author_score": 0.10050251334905624,
+                "detected_at_illustrative_zero": true,
+                "quality_equivalent": false,
+                "credit_as_faithful_removal": false
+              },
+              {
+                "trial": "native:doc-02",
+                "original_source_score": 0.16161616146564484,
+                "author_score": -0.051948051899671555,
+                "detected_at_illustrative_zero": false,
+                "quality_equivalent": false,
+                "credit_as_faithful_removal": false
+              },
+              {
+                "trial": "native:doc-03",
+                "original_source_score": 0.16243654489517212,
+                "author_score": 0.16161616146564484,
+                "detected_at_illustrative_zero": true,
+                "quality_equivalent": true,
+                "credit_as_faithful_removal": false
+              },
+              {
+                "trial": "native:doc-05",
+                "original_source_score": 0.16243654489517212,
+                "author_score": 0.04040404036641121,
+                "detected_at_illustrative_zero": true,
+                "quality_equivalent": null,
+                "credit_as_faithful_removal": false
+              },
+              {
+                "trial": "native:doc-08",
+                "original_source_score": 0.10101009905338287,
+                "author_score": -0.1568627506494522,
+                "detected_at_illustrative_zero": false,
+                "quality_equivalent": false,
+                "credit_as_faithful_removal": false
+              },
+              {
+                "trial": "native:doc-09",
+                "original_source_score": 0.24242424964904785,
+                "author_score": 0.07999999821186066,
+                "detected_at_illustrative_zero": true,
+                "quality_equivalent": null,
+                "credit_as_faithful_removal": false
+              },
+              {
+                "trial": "native:doc-10",
+                "original_source_score": 0.10101009905338287,
+                "author_score": 0.019999999552965164,
+                "detected_at_illustrative_zero": true,
+                "quality_equivalent": null,
+                "credit_as_faithful_removal": false
+              }
+            ],
+            "scope": "Every marked continuation from the qualified single-checkpoint source cohort. Native library factory/guard/default sampler and seed, observation only. Complete visible-text reviews frozen before author after scores. Malformed/truncated sources retained; indeterminate meaning receives no credit. One literal article insertion preserves visible meaning but remains marked. Both negative after decisions lose or add facts. Illustrative zero is not calibrated population FPR or provider verification. No successful faithful removal, market leadership, default-model change or deployment.",
+            "summary_sha256": "6ac1334f20aee80ce111f5604aa9400d0c3637ddf7987f15109a8596202da5e7"
+          }
+        },
+        {
+          "model": "openstamp/mistral-7b-v0.3-openstamp-L254-delta1.0-gamma0.25",
+          "revision": "6557dfa8935331dca2bddab6664f91b45510b6da",
+          "test_status": "completed_native_library_rewrite_no_faithful_removal",
+          "scope": "Ten fixed paired development prefixes, complete exact BF16 base and released head, unchanged original author generator and detector, and independent staged BF16 score replay. At illustrative zero the source controls all separated. The default library rewriter refused all marked inputs in strict mode. No full output was available for after detection or fidelity judgment.",
+          "artifact_preflight": {
+            "base_model": "mistralai/Mistral-7B-v0.3",
+            "base_revision": "caa1feb0e54d415e2df31207e5f4e273e33509b1",
+            "base_revision_scope": "Independently pinned named base; author card does not pin the training base revision.",
+            "common_tensor_count": 291,
+            "changed_tensor_names": [
+              "lm_head.weight"
+            ],
+            "all_loaded_base_parameters_exact": true,
+            "tie_word_embeddings": false,
+            "device": "mps:0",
+            "dtype": "torch.bfloat16",
+            "fixed_cpu_mps_probes": {
+              "checks": [
+                {
+                  "ids": [
+                    1,
+                    450,
+                    6593,
+                    302
+                  ],
+                  "finite": true,
+                  "max_logit_difference": 0.375,
+                  "max_probability_difference": 0.006064921617507935,
+                  "all_greedy_ids_equal": true
+                },
+                {
+                  "ids": [
+                    1,
+                    415,
+                    1834,
+                    297,
+                    272
+                  ],
+                  "finite": true,
+                  "max_logit_difference": 0.375,
+                  "max_probability_difference": 0.008199945092201233,
+                  "all_greedy_ids_equal": true
+                }
+              ],
+              "declared_max_logit_difference": 0.5,
+              "declared_max_probability_difference": 0.01,
+              "scope": "Two fixed kernel smoke probes, not universal CPU/MPS parity."
+            },
+            "paired_weight_proof_sha256": "a7f3f4b41f8b5d3addbdc8ff30cd22ad5a9f3bb8d5cba5daa2648b1353773ee6",
+            "device_checks_sha256": "93991a2ae7693ba60d5649b74142898f5c6ddd2e6cd227492af4b972c31be1ba",
+            "license_scope": "Base card declares Apache-2.0 and original author code is MIT. Marked model card has no explicit YAML license metadata. This evaluation does not redistribute weights or assert an explicit marked-weight redistribution license."
+          },
+          "native_library_rewrite": {
+            "clean_controls": 10,
+            "marked_controls": 10,
+            "clean_score_range": [
+              -0.2512562870979309,
+              -0.1306532621383667
+            ],
+            "marked_score_range": [
+              0.060301508754491806,
+              0.2010050266981125
+            ],
+            "strict_attempts": 10,
+            "returned": 0,
+            "refused": 10,
+            "after_detector_negative": 0,
+            "faithful_removals": 0,
+            "faithful_ids": [],
+            "pairs": [],
+            "guard_replay_counts": {
+              "placeholder_mismatch": 32,
+              "accepted": 4
+            },
+            "artifact_sha256": {
+              "native-plan.json": "670d996f196dab03e333545ba1427a17f481de4a9fde29105e61ac0d1eb7d060",
+              "native-source-scores.json": "3f13c997f876508d8bbb6ad9b05474cfa4dd5834b3e70d917047c89212b100a0",
+              "native-source-texts.json": "6dbe7aa3c2c620fe59481e02451a04e0b1f12edcac511c83d19fe42dbd5be88f",
+              "native-generation-records.json": "f500a0bcf0ed27b4b9834329a11813808dc3245a90f6a51fdd90bbb263bda6e4",
+              "removal-plan.json": "5e8d282e32909068d9e8929527bd942ae168ed112161ce08d7802014f51ee065",
+              "resume-removal-plan.json": "2fce156294b4139a4cee681b7551463777f194b6ff6424f72643e4c363449477",
+              "removal-results.json": "e47f091c1810df3818cb55a863e119c3a430b108b0387d86a02da22fbf21d91e",
+              "removal-quality-freeze.json": "c5461296ec28261a57e8e6df352e4e9b9ea10ffdc6bd00fae54522427db79b9a",
+              "after-results.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+              "after-finished.json": "41ab1eb89c7893d4e9309dfa37554404e5a4fd5d19253b185886a42a12a256ca",
+              "guard-replay.json": "88fbfa40e7d142dd4b75c19c77ddd8ca9be7a52f37deb837a3288268fe3fa7f7"
+            },
+            "scope": "Ten fixed development source pairs with original author generation and scoring. Illustrative zero cutoff, no population calibration. Full-text executor review.",
+            "summary_sha256": "031f12b1d4d8ac2d32a96fd2fb0fec9239b15bff233ade5a251bfee98c201c20"
+          },
+          "article_mask_diagnostic": {
+            "source": "doc-09",
+            "baseline": {
+              "status": "refused_by_shared_guard",
+              "model_calls": 3,
+              "fact_placeholders_per_candidate": [
+                19,
+                19,
+                19
+              ],
+              "placeholder_mismatches": 3
+            },
+            "article_mask_probe": {
+              "status": "refused_by_shared_guard",
+              "model_calls": 3,
+              "fact_placeholders_per_candidate": [
+                12,
+                12,
+                12
+              ],
+              "placeholder_mismatches": 3
+            },
+            "results_sha256": "d502cc4ceca0a2b7cc3584344f53b5e76d2079e54ccfb43bf586f8e282a13ac0",
+            "summary_sha256": "44d12bd2e8b649311aae104778744070f9d35baa0d426c92a0826694a8d81165",
+            "scope": "One examined marked source with excess article masks. Temporary diagnostic excludes exact standalone the/The mask entries only, retains normal structural and fact checks. Fewer masks did not resolve refusal."
+          }
+        },
+        {
+          "model": "openstamp/qwen2.5-7b-openstamp-L251-delta1.0-gamma0.25",
+          "revision": "ca313a7823b35512984f992bc9c01d19b1c48e78",
+          "test_status": "pending_generator_detector_qualification",
+          "scope": "Public metadata and declared detection-artifact filenames inspected; weights not executed."
+        },
+        {
+          "model": "openstamp/llama2-7b-openstamp-L254-delta1.0-gamma0.25",
+          "revision": "33c826a4f50a75e8c70be4307df6b512bcc79d1e",
+          "test_status": "pending_generator_detector_qualification",
+          "scope": "Public metadata and declared detection-artifact filenames inspected; weights not executed."
+        }
+      ],
+      "numerical_method_preflight": {
+        "scope": "Unchanged original methods on fixed synthetic logits/hidden states only; not real language-model generation, detection qualification or removal.",
+        "author_source_sha256": "916b6a7fefa585a5b691fe66ddc57b0d5e7515679b940f398e65aa8a2b3eb359",
+        "score_shift": "labels[:, 2:] and hidden_states[:, 1:-1]",
+        "masked_padding_excluded": true,
+        "independent_oracle": "NumPy float64 logsumexp and position-wise likelihood-ratio sum",
+        "max_absolute_error": 5.456591322117177e-07,
+        "predeclared_absolute_tolerance": 2e-06,
+        "actual_source_mutations_killed": [
+          "first_prediction_included",
+          "reversed_llr",
+          "padded_denominator",
+          "wrong_softmax_axis"
+        ],
+        "zero_eligible_positions": "Original method returns nonfinite values; future integration must reject, never classify as clean.",
+        "tied_weight_constructor_preflight": "Original Mode.Generate head copy changes the tied input embeddings on a tiny synthetic model. Actual copy-to-no-op mutation fails the same assertion.",
+        "bf16_accumulation_preflight": {
+          "scope": "Original BF16 method on repeated fixed synthetic hidden states and logits. Independent exact rational sums start from original gathered BF16 log-probabilities; this is accumulation parity, not a full float64 forward/logit oracle, native model detector qualification or removal.",
+          "sum_dtype": "torch.bfloat16",
+          "score_dtype": "torch.float32",
+          "author_scores": [
+            -0.23880596458911896,
+            0.1538461595773697,
+            0.07058823853731155
+          ],
+          "independently_rounded_sum_scores": [
+            -0.23880596458911896,
+            0.1538461595773697,
+            0.07058823853731155
+          ],
+          "unrounded_sum_of_same_bf16_log_probabilities": [
+            -0.22360851990049752,
+            0.1509506118881119,
+            0.06397058823529411
+          ],
+          "predeclared_absolute_tolerance": 1e-07,
+          "max_absolute_error": 0.0,
+          "actual_f32_sum_source_mutation": {
+            "scores": [
+              -0.22360852360725403,
+              0.1509506106376648,
+              0.06397058814764023
+            ],
+            "max_error_against_same_oracle": 0.01519744098186493,
+            "distinguished": true
+          },
+          "future_native_qualification": "Preserve and replay original BF16 sum/difference plus F32 denominator behavior explicitly. Do not silently promote sums or call this an exact full-model likelihood ratio."
+        }
+      }
+    },
+    {
+      "scheme": "SemField",
+      "source": "semfield",
+      "module": null,
+      "adapter": null,
+      "status": "unavailable_declared_source_url",
+      "paper": "https://arxiv.org/abs/2610.11848v1",
+      "reviewed_on": "2026-11-17",
+      "source_revision": null,
+      "scope": "Primary paper and declared repository inventory reviewed only. No qualified author generation/detection, library removal or semantic-preservation result.",
+      "source_access_observation": "Declared GitHub repository returned HTTP 404 to web and anonymous API reads; other implementations are not ruled out.",
+      "variants": [
+        "SemField",
+        "SemField-PL"
+      ]
     }
   ],
-  "observed_on": "2026-11-14",
+  "observed_on": "2026-11-17",
   "format_cases": [
     {
       "scheme": "Windows AI invisible Unicode sequence",
@@ -426,6 +1327,620 @@
       "fixture_type": "synthetic_published_format",
       "test_file": "tests/test_windows_text_watermark.py",
       "live_provider_output_tested": false
+    }
+  ],
+  "rewriter_references": [
+    {
+      "name": "RLCracker",
+      "source": "https://github.com/OTTO-OTO/RLCracker",
+      "source_revision": "bb78b6ced7d756a9ee36b4b2129e184fa0c9161d",
+      "status": "reviewed_not_executed",
+      "scope": "Training/evaluation pipeline and pinned source tree inspected. No trained-checkpoint or faithful-removal result established."
+    },
+    {
+      "name": "Adaptive watermark evasion paraphrasers",
+      "source": "https://github.com/nilslukas/ada-wm-evasion",
+      "source_revision": "3dba204cc08b313bb1ea3f6a08e051a6c8b628de",
+      "checkpoint_source": "https://huggingface.co/DDiaa/WM-Removal-EXP-Qwen2.5-0.5B",
+      "status": "one_checkpoint_library_benchmark_complete",
+      "scope": "One published EXP-tuned Qwen0.5 adapter evaluated with paired base-only controls under native-library and unchanged author-function policies on fixed OpenStamp, SynthID and original EXP cohorts. Every returned output changes meaning despite negative after detection. No faithful removal, production-default improvement, family-wide coverage or exact EXP training-key/implementation parity established.",
+      "example_adapter_revision": "79199895e8805cefbb723fe8c8d81bf73c6e6e80",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "base_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "base_revision_scope": "Named base independently frozen; adapter configuration does not specify its training base revision.",
+      "loading_preflight": {
+        "adapter_state_tensors_verified": 96,
+        "all_base_parameters_unchanged": true,
+        "unmerged": true,
+        "dtype": "torch.float32",
+        "active_max_logit_delta": 1.2231130599975586,
+        "disabled_logits_exactly_match_pristine_base": true,
+        "disabled_greedy_probe_exactly_matches_pristine_base": true,
+        "restored_active_logits_exact": true,
+        "adapter_base_tokenizer_vocabulary_equal": true,
+        "report_sha256": "95d59615771d98f91843d1c57b17a3128dcf23901215f5ffda01515f9bbcda69"
+      },
+      "paired_library_benchmark": {
+        "trials": 120,
+        "source_count": 30,
+        "schemes": [
+          "OpenStamp",
+          "SynthID",
+          "EXP"
+        ],
+        "variants": {
+          "base_native": {
+            "trials": 30,
+            "returned": 0,
+            "refusals": 30,
+            "generations": 92,
+            "complete_generations": 92,
+            "guard_candidates": 92,
+            "accepted_guard_candidates": 2,
+            "exceptions": {
+              "RuntimeError": 30
+            },
+            "faithful_removal": 0
+          },
+          "adapter_native": {
+            "trials": 30,
+            "returned": 0,
+            "refusals": 30,
+            "generations": 90,
+            "complete_generations": 90,
+            "guard_candidates": 90,
+            "accepted_guard_candidates": 0,
+            "exceptions": {
+              "RuntimeError": 30
+            },
+            "faithful_removal": 0
+          },
+          "base_author": {
+            "trials": 30,
+            "returned": 2,
+            "refusals": 28,
+            "generations": 93,
+            "complete_generations": 92,
+            "guard_candidates": 92,
+            "accepted_guard_candidates": 8,
+            "exceptions": {
+              "RuntimeError": 28
+            },
+            "faithful_removal": 0
+          },
+          "adapter_author": {
+            "trials": 30,
+            "returned": 1,
+            "refusals": 29,
+            "generations": 92,
+            "complete_generations": 92,
+            "guard_candidates": 92,
+            "accepted_guard_candidates": 5,
+            "exceptions": {
+              "RuntimeError": 29
+            },
+            "faithful_removal": 0
+          }
+        },
+        "returned": 3,
+        "refusals": 117,
+        "faithful_removal": 0,
+        "fresh_original_exp_control_replays": 20,
+        "results_sha256": "c214c73a6aa5cad8636fe84f36c2b5c6661b482d2da87497200369f6bd4c18f4",
+        "quality_sha256": "0aa3879a94f0c46a71cead3f06752a412c8f5f0f0178bd5f4187e9f9d16d574a",
+        "after_sha256": "8bbb4f76aabe69010cfe708a3cc7e97e641219ece4d1e0c35b30d49b767a9025",
+        "controls_sha256": "12fb915d8a520dc30dc5ec4d08d487ef5e6aa4697611fe1900eba41232372d6f",
+        "protocol_sha256": "e4b6e29efe2871631a41e90a5fdb22f7fd8b0dd7f824623ff6c22b8450a9d52a",
+        "library_sha256": "2b4c8745b98b2c1d2da37f3eb4d3a5ffccc9310448730b7dcd34f96ff711e899",
+        "summary_sha256": "4e414068ffff6629124f04ca79d7614253511f42d5af09a0b9d15b3efb3b47fd"
+      }
+    },
+    {
+      "name": "Offline masked-word substitution baseline",
+      "source": "https://github.com/javimezba/LLM-Watermark-Removal",
+      "source_revision": "451e92b98e70d92dc4d33639e24192bedccd198e",
+      "status": "library_benchmark_complete_no_faithful_removal",
+      "scope": "Unchanged original BERT/MPNet helper functions run through a guarded library custom rewriter on fixed qualified OpenStamp, SynthID and EXP inputs. Six returned outputs change meaning; one is uncertain and remains detected. The only negative after decision changes meaning. No faithful-removal, CLI parity, population FPR or proprietary-provider result established.",
+      "library_benchmark": {
+        "trials": 30,
+        "schemes": [
+          "OpenStamp",
+          "SynthID",
+          "EXP"
+        ],
+        "returned": 7,
+        "refusals": 23,
+        "quality_negative": 6,
+        "quality_uncertain": 1,
+        "faithful_removal": 0,
+        "by_scheme": {
+          "OpenStamp": {
+            "trials": 10,
+            "returned": 3,
+            "faithful_removal": 0
+          },
+          "SynthID": {
+            "trials": 10,
+            "returned": 0,
+            "faithful_removal": 0
+          },
+          "EXP": {
+            "trials": 10,
+            "returned": 4,
+            "faithful_removal": 0
+          }
+        },
+        "cosine_replays": 224,
+        "author_clipped_calls": 0,
+        "fresh_exp_control_replays": 20,
+        "fresh_openstamp_control_replays": 2,
+        "results_sha256": "78c4ad4778cac17b977fe35b51c430406b5fc2cfad53b7dd55fe0bb4a20f39a6",
+        "quality_sha256": "99cbfc807d5faf035e8d03b87a9090f9c8282ca9577023aebd50e15bc13a3e82",
+        "exp_after_sha256": "cc37fe521f21954034bca475f61db3ad06f1a7576c2af70ffd6a8a110ebce3a5",
+        "openstamp_after_sha256": "5ca9322e6e123dbcdc306dbfe630ae3390a8cba21a598406b7e26da2171f8045",
+        "protocol_sha256": "70c0efcb942e6eca6bc13ed2e7345656a42f4408c45b4c78af2bca209cfb098b",
+        "library_sha256": "2b4c8745b98b2c1d2da37f3eb4d3a5ffccc9310448730b7dcd34f96ff711e899",
+        "summary_sha256": "3f0b7222ce9647a0487ac3ecef26956b34cb6a05e8680f192056eeaf71e5499b",
+        "models": {
+          "bert": {
+            "model_repo": "google-bert/bert-base-uncased",
+            "model_revision": "86b5e0934494bd15c9632b12f734a8a67f723594",
+            "scope": "Independently pinned named reference model; author supplied no exact revision."
+          },
+          "mpnet": {
+            "model_repo": "sentence-transformers/all-mpnet-base-v2",
+            "model_revision": "e8c3b32edf5434bc2275fc9bab85f82640a19130",
+            "scope": "Independently pinned named reference model; author supplied no exact revision."
+          }
+        }
+      },
+      "acceptance_followup": {
+        "status": "selected_membership_criticism_guard_applied",
+        "executed_benchmark_core_sha256": "2b4c8745b98b2c1d2da37f3eb4d3a5ffccc9310448730b7dcd34f96ff711e899",
+        "later_core_sha256": "89995b3ed53a2f8abbf8c29e39c861e9ba5029d3088e3287f600a70b33c840b2",
+        "fixed_regressions_before_failed": 8,
+        "fixed_regressions_after_passed": 17,
+        "actual_mutations_failed": 5,
+        "complete_outputs_replayed": 10,
+        "newly_rejected_case": "lexical OpenStamp:doc-07",
+        "existing_development_cases_unchanged": 214,
+        "expanded_development_cases": 218,
+        "replay_sha256": "49f4bc03e034264b19b5679997aa3e6c9ddf6255aed2b798616d0a6925118353",
+        "summary_sha256": "ef2791bc5cabfa1aba087275aac0f7fcc4c03e60f7e505caf966c02863ce6e6c",
+        "scope": "No regeneration or retroactive benchmark edits. Selected affirmative determiner-led copular frames with matching literal descriptions only; unsupported grammar and mixed claims remain unresolved."
+      }
+    },
+    {
+      "name": "Pegasus sentence paraphraser",
+      "source": "https://huggingface.co/tuner007/pegasus_paraphrase",
+      "model_revision": "0159e2949ca73657a2f1329898f51b7bb53b9ab2",
+      "license": "Apache-2.0",
+      "status": "one_checkpoint_local_library_benchmark_complete",
+      "scope": "Fixed reused English development cohorts, new sentence/beam/guard/NLI selection policy. Not unchanged author demo, CUDA reproduction, independent human fidelity study, production default or private-provider verification.",
+      "loading_preflight": {
+        "all_serialized_parameters_exactly_equal_original": true,
+        "serialized_named_parameters_compared": 677,
+        "omitted_static_position_tables": 2,
+        "static_positions_exact_original_transformers_formula": true,
+        "static_positions_already_matched_before_copy": true,
+        "learned_missing_parameters": 0,
+        "dtype": "float32",
+        "attention": "eager",
+        "full_ordinary_vocabulary_pieces_compared": 95998,
+        "source_sentence_encodings_equal_original_sentencepiece": 401,
+        "two_fixed_cpu_mps_argmax_and_greedy_ids_match": true,
+        "max_observed_fixed_probe_logit_delta": 6.67572021484375e-05,
+        "loading_report_sha256": "1deda088c522826f92ded466339cca081df8f03fa8d99c6662aa7a20fd953ec8",
+        "tokenizer_report_sha256": "3ae8363c5b5c3593a7bcb7802d28cedd385db5f4b960b51d4b017648a30582d7",
+        "numerical_report_sha256": "0cb51bc057c5b5deb2e07d4e469e5250cfee035a7a7c67d3aa2506c144dfec35"
+      },
+      "policy": {
+        "generator_device": "mps",
+        "critic": "cross-encoder/nli-deberta-v3-base",
+        "critic_revision": "6c749ce3425cd33b46d187e45b92bbf96ee12ec7",
+        "critic_device": "cpu",
+        "trained_position_limit": 60,
+        "input_truncation": false,
+        "forced_eos_disabled_and_actual_processor_stack_checked": true,
+        "beams_requested": 10,
+        "stochastic_sampling": false,
+        "minimum_bidirectional_sentence_entailment": 0.99,
+        "no_detector_feedback": true,
+        "selection": "First probability-ranked naturally terminated nonidentity beam passing shared local guard and per-sentence NLI. Original sentence retained otherwise; whole callback passes shared guard, library strict partial=False.",
+        "trace_scope": "Selection beam prefix retained through first accepted beam; later uninspected beams not serialized. Complete returned document and source are hash-bound.",
+        "source_only_sentence_spans": 401,
+        "source_length_qualified_sentences": 398,
+        "source_unqualified_length_sentences": 3,
+        "source_only_callbacks": 133,
+        "actual_callbacks": 87,
+        "distinct_proposals": 271,
+        "generated_distinct_proposals": 264,
+        "retained_placeholder_proposals": 4,
+        "retained_unqualified_length_proposals": 3,
+        "selected_distinct_proposals": 133,
+        "actual_boundary_policy_mutations_rejected": 7,
+        "generated_distinct_proposals_without_selected_beam": 131
+      },
+      "fixed_library_benchmark": {
+        "trials": 30,
+        "returned": 12,
+        "shared_guard_refusals": 18,
+        "meaning_true": 3,
+        "meaning_false": 7,
+        "meaning_unresolved": 2,
+        "sources_per_scheme": 10,
+        "schemes": [
+          "SynthID",
+          "EXP",
+          "OpenStamp"
+        ],
+        "executed_library_core_sha256": "89995b3ed53a2f8abbf8c29e39c861e9ba5029d3088e3287f600a70b33c840b2",
+        "faithful_removals": 0,
+        "quality_scope": "Complete outputs reviewed before after scores. Three judged equivalent outputs remain detected. Seven change meaning; two unresolved source fragments get no credit. One negative EXP after text changes meaning.",
+        "results_sha256": "aba91f05fbb119563b37018a89f491dbadf748156128024a872fc397adf0764d",
+        "pre_score_quality_sha256": "4968ddba4b13f5a2a2092a4c5cac4619c42c1c7715134284dd35b1373b5845bd",
+        "protocol_sha256": "f93535c133def06cf32f7aaf5c2d3c35c7f0ff0425ffe11f4d765ab9b2a4260a",
+        "synthid_score_sha256": "957bfa86a4014411f6150305cc87f31fca0ad0532225a2e89d8ded892e954843",
+        "exp_score_sha256": "18f944f5326d625adf94e9a9276a315f5377eb9b14e65d2850079ddcbf7ac359",
+        "openstamp_score_sha256": "3dffa51d81359606362ded554d4a334be45ac66a56a360e6c85a18e98887f342",
+        "fresh_synthid_source_control_traces": 20,
+        "fresh_exp_source_control_traces": 20,
+        "fresh_openstamp_source_control_traces": 2,
+        "openstamp_zero_threshold": "Illustrative only, not calibrated population FPR.",
+        "negative_reference_decisions": {
+          "SynthID": 0,
+          "EXP": 1,
+          "OpenStamp": 0
+        }
+      },
+      "estimate_guard_followup": {
+        "core_sha256": "4fca2db75d3f8f781b2c5ddad7a22da4b23d63b26c02d728ac858f661b83430b",
+        "scope": "Later selected adjacent estimate-status guard; saved-candidate callback replay, not fresh model inference or retroactive cohort counts. Nonadjacent estimates, general uncertainty and broader participant binding remain unresolved.",
+        "unchanged_prior_development_bank_cases": 218,
+        "new_synthetic_examined_pairs": 4,
+        "newly_rejected_saved_output": "SynthID:doc-06",
+        "other_saved_output_callback_decisions_unchanged": true,
+        "regression_cases": 12,
+        "actual_assertion_mutations_rejected": 4,
+        "replay_sha256": "f1b448a5f1449eb243c2e231e3c96abfa495bfc1c0044a8558589ccf6bd867cb",
+        "mutation_sha256": "80fea695027a1741034148873a265c1f3e9659bb9c45b4882fc50619f8a12c7c",
+        "fresh_targeted_execution": {
+          "scope": "Separately frozen one-source regression, not a rerun or reclassification of the original 30-source cohort. Original beam prefix IDs reproduce; the estimate-dropping selection is rejected and its source sentence retained.",
+          "trials": 1,
+          "source": "SynthID:doc-06",
+          "changed_sentence_selections": 1,
+          "original_generated_beam_prefix_ids_equal": true,
+          "meaning_preserved": false,
+          "reference_detected": true,
+          "faithful_removal": false,
+          "results_sha256": "75e4f135d97488f7ff0d4b66b7dcb4e73b091fc82621ecd141e1df4f4f7cb3fc",
+          "pre_score_quality_sha256": "2df4f1b62fd85e874d8346cc83a31f4426fa844254bf4d7e5f27dc8120e3d0fd",
+          "selection_comparison_sha256": "3d8a9f5b75982916aa041d9621f59d9c4652339d007e912fe217c703ca9def53",
+          "after_score_sha256": "5d923517cf753fcffd12d3315acd3fcd21106bb240623d26e07b271e3ed034f9"
+        }
+      }
+    },
+    {
+      "name": "Paired local fact transport",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct",
+      "model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "status": "completed_development_comparison_not_adopted",
+      "scope": "Same marked development documents, local model, prompt, paragraph boundaries, native retries, technical placeholders and post-rewrite guards. Changed only whether the model received fact placeholders or visible facts.",
+      "library_sha256": "e3eb610eddc1a376f36eee4f589d3a7b739b63740b7e8626a8f0ac2ac5d84722",
+      "results": {
+        "completed": true,
+        "attempts": 40,
+        "scheduled": 40,
+        "cells": [
+          {
+            "scheme": "OpenStamp Mistral",
+            "arm": "masked",
+            "documents": 10,
+            "outcomes": {
+              "refused": 10
+            },
+            "candidate_decisions": {
+              "placeholder_mismatch": 32,
+              "accepted_fragment": 4
+            },
+            "missing_factual_markers": 152,
+            "missing_structural_markers": 9,
+            "native_generation_calls": 36
+          },
+          {
+            "scheme": "OpenStamp Mistral",
+            "arm": "visible",
+            "documents": 10,
+            "outcomes": {
+              "returned_not_quality_certified": 1,
+              "refused": 9
+            },
+            "candidate_decisions": {
+              "accepted_fragment": 8,
+              "facts": 28,
+              "placeholder_mismatch": 3
+            },
+            "missing_factual_markers": 0,
+            "missing_structural_markers": 9,
+            "native_generation_calls": 39
+          },
+          {
+            "scheme": "SynthID",
+            "arm": "masked",
+            "documents": 10,
+            "outcomes": {
+              "refused": 10
+            },
+            "candidate_decisions": {
+              "placeholder_mismatch": 31,
+              "accepted_fragment": 1,
+              "facts": 1
+            },
+            "missing_factual_markers": 161,
+            "missing_structural_markers": 0,
+            "native_generation_calls": 33
+          },
+          {
+            "scheme": "SynthID",
+            "arm": "visible",
+            "documents": 10,
+            "outcomes": {
+              "refused": 10
+            },
+            "candidate_decisions": {
+              "accepted_fragment": 12,
+              "facts": 37
+            },
+            "missing_factual_markers": 0,
+            "missing_structural_markers": 0,
+            "native_generation_calls": 49
+          }
+        ],
+        "results_sha256": "74963fc9e0829ad525e020b898f27a607bba80784bcb4e7778ccd7d8b70a30ad",
+        "protocol_sha256": "d1cb6aedf62d13009b65052c92b601d72013d3f3f101708a8f9054382e6c146b",
+        "strict_return_is_not_detector_or_fidelity_success": true,
+        "faithful_removals": 0,
+        "after_detector_rows": 0,
+        "fidelity_freeze_sha256": "2406512497427aef24a3ab293e8b723b13fd997716f03f0ece2a4c49572e10d2",
+        "guard_replay_sha256": "743751af69da910a5e2a9fec886ea775cc7708fb8a0308d1e25f49fa21f876ef"
+      }
+    }
+  ],
+  "quality_gate_references": [
+    {
+      "name": "English bidirectional DeBERTa NLI quality diagnostic",
+      "source": "https://huggingface.co/cross-encoder/nli-deberta-v3-base",
+      "model_revision": "6c749ce3425cd33b46d187e45b92bbf96ee12ec7",
+      "license": "Apache-2.0",
+      "status": "development_diagnostic_complete_not_adopted",
+      "role": "Quality critic only, not a watermark generator, detector or removal backend.",
+      "scope": "Examined English development pairs and previously reviewed outputs/excerpts; no heldout human-judge accuracy, multilingual coverage, semantic certificate or private-provider verification.",
+      "library_core_sha256": "89995b3ed53a2f8abbf8c29e39c861e9ba5029d3088e3287f600a70b33c840b2",
+      "model_loading": {
+        "all_named_parameters_match_saved_file": true,
+        "missing_parameters": 0,
+        "unused_serialized_buffer": "deberta.embeddings.position_ids"
+      },
+      "protocol": {
+        "dtype": "float32",
+        "device": "cpu",
+        "pair_directions": 2,
+        "no_truncation": true,
+        "max_pair_tokens": 512,
+        "acceptance": "Minimum entailment probability in both directions reaches threshold; combined metrics additionally require the existing factual guard.",
+        "probability_replay": "Raw logits independently normalized in float64; tolerance 1e-6."
+      },
+      "fixed_development_cohort": {
+        "cases": 237,
+        "qualified_english": 177,
+        "unqualified_language": 60,
+        "english_bank_pairs": 158,
+        "previous_complete_outputs": 10,
+        "previous_changed_excerpts": 9,
+        "bank_library_only": {
+          "qualified_labeled_cases": 158,
+          "true_accept": 77,
+          "false_accept": 41,
+          "true_reject": 38,
+          "false_reject": 2
+        },
+        "bank_combined_threshold_0_99": {
+          "qualified_labeled_cases": 158,
+          "true_accept": 73,
+          "false_accept": 8,
+          "true_reject": 71,
+          "false_reject": 6
+        },
+        "complete_labeled_outputs_combined_threshold_0_99": {
+          "qualified_labeled_cases": 9,
+          "true_accept": 0,
+          "false_accept": 2,
+          "true_reject": 7,
+          "false_reject": 0
+        },
+        "result_sha256": "cf7b57cf38aa80b608037e2b320eff7b610d41cd4475bc7884fa0801d8afb415",
+        "summary_sha256": "fb5132dbd8b1a26410f85c6bd18829df1794158f16242ad58b2fae05c97bbd54"
+      },
+      "numerical_preflights": {
+        "directed_pairs": 360,
+        "cpu_mps_argmax_and_fixed_threshold_decisions_equal": true,
+        "bit_exact": false,
+        "mps_used_for_rewrite_experiment": false,
+        "standard_report_sha256": "3be1d76f43b7237d5cd39403cad84851a5421da3cdaa042f735134c027e3e93d",
+        "bucketed_report_sha256": "4bde11276e5ed98c8233564f608d8cc815280ef3a01cdec7d713a4ec408d1319"
+      },
+      "limitations": [
+        "Long complete outputs can receive high entailment despite local meaning changes.",
+        "English-only qualification; unsupported languages not scored as passing.",
+        "Development comparisons are not independent calibration or population error estimates."
+      ],
+      "candidate_diagnostics": {
+        "status": "complete_no_faithful_removal",
+        "schemes": [
+          "SynthID",
+          "EXP",
+          "OpenStamp"
+        ],
+        "source_count_per_scheme": 10,
+        "scope": "Fixed reused development sources and original author detectors. Every complete returned text reviewed before after-detector scoring. New proposal/eligibility/budget/spacing policy, not an isolated NLI or equal-cost comparison.",
+        "two_scope_policy": {
+          "focus_words_each_side": 8,
+          "whole_paragraph_check": true,
+          "minimum_bidirectional_entailment": 0.99,
+          "selected_fraction_of_eligible_words": 0.5,
+          "maximum_alternatives_per_selected_position": 3,
+          "source_helper": "Unchanged pinned BERT proposal helper; new candidate eligibility, exact whitespace and selection policy.",
+          "no_detector_feedback": true,
+          "trials": 30,
+          "returned": 25,
+          "guard_refusals": 5,
+          "meaning_false": 24,
+          "meaning_true": 0,
+          "meaning_unresolved": 1,
+          "below_reference_threshold": {
+            "SynthID": 0,
+            "EXP": 4,
+            "OpenStamp": 1
+          },
+          "faithful_removals": 0,
+          "results_sha256": "8e5feae5f6a3d5693e9f23f95f2ebb36df638c2098f55984e772fd4b82535b1f",
+          "pre_score_reviews_sha256": "7e3d65cc6c6233da8af9af2853223adb6c74fccba49038386f4b0c86a5f221b0",
+          "protocol_sha256": "81595ef32e94f848de5e196aa5686186f48d73cf084d5b7874ac9bc2cb4c5003"
+        },
+        "lexical_postfilter": {
+          "scope": "Separate NLP-only diagnostic on selected proposals from the prior 25 returned candidates. Five prior refusals excluded, no regeneration; changed combinations not re-certified by NLI. Library default rejects an unchanged prose cluster.",
+          "spacy_version": "3.8.18",
+          "english_model": "en_core_web_sm",
+          "english_model_version": "3.8.0",
+          "nltk_version": "3.10.4",
+          "wordnet_version": "3.0",
+          "wordnet_data_revision": "550b6625bcef1f2abff2ff770a5a0d272c9c6b2a",
+          "lemminflect_version": "0.2.3",
+          "rules": "Content POS and morphology plus a shared WordNet synset; dictionary-backed handling of ambiguous regular past/participle forms. Shared senses do not prove contextual equivalence.",
+          "probe_cases": 19,
+          "actual_assertion_mutations_rejected": 6,
+          "probe_scope": "Examined development controls, not general POS, grammar or semantic accuracy.",
+          "trials": 25,
+          "returned": 6,
+          "guard_refusals": 19,
+          "meaning_true": 4,
+          "meaning_false": 1,
+          "meaning_unresolved": 1,
+          "all_returned_remain_reference_detected": true,
+          "faithful_removals": 0,
+          "results_sha256": "17967dccc9f848735dce71b7fcd0c73a94a2325cdc39d687669f368123c5ae41",
+          "pre_score_reviews_sha256": "f8f1b00969dfe2b933132b4bee4136bebdd10ff747eee0a168d8251733efa7f4",
+          "probe_results_sha256": "a946b77476365408b8fd0ac4ccadc8044e8c3c6eb203b4c89cbf6bf267250853",
+          "mutation_results_sha256": "ce90598d0fa971b28a24380b438ad2c86b7bcbc14b209bf7f41d011308580640",
+          "unchanged_callback_followup": "Returning an unchanged callback leaves the same 19 refusals under default allow_partial=False; all six returned outputs are byte-identical."
+        },
+        "detector_replays": {
+          "fresh_synthid_source_control_traces": 20,
+          "fresh_exp_source_control_traces": 20,
+          "fresh_openstamp_source_control_pair": 2,
+          "openstamp_zero_threshold": "Illustrative only, not population-FPR calibrated.",
+          "synthid_report_sha256": "cfddff3a7e766d464a24d68dcba5901098edc2793a38e44715f3455545f67b1d",
+          "exp_report_sha256": "c311a3c711cf89a9c955d99f7a883d8c6a8941d71af479ce3e2efa0512e7752d",
+          "openstamp_report_sha256": "8352e19e9b16a8ceff94ec4e7a6432ee0c744d4145493e840896e962d0e72cd0"
+        },
+        "conclusion": "NLI alone admits consequential meaning changes; lexical constraints reduce edits but do not establish removal with fidelity. Neither diagnostic adopted as a production default."
+      }
+    },
+    {
+      "name": "English AMR graph identity diagnostic",
+      "source": "https://github.com/bjascob/amrlib",
+      "model_revision": "parse_xfm_bart_large-v0_1_0",
+      "model_asset_id": 57066548,
+      "license": "MIT project and model repository notices",
+      "status": "completed_development_diagnostic_not_adopted",
+      "role": "Independent semantic structure diagnostic",
+      "scope": "English examined development pairs only. Exact labeled graph identity rejects many faithful edits. No SWAN code or detector execution.",
+      "metrics": {
+        "full_current_english_bank": {
+          "library_fact_only": {
+            "labeled_cases": 162,
+            "true_accept": 79,
+            "false_accept": 41,
+            "true_reject": 40,
+            "false_reject": 2,
+            "unqualified": 0
+          },
+          "amr_identity_only": {
+            "labeled_cases": 162,
+            "true_accept": 20,
+            "false_accept": 0,
+            "true_reject": 81,
+            "false_reject": 61,
+            "unqualified": 0
+          },
+          "fact_and_amr_identity": {
+            "labeled_cases": 162,
+            "true_accept": 20,
+            "false_accept": 0,
+            "true_reject": 81,
+            "false_reject": 61,
+            "unqualified": 0
+          }
+        },
+        "exact_pair_intersection_with_prior_nli": {
+          "library_fact_only": {
+            "labeled_cases": 158,
+            "true_accept": 77,
+            "false_accept": 41,
+            "true_reject": 38,
+            "false_reject": 2,
+            "unqualified": 0
+          },
+          "amr_identity_only": {
+            "labeled_cases": 158,
+            "true_accept": 19,
+            "false_accept": 0,
+            "true_reject": 79,
+            "false_reject": 60,
+            "unqualified": 0
+          },
+          "fact_and_amr_identity": {
+            "labeled_cases": 158,
+            "true_accept": 19,
+            "false_accept": 0,
+            "true_reject": 79,
+            "false_reject": 60,
+            "unqualified": 0
+          },
+          "nli_099_only": {
+            "labeled_cases": 158,
+            "true_accept": 74,
+            "false_accept": 13,
+            "true_reject": 66,
+            "false_reject": 5,
+            "unqualified": 0
+          },
+          "fact_and_nli_099": {
+            "labeled_cases": 158,
+            "true_accept": 73,
+            "false_accept": 8,
+            "true_reject": 71,
+            "false_reject": 6,
+            "unqualified": 0
+          },
+          "fact_and_nli_099_and_amr": {
+            "labeled_cases": 158,
+            "true_accept": 19,
+            "false_accept": 0,
+            "true_reject": 79,
+            "false_reject": 60,
+            "unqualified": 0
+          }
+        }
+      },
+      "unique_inputs": 244,
+      "qualified_unique_inputs": 244,
+      "unsupported_language_pairs": 60,
+      "artifact_sha256": {
+        "comparison_results": "994527e6703c25687340899a1cbf45cc8f17f9b0b487367e68ee4180d9e9becc",
+        "probe_model": "2fcfe2113527accb752b6c574994022b3375b66d59da5042356c0f853e879849",
+        "actual_graph_mutations": "7bd2ab44a03223ece0e85295499853053d796fcda9058edd3ee95c1431a2b038"
+      }
     }
   ]
 }

@@ -12,6 +12,7 @@ import pytest
 from click.testing import CliRunner
 
 import remove_ai_watermarks as raiw
+from remove_ai_watermarks import text as text_module
 from remove_ai_watermarks.cli import main
 from remove_ai_watermarks.text import (
     C2PATXT_MAGIC,
@@ -124,6 +125,59 @@ def test_c2pa_ascii_armor_appendix_a9_html_and_hash_comments() -> None:
     assert remove_text_metadata(hash_armored).cleaned_text == body
 
 
+@pytest.mark.parametrize(
+    ("clean", "prefix", "suffix", "reference", "newline", "position"),
+    [
+        ("Hello, World!\n", "#", "", "https://example.com/m.c2pa", "\n", "start"),
+        ("<root/>\n", "<!--", " -->", "https://example.com/m.c2pa", "\n", "end"),
+        ("café ☕\r\nsecond line\r\n", "//", "", "data:application/c2pa;base64,3q2+7w==", "\r\n", "start"),
+        ("a {}\n", "/*", " */", "https://example.com/m.c2pa", "\n", "end"),
+        ("<root/>\r\n", "<!--", " -->", "https://example.com/m.c2pa", "\r\n", "end"),
+    ],
+)
+def test_c2pa_ascii_armor_single_line_exact_recovery(
+    clean: str, prefix: str, suffix: str, reference: str, newline: str, position: str
+) -> None:
+    comment = f"{prefix} -----BEGIN C2PA MANIFEST----- {reference} -----END C2PA MANIFEST-----{suffix}"
+    marked = comment + newline + clean if position == "start" else clean + newline + comment
+    assert "c2pa_ascii_armor" in identify_text(marked).signals
+    result = remove_text_metadata(marked)
+    assert result.cleaned_text.encode() == clean.encode()
+    assert result.remaining_markers == {}
+    assert remove_text_metadata(clean).cleaned_text == clean
+
+
+def test_c2pa_ascii_armor_single_line_preserves_prose_and_mismatched_comments() -> None:
+    snippet = "-----BEGIN C2PA MANIFEST----- https://example.com/m.c2pa -----END C2PA MANIFEST-----"
+    malformed_data = snippet.replace("https://example.com/m.c2pa", "data:application/c2pa;base64,???")
+    clean = f"Document the syntax {snippet} in this guide.\n<!-- {snippet} */\n# {malformed_data}\n"
+    assert remove_text_metadata(clean).cleaned_text == clean
+    assert "c2pa_ascii_armor" not in identify_text(clean).signals
+
+
+def test_c2pa_ascii_armor_single_line_between_xml_declaration_and_root() -> None:
+    header = '<?xml version="1.0"?>\r\n'
+    manifest = "<!-- -----BEGIN C2PA MANIFEST----- https://example.com/m.c2pa -----END C2PA MANIFEST----- -->\r\n"
+    root = "<root/>\r\n"
+    assert remove_text_metadata(header + manifest + root).cleaned_text == header + root
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_c2pa_ascii_armor_preserves_fenced_examples(newline: str) -> None:
+    begin = "-----BEGIN C2PA MANIFEST-----"
+    end = "-----END C2PA MANIFEST-----"
+    snippet = f"# {begin} https://example.com/example.c2pa {end}"
+    example = newline.join(
+        ("Document both forms below.", "```text", snippet, begin, "https://example.com/example.c2pa", end, "```", "")
+    )
+    marker = f"# {begin} https://example.com/real.c2pa {end}" + newline
+    assert remove_text_metadata(example).cleaned_text == example
+    assert "c2pa_ascii_armor" not in identify_text(example).signals
+    marked = marker + example
+    assert "c2pa_ascii_armor" in identify_text(marked).signals
+    assert remove_text_metadata(marked).cleaned_text == example
+
+
 def test_c2pa_html_appendix_a7_single_and_multiple_elements() -> None:
     import base64
 
@@ -163,6 +217,12 @@ def test_vsrmark_soft_binding_roundtrip_and_crc_validation() -> None:
     assert cleaned.cleaned_text == carrier
     assert cleaned.remaining_markers == {}
 
+    combined = encode_unicode_tags("", "pud") + marked
+    combined_report = identify_text(combined)
+    assert combined_report.vsrmark_payload == payload
+    assert combined_report.unicode_tags_payload == "pud"
+    assert remove_text_metadata(combined).cleaned_text == carrier
+
     # Corrupting the CRC32 must disqualify VSRMark attribution while still flagging steganography
     bad_body = struct.pack(">4sBH", VSRMARK_MAGIC, VSRMARK_VERSION, 4) + b"test"
     bad_crc = (zlib.crc32(bad_body) ^ 0xFFFFFFFF) & 0xFFFFFFFF
@@ -192,6 +252,51 @@ def test_unicode_tags_and_zero_width_stego_preserve_emojis() -> None:
     stripped = remove_text_metadata(tagged)
     assert stripped.cleaned_text == "Hello world ❤️ 👩‍💻!"
     assert stripped.remaining_markers == {}
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        ("❤", "\ufe0f"),
+        ("👩\u200d", "💻"),
+        ("1\ufe0f", "\u20e3"),
+        ("\u2229", "\ufe00"),
+        ("م", "\u200cی"),
+        ("ก", "\u200bข"),
+        ("2\u2060", "\u00d7\u20603"),
+    ],
+)
+def test_unicode_tags_between_glyph_components_preserve_the_original(left: str, right: str) -> None:
+    clean = f"Glyph {left}{right}."
+    marked = f"Glyph {encode_unicode_tags(left, 'pud')}{right}."
+
+    assert remove_text_metadata(clean).cleaned_text == clean
+    assert identify_text(marked).unicode_tags_payload == "pud"
+    result = remove_text_metadata(marked)
+    assert result.cleaned_text == clean
+    assert result.removed_codepoints == len(marked) - len(clean)
+    assert result.remaining_markers == {}
+
+
+@pytest.mark.parametrize("code", ["gbeng", "usca", "albr", "001"])
+def test_emoji_flag_preserves_valid_cldr_tag_codes(code: str) -> None:
+    sequence = "🏴" + "".join(chr(0xE0000 + ord(char)) for char in code) + "\U000e007f"
+    assert not identify_text(sequence).has_ai_metadata
+    assert remove_text_metadata(sequence).cleaned_text == sequence
+
+
+@pytest.mark.parametrize(
+    ("code", "tail"),
+    [("ushuh", ""), ("us", ""), ("pud", "\u200d\u2620\ufe0f")],
+)
+def test_emoji_flag_strips_invalid_cldr_tag_codes(code: str, tail: str) -> None:
+    tags = "".join(chr(0xE0000 + ord(char)) for char in code) + "\U000e007f"
+    marked = f"🏴{tags}{tail}"
+    assert identify_text(marked).unicode_tags_payload == code
+    result = remove_text_metadata(marked)
+    assert result.cleaned_text == f"🏴{tail}"
+    assert result.removed_codepoints == len(tags)
+    assert result.remaining_markers == {}
 
 
 def test_span_protected_regeneration_locks_technical_spans_verbatim(tmp_path: Path) -> None:
@@ -323,6 +428,32 @@ def test_cli_text_commands_and_missing_runtime_hint(tmp_path: Path, monkeypatch:
     inv_res = runner.invoke(main, ["text", "invisible", str(meta_out), "-o", str(tmp_path / "inv.md")])
     assert inv_res.exit_code != 0
     assert "remove-ai-watermarks[text]" in inv_res.output
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_cli_all_routes_text_using_normal_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, force: bool
+) -> None:
+    original = "The team wrote the report.\r\n"
+    marked = encode_c2patxt(original, SYNTHETIC_JUMBF_MANIFEST).encode()
+    source = tmp_path / "article.txt"
+    source.write_bytes(marked)
+    model_calls = []
+
+    def build_rewriter(model_id, *, seed, **_kwargs):
+        model_calls.append((model_id, seed))
+        return lambda prose: prose.replace("wrote", "drafted")
+
+    monkeypatch.setattr(text_module, "_build_local_lm_rewriter", build_rewriter)
+    args = ["all", str(source)]
+    if force:
+        args.extend(["--force", "--seed", "71"])
+    outcome = CliRunner().invoke(main, args)
+    assert outcome.exit_code == 0, f"{outcome.output}\n{outcome.exception!r}"
+    expected = original.replace("wrote", "drafted") if force else original
+    assert (tmp_path / "article_clean.txt").read_bytes() == expected.encode()
+    assert source.read_bytes() == marked
+    assert model_calls == ([(text_module.DEFAULT_TEXT_REWRITER_MODEL, 71)] if force else [])
 
     # Top-level raiw exports resolve lazily
     assert raiw.identify_text is identify_text

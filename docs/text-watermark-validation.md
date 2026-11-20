@@ -15,6 +15,55 @@ emoji and joining-script context. The sequence is forgeable, so this signal does
 not attribute the source to Microsoft. Tests cover synthetic published-format
 fixtures; actual Windows AI output has not been generated in this environment.
 
+### Independent C2PA text replay
+
+`scripts/benchmark_c2pa_text.py` reads the external encoder's published
+vectors and verifies that its decoder recognizes each marked input and
+rejects its clean control. It reports exact byte recovery, preservation
+of clean inputs, idempotence and reference-decoder residue. The two
+supplemental Markdown examples use exact byte recovery because their
+quoted manifest is literal content.
+
+Use the [c2pa-text reference revision](https://github.com/encypherai/c2pa-text/tree/7e818755818281748c41aef8766037b30ce9fb04)
+and, for the optional comparison, [dewatermark 0.8.0 at the tested revision](https://github.com/cyzanfar/text-watermark-remover/tree/fd620a93b9d96c7a4730d80be2d7aa90d5017575).
+Run from the library checkout with the reference source already present
+locally.
+
+```bash
+uv run --with requests python scripts/benchmark_c2pa_text.py \
+  --reference-root ../c2pa-text \
+  --dewatermark-root ../text-watermark-remover \
+  --output ../c2pa-text-results.json
+```
+
+The library recovered all seven publisher originals and both Markdown
+examples. The dewatermark safe and aggressive profiles recovered zero
+and two of the nine originals, respectively. All three configurations
+preserved each clean original. These results describe the tested C2PA
+carriers and the two exact Markdown cases.
+
+### Exact Unicode and serialized recovery through API and CLI
+
+`benchmark_text_exact.py` has an independent synthetic Unicode panel in the
+script. It inserts the published Windows sequence next to prose that contains
+joining scripts, emoji, bidi isolates, decomposed text, numeric multiplication
+with word joiners, and a fenced CRLF example. Results require byte-identical
+recovery through `remove_text_all` and the CLI's top-level `all`. The harness
+also checks the clean inputs and source-file preservation. The math control
+covers the supported numeric multiplication form. Letter-based equalities
+with WORD JOINER fall outside that preservation rule.
+
+```bash
+uv run python scripts/benchmark_text_exact.py --output ../unicode-exact.json
+uv run --with requests python scripts/benchmark_text_exact.py \
+  --reference-root ../c2pa-text --output ../text-exact.json
+```
+
+The second command adds the published C2PA vectors and the two fenced
+Markdown examples as a separate report group. Reports contain input and
+output hashes and fail the command on mismatches, clean-control changes,
+non-idempotent API output, or residue found by the reference decoder.
+
 ## Partial regeneration
 
 Partial processing is opt-in. Rejected paragraph clusters remain unchanged and
@@ -310,6 +359,7 @@ uv run python scripts/benchmark_alimark_reference.py --help
   nonnegative integer `retained_prose_spans`. The replay records actual reference
   and encoder file hashes. It does not import or run vLLM generation. Without a
   caller-declared `--threshold`, the result remains `scored_uncalibrated`.
+
   A declared threshold is an experiment setting, not a calibrated FPR. The initial
   HF generation bridge used a smaller candidate budget than the paper; its source
   was not a valid positive at the separately tested cutoff. That is a failed
@@ -546,6 +596,254 @@ different code from the module already imported by a running process.
 Local artifact bundles are evidence for that run; they do not become public
 release claims automatically.
 
+### Comparing methods on the same marked and clean sources
+
+Use `scripts/benchmark_text_pairs.py` from a source checkout to combine blinded
+fidelity reviews with locally recorded detector results. Keep the run directory
+and inputs outside the checkout if the texts are private.
+
+The input JSON contains an `arms` list, a `detectors` object mapping named
+reference configurations to their minimum scored positions, and a `pairs` list.
+Each pair has an `id`, a `detector`, and `marked` and `clean` entries. Each
+entry contains the exact `source` text and an `outputs` object with one exact
+output per arm. Use JSON `null` for a refusal and the original text for an
+unchanged output. Supply detector receipts as a JSON list with one
+`detector`, UTF-8 `sha256`, boolean `detected`, and integer `positions` record
+per distinct detector and text. Run the reference detector separately with
+the same configuration and threshold for every source and output.
+
+For any method that deliberately retains prose spans, record them under
+`retained_prose` as a mapping from arm to the list of exact fragments present in
+the source and output. Score those fragments separately with the same detector.
+The report flags a partial output as `partial_unverified` if any declared
+fragment is positive or has too few scored positions. A faithful, whole-document
+negative with that flag stays in the denominator and earns no joint success.
+The scorer checks declared fragments. It cannot infer which spans were retained
+by an arm.
+
+```bash
+uv run python scripts/benchmark_text_pairs.py bind \
+  --input trials.json --run paired-run
+uv run python scripts/benchmark_text_pairs.py seal \
+  --run paired-run --reviews reviews.json
+uv run python scripts/benchmark_text_pairs.py score \
+  --input trials.json --run paired-run --reviews reviews.json \
+  --detections detections.json --baseline strict --output results.json
+```
+
+Give reviewers only `paired-run/blind-pairs.json`. Record a boolean
+`faithful` verdict and a nonempty `reason` for each packet ID in
+`reviews.json` and seal it before inspecting detector results. The script
+checks that every marked source tests positive, every clean source tests
+negative, and both meet the declared position minimum. Every attempted source
+stays in the denominator. Only changed marked outputs with enough scored
+positions, a negative detector result, and a faithful review count as joint
+successes. The report also gives detector outcomes for changed clean controls
+and exact paired tests against the declared baseline for each detector.
+
+#### Generating matched KGW sources locally
+
+`scripts/benchmark_text_kgw_sources.py` creates paired marked and clean
+continuations from a pinned local chat checkpoint and the author's KGW
+implementation. The plan requires `detector`, `key`, `wrong_key`, `gamma`,
+`delta`, `z_threshold`, `minimum_positions`, `seed`, `batch_size`, `top_k`,
+`temperature`, `max_new_tokens`, and a list of exact, distinct `prompts`.
+Pin the checkpoint, tokenizer and generation assets in `model_sha256`.
+Pin `watermark_processor.py` and `normalizers.py` in `reference_sha256`.
+Keep the plan, batch size, device and runtime fixed when reproducing a panel.
+The author processor runs on CPU and the model runs on the chosen device.
+
+```bash
+uv run --extra text --with nltk --with scipy python scripts/benchmark_text_kgw_sources.py \
+  --config kgw-sources.json --reference-root /path/to/kgw-reference \
+  --model-dir /path/to/local-checkpoint --device mps --output-dir kgw-sources
+```
+
+`qualification.json` records every attempt, including incomplete
+continuations, exact token traces and both key checks. A pair enters
+`trials.json` when both continuations end cleanly, round-trip through the
+tokenizer, and meet the position minimum, with a positive marked source,
+negative clean control, and negative wrong-key check on the marked source.
+The trials are ready for the local sentence-repair runner. Apply any planned
+readability screen before generating rewrites, and keep the original
+qualification report for the full attempted denominator.
+
+#### Generating local KGW detector receipts
+
+`scripts/benchmark_text_kgw_receipts.py` consumes a sealed paired review and
+emits `detections.json` for `score`. Use the author's local reference files and
+the exact local tokenizer from source generation. This profile runs on CPU
+with `simple_1`, distinct bigrams, and no normalization. The configuration
+file has `detector`, `key`, `gamma`, `delta`, and `z_threshold` fields.
+`detector` must match the manifest's detector ID. In the same file, map each
+reference file name to its SHA-256 in `reference_sha256`, including
+`watermark_processor.py` and `normalizers.py`. Map the tokenizer files in
+`tokenizer_sha256`, including `config.json`, `tokenizer.json`, and
+`tokenizer_config.json`. Include all other tokenizer assets used by the
+generation checkpoint.
+
+```bash
+uv run --extra text --with nltk --with scipy python scripts/benchmark_text_kgw_receipts.py \
+  --input trials.json --run paired-run --reviews reviews.json \
+  --config kgw-config.json --reference-root /path/to/kgw-reference \
+  --tokenizer-dir /path/to/local-tokenizer --output-dir kgw-receipts
+```
+
+Pass `--dependency-dir` for dependencies prepared in an isolated directory.
+The output also records raw z scores by exact text hash, runtime versions,
+and hashes of the configuration, review, and receipts. A text with no scored
+positions has an absent z score and cannot qualify as cleared. The paired
+scorer still checks the original marked and clean controls and applies the
+minimum scored positions in the manifest.
+
+#### Generating matched Threefry sources locally
+
+`scripts/benchmark_text_threefry_sources.py` generates paired clean and
+marked continuations from a pinned local chat checkpoint and the open
+reference. It takes the same sampling fields as the KGW source runner.
+Use `detector`, `alpha`, `eos_token_ids`, and `scheme` from the Threefry
+receipt configuration below, plus a distinct `wrong_key` in the same
+63-bit key space. Pin the checkpoint, generation config, and tokenizer
+assets in `model_sha256`, and the reference files in `reference_sha256`.
+`top_k` must be positive. The clean and marked arms use the same
+temperature and candidate width. The reference watermark processor runs on CPU.
+
+```bash
+uv run --extra text --with scipy python scripts/benchmark_text_threefry_sources.py \
+  --config threefry-sources.json --reference-root /path/to/threefry-reference \
+  --model-dir /path/to/local-checkpoint --device mps --output-dir threefry-sources
+```
+
+`qualification.json` records all attempts, token traces, end markers,
+and both key checks. The library and reference must agree on the raw scores.
+The runner exports a pair to `trials.json` only when both continuations
+end cleanly, round-trip exactly, and meet the scoring minimum. The marked
+source must be positive with the matched key and negative with the wrong key.
+The clean source must be negative with the matched key. Apply a planned
+readability screen before generating rewrites and keep the full qualification
+record for the attempted denominator.
+
+#### Generating local Threefry detector receipts
+
+`scripts/benchmark_text_threefry_receipts.py` uses the open frequentist
+reference and checks its scored positions, counted one bits, nominal p values,
+and verdicts against the library on the same token IDs. Use a configuration
+with `detector`, `alpha`, `eos_token_ids`, and a `scheme` object containing
+`key`, `ngram_len`, `depth`, `context_history_size`, and `num_leaves` set to 2.
+Use the tokenizer from source generation and list its asset hashes in
+`tokenizer_sha256` as for KGW. Under `reference_sha256`, pin paths relative to
+the reference root, including `synthid_text/detector_frequentist.py`,
+`synthid_text/hashing_function.py`, and `synthid_text/logits_processing.py`.
+Include `synthid_text/__init__.py` if the local reference contains it.
+
+```bash
+uv run --extra text --with scipy python scripts/benchmark_text_threefry_receipts.py \
+  --input trials.json --run paired-run --reviews reviews.json \
+  --config threefry-config.json --reference-root /path/to/threefry-reference \
+  --tokenizer-dir /path/to/local-tokenizer --output-dir threefry-receipts
+```
+
+Each receipt generator scores only trials with its configured detector ID.
+For a mixed manifest, concatenate the receipt arrays, for example with
+`jq -s add kgw-receipts/detections.json threefry-receipts/detections.json > detections.json`.
+The paired scorer requires complete coverage and rejects duplicate receipts.
+These settings describe the open single-key research profile. Its nominal
+p values assume independent bits.
+
+#### Running the local sentence-repair comparison
+
+`scripts/benchmark_text_local_repair.py` prepares the scorer manifest from
+source pairs and a local Chat Completions endpoint. Use the same input format
+as above with arms `restore`, `strict_residual`, and `document_residual`, every
+output set to `null`, and no `retained_prose` entries. For example, one pair
+has this shape:
+
+```json
+{
+  "id": "pair-1",
+  "detector": "kgw-config-1",
+  "marked": {
+    "source": "Exact marked source",
+    "outputs": {"restore": null, "strict_residual": null, "document_residual": null}
+  },
+  "clean": {
+    "source": "Exact clean source",
+    "outputs": {"restore": null, "strict_residual": null, "document_residual": null}
+  }
+}
+```
+
+```bash
+uv run --extra text-api python scripts/benchmark_text_local_repair.py \
+  --input sources.json --output-dir local-run \
+  --url http://127.0.0.1:11434/v1 --model MODEL
+```
+
+The runner uses the same first draft and at most one shared residual request
+per source. The first arm restores individually rejected sentences when the
+document fails the fact guard. The residual arms rewrite verbatim retained
+sentences and require the same whole-document check. The strict arm also
+applies the fact guard to each rewritten sentence. The runner records exact
+retained sentences for detector scoring and produces `local-run/trials.json`
+for `bind`. It logs requests and responses to stderr, so keep the logs with the
+private inputs. Pin the model revision and runtime separately for a live rerun.
+Run the reference detector independently after sealing the blind review.
+The strict arm is available through `build_text_api_strict_residual_rewriter`
+and the Ollama CLI flag `--strict-residual`. Replaying saved model replies
+through both surfaces checks the actual request sequence, exact file output,
+and untouched destinations on refusal.
+
+#### Adding the local ReFlip baseline
+
+`scripts/benchmark_text_reflip.py` adds the pinned ReFlip Python
+`paraphrase` pipeline to an existing paired manifest. Use the same marked
+texts and clean controls as the library arms. For the comparison plan, record
+the ReFlip checkout `revision`, SHA-256 paths in `source_sha256`, the
+`ollama_version`, the Ollama `model_digest` of ReFlip's default checkpoint,
+and a positive `workers` count. Include the imported ReFlip modules and its
+facts lexicon in the source hashes. Keep the same runtime and checkpoint for
+a rerun.
+
+```bash
+uv run --with requests python scripts/benchmark_text_reflip.py \
+  --input local-run/trials.json --config reflip-plan.json \
+  --reference-root /path/to/reflip --url http://127.0.0.1:11434/v1 \
+  --output-dir combined-run
+```
+
+The runner checks the live local Ollama version and model digest before
+generation. It keeps the library arms and records requests, replies and
+refusals. An unrevised failed block, error, or length-limited reply counts as a
+refusal. Run `bind` on
+`combined-run/trials.json` before judging meaning or scoring the new text.
+The two arms may use different checkpoints, so this compares complete local
+pipelines. Keep the transport record private when it contains private text.
+
+#### Adding the on-device Apple baseline
+
+`scripts/benchmark_text_apple.py` adds an arm from Apple Intelligence's
+on-device system language model. It requires an available Apple Intelligence
+model and the macOS 27 Xcode SDK. The library and
+its other benchmark commands have no Apple SDK dependency.
+[Apple Foundation Models documentation](https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel)
+
+Set `arm` to a new name, `instructions` to the exact generation prompt,
+`macos_build` to the output of `sw_vers -buildVersion`, and
+`maximum_response_tokens` to a positive integer, such as 1024.
+
+```bash
+uv run python scripts/benchmark_text_apple.py \
+  --input combined-run/trials.json --config apple-plan.json \
+  --output-dir with-apple
+```
+
+The runner records the OS and SDK versions and uses greedy sampling in a
+fresh private session for each distinct input. It keeps empty outputs and
+generation errors as refusals. A sentence left verbatim is recorded for
+independent detector scoring. Seal the blind review before scoring
+`with-apple/trials.json`. This baseline uses the system model shipped with
+the recorded macOS build. Its weights can change with system updates.
+
 ## Local language preservation trial
 
 A fixed seven-source, three-prompt experiment with the default cached
@@ -620,6 +918,9 @@ previous judge measurements do not cover the revised corpus hash.
   as regeneration. Invalid/unchanged candidates now raise without replacing output.
 - List prefixes are locked separately from their prose. Comparative "one of the
   most" is not treated as a count; "one crate" remains a quantity.
+  A selected pattern for an indefinite article with a modified participle
+  handles noun substitutes such as "a partly filled one". The regression
+  checks exact counts and local prompt masking, including a numeric compound.
 - Local candidates must preserve the full service-placeholder multiset. An
   invented example marker was reproduced in a real rewrite and is now rejected.
 - A dominant-script backstop rejects obvious unrequested translation; it is not
@@ -638,6 +939,10 @@ previous judge measurements do not cover the revised corpus hash.
   `at least 20`/`no fewer than 20`. Quantified negation is distinguished from
   predicate negation. This lexical check can refuse ambiguous phrasing; it does
   not establish participant attachment or general semantic equivalence.
+- Selected English phrases distinguish a percentage reached from a percentage
+  gained or lost. Positive and negative controls cover lexical paraphrases,
+  inverted roles and multiple percentages in the same sentence. This guards a
+  fact relation without changing any statistical detector or decision threshold.
 - Selected Russian cardinal forms are read as whole integer sequences, including
   hundreds and descending thousand/million/billion scales. This distinguishes
   `двадцать пять` from `двадцать шесть` while allowing `25`, and attaches supported
@@ -688,6 +993,11 @@ matching integer key. The expanded benchmarks use external reference detectors.
 Anthropic's [model table](https://support.claude.com/en/articles/16266773-how-claude-marks-ai-generated-content)
 identifies marked versions and private text-detector access. The catalog records
 these individual models as blocked rather than implying a passed Claude test.
+The catalog refresh also includes the currently listed older Opus/Sonnet/Haiku
+models. For the marked legacy entries, non-default temperature/top-p/top-k can
+make marking unreliable. Opus 3 cloud-partner text marking is not confirmed by
+the table, and selected Bedrock rollouts have an additional delay caveat. These
+conditions belong to source qualification, not a removal success.
 [OpenAI](https://help.openai.com/en/articles/8912793-provenance-signals-in-openai-generated-content)
 publishes textGrain product, region and API opt-in conditions with restricted text
 checks. Its public policy does not enumerate every eligible model ID.
@@ -802,8 +1112,8 @@ adherence and participant/event preservation remain unresolved.
 ### Remaining entropy-weighted source states
 
 A constructor/requirements audit of exact candidates 026 through 036 confirms
-that each requires per-token `entropies`. These entries remain unexecuted in the
-inventory. The author's entropy-weighted condition can return no weights when
+that each requires per-token `entropies`. The subsequent exact-source executions
+are recorded below. The author's entropy-weighted condition can return no weights when
 signals are omitted, so a plain detector call would not reproduce the declared
 weighted method. The source-state adapter does not yet allow these candidates.
 
@@ -817,8 +1127,10 @@ missing arrays and unweighted scores cannot qualify the author method.
 
 An access check for the declared Gemma model's pinned configuration returned
 HTTP 403. The model's [official card](https://huggingface.co/google/gemma-3-270m-it)
-requires license acceptance before access. This leaves those exact weighted
-states unverified; a different model or an unweighted detector is not substituted.
+requires license acceptance before access. This historical access failure did
+not establish that identical files were unavailable elsewhere. The later
+byte-verified public-mirror execution below supersedes this dependency blocker;
+a different auxiliary model or an unweighted detector was not substituted.
 
 An additional exact-source constructor audit covers candidates 037 through 052
 and the three baseline configurations, with their declared requirements recorded
@@ -837,8 +1149,8 @@ SynthID do not declare auxiliary signals. These audits establish prerequisites,
 not generated-text control qualification or removal coverage. Baseline source
 verification uses the separate tree-based replay path, since these configurations
 are not individual content-addressed submission maps. The declared AAR and
-SynthID baseline executions are recorded below; TextSeal still needs its entropy
-pipeline before execution can qualify.
+SynthID baseline executions are recorded below; the later TextSeal execution uses its entropy
+pipeline; its qualification failure is recorded below.
 
 ### Native 9B rewrite ablations and numerical occurrences
 
@@ -982,3 +1294,1043 @@ establish source quality, independent FPR calibration, native paper-model parity
 or actual private-provider coverage. The submission inventory retains these
 baseline outcomes separately from selected-package experiments and metadata-only
 audits. No production model, prompt or backend default changed in this phase.
+
+### Teacher-forced signal consistency
+
+The reference adapter now checks the author's leading zero sentinel, token and
+vocabulary types and bounds, per-position nonzero target probabilities, unique
+and sorted top-eight rows, and agreement between a target probability and its
+row entry. A target absent from the top eight cannot be more likely than the
+last entry. Float32 tolerance and clamped tail ties remain accepted. These
+checks reject structural and internal consistency errors; they cannot establish
+model identity or detect every jointly shifted or stale array. Qualified model
+experiments must additionally freeze the exact token arrays, model files,
+provider source and configuration, and compare against a separate teacher-forced
+forward pass. The source-state adapter's plain-signal gate remains in place.
+
+Regression cases were exercised against the preceding implementation and against
+intentional mutations of the new checks. This validation change alone does not
+establish faithful watermark removal or enable previously unsupported methods.
+
+### Exact AccentMark and RowMark weighted execution
+
+Exact source states 049 and 050 completed the unchanged author generation and
+weighted detection path with qualified EOS, token round-trip and source/shared
+negative controls. The frozen Qwen2.5-1.5B MPS float32 bridge retains sampling
+after the author CPU processor. AccentMark receives the declared token
+log-probabilities; RowMark additionally receives the declared author top-eight
+ID/probability rows. Direct local-HF provider calls avoid the outer provider's
+zero fallback. Each signal is checked against a separate teacher-forced forward
+on those exact tokens, including the previous-position alignment and the author's
+probability floor. Fresh-process replays recompute the signals and reproduce the
+author scores. The inventory records the frozen diagnostic values and source
+hashes. The common negative control is reused, not an independent FPR sample.
+
+Both complete native library rewrites are refused. RowMark accepts intermediate
+paragraphs before refusing a later cluster; an accepted intermediate paragraph
+omits listed objects and changes borrowing into lending. Whole-output refusal is
+not credited as removal, and intermediate acceptance does not certify fidelity.
+Examined, disambiguated borrower/lender-role and listed-object development pairs
+record these gaps. The current fact checker accepts both negative examples;
+they do not establish an improved checker or new held-out judge accuracy.
+
+The reusable source-state replay command still rejects weighted methods. These
+research executions do not silently enable its plain detection route, transfer
+coverage from the selected package, establish native paper-model parity, or
+verify inaccessible provider detectors. Production defaults remain unchanged.
+
+### Optional parsed English loan-role check
+
+`remove_ai_watermarks.text_roles.verify_text_rewrite_loan_roles` supplies an
+optional callback helper for selected parsed borrower/lender reversals. It uses
+an explicitly supplied local English dependency parser, not another rewriter.
+Active/passive borrow/lend/loan clauses share borrower/lender roles; exact
+participant lemmas and available item lemmas bind comparisons. Selected subject
+control, coordination, recipient passives, datives and object-attached source
+prepositions are handled. A complete parse must retain each exact input text;
+missing/partial annotations, empty documents and stale/truncated text raise
+instead of becoming acceptance. Importing the helper needs no ML dependencies.
+The default rewriter, dependency groups and acceptance policy are unchanged.
+
+An examined native RowMark trial with the unchanged current library rewriter
+reproduced an intermediate borrower/lender reversal accepted by the existing
+hard guards. The callback rejects that candidate inside the library retry loop.
+The next candidate passes the selected role check but still changes other
+wording; a later cluster is refused, so there is no complete marked output or
+removal success. A separate short control returns prose after rejecting an
+unsupported lending-role change, but its return-after-use condition becomes
+less explicit. Whole-text fidelity remains uncertain, not certified.
+
+Pinned `en_core_web_sm` and `en_core_web_trf` 3.8.0 model runs are kept separate.
+The small model misparses some loan and dative examples; the transformer model
+handles the examined additional constructions. Both reproduce the recorded
+native callback decisions. Frozen dependency trees exercise rule behavior
+without requiring models in unit tests. These are examined development inputs,
+not held-out parser accuracy or proof of complete role binding. In the frozen
+English fidelity corpus the helper rejects a selected role-change error that
+the existing fact helper accepts; many other semantic errors remain accepted.
+Matching roles do not establish object preservation, ownership, coreference,
+negation scope, scheduling or general semantic equivalence. No default model or
+semantic gate is adopted from these diagnostics.
+
+### Exact UnisonMark and ConcordMark canonical source states
+
+Exact states 051 and 052 completed unchanged author processing and weighted
+scoring through the Llama3.2-1B float32 MPS bridge. The complete tokenizer is
+canonically equal to the pinned declared Llama3.1 reference, including special
+tokens and merge ranks. The source-state asset helper verifies the selected
+nonidentity, idempotent, minimal-representative map and rejects foreign token
+maps, missing modes, malformed arrays and unavailable assets. Both published
+archive schemas are supported: the earlier six-array UnisonMark asset and the
+later asset with the additional sense array. No embedded build-tokenizer identity
+is claimed. Generation and fresh detectors also check that the actual loaded
+map equals the published selected array instead of falling back to raw IDs.
+
+Direct unchanged author logprob/top-eight providers are checked against separate
+teacher-forced forwards. Fresh-process replay recomputes the signals and
+reproduces the source/shared-control contrasts. The reused unmarked Llama control
+has the same frozen prompt, including its synthetic chat-template date; it is
+not an independent FPR sample. Source EOS, text/token round trips and scored
+lengths qualify both diagnostic contrasts. The inventory records the scores,
+model revisions, map hashes and scope of the bridge. No native vLLM/paper-model
+or private-provider parity is established.
+
+The complete UnisonMark rewrite is refused. ConcordMark returns a complete text
+that the unchanged author detector does not detect at the frozen alpha, but a
+communal notebook becomes a personalized notebook for each tool. That meaning
+change was recorded before after-text detector replay. It is not credited as
+faithful removal. Examined, disambiguated shared-record/per-item-record pairs
+record this known fact-checker gap; earlier judge/parser/competitor measurements
+retain their previous corpus hashes. The reusable replay command remains
+plain-only and does not silently enable these weighted methods.
+
+
+### Default-entropy OmniSeal and TextSeal execution
+
+The inventory now records exact author-source executions of candidates 026
+through 036 and the declared TextSeal baseline. The original processors,
+configurations, detectors and default Gemma entropy provider are unchanged.
+Nine runtime files from `daniel-dona/gemma-3-270m-it` revision
+`99073d6b6edb0e298d163f964ec2b9d970b3408d` match official
+`google/gemma-3-270m-it` revision
+`ac82b4e820549b854eebf28ce6dedaf9fdfa17b3` byte identities: LFS SHA-256
+or ordinary-file Git blob hashes, followed by local file verification. This
+claims runtime-file identity, not identical model cards or complete repositories.
+
+The author provider consumes raw Qwen generator IDs, without decoding and
+retokenizing into Gemma IDs or adding BOS. Its unchanged loader selects CPU
+bfloat16 and SDPA in the recorded environment. Entropy uses the author's
+float32 log-softmax and reduction, with a zero leading sentinel and next-token
+alignment. Every source/control signal is independently recomputed in a fresh
+process and exactly matches the frozen author arrays; each detector explicitly
+reports weighted mode. A separate model forward uses the same float32
+normalization and independent float64 exponential/summation to check entropy.
+Fully float64 normalization differs from the author calculation; that diagnostic
+is retained rather than replacing the declared numerical method.
+
+The reusable `validate_entropies` helper rejects malformed types, alignment,
+sentinels, nonfinite values, zero fallbacks, invalid raw token IDs and impossible
+entropy bounds. These structural checks do not establish model or source
+provenance; the frozen file hashes and independent inference supply separate
+evidence. Deliberate mutations demonstrate the new assertions. The public
+plain-only replay command still rejects entropy-dependent configurations.
+
+All eleven candidate sources pass the declared source/shared-negative-control
+contrast and generation qualification. Native library rewriting refuses complete
+output after three attempts per source. Attempt records expose dropped daily
+frequencies, conditions and protected markers; no complete faithful removal is
+credited. Candidates 026 through 029 produce identical source text and scores,
+so they are separate source-state executions, not independent text samples.
+Candidates 030 and 034 also share that source text, with different configured
+weights and scores. The frozen summary records all six duplicate-source states.
+
+The TextSeal baseline completes generation and independently reproduced weighted
+scoring, but fails exact generation/tokenizer round-trip qualification. Its low
+source p-value cannot qualify this trial, and rewriting is not attempted. The
+failed frozen input is retained without detector-guided replacement generation.
+
+These experiments use a declared Qwen2.5-1.5B MPS float32 generation bridge,
+CPU author processing, and the native library's MPS float16 rewriter. They do
+not establish native paper-model/vLLM parity, independent FPR calibration,
+private-provider coverage or market leadership. The active goal still requires
+effective faithful rewriting and independent full-product comparison. Inventory
+coverage of source states must not be reported as coverage of provider models.
+
+### Visible facts, sentence ablations and explicit record scope
+
+Development ablations on frozen previously examined sources compared visible
+facts, visible facts with an explicit preservation list, and contextual
+sentence-wise rewriting with aggregate paragraph checks. Each used the library
+pipeline and original fact guards plus exact selected-expression multiplicities.
+The sentence strategy permits more total model calls and is not a fixed-cost
+comparison. An initial sentence-count restriction was removed because splitting
+a sentence is not inherently a meaning error; its frozen first answer was reused
+in the refinement rather than regenerated. The returned complete texts still
+change borrower/lender roles, omit listed objects, change a hanging notepad to a
+resting notebook, or distribute a communal notebook per tool. No returned text
+is credited as faithful removal, and these experimental strategies are not
+adopted. After-detector scoring is not used to rehabilitate a known quality
+failure.
+
+The native fact checker now rejects selected explicit English contradictions
+between a shared/communal record container and separate containers per item, in
+either direction. It distinguishes notebook entries, ledger pages and register
+codes from their containers. Missing cues, mixed distributions and bindings to
+different people/items remain unresolved. Passing this check is not an ownership
+or semantic-equivalence certificate. The existing communal-record development
+negative changes from accepted to rejected; other decisions in the frozen
+development corpus are unchanged. This is examined regression evidence, not
+held-out semantic-judge accuracy.
+
+A fresh native rewrite of the same frozen ConcordMark source keeps the original
+model, prompt, masking and retry budget. The new guard rejects an intermediate
+per-tool-notebook response that the preceding guard accepts. Complete rewriting
+then refuses, so there is no new after output or detector verdict. The inventory
+retains the earlier meaning-changed diagnostic and adds the separately hashed
+guard follow-up. Subsequent type annotation and compound-word protection changes
+are checked by replaying every frozen native candidate with identical decisions
+under the final core. Regressions first fail against the preceding implementation; bypass
+and over-refusal mutations demonstrate both negative and positive assertions.
+
+### Local edit proposals and indexed sentence replacements
+
+Two development prototypes use the library runtime and custom-rewriter hook on
+the same frozen examined inputs. Exact old/new phrase proposals enforce unique
+source matches, nonoverlap and selected-fact/technical-token locks. The small
+model instead repeatedly edits listed protected expressions or copies source
+strings inaccurately, preventing complete output. Accepted intermediate edits
+can still change locations or participant roles; formal edit validity is not
+semantic validation. An executor review also catches an adjacent-placeholder
+boundary gap; the native placeholder guard already rejects the resulting token
+loss, and the refined temporary executor rejects it directly.
+
+Indexed sentence proposals remove exact source-string copying and do not expose
+a separate protected-expression list. Invalid unit rewrites retain their original
+sentences, with retained ids recorded separately from paragraph-level prose-span
+accounting. Whole assembled paragraphs still pass native fact/language guards.
+The sole returned full candidate retains original sentences and has unresolved
+exchange and sign-off wording. Its manual quality review predates scoring and
+does not establish equivalence.
+
+The unchanged ConcordMark detector still detects this indexed candidate. Exact
+source objects, canonical arrays, full tokenizer compatibility and required
+weighted signals are checked with the original pinned generator checkpoint.
+Fresh author providers reproduce frozen source/control signals and scores;
+separate teacher-forced forwards verify probabilities and top-eight rows for the
+new after text. The inventory records this retained-mark experiment separately
+from earlier native trials. Neither proposal strategy is adopted, and there is
+no new complete faithful removal or market-leadership evidence.
+
+### Matched local runtime and Llama head precision
+
+A local Qwen3-4B GGUF transport experiment reuses the unchanged library rewriter
+factory, prompt, masking, retries and candidate guards. Every HF vocabulary id
+and BPE merge matches the recorded GGUF representation, with unused padding ids
+explicitly outside the equality claim. All observed prompt token counts match.
+Raw local generation receives the library-rendered chat prompt; a counterfactual
+completion test verifies that length-limited replies trigger the native retry
+instead of becoming successful EOS stops. This remains a research transport,
+with no shipped backend or numerical parity claim.
+
+The returned RowMark and ConcordMark development candidates remain detected by
+their unchanged weighted author oracles. Manual review also finds approval-signal
+direction and manner-to-event binding changes. The inventory records separate
+native default retests, raw-transport outputs and their code/input hashes. These
+observations do not support a default model or strategy change.
+
+An independent ConcordMark signal check initially compares the author's
+32-position Llama output-head multiplication with a full-head forward. On an
+examined input, the same hidden states produce small MPS float32 rounding
+differences between those matrix shapes. Repeated backbone states are bit
+identical; the full wrapper matches the full-head calculation, and the original
+provider matches the chunked-head calculation exactly. The checker now performs
+a separate backbone forward with the source-declared head chunk shape. The
+original tolerance is retained, original author signals and generated outputs
+remain unchanged, and frozen marked/control scores reproduce. Signal validation
+must bind the declared numerical method as well as token ids and model files.
+
+### Dependency-bound protected phrases
+
+A native MLX development study pairs the existing mask with source-bound
+dependency bundles, then adds a readable phrase glossary. The pinned English
+parser's installed files match its model wheel. Source-offset binding, exact
+restoration, literal marker collisions and stale-parser rejection are checked;
+these checks do not establish parser accuracy or semantic equivalence. Neither
+bundle strategy returns a complete accepted text on the examined inputs.
+
+A format refinement permits exact protected-phrase expansions only with matching
+literal multiplicities and the existing native guard. Removing the count check
+admits a forbidden approval-direction change in a deliberate mutation. Reusing
+the earlier first-paragraph replies recovers one paragraph, but subsequent
+attempts still fail complete-output acceptance. The refinement is adaptive
+development evidence, not an independent cohort or a shipped strategy.
+
+The original-mask Qwen3-4B MLX baseline returns OmniSeal and RowMark candidates.
+Pre-detector review identifies borrowing becoming lending in the former and
+leaves loan direction and detail preservation unresolved in the latter. Both
+remain detected by their unchanged weighted author oracles. Source identities,
+model files and required signals are verified, separate forwards cross-check
+signals, and frozen marked/control scores reproduce. No complete faithful
+removal is credited. The ConcordMark baseline refuses, with no new after score.
+The study does not change production masking, prompts, models or APIs.
+
+### Larger MoE capacity and explicit signal direction
+
+A pinned Qwen3-30B-A3B-Instruct-2507 MLX quantization runs the same examined
+OmniSeal, RowMark and ConcordMark sources through the native library factory.
+One paired ablation changes only the sampler to argmax. The installed runtime's
+sampler identity and an argmax probe verify that intervention; disabling its
+actual configuration branch fails the preflight expectations. Model files are
+verified against the pinned repository's LFS SHA-256 and Git blob identities.
+
+Both native and greedy OmniSeal rewrites refuse. RowMark and ConcordMark return
+complete candidates in both modes, but pre-detector manual review finds signal
+source/recipient reversals or lost inspection speed. Every complete candidate
+remains detected by its unchanged weighted author oracle. Required signals are
+independently checked with the declared numerical methods and frozen source and
+control scores reproduce. These observations do not establish a better model
+default, paper-model parity, an independent holdout or private-provider coverage.
+
+A second development phase, fixed after the meaning review and before new keyed
+after scores, applies the previously examined dependency bundles and readable
+glossary with strict exact-expansion recovery. The pinned parser files match the
+preceding wheel proof. Every generated candidate restores to its unchanged
+source paragraph, so nonidentity rejection prevents counting copying as removal.
+These adaptive constraint trials remain separate from the first paired phase.
+
+The library fact checker now rejects selected explicit English signal-direction
+contradictions, including a nod `from the community` becoming a nod `to the
+community` or `in return to the community`. It compares the same literal signal
+and recognized participant when both directions are unambiguous. Missing cues,
+different participant descriptions and mixed directions abstain. Compound
+participant descriptions are not shortened to recognized prefixes. This does
+not establish general approval actors, ownership or modifier-to-event binding.
+
+Regression cases fail against the preceding core. Bypassing the new extractor
+fails the negative cases; blanket rejection fails the equivalent/unresolved
+controls. Frozen candidate replay changes the two observed RowMark false
+acceptances to rejection. A native RowMark rerun reproduces the initial prompts,
+replies and stops until the changed guard decision, then retries that paragraph
+and refuses the complete output. This prevents a meaning error, not successful
+removal. New examined signal-direction and inspection-speed development pairs
+retain earlier judge and competitor reports under their original corpus hashes.
+
+### Published curated SynthID source and control traces
+
+A further reference replay binds the published curated English corpus to its
+pinned Qwen2.5-14B tokenizer and exact serialized CPU sampling table. All marked
+and clean token sequences, complete context-repetition masks and g-value arrays
+reproduce. The current library's reference scorer agrees with the exact g-value
+means and the published decision threshold. The coverage catalog retains the
+source URL, input identities and replay-report hash. This adds a reference
+corpus, not a newly tested commercial provider or independent population FPR
+calibration. The sources were curated after generation and are not represented
+as untouched generation outputs.
+
+The current default Qwen2.5-1.5B native factory is run on every marked source in
+that fixed corpus with its pinned snapshot, MPS float16, original prompt/masking,
+seed and per-cluster retry policy. Every complete document refuses acceptance.
+The observed candidates lose protected markers and selected facts. This is an
+availability failure, not a successful-removal result or a fidelity pass.
+
+A separately frozen adaptive format ablation exposes the same native factual
+literals inside visible tags. The decoder checks exact and case-insensitive
+literal multiplicities, rejects malformed keep tags and runs the original native
+guard on restored text. Disabling the actual multiplicity rejection admits a
+forbidden protected-literal change in the format preflight; that probe uses a
+guard stub and is not semantic certification. Some intermediate paragraphs pass,
+but every complete document still refuses. Prompt length, output encoding and
+total calls differ, so this is not a cost-matched visibility-only comparison.
+No complete native after score is claimed and no default format, model or API
+change is adopted.
+
+### Larger-model corpus trial and technical-capability false refusal
+
+The same ten frozen curated sources are evaluated with a pinned local
+Qwen3-30B-A3B-Instruct-2507 MLX quantization, first with the native mask and then
+with the previously examined visible native-fact format. All twenty complete
+outputs refuse under that frozen core. Model files, source identities and the
+unchanged source/control traces are verified before generation. The corpus is
+examined development evidence, not fresh holdout or provider coverage.
+
+Review exposes a false refusal: the system allowing staff to record information
+is paraphrased as the system enabling staff to document information. A literal
+permission cue is lost, while the observed technical capability is retained.
+The fact checker now normalizes only matching selected sentence-initial technical
+frames for this comparison. Subject, actor, functional-action family and bounded
+object must match, with a small local alias set. Explicit permission elsewhere,
+human/policy subjects, access verbs and unmatched/repeated frames retain ordinary
+cue checks. This is a selected ambiguity exception, not general authorization
+or semantic-equivalence inference.
+
+The unchanged regressions fail against the preceding core. Bypassing the helper,
+removing every allow cue, or deleting subject/actor/action/object binding from
+its actual key each fails the relevant tests. The preceding development corpus
+has unchanged decisions; the new calculator capability positive now passes.
+Native and visible-format regression reruns reproduce the initial six
+prompts/replies/stops exactly, then accept the formerly rejected capability
+paragraph and complete the document. This targeted rerun is separate from the
+earlier full-corpus experiment and does not silently replace its core hash.
+
+Full-text review before new after scores leaves the native result unresolved
+because qualifier and temporal wording equivalence is unproven. The visible
+format result changes device availability for installation into an assertion
+that installation began. The native result remains detected; the visible-format
+result is not detected but has that meaning error. Fresh unchanged author-score
+replay and the library scorer agree, with original source/control traces
+reproduced. Neither result earns faithful-removal credit. No default model,
+format, backend or API change is adopted; only the selective false-refusal
+correction enters the working library.
+
+### Source-bound nominal and verbal anchors
+
+Three adaptive local phases use all ten fixed curated English sources with the
+same pinned Qwen3-30B-A3B MLX model and native generation/retry policy. Source
+tokenizers, sampling table and complete marked/control traces reproduce. Parser
+model files match their pinned wheel proof; exact library paragraph inputs,
+token offsets, dependencies and protected spans are frozen before each phase.
+This verifies identity and examined coverage, not held-out parser accuracy.
+
+The first phase shows nominal bundles inline, then adds availability/readiness,
+planning/modality/negation and temporal anchors. A deliberate predicate-extension
+bypass fails the coverage probes; the protected availability example rejects
+conversion into an actual installation start while an unrelated passive rewrite
+still passes. Only one complete nominal output returns. Pre-detector review
+finds announcement/launch wording and development becoming implementation. The
+unchanged author reference and library scorer agree that the output remains
+detected. No faithful-removal credit is assigned.
+
+The second phase uses identified readable fields, validates every id and an
+ordered echo of source content, then restores the exact source field values.
+Missing, foreign, duplicate, nested and malformed identifiers are rejected.
+Bypassing the actual echo guard admits a role-swap probe through the native
+guard, showing why identifier presence alone is insufficient. Reporting and
+perfect/progressive source anchors are added before this phase's generation.
+Both variants refuse complete rewrites. No keyed after feedback is used for refinement.
+
+The third phase reduces wide headed-preposition spans to local preposition and
+coordinated object groups, binds numeric heads and keeps selected predicate
+chains compact. Every source round trip is exact, but all complete outputs
+still refuse. The observed failures include omitted ids and altered protected
+expressions. These results do not isolate a universal cause or prove that the
+formats fail on other models. The phases change prompts, span rules and encoding;
+they are not cost-matched independent cohorts or new commercial-model coverage.
+No prototype is adopted into production masking, APIs or model defaults.
+Examined development/implementation fidelity pairs retain earlier measurements
+under their archived corpus hashes.
+
+### Native dense Mistral family and currency boundaries
+
+The curated-source catalog followup binds a pinned local Mistral Small 3.2 MLX
+conversion to its verified file identities and actual native loader/template.
+Every source runs with the unchanged library prompt, mask, sampler and guard
+policy. Source/control tokenization, sampling table, complete masks, g-values
+and decisions reproduce before generation. This is text-only runtime execution,
+not numerical parity with the original model runtime or a multimodal study.
+
+One complete initial output returns; full-text review before after scoring finds
+a missing announcing subject and malformed staffing/iteration price relations.
+The unchanged author scorer and library reference agree that it remains detected.
+Other complete documents refuse. No faithful removal is credited.
+
+The traces expose a segmentation defect: two currency dollars lock intervening
+prose as inline math. Dollar math now requires non-whitespace at both inner
+delimiter edges and no digit after its closing dollar, following the selected
+[documented dollar-boundary rules](https://pandoc.org/MANUAL.html#extension-tex_math_dollars).
+Currency pairs remain prose while genuine numeric and symbolic formulas stay
+locked. New regression assertions fail on the preceding implementation; bypassing
+each boundary and disabling dollar math fail their respective controls.
+
+A targeted known-source native rerun after the correction reproduces the first
+eight raw generations, then reaches an ordinary price-bearing prose paragraph.
+It refuses rather than returning a complete text. Recorded differences include
+`per week` versus `weekly` receiving different recurrence signatures. Other
+examined traces show `annual`/`yearly` and `four-week period`/`four weeks` signature
+asymmetries; these remain separately recorded limitations, not relaxed by the
+dollar fix. No default model or backend changes. This followup reuses development
+sources and does not add independent texts, provider coverage or market ranking.
+
+### Selected duration/frequency signatures and numeric-style ablation
+
+Observed native attempts expose three asymmetries: `four-week` versus `four weeks`,
+`annual` versus `yearly`, and a bare `per week` rate versus `weekly`. The library
+now recognizes selected numeric English hour/day/week/month/year compounds as
+whole measurements, an annual recurrence alias and bare per-unit periods. A
+word/hyphen boundary prevents annual being read inside semi-annual or non-annual.
+This does not interpret arbitrary compound schedules or general subtraction.
+
+The preceding core fails the new regression bank; removing each new branch,
+relaxing the frequency prefix boundary, bypassing measurement/frequency checks
+and disabling masking all fail corresponding controls. The preceding development
+bank keeps its decisions. Added examined positive/negative duration, recurrence
+and monetary-period pairs change in the intended direction; previous judge
+measurements retain their original corpus hashes. Frozen known candidate replay
+removes selected parser refusals without certifying those candidates' full meaning.
+
+Three known-source native Mistral reruns use the same pinned model, unchanged
+prompt/sampler/retry policy and corrected recognition/masking. Source/control
+tokenization, table, masks, g-values and decisions reproduce. The garden and
+museum documents advance past their initial paragraphs, but all complete outputs
+still refuse. There is no native after text or successful removal to score.
+
+A separately frozen deterministic callback ablation converts only selected
+unambiguous English integer words greater than one to ASCII digits, skipping
+recognized names and hyphen-boundary ambiguity. It runs through the library's
+custom-rewriter API with explicitly requested partial mode: unchanged clusters
+are retained and reported. One source has no eligible edit and yields no output.
+All edits in the returned outputs are reviewed in context before scoring. An
+explicit manually checked value map and a separate unchanged-region byte walk
+verify that no other text changed. This supports fidelity for these examined
+outputs, not general numeric disambiguation or a default implementation.
+
+The unchanged author detector and library reference agree that every returned
+numeric-style output remains detected. This establishes a meaning-preserving
+failed ablation, not watermark removal. No prototype numeric API, model default,
+backend or production policy is adopted. These are repeated development sources,
+not new independent texts, commercial models or market-leadership evidence.
+
+### Selected initial appositive names
+
+An observed native mask leaves the first name outside the protected surname:
+`Robert [[...]]`. A labeled synthetic mutation of that actual source changes the
+first name while preserving the surname and passes the preceding native guard.
+The selected initial ASCII appositive extension now masks and checks the full
+phrase, such as `Robert Johnson, the curator`. Common leading function words
+and numeric words abstain. Single names, arbitrary initial runs, initials,
+non-ASCII names and general entity/role resolution remain outside this extension.
+
+The new regression bank fails on the preceding core. Actual extraction,
+checking, masking and leading-word bypasses fail their corresponding controls.
+A separate CR-only boundary omission is exposed by a failing assertion and
+corrected; LF, CRLF and CR name boundaries are tested. The preceding development
+bank retains its decisions, while the added examined wrong-first-name pair is
+rejected. Earlier model/judge/parser results retain their original input hashes.
+
+A fixed known-source native Mistral rerun uses the same pinned files, unchanged
+prompt, sampler and retry policy. Its first raw generation matches the preceding
+trial exactly. The later name cluster retains the full person marker in every
+attempt, but the complete rewrite still refuses. Remaining observed problems
+include an omitted department component, download replacing required installation,
+and invented seamless functioning or a scheduled entry time. No full after text
+or successful-removal score exists.
+
+Generation precedes the CR-only follow-up, and the catalog keeps both module
+hashes. On the final core, every recorded LF mask, factual map and guard decision
+reproduces exactly. Source/control detector traces also reproduce. This is frozen
+trace replay, not fresh final-core model inference or full semantic certification.
+The change does not adopt a model default, relax other checks or add provider
+coverage, a new holdout or market-leadership evidence.
+
+### Actor apposition and separate participants
+
+A local sentence paraphrase trial found two constructions where a descriptive
+apposition still appeared with the original role label while the rewrite
+made that description a separate participant. One rewrite split the original
+officer into two people in a greeting scene. Another made the officer the
+thing handed over. A second beam made the woman the recipient of the handover.
+
+The built-in fact guard now rejects these contrasts for selected English
+actions, initial title descriptions and literal matching participants.
+Active-to-passive and reordered apposition controls preserve the original
+reading. The new paired tests fail on the earlier library and pass with the
+rule. This is a bounded check for a known failure mode. General agent,
+patient, recipient and pronoun resolution require separate evidence.
+
+### Selected explicit event phases
+
+A bidirectional entailment comparison accepted a candidate that changed finding
+shelter into seeking refuge. The native guard now compares a bounded set of
+English plans, attempts and completions when both clauses name the same actor
+and object. It recognizes explicit completed passives with a stated actor.
+The shelter frame separately matches the actor and stated location.
+
+The paired tests cover shelter, repair, reopening, restoration, delivery,
+unlocking and submission. Matching voice changes and lexical variants pass.
+Unmatched objects and actors, mixed phases, modal wording, questions and
+different locations abstain. This is a local fact check for supported frames.
+It can miss omitted events and cannot assess broader entailment.
+
+### Selected weekend timing expressions
+
+The fact guard compares explicit weekend timing in adverbial clauses.
+It groups single-occasion variants such as “on the weekend” and “over
+the weekend” while preserving distinctions among relative weekends,
+recurring weekends and whole-weekend duration. It leaves noun uses such
+as “the weekend shift” to other checks. Local regeneration protects the
+complete recognized phrase as one literal span.
+
+A saved KGW rewrite changed a weekend event into a week-long activity.
+The earlier guard accepted that paragraph. The updated guard rejects
+the saved change and retains the identity and equivalent phrasing
+controls. This is a regression check for the observed timing change.
+
+### Qualified influence claims
+
+An examined local rewrite replaced the possibility that paper surface
+absorbency affects drying with a direct assertion about the same process.
+The fact guard now compares selected affirmative English influence clauses
+with matching factors, effects and conditions. The observed rewrite fails
+against the current guard. Modal and equivalent wording controls pass, and
+different factors, effects, conditions and mixed evidence abstain. This
+check leaves general modal scope and unsupported sentence families open.
+
+### Dense Qwen27 on the curated SynthID corpus
+
+A pinned Qwen3.8-27B MLX checkpoint, previously executed on other English/Russian
+marked texts, runs all fixed curated sources under the current native library
+policy. Every model file is verified and all previously retained model-file
+hashes match. The original source/control detector traces reproduce exactly.
+The installed text loader and actual template execute with thinking disabled.
+No new commercial model, untouched generator or original-model parity is claimed.
+
+One complete output returns. Full-text review before after scoring identifies
+each-type maintenance-checklist coverage becoming various types, initially
+successful repairs becoming seemingly successful, and damaged referential/channel
+wording. The unchanged author detector and library reference agree that this
+output is no longer detected at the published threshold. It fails fidelity and
+receives no successful-removal credit. Other complete attempts refuse.
+
+The added examined each-type/various-types pair records a semantic-check gap
+on that generation core: selected numeric/name/polarity checks can still accept that coverage loss.
+The positive counterpart and earlier judge/model measurements remain bound to
+their recorded corpus hashes. This addition is not a new held-out quality study.
+
+### Newly inventoried research references
+
+The catalog now separately records SAMark, SWAN, OpenStamp and SemField. Pinned
+public source inventories were retrieved for the first three. The declared
+SemField source URL returned HTTP 404; this observation does not rule out other
+implementations. OpenStamp's listed checkpoint metadata and detection-artifact
+filenames are retained; subsequent checkpoint-specific execution is recorded
+separately below and in the catalog. None of these entries inherits a SynthID,
+MarkLLM or AutoMark result. Semantic-structure/embedding and weight-level schemes require their own
+unchanged author detectors, controls and meaning review.
+
+The SAMark paper's [Algorithm 2](https://arxiv.org/html/2605.25796v3#S3.SS3)
+has a separate response-matrix implementation in `_internal/samark.py`.
+The scorer takes supplied cosines, infers flags and returns the equation's
+statistic without assigning a detection threshold. Synthetic controls check
+sentence permutation, tied channels and undefined constant-alignment cases.
+On a simulated symmetric response distribution, estimating flags on the
+scored document raised the exceedance rate above the nominal standard-normal
+tail. Set thresholds on separate clean examples for the exact encoder,
+text segmentation and key regime. The author code, text embeddings and
+watermarked outputs have not been replayed by this mathematical check.
+
+The SWAN source at revision `2ca0c2071c8d0c6bb3739b2b2bcfb34cfe63eb2a`
+explicitly carries [CC BY-NC 4.0](https://github.com/amazon-science/SWAN/blob/2ca0c2071c8d0c6bb3739b2b2bcfb34cfe63eb2a/LICENSE).
+The catalog marks it `blocked_license_clearance`: permission for this
+product-oriented execution or redistribution has not been established. Its
+author code has not been executed or included in the package. Independently
+testing a separately licensed AMR parser cannot qualify SWAN's watermark
+generator, detector or removal performance.
+
+Separate rewriter references record RLCracker, the published adaptive-evasion
+paraphraser collection and a masked-word substitution baseline. Their source
+inventories are not executed trained-policy comparisons or full-fidelity results.
+In particular, a sentence-similarity threshold does not establish factual
+equivalence. These additions expand the explicit unfinished evaluation scope;
+they do not turn reviewed papers or metadata into tested model coverage.
+
+### OpenStamp artifact and numerical preflight
+
+The OpenStamp catalog entry records a separate staging step for its published
+SmolLM2 checkpoint and the base named in that checkpoint's README. The named base
+revision is independently frozen because the author card does not specify one.
+Git/LFS checksums cover both sets of artifacts. Tensor-by-tensor comparison finds
+the shared input/output embedding changed while the remaining serialized tensors
+match. This is artifact evidence, not source/control generation qualification.
+
+Unchanged author LLR methods run on fixed synthetic hidden states and logits
+against an independently summed float64 oracle. Real source mutations of the
+prediction shift, sign, padding denominator and softmax axis fail the same fixed
+comparison. The author scores labels from the third input position onward; an
+input with no eligible positions yields nonfinite scores and must be rejected by
+a future integration. Neither short input nor missing output earns clean status.
+
+A tiny synthetic tied-weight model confirms that the unchanged author generation
+constructor copies the modified head into the shared input embedding as well.
+Replacing that actual copy with a no-op fails the assertion. The released selector
+is finite BF16. Replaying the original BF16 matrix/head construction on CPU is
+close to the released tensor but is not an exact match; the discrepancy remains
+explicit in the catalog, with no post-hoc tolerance promoted to parity.
+
+No full OpenStamp language model has run in these preflights. Qualified native
+generation, detector controls, threshold calibration and library removal remain
+unexecuted. None of the numerical or artifact checks adds a tested-model pass.
+
+A subsequent diagnostic computes exact rational sums of the selector components
+at the discrepant head coordinates, then independently compares neighboring BF16
+values for each staged rounding operation. Fixed binary-fraction controls pass,
+and removing the even-mantissa tie preference fails an actual function mutation.
+This diagnoses the observed arithmetic without claiming the original device's
+accumulation behavior or silently changing the author algorithm.
+
+The original `from_augmented` constructor provides a separate published-head
+path. On real released head tensors in a minimal tied-weight container, it
+reproduces the saved shared embedding exactly; bypassing its actual copy fails
+the same check. This is not a full causal-model forward pass. Tokenizer JSON
+structures match after converting older string BPE merge pairs to the newer
+pair-list representation. Padding and raw model-configuration differences remain
+explicit. Future native qualification can use the released head through this
+author path while retaining the nonexact CPU `from_config` observation separately.
+
+### Completed first Qwen27 thinking mode
+
+The first frozen thinking mode has every curated source terminal. It uses the
+original library factory, prompt and acceptance policy with explicitly adapted
+native thinking templates, author-recommended sampling and strict final-channel
+projection. The readable-source mode is a separate unfinished part of the same
+predeclared experiment. These are not unchanged-default or equal-cost comparisons.
+
+The returned full text adds unsupported paper medium to the original manual
+booking process. Its full-text development review precedes keyed after scoring.
+The unchanged author detector and library reference still classify it as marked,
+and it fails fidelity. Other complete attempts refuse after acceptance checks.
+All recorded generations finish normally with final projections. Replaying saved
+candidates reproduces every observed guard decision; selected-fact checks account
+for the rejections. Intermediate accepted clusters are not complete outputs.
+The catalog phase-summary/review/replay hashes bind these results separately from
+the earlier nonthinking cohort and still-running readable-source mode. No
+faithful removal is credited.
+
+The original scheduling sentence has ambiguous date attachment, so its
+rephrasing is recorded as uncertainty, not a proven date contradiction. Separate
+examined synthetic event/date binding pairs and a medium-addition counterpart
+record unresolved checker gaps. Earlier calibration measurements retain their
+recorded corpus hashes. These additions are not a new held-out study.
+
+### OpenStamp BF16 accumulation fingerprint
+
+The original author loader selects BF16. A separate fixed synthetic preflight
+reproduces BF16 log-probability sums and their difference, followed by division
+by a float32 valid-position count. Independently summed exact rational values
+with staged BF16 rounding reproduce the original scores. Promoting the actual
+log-probability sums to float32 changes the results and fails the same fixed
+comparison. This is a numerical fingerprint of the author algorithm, not an
+endorsement of its precision or an independently calibrated detector. The oracle
+starts from gathered BF16 values; it is not a float64 full-forward likelihood
+calculation. Native qualification must preserve that distinction.
+
+### Applied selected English type-coverage guard
+
+The reusable library now recognizes selected explicit each/every/all type
+phrases, preserves their mention count and masks the same whole phrases in local
+rewriting. The examined each-type/various-types loss now fails the fact check. A
+regression also feeds the originally accepted native Qwen paragraph to the shared
+local guard and confirms rejection. Language identification is isolated in that
+regression; its own tests remain separate.
+
+The unchanged regression assertions fail on the preceding core and pass after
+the fix. Actual production-source checker, signature, mask and boundary mutations
+fail their corresponding assertions. Existing text tests, style and type checks
+pass. In the current examined development corpus only the known type-coverage
+negative changes decision; the faithful counterpart and earlier cases stay
+unchanged. Earlier isolated-candidate measurements retain their original corpus
+hash. This is not a new held-out study or a fresh model run on the corrected core.
+
+The check preserves selected mention multiplicity conservatively. It does not
+bind a type to a participant, recognize every quantifier/paraphrase, fix uppercase
+name false rejections, or certify meaning. Unsupported paper medium and swapped
+event/date assignments remain recorded gaps. The original Qwen generation
+results remain bound to their earlier core; this guard does not retroactively
+change those model outcomes or establish successful watermark removal.
+
+### Completed readable-source Qwen27 thinking mode
+
+The predeclared readable-source mode is now terminal too. It exposes actual
+source wording through an explicitly empty factual mask while retaining native
+acceptance checks and outer technical-span protection. Full-text review occurs
+before keyed after scoring. The complete returned document strengthens potential
+conflict to likely conflict and weakens immediate repair into priority handling.
+It falls below the frozen author threshold, but fails fidelity and earns no
+faithful-removal credit. Fresh original source/control traces and author/library
+after-score decisions agree; frozen guard decisions replay on the generation core.
+
+Both modes are complete. Their returned texts concern the same curated source,
+not additional independent documents or providers. The experiment combines
+explicit thinking/template, sampler, token-budget and final-projection adapters;
+it is not an unchanged default, equal-cost comparison, new holdout or proof of
+market leadership. The later type-coverage fix has a separate production core and
+does not retroactively change this experiment.
+
+### Native OpenStamp source/control qualification
+
+The released SmolLM2 OpenStamp checkpoint now has a qualified local source/control
+cohort. The original author loader, generation function, published-head
+constructor and detector execute without edits. Explicit adapters provide local
+paths/CPU placement, fixed prefixes from cleared fictional reports, paired seed
+resets and the released head rather than nonexact CPU reconstruction. The author
+requirements and complete runtime package versions are frozen separately.
+
+Every clean and marked continuation is reported, with no rerolls or favorable
+source selection. Original scores separate both conditions at the illustrative
+author zero threshold. Original per-token traces independently replay through
+exact rational sums and staged BF16 rounding followed by float32 division.
+Serialized base parameters match before generation, and the original tied
+embedding is restored before the unchanged detector scores either condition.
+The protocol and result hashes are retained in the catalog.
+
+This tests one released checkpoint. It is not independent full-forward numerical
+parity, untouched data, a calibrated population false-positive rate, other
+OpenStamp models, private provider verification, library removal or meaning
+preservation. The complete marked cohort enters a separately fixed library
+rewrite experiment; quality review must precede its keyed after scores.
+
+### Native library rewriting of the qualified OpenStamp cohort
+
+Every qualified marked continuation enters the fixed native-library rewrite
+plan on the later type-coverage core. The same pinned Qwen27 files, default
+system prompt, factual mask, sampler, retries and seed are used, with observation
+only. Detector values and keys do not enter rewriting. Complete visible-text
+reviews precede unchanged author after scoring.
+
+The below-threshold outputs add unsupported residence or narrow individuals to
+residents. They fail fidelity and earn no credit. The visible-text faithful
+output only inserts an initial article and remains marked. Other full returns
+remain marked, including ones whose malformed timing/condition clauses cannot
+be confidently judged. Refusals are unscored. Raw malformed/truncated sources are
+kept in the cohort rather than filtered for favorable results; indeterminate
+fidelity is distinct from demonstrated contradiction and receives no credit.
+
+The original source/control cohort is reused by exact artifact identity, and
+a fixed clean/marked pair replays fresh before after scores. Original after
+scores independently replay through their gathered BF16 traces and staged
+rounding. This is not independent full-forward parity, calibrated population
+FPR, another checkpoint/provider or market-leadership evidence. No successful
+faithful removal is credited. The catalog retains exact outcome and report hashes.
+
+New examined synthetic work/residence, beneficiary-class, goal/achievement,
+likelihood and immediate/priority pairs record current guard gaps. Their positives
+and negatives are not a held-out judge study or completed semantic fix. Earlier
+judge/model/parser metrics and the type-coverage comparison retain their original
+corpus hashes; the expanded calibration bank does not rewrite those measurements.
+
+### Published EXP-tuned adapter: loaded controls and a fixed comparison
+
+The published Qwen0.5 LoRA adapter and its named base are checksum-verified. The
+base revision is independently frozen because the adapter config does not state
+its training revision. Loaded adapter tensors match the file; original base
+parameters stay unchanged. Disabling the unmerged adapter reproduces pristine
+base probe logits and greedy tokens exactly; reenabling changes probe logits
+and restores the original active result. Disabled-as-active fails the same
+activation assertion. This is a loading/probe check, not watermark removal.
+
+The model-card paraphrase function, template and postprocessor run unchanged in
+a recording preflight. Actual cap, delimiter and output-slice mutations fail.
+The completed fixed comparison uses native library policy and the author function
+as an explicitly guarded library custom rewriter. Both have paired base-only
+controls. All processing passes through the library; no new production default
+or equal-cost/mask-only comparison is claimed. Reviews must precede after scores.
+
+A new fixed source/control cohort uses unchanged original MarkLLM EXP and
+BaseWatermark methods with explicit CPU, first-paragraph fiction prompts, raw
+continuation-token slicing and sampling adapters. Every source/control pair is
+reported. Both conditions separate at the original config threshold. Original
+per-token scores independently reproduce via prefix-product seeding and an
+integer-shape gamma survival sum. Actual seed, sampler and survival-tail mutations
+fail fixed numerical controls. This is the intended EXP family; exact training
+implementation/key parity and population FPR are unverified. Reused qualified
+SynthID and OpenStamp corpora remain separate, with their original identities.
+No faithful-removal credit follows from the loading/source preflights. The completed
+model comparison is reported below, separately from those checks.
+
+### Complete paired EXP-adapter and lexical-substitution comparisons
+
+The paired adapter comparison executes the fixed four policy/activation variants
+on the same qualified OpenStamp, SynthID and original EXP development sources.
+Native policy returns no complete output for either the base or adapter. The
+guarded author function returns two base outputs and one adapter output. Full
+meaning reviews are frozen before after scores. All three change meaning:
+workshops replace sharing experiences with judges, employee feedback becomes
+customer feedback, or matching the prior year becomes surpassing prior years.
+All become negative under the original EXP detector, but none earns faithful
+removal credit. Fresh original EXP source/control replays reproduce their
+per-token contributions and decisions. Counts, variant metadata and artifact
+hashes are recorded in `catalog.json` under the adaptive-paraphraser entry.
+Only the named checkpoint is evaluated; other family members remain unexecuted.
+
+The offline lexical baseline uses the original BERT candidate and MPNet ranking
+functions unchanged, inside the library custom-rewriter and native acceptance
+guard. The author supplies model names without revisions; both model revisions
+are independently pinned. The replacement fraction applies to eligible words,
+not all words. Original character/token caps and threshold remain in place;
+technical-span protection can split callbacks, so full CLI execution parity is
+not claimed. No callback input exceeds the author character cap in this run.
+Controlled fraction, threshold, candidate-limit and ranking mutations fail
+actual assertions. Every real cosine operation independently reproduces from
+recorded embeddings; that is numerical consistency, not factual equivalence.
+
+All complete outputs receive frozen full-text reviews before original-author
+after scoring. Clear changes include series membership becoming criticism,
+parents becoming people, custom cakes becoming snack cakes, inventory software
+becoming order software, and volunteers becoming a committee. One repair-history
+paraphrase remains uncertain and stays detected. Only the bakery output becomes
+negative under EXP, with changed meaning. Every OpenStamp output stays positive
+at the explicitly illustrative zero threshold, which is not population-FPR
+calibration. Fresh EXP controls and an OpenStamp source/control pair reproduce;
+OpenStamp after traces independently replay with the preflighted BF16 staged
+rounding. No faithful removal is credited. Fixed counts, model revisions and
+artifact hashes are in the offline-baseline catalog entry.
+
+These are fixed development cohorts with reused topics. Refusals and uncertain
+fidelity receive no credit. Neither comparison establishes commercial-model
+coverage, private-detector access, market leadership or a production default.
+
+### Membership/stance acceptance follow-up
+
+The lexical blog output exposes an accepted membership-to-criticism change.
+The later shared guard compares selected affirmative determiner-led English
+copular frames with matching literal subject/object descriptions. It handles
+the observed joining of source line breaks. Different descriptions, unsupported
+grammar, modality, negation and mixed claims remain unresolved. The fixed
+regression file fails on the archived pre-fix core and passes afterward; actual
+guard, relation, participant and mixed-claim mutations fail. Full saved-output
+replay newly rejects the lexical blog case. Existing development-bank decisions
+are unchanged; added counterparts are development evidence, not new holdout
+quality measurements. The catalog records the later core/replay separately.
+Historical cohort counts, reviews and detector scores retain their executed
+core identities and are not retroactively changed.
+
+The optional API factory shares this acceptance path, but its local HTTP and
+packaging tests are transport evidence only. They add no commercial-model
+watermark verification and do not change inaccessible-provider catalog states.
+
+
+### NLI and lexical-constraint development diagnostics
+
+The pinned English [DeBERTa NLI cross-encoder](https://huggingface.co/cross-encoder/nli-deberta-v3-base)
+was executed as a quality critic, separately from watermark detection. Its saved
+parameters match the loaded model. Both text directions are evaluated without
+truncation; raw logits have independently replayed softmax probabilities. The
+catalog's `quality_gate_references` records the frozen model revision, English
+qualification, confusion counts, thresholds and artifact hashes. Unsupported
+languages receive no passing decision. CPU/MPS numerical probes agree on the
+fixed labels and threshold decisions, not bit-for-bit outputs or universal parity.
+
+Combining the critic with the existing factual guard rejects more known bad
+English pairs, while also rejecting more known good ones. Long complete outputs
+still receive high entailment despite local factual changes. These reused
+examined cases are development evidence, not held-out semantic-judge accuracy.
+
+A separate fixed-cohort rewrite experiment uses the pinned original BERT proposal
+helper with new eligibility, a larger edit budget, exact whitespace, bidirectional
+local-window and whole-paragraph NLI checks, and the unchanged shared library
+guard. This changes several policy components; it is not an isolated NLI or
+equal-cost comparison. Complete returned texts were reviewed and hash-frozen
+before original watermark-detector scores. Observed errors include installation
+becoming configuration, exploring improvements becoming implementing them, and
+food security becoming garden security. Every after text below its selected
+reference threshold has changed meaning. No faithful removal is credited.
+
+A subsequent NLP-only postfilter restricts previously selected proposals using
+English POS, morphology, dictionary-backed verb forms and a shared WordNet
+synset. It does not regenerate proposals or re-certify the new combinations with
+NLI. The examined lexical controls pass and actual gate mutations fail, but
+shared lexical senses are not contextual equivalence. A support-contact-points
+change to contact details remains accepted. The stricter filter also leaves
+unchanged clusters, which the library's default strict policy refuses. Merely
+returning an unchanged callback does not enable partial processing. All returned
+postfiltered outputs remain marked under their original reference detectors.
+
+Fresh original SynthID and EXP source/control traces reproduce; the original
+OpenStamp detector reproduces a fixed source/control pair and independently
+replays its staged BF16 rounding. Its zero threshold is illustrative, not a
+population-FPR calibration. Fixed counts, policies, quality reviews and score
+hashes live in the catalog. Neither diagnostic establishes private-provider
+coverage, a production default or market leadership. The optional API transport
+remains separate from these entirely local experiments.
+
+
+### Pegasus sentence benchmark and estimate-status follow-up
+
+The pinned English [Pegasus paraphrasing checkpoint](https://huggingface.co/tuner007/pegasus_paraphrase)
+was executed through the library with exact sentence-gap reconstruction,
+probability-ranked beams, shared factual guards and bidirectional sentence NLI.
+The new policy retains sentences outside the checkpoint's trained positional
+window without truncation and refuses unchanged clusters under the default
+strict library behavior. Natural termination is checked separately from the
+length cap; the actual generation processor stack cannot force EOS.
+
+All serialized parameters match the original checkpoint. Two omitted static
+position tables already match the original deterministic Transformers formula;
+these are not missing learned weights. The complete ordinary vocabulary and
+preselected sentence encodings match the original SentencePiece model. Fixed
+CPU/MPS numerical probes agree on labels and greedy IDs within the recorded
+logit tolerance, not universal or CUDA parity. The catalog records exact models,
+policies, qualifications, controls, counts and artifact hashes.
+
+Complete returned texts were reviewed before after-detector scoring. The
+examined equivalent outputs remain detected. The only output with a negative reference-detector
+decision changes meaning. Other observed errors include assigning a leader
+becoming performed leadership, an optional quantity feature becoming an order
+condition, and a few steps becoming a few things. Unresolved source fragments
+remain unresolved. No faithful removal or production-default improvement is
+credited; this is a reused development cohort with executor review.
+
+The museum output also drops an explicit numerical estimate. A later shared
+lexical guard recognizes selected adjacent English `estimated N`, `estimated at N`
+and `estimate of N` forms as a distinct estimate kind, preserving the supported
+value and unit. The unchanged regression file fails on the executed old core and
+passes on the new core; actual alias, guard and unit mutations fail assertions.
+Saved callback replay newly rejects that museum output. Prior development-bank
+decisions are unchanged, and the added synthetic counterparts are examined
+regressions. Nonadjacent descriptions, general uncertainty, same-value participant
+attachment and unrelated semantic errors remain unresolved. The original cohort is
+not retrospectively reclassified. A separately frozen fresh museum-source run
+reproduces the old beam prefix IDs, rejects the estimate-dropping candidate and
+retains the original financial sentence. A broader availability claim remains
+wrong, and the fresh output remains reference-detected. This targeted regression
+adds no faithful-removal credit.
+
+### Native OpenStamp Mistral evaluation
+
+The released Mistral checkpoint differs from the pinned named base only in
+`lm_head.weight` across 291 serialized tensors. All loaded base tensors match
+the pinned checkpoint exactly. The original author generator and released-head
+detector ran in BF16 on MPS using fixed synthetic prefixes. At the illustrative
+zero threshold all ten clean controls scored negative and all ten marked
+controls scored positive. Captured token probabilities independently reproduce
+the original staged BF16 scores.
+
+The strict library path with its default local rewriter refused all ten marked
+inputs. Replaying the saved shared-guard calls reproduced every decision.
+Thirty-two candidates failed placeholder preservation and four passed as
+individual fragments. No full output existed for fidelity review or after
+scoring. The catalog binds the exact checkpoint, protocols and artifacts.
+
+One examined source also exposed unnecessary standalone article masks. A
+separate rerun made only those entries visible to the model. This reduced fact
+placeholders from nineteen to twelve on each attempt. All three candidates
+still failed placeholder preservation. This single-source diagnostic did not
+change library behavior.
+
+### Independent AMR quality diagnostic
+
+The English AMR diagnostic uses amrlib's published BART parser and compares
+directed, labeled graphs with literal values and an explicit root. The
+comparison ignores variable names and relation order. Mutations that discard
+roles, concepts or roots fail the original controls.
+
+All inputs in the English development subset yielded qualified graphs. On
+this known set, exact identity rejects every labeled meaning change and
+rejects most faithful paraphrases too. The catalog records the complete
+confusion tables and comparisons on exact pairs shared with the earlier NLI
+study. Exact identity was too restrictive for a mandatory rewrite check.
+The diagnostic is separate from SWAN and contributes no watermark result.
+
+### Paired local fact transport
+
+The fixed SynthID and OpenStamp Mistral development cohorts each contributed
+ten marked documents. Each document used the same pinned native Qwen2.5-1.5B
+runtime with masked and visible facts. The two arms shared the prompt,
+segmentation, locked-span handling, retry policy and restored-text guards.
+
+All forty scheduled document attempts finished. The catalog separates document
+returns, candidate rejection reasons and generation calls. Replay reproduced
+all 157 observed candidate decisions. The visible-fact arm removed factual
+placeholder mismatches but encountered factual-guard refusals on both cohorts.
+One complete OpenStamp result reached fidelity review. It reversed the intended
+users of the paper visitor log and added an unsupported statement about the
+information being outdated. Meaning review was frozen before after scoring.
+No full result qualified for after scoring or faithful-removal credit.

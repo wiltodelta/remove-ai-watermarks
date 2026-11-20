@@ -9,6 +9,15 @@ explicitly names a tracked canonical result.
 
 | Script | Purpose |
 | --- | --- |
+| `benchmark_text_apple.py` | Add an on-device Apple Intelligence baseline on macOS. |
+| `benchmark_text_exact.py` | Verify exact Unicode and serialized-carrier recovery through the API and CLI. |
+| `benchmark_text_kgw_receipts.py` | Score sealed paired trials with a pinned local KGW reference. |
+| `benchmark_text_kgw_sources.py` | Generate and qualify matched local KGW-marked and clean source pairs. |
+| `benchmark_text_local_repair.py` | Generate paired text repair trials through a local endpoint. |
+| `benchmark_text_pairs.py` | Bind blind reviews and detector receipts and score paired text trials. |
+| `benchmark_text_reflip.py` | Add a pinned local ReFlip paraphrase baseline. |
+| `benchmark_text_threefry_receipts.py` | Score sealed paired trials and verify Threefry reference and library parity. |
+| `benchmark_text_threefry_sources.py` | Generate and qualify matched local Threefry-marked and clean source pairs. |
 | `corpus_gap_scan.py` | Inventory `identify`, metadata markers, normalized C2PA review fields, unattributed outcomes, errors, and gap candidates over a full or date-bounded corpus. Its schema-versioned checkpoint resumes safely after interruption. |
 | `detection_timing.py` | Record per-method metadata and verdict timings. |
 | `detection_timing_report.py` | Aggregate timing records by method and segment. |

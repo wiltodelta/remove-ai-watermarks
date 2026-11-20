@@ -73,6 +73,7 @@ text = [
     # Thresholds are evaluated against this packaged language model.
     "py3langid==0.4.0",
 ]
+text-api = ["py3langid==0.4.0"]
 # Optional Apple silicon text generation; the shared text guards also cover MLX.
 text-mlx = [
     "mlx-lm>=0.32.2; platform_system == 'Darwin' and platform_machine == 'arm64'",
@@ -258,6 +259,8 @@ migan = [
 dev = [
     "remove-ai-watermarks[video]",
     "remove-ai-watermarks[detect]",
+    # API transport tests exercise the actual packaged language checker.
+    "remove-ai-watermarks[text-api]",
     # Development-only OpenAI Content Provenance oracle. It is not exposed by
     # the installed CLI or the public Python API.
     "openai>=2.52.0",

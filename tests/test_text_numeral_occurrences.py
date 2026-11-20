@@ -9,6 +9,8 @@ from remove_ai_watermarks import text as lib
     ("source", "candidate"),
     [
         ("Waiting times at two clinics fell.", "Two clinics two had waiting times fall."),
+        ("A volunteer collected one vial.", "A volunteer collected a partly filled vial."),
+        ("A volunteer requested one sealed vial.", "A volunteer requested a partly filled one."),
         (
             "Two boxes are stored at two depots. Three inspectors work at one depot.",
             "Two boxes are stored at three depots. Three inspectors work at one depot.",
@@ -43,10 +45,41 @@ def test_changed_numeral_multiplicity_is_rejected(source, candidate):
         ("The loans last a day and an hour.", "The loans last one day and one hour."),
         ("Two volunteers inspect tools every other day.", "2 volunteers inspect tools once every two days."),
         ("One of the most popular books has two editions.", "A book among the most popular has 2 editions."),
+        (
+            "When you tap an empty bottle and a partly filled bottle, the notes differ.",
+            "When you tap an empty bottle and a partly filled one, the notes differ.",
+        ),
     ],
 )
 def test_aliases_keep_the_same_numerical_occurrences(source, candidate):
     assert lib.verify_text_rewrite_facts(source, candidate)
+
+
+def test_paired_scenario_openings_are_illustrative():
+    source = "In one scenario, two cameras are used. In the second scenario, two sensors are used."
+    candidate = "In a particular situation, two cameras are used. In another scenario, two sensors are used."
+    assert lib.verify_text_rewrite_facts(source, candidate)
+    assert lib.verify_text_rewrite_facts(candidate, source)
+    assert not lib.verify_text_rewrite_facts(source, candidate.replace("two cameras", "three cameras"))
+    assert not lib.verify_text_rewrite_facts(source, candidate.replace("In another scenario, ", ""))
+    assert not lib.verify_text_rewrite_facts(source.replace("In one scenario,", "In one scenario only,"), candidate)
+
+
+def test_single_scenario_keeps_its_count():
+    assert not lib.verify_text_rewrite_facts(
+        "In one scenario, two cameras are used.", "In a particular situation, two cameras are used."
+    )
+    assert not lib.verify_text_rewrite_facts(
+        "Two cameras are used in one scenario.", "Two cameras are used in a particular situation."
+    )
+
+
+def test_indefinite_participle_substitute_remains_in_prose():
+    passage = "A partly filled one, a fully sealed one, and one vial were used."
+    masked, replacements = lib._mask_local_rewrite_facts(passage)
+    assert masked.startswith("A partly filled one, a fully sealed one,")
+    assert list(replacements.values()) == ["one"]
+    assert lib._extract_numeral_occurrences("a partly filled one-litre bottle") == ("1",)
 
 
 def test_legacy_value_set_still_deduplicates_for_callers():

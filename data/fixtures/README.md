@@ -1,7 +1,21 @@
 # Provenance fixtures
 
-These files exercise real container, metadata, and pixel-provenance formats.
-They are test inputs, not evaluation corpora.
+These files exercise container, metadata and pixel-provenance formats, plus
+guards for rewriting synthetic text. They are test inputs, not evaluation corpora.
+
+## English loan-role dependency trees
+
+`synthetic/text-loan-role-parses.json` contains handwritten synthetic English
+sentences and frozen annotations from the official
+[`en_core_web_trf` 3.8.0 model](https://github.com/explosion/spacy-models/releases/tag/en_core_web_trf-3.8.0).
+One case explicitly identifies the small English model's alternative object
+attachment. Metadata records the downloaded wheel hashes and the compact annotation
+schema. `tests/test_text_loan_roles.py` replays these trees without a model to
+exercise loan-role normalization, selected reversals and parse validation.
+These are examined rule fixtures, not a parser-accuracy benchmark or semantic
+equivalence labels. A no-reversal expectation can also mean that the helper has
+no supported matching event or participant. Models and generated evaluation
+reports are not stored here.
 
 ## Honor YOYO metadata reconstruction
 

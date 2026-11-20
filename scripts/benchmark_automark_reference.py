@@ -96,24 +96,81 @@ def assess(source: float, baseline: float, after: float | None, alpha: float) ->
 
 
 def validate_auxiliary(tokens: list[int], logprobs: Any, row_ids: Any, row_lps: Any, vocab_size: int) -> None:
-    """Refuse absent/invalid weighted detection signals instead of degrading to zeros."""
+    """Check teacher-forced signal structure and internal position consistency.
+
+    This cannot prove which model produced the signals. Replays must also bind
+    their token arrays, provider source and model files to frozen provenance.
+    """
     np: Any = importlib.import_module("numpy")
     lp, ids, rows = map(np.asarray, (logprobs, row_ids, row_lps))
     if (
         len(tokens) < 2
+        or isinstance(vocab_size, bool)
+        or not isinstance(vocab_size, (int, np.integer))
+        or vocab_size < 8
+        or any(
+            isinstance(token, (bool, np.bool_))
+            or not isinstance(token, (int, np.integer))
+            or not 0 <= token < vocab_size
+            for token in tokens
+        )
         or lp.shape != (len(tokens),)
         or ids.shape != (len(tokens), 8)
         or rows.shape != ids.shape
+        or any(array.dtype.kind not in "iuf" for array in (lp, ids, rows))
         or not all(np.isfinite(array).all() for array in (lp, ids, rows))
         or np.any(lp > 0)
         or np.any(rows > 0)
         or np.any(ids < 0)
         or np.any(ids >= vocab_size)
         or np.any(ids != np.rint(ids))
-        or not np.any(lp[1:] < 0)
-        or not np.any(rows[1:] < 0)
+        or lp[0] != 0
+        or np.any(ids[0] != 0)
+        or np.any(rows[0] != 0)
+        or np.any(lp[1:] >= 0)
+        or np.any(np.all(rows[1:] == 0, axis=1))
+        or np.any(np.diff(rows[1:], axis=1) > 0)
+        or any(len(set(row)) != 8 for row in ids[1:])
     ):
         raise ValueError("AutoMark auxiliary signal is missing, malformed or nonfinite")
+    for index, token in enumerate(tokens[1:], start=1):
+        matches = ids[index] == token
+        if np.any(matches):
+            consistent = np.isclose(lp[index], rows[index, matches][0], rtol=1e-5, atol=1e-5)
+        else:
+            consistent = lp[index] <= rows[index, -1] + 1e-5
+        if not consistent:
+            raise ValueError("AutoMark auxiliary signal target and top-k row disagree")
+
+
+def validate_entropies(tokens: list[int], entropies: Any, vocab_size: int) -> None:
+    """Check native entropy structure and bounds, not its model provenance.
+
+    Tokens are the raw generator IDs consumed by the author's auxiliary model;
+    they are not decoded and retokenized. Qualified experiments must also bind
+    those exact IDs and model files and independently recompute the signal.
+    """
+    np: Any = importlib.import_module("numpy")
+    values = np.asarray(entropies)
+    if (
+        len(tokens) < 2
+        or isinstance(vocab_size, bool)
+        or not isinstance(vocab_size, (int, np.integer))
+        or vocab_size < 2
+        or any(
+            isinstance(token, (bool, np.bool_))
+            or not isinstance(token, (int, np.integer))
+            or not 0 <= token < vocab_size
+            for token in tokens
+        )
+        or values.shape != (len(tokens),)
+        or values.dtype.kind != "f"
+        or not np.isfinite(values).all()
+        or values[0] != 0
+        or np.any(values[1:] <= 0)
+        or np.any(values[1:] > math.log(vocab_size) + 1e-5)
+    ):
+        raise ValueError("Author entropy signal is missing, malformed, misaligned or outside its bounds")
 
 
 def load_reference(args: argparse.Namespace, config_payload: dict[str, Any], vocab_size: int) -> tuple[Any, Any]:

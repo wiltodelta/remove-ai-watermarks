@@ -17,6 +17,7 @@ defaults. This page focuses on choosing the right command.
 | `classify-source` | `remove-ai-watermarks[source-classify]` |
 | `text invisible` and `text all --invisible`, default backend | `remove-ai-watermarks[text]` |
 | Text regeneration with an explicit Apple silicon MLX checkpoint | `remove-ai-watermarks[text-mlx]` |
+| Text regeneration with a locally installed model served by Ollama | `remove-ai-watermarks[text-api]` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
 | Adobe TrustMark signals in `identify` | `remove-ai-watermarks[trustmark]` |
@@ -533,18 +534,33 @@ remove-ai-watermarks text metadata article.md --remove -o article_clean.md
 ```
 
 When `-o` is omitted, `text metadata --remove` writes `<source>_clean` and never
-overwrites the input. Valid Emoji presentation selectors (`U+FE0E`/`U+FE0F`) and
-Emoji `U+200D` ZWJ sequences are preserved. File I/O retains LF, CRLF and CR
-line endings; protected-span segmentation supports each format.
+overwrites the input. Valid Emoji presentation selectors (`U+FE0E`/`U+FE0F`),
+keycap emoji, and Emoji `U+200D` ZWJ sequences are preserved. ZWJ is also
+preserved in standalone Devanagari half forms, legacy Malayalam chillus,
+and explicit Saurashtra conjuncts. The cleaner also
+preserves isolated `U+200B` between Thai word characters or within recognized
+inline and fenced code, contextual `U+00AD` discretionary hyphens within words,
+paired `U+2060` word joiners around multiplication or division signs between
+decimal digits, and `U+034F` combining grapheme joiners that block canonical
+mark reordering. The complete Windows AI watermark sequence is removed before
+classifying its neighbors. Recognized binary and StegCloak streams take
+precedence over the contextual rules for `U+200B`, `U+00AD` and `U+2060`.
+File I/O retains LF, CRLF and CR line endings.
+Single selectors in registered standardized and ideographic variation pairs
+also retain their glyph selection.
 
 Install `remove-ai-watermarks[text]` for default Transformers text regeneration.
 The historical `diffusion` extra remains compatible.
 
 For best-effort disruption of statistical token-level LLM watermarks, regenerate
-unlocked prose spans with an
-unwatermarked local causal LM while locking low-entropy technical spans
+unlocked prose spans with a
+local causal LM while locking low-entropy technical spans
 (fenced code blocks, inline code, LaTeX math, URLs, file paths, HTML blocks/tags,
-and Markdown headings) byte-for-byte:
+and Markdown headings) byte-for-byte. Single-dollar formulas require content
+without whitespace at the inner delimiter edges and no digit immediately after
+the closing dollar. Currency pairs such as `$500` and `$1,750` stay prose.
+
+Examples:
 
 ```bash
 remove-ai-watermarks text invisible article.md -o article_clean.md --seed 0
@@ -559,11 +575,43 @@ Apple silicon callers can install `remove-ai-watermarks[text-mlx]` and select
 the same fact/placeholder guards and requires an explicit clean generation stop.
 Its availability does not certify a model's semantic fidelity or watermark removal.
 
+To use a locally installed model already served by Ollama, install
+`remove-ai-watermarks[text-api]` and select the Ollama backend explicitly:
+
+```bash
+remove-ai-watermarks text invisible article.md -o article_clean.md \
+  --rewriter-backend ollama --rewriter-model qwen3:8b-q4_K_M --seed 7291
+```
+
+This backend batches sentences in document order, requests a fixed-length JSON
+array and checks the assembled document's facts before writing. It uses one
+request and accepts only an HTTP loopback address. Set `--ollama-url` for a
+different loopback port. The server must support structured array output and
+serve the named model. The same options work with `text all --invisible`.
+`--allow-partial` permits unchanged prose slots from a valid Ollama response.
+A malformed response or failed document fact check aborts before writing.
+
+With the Ollama backend, `--strict-residual` enables an optional second
+request for sentences that remain verbatim after the first draft or a
+local restoration. The edits must pass sentence and whole-document fact checks.
+A failed second pass leaves the destination intact. Use this option without
+`--allow-partial` with either `text invisible` or `text all --invisible`.
+
+```bash
+remove-ai-watermarks text invisible article.md -o article_clean.md \
+  --rewriter-backend ollama --rewriter-model qwen3:8b-q4_K_M --seed 7291 --strict-residual
+```
+
+The Python API additionally supports an explicitly configured
+[`build_text_api_rewriter`](python-api.md#optional-api-text-rewriter) with the
+`text-api` extra. CLI generation remains local; there are no API-key flags or
+implicit API fallbacks.
+
 See [text watermark and provenance research](text-watermark-research.md) for the
 measured token-perturbation survival tables and architecture.
 
-Regeneration is best-effort, not a provider-verified clean verdict. The local
-model refuses an unchanged passage, token-budget truncation without EOS, or
+Regeneration is best-effort. The native Transformers and MLX backends refuse
+an unchanged passage, token-budget truncation without EOS, or
 candidates that fail its fact checks after
 three attempts; an existing destination stays untouched on failure. Those checks
 cover selected numerals, entities and polarity, not full semantic equivalence.

@@ -452,8 +452,136 @@
       "configuration_sha256": "9464c9cedc9a9510244a526e10147e0dfd403a56f733847ed5b483e55a5d189e",
       "source_map_sha256": "12fff33a5f2c9f51dde025412ab22357c03d444f039464ee3f726631b3245fbc",
       "watermark_class": "OmniSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.3622118592202375e-67,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 270,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 6.459636914257771e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "685376d991c158ea546c2365ca74c5e5a4c392e0f75efc2d3c807291234322e8",
+        "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+        "production_default_changed": false
+      },
+      "current_native_rewrite_retest": {
+        "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+        "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "status": "native_library_refusal",
+        "guard_candidates_checked": 3,
+        "scope": "Unchanged frozen source; native MPS float16/default prompt/masking and three attempts per cluster. Whole output refused. No new source generation or successful removal."
+      },
+      "experimental_rewrite_followups": [
+        {
+          "strategy": "experimental_raw_local_transport",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "aa0bd894c99a1997c595e278ea703ac8929a293469c35d23ae5c114f040f87d9",
+          "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+          "rewriter_tag": "qwen3:4b-instruct-2507-q4_K_M",
+          "rewriter_original_manifest_sha256": "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0",
+          "rewriter_local_manifest_sha256": "6214d088d3846e16c9fe00adcbabdbfddc61ce4a70daacc46cb2310c38603054",
+          "tokenizer_identity_proof_sha256": "f2a0cb6abcef794af204771229cc3fb9c3066d86b54ba59bcd5fd4113268191d",
+          "native_factory_prompt_masking_retry_guards_unchanged": true,
+          "transport": "Temporary raw local Ollama transport with a matched Qwen3 tokenizer. Unused GGUF padding ids and numerical parity with HF are not claimed. This is not a shipped backend.",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "removal_status": "no_after_output",
+          "quality_equivalent": null
+        },
+        {
+          "strategy": "qwen30b_capacity_native",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "63fec39330b77e91c280a8412bce7c5b691905a157a3a2c8d4cd1a16c25e1c44",
+          "protocol_sha256": "77dac9a18ed23805dc42f9b8b6c226321573f32f3d3b34e4e74a549ada72ffb0",
+          "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 6,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        },
+        {
+          "strategy": "qwen30b_capacity_greedy",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "63fec39330b77e91c280a8412bce7c5b691905a157a3a2c8d4cd1a16c25e1c44",
+          "protocol_sha256": "77dac9a18ed23805dc42f9b8b6c226321573f32f3d3b34e4e74a549ada72ffb0",
+          "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        },
+        {
+          "strategy": "qwen30b_capacity_bundled",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "5d69ec724d5e15e7abd1d3ae70027c014f2a96d4fc128c5333e810b2a97d20c2",
+          "protocol_sha256": "c25fb8d67c46f030be5ce472d93396e4298a7f53d0e835c36399d2e68aeee245",
+          "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        },
+        {
+          "strategy": "qwen30b_capacity_bundled_readable_expanded",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "5d69ec724d5e15e7abd1d3ae70027c014f2a96d4fc128c5333e810b2a97d20c2",
+          "protocol_sha256": "c25fb8d67c46f030be5ce472d93396e4298a7f53d0e835c36399d2e68aeee245",
+          "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        }
+      ]
     },
     {
       "id": "candidate-027",
@@ -463,8 +591,52 @@
       "configuration_sha256": "9464c9cedc9a9510244a526e10147e0dfd403a56f733847ed5b483e55a5d189e",
       "source_map_sha256": "296b2d63b9c2f8393f82fbaa1b44169c27b5e9d55bf96652411e080a38d1f2bd",
       "watermark_class": "OmniSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.3622118592202375e-67,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 270,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 6.459636914257771e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "71547c1e48c93815c5e55a2eaef9a348ef5315bf2b3eba307c5453f9e30f89aa",
+        "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-028",
@@ -474,8 +646,52 @@
       "configuration_sha256": "9464c9cedc9a9510244a526e10147e0dfd403a56f733847ed5b483e55a5d189e",
       "source_map_sha256": "7dc2e9dbde217fb470ca219f073d4cb9fe74ef2b1d3ba3882bc39dc988af5497",
       "watermark_class": "OmniSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.3622118592202375e-67,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 270,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 6.459636914257771e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "4af58f1f3d237dd2498ae898d426f79761b7a2d7f3e25b0a1f0c6fc1de2f1c08",
+        "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-029",
@@ -485,8 +701,52 @@
       "configuration_sha256": "41487533db886f09e0574ec3399e10f8793a834034e20b067538277d4dc715ad",
       "source_map_sha256": "8223f8c8ca17eca8508fa08e028f98443b8c53cbaa2e5e5a87496f86cab72bb3",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.3622118592202375e-67,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 270,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 6.459636914257771e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "46ce9b7c9af8f78fba3f965afeb731673106226c9f0dec98c2dbc671e7fe7ceb",
+        "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-030",
@@ -496,8 +756,52 @@
       "configuration_sha256": "e77be668a2a61eaa7100eb40ecaa115e945fe6ef4c63c7a4467d452a5a50d6af",
       "source_map_sha256": "6ca5eaee5173a1018dcf74eaa016c9d95d13ca16e31e089f64873b8e815c68df",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 2.3873521527333717e-62,
+          "baseline": 0.4909163805541419
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 270,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 6.459636914257771e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "cfecb6aef7b50467d1581c4ac068974e94e0cd41d2ecd6bc39d627a1646878e1",
+        "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-031",
@@ -507,8 +811,52 @@
       "configuration_sha256": "44f9c27e9abc9c3cb1bff7f8b6ab36dadb12521c4c4a3ef4de87156cce244d08",
       "source_map_sha256": "581857b1d724a41a6665b902b3a8a0d2099df49469d63ce9e5b98eb7ebe050df",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.914159679310593e-34,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 125,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 5.202503707835149e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "8a084137564bd9aa12b23b5718378debee966782dcc05f93c30b3b48e48a81eb",
+        "source_text_sha256": "9595d6e2b6c4754416a8c560213af3e82e14fc329dd8b0e96b7bed850e441d77",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-032",
@@ -518,8 +866,52 @@
       "configuration_sha256": "a691554ef9a7097e047b8f2b6c200740425075360ad9f1c236c5049fa93fbdf9",
       "source_map_sha256": "a32d13c592adad908f0f0c3a1d953bbfe69bacaf6f6be43a2ef6ec0a455d4d46",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.5812121937195972e-52,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 166,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 6.31395332462148e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "dc6e1d42c0ef5f314ee3069e774bcf6de7f8e9d6d9c8e7614b72f1ff02339ba3",
+        "source_text_sha256": "3fa47baef2bec49bccf7a057ed3904893e3b43923dca690caf23e7fb8e68be78",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-033",
@@ -529,8 +921,52 @@
       "configuration_sha256": "1de97a5c7743c1406c7c3f897e9f0bf0c2c2ea80ecfa7ce308f517831b06196a",
       "source_map_sha256": "799d15e743ceaf0a691c3a4150a4bf60431e8782b95486c89fad72ebe34827a3",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 5.575683515115315e-64,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 250,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 7.00453579582927e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "8bd953e9c9662779644930da2f78800d81cea5d3768b996c8f53dc5c791e6940",
+        "source_text_sha256": "fe3e136ef0b6e08fc4f02adfeabb646f738c3bce6da77af907b0ee6e6f3b557e",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-034",
@@ -540,8 +976,52 @@
       "configuration_sha256": "05ddbfa0e8d144089a3438e2eb875c1a1920ff0429ae965da56a2b0c47149251",
       "source_map_sha256": "d3d5bf6d46538926169708c5bb3ea624613640e7bc3a9ad3a92f9d427bcc815c",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 3.663095732577211e-65,
+          "baseline": 0.4586937979594494
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 270,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 6.459636914257771e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "3983c859aeb457f462e5cbc5f7b085fbbfe3183deb409e713a99451c5912db76",
+        "source_text_sha256": "c6333202f93e5d6391641549c2283cd200492530e79bf04f3342d5166b7ea269",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-035",
@@ -551,8 +1031,52 @@
       "configuration_sha256": "bc4ad23afdec452e10c1c4beb97610998caf54781302f52c139105718e4013d5",
       "source_map_sha256": "7523644eb97e25de9b57e77494f8b8ae2b40b4c7bc8774c36e320b5cea6da2cc",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 8.890726947443447e-64,
+          "baseline": 0.45084603302907705
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 228,
+          "baseline": 282
+        },
+        "signal_max_absolute_errors": {
+          "source": 4.906988895214681e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "73c854e6b5a3605099c56367e36655b2850ba38416c26d90d166ca17e15ff477",
+        "source_text_sha256": "19e9b554a299c5825e23e5257c6d4be0cbf06d6b20ff873476178e4014f1747a",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-036",
@@ -562,8 +1086,52 @@
       "configuration_sha256": "952e21e4bd969c3378e12a3dcafcf7561818febe9c89edb2ccd36b736ad099db",
       "source_map_sha256": "9bd788cab26dcd9a82a457e916aeeda1d2ab43491b91b0da8f2a893b2c3c66a9",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate."
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published state executed with unchanged author generation/detection and default Gemma entropy provider. Independent fresh-process signal recomputation and author replay reproduce frozen source/shared-control scores; required weighted mode is active. Native library rewriting refuses complete output after three attempts. This is a Qwen2.5-1.5B generation bridge, not native paper-model/vLLM or private-provider coverage. One shared control does not calibrate FPR. The public plain-only replay command remains disabled for this weighted method.",
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 7.657857312934185e-36,
+          "baseline": 0.4296127453155813
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after output; no faithful removal credited.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "d318fbd8196e00ea0bca32dac0c98632905ff75fcdf47a2cc7c40d0c0e096718",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 192,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 4.714985184506304e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 3,
+        "generation_token_roundtrip_exact": true,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "8c06222fbdc6277872ae3990dde9612ed5ee205f15b748b877d8a53c10428d5d",
+        "source_text_sha256": "5d0a66779576849bc6f53d20891b171d20de7fcdf56aacc1700942e70c9b5c89",
+        "production_default_changed": false
+      }
     },
     {
       "id": "candidate-037",
@@ -919,8 +1487,8 @@
       "configuration_sha256": "537728d11e6d16598e61eea3ab160608d0b21fddebac6f97f5f3c9d496b554a8",
       "source_map_sha256": "ebfd1583bda3d18430f7f0961baa6b87ee1b56b691363544e10dba6db4025dfb",
       "watermark_class": "lm_wm_tools.watermarks.logits_processors.accentmark.AccentMarkWatermark",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge. Direct same-model author token-logprob providers, and author top-eight providers for RowMark, were verified against separate teacher-forced forwards; no outer zero fallback or unweighted substitution. EOS, round-trip and source/shared-negative-control gates passed. Fresh-process signal recomputation and author replay reproduced scores. Native library rewriting refused complete output. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage. The plain-only source-state adapter remains disabled for this weighted method.",
       "requirements_audit": {
         "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
         "required_auxiliary_signals": [
@@ -928,6 +1496,27 @@
         ],
         "processor_class": "AccentMarkWatermark",
         "detector_class": "AccentMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 2.2617316399086323e-49,
+          "baseline": 1.0
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_backend": "transformers",
+        "signal_provider_sha256": "9e4bb2f20a46f96e82f2722ca1b683bbc84a618b3d1353ecc2c4b72be422375d",
+        "signal_validator_sha256": "0632e6e5968b78a8f9d15f0cb459f98259beadba70683dfd762dd47ed4b88a22",
+        "signal_method": "Unchanged direct local HF providers, separately teacher-forced and fresh-process verified. AccentMark receives only token_logprobs; RowMark additionally receives author top8 rows.",
+        "scored_tokens": {
+          "source": 185,
+          "baseline": 285
+        },
+        "native_rewrite_attempts": 3,
+        "production_default_changed": false
       }
     },
     {
@@ -938,8 +1527,8 @@
       "configuration_sha256": "f21e91036068cd2dfa253bbb20f7fb8231dda26817ad5dbf1c09f0aaaf4e4f79",
       "source_map_sha256": "88262b3f59777f825701d517004b116c2430d6957dcbd442930b0a1418b4508e",
       "watermark_class": "lm_wm_tools.watermarks.logits_processors.rowmark.RowMarkWatermark",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Qwen2.5-1.5B MPS float32 sampling bridge. Direct same-model author token-logprob providers, and author top-eight providers for RowMark, were verified against separate teacher-forced forwards; no outer zero fallback or unweighted substitution. EOS, round-trip and source/shared-negative-control gates passed. Fresh-process signal recomputation and author replay reproduced scores. Native library rewriting refused complete output. One prompt/key/seed and a reused control do not establish independent FPR calibration, source quality, paper-model parity or private-provider coverage. The plain-only source-state adapter remains disabled for this weighted method.",
       "requirements_audit": {
         "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
         "required_auxiliary_signals": [
@@ -963,7 +1552,172 @@
         ],
         "processor_class": "RowMarkWatermark",
         "detector_class": "RowMarkWatermark"
-      }
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.1364080844450814e-72,
+          "baseline": 1.0
+        },
+        "removal_status": "no_after_output",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_backend": "transformers",
+        "signal_provider_sha256": "9c49b9bf2d6c17e97735e0d9c74837384e53a251da364ba2a0567c6a409ba4ec",
+        "signal_validator_sha256": "0632e6e5968b78a8f9d15f0cb459f98259beadba70683dfd762dd47ed4b88a22",
+        "signal_method": "Unchanged direct local HF providers, separately teacher-forced and fresh-process verified. AccentMark receives only token_logprobs; RowMark additionally receives author top8 rows.",
+        "scored_tokens": {
+          "source": 253,
+          "baseline": 285
+        },
+        "native_rewrite_attempts": 6,
+        "production_default_changed": false
+      },
+      "current_native_rewrite_retest": {
+        "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+        "source_text_sha256": "cec3ee5615444f8612c0361d2f6c684bdfeffd53992cb72773e3d7d7a8f6badc",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "status": "native_library_refusal",
+        "guard_candidates_checked": 6,
+        "scope": "Unchanged frozen source; native MPS float16/default prompt/masking and three attempts per cluster. Whole output refused. No new source generation or successful removal."
+      },
+      "experimental_rewrite_followups": [
+        {
+          "strategy": "experimental_raw_local_transport",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "aa0bd894c99a1997c595e278ea703ac8929a293469c35d23ae5c114f040f87d9",
+          "source_text_sha256": "cec3ee5615444f8612c0361d2f6c684bdfeffd53992cb72773e3d7d7a8f6badc",
+          "rewriter_tag": "qwen3:4b-instruct-2507-q4_K_M",
+          "rewriter_original_manifest_sha256": "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0",
+          "rewriter_local_manifest_sha256": "6214d088d3846e16c9fe00adcbabdbfddc61ce4a70daacc46cb2310c38603054",
+          "tokenizer_identity_proof_sha256": "f2a0cb6abcef794af204771229cc3fb9c3066d86b54ba59bcd5fd4113268191d",
+          "native_factory_prompt_masking_retry_guards_unchanged": true,
+          "transport": "Temporary raw local Ollama transport with a matched Qwen3 tokenizer. Unused GGUF padding ids and numerical parity with HF are not claimed. This is not a shipped backend.",
+          "status": "returned_not_quality_certified",
+          "guard_candidates_checked": 4,
+          "production_default_changed": false,
+          "after_text_sha256": "00665bb6a0fd6f2cf0f7e681262817af39647a057191b9c47f4868d1d8894467",
+          "quality_equivalent": false,
+          "quality_basis": "Approval signal direction changed.",
+          "pvalues": {
+            "source": 1.1364080844450814e-72,
+            "baseline": 1.0,
+            "ours_ollama": 2.8046413824369067e-13
+          },
+          "removal_status": "retained",
+          "signal_checks": {
+            "weighted": true,
+            "separate_forward_verified": true,
+            "frozen_signals_match": false,
+            "scored_tokens": 249
+          },
+          "oracle_report_sha256": "9c8e06d7d4814f04dc2c0dbdf4eb95353d08a16249b1b763be78eaaa2897d37f"
+        },
+        {
+          "strategy": "qwen30b_capacity_native",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "63fec39330b77e91c280a8412bce7c5b691905a157a3a2c8d4cd1a16c25e1c44",
+          "protocol_sha256": "77dac9a18ed23805dc42f9b8b6c226321573f32f3d3b34e4e74a549ada72ffb0",
+          "source_text_sha256": "cec3ee5615444f8612c0361d2f6c684bdfeffd53992cb72773e3d7d7a8f6badc",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "returned_not_quality_certified",
+          "guard_candidates_checked": 6,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change.",
+          "after_text_sha256": "1a3cb070ce408292ab6ddf529c16e7f6e8cf4fc8d1ca0c3f6e736852130e0edf",
+          "quality_equivalent": false,
+          "quality_basis": "Approval-signal direction changes from the community giving the nod to the borrower giving the nod.",
+          "pvalues": {
+            "source": 1.1364080844450814e-72,
+            "baseline": 1.0,
+            "native": 3.2749500767366042e-09
+          },
+          "removal_status": "retained",
+          "signal_checks": {
+            "weighted": true,
+            "separate_forward_verified": true,
+            "frozen_signals_match": false,
+            "scored_tokens": 253
+          },
+          "oracle_report_sha256": "b4159b9a7d48eb7c78a93840973ff31a80386e99270d0bbe81a88988b813600a"
+        },
+        {
+          "strategy": "qwen30b_capacity_greedy",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "63fec39330b77e91c280a8412bce7c5b691905a157a3a2c8d4cd1a16c25e1c44",
+          "protocol_sha256": "77dac9a18ed23805dc42f9b8b6c226321573f32f3d3b34e4e74a549ada72ffb0",
+          "source_text_sha256": "cec3ee5615444f8612c0361d2f6c684bdfeffd53992cb72773e3d7d7a8f6badc",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "returned_not_quality_certified",
+          "guard_candidates_checked": 4,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change.",
+          "after_text_sha256": "53faeb75591d87bd22066c82b0f0ce97bf03b8049314b5867ca7e5602a0929e4",
+          "quality_equivalent": false,
+          "quality_basis": "Approval-signal direction changes from the community giving the nod to the borrower giving the nod.",
+          "pvalues": {
+            "source": 1.1364080844450814e-72,
+            "baseline": 1.0,
+            "greedy": 1.1414072836405286e-09
+          },
+          "removal_status": "retained",
+          "signal_checks": {
+            "weighted": true,
+            "separate_forward_verified": true,
+            "frozen_signals_match": false,
+            "scored_tokens": 255
+          },
+          "oracle_report_sha256": "b4159b9a7d48eb7c78a93840973ff31a80386e99270d0bbe81a88988b813600a"
+        },
+        {
+          "strategy": "qwen30b_capacity_bundled",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "5d69ec724d5e15e7abd1d3ae70027c014f2a96d4fc128c5333e810b2a97d20c2",
+          "protocol_sha256": "c25fb8d67c46f030be5ce472d93396e4298a7f53d0e835c36399d2e68aeee245",
+          "source_text_sha256": "cec3ee5615444f8612c0361d2f6c684bdfeffd53992cb72773e3d7d7a8f6badc",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        },
+        {
+          "strategy": "qwen30b_capacity_bundled_readable_expanded",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "5d69ec724d5e15e7abd1d3ae70027c014f2a96d4fc128c5333e810b2a97d20c2",
+          "protocol_sha256": "c25fb8d67c46f030be5ce472d93396e4298a7f53d0e835c36399d2e68aeee245",
+          "source_text_sha256": "cec3ee5615444f8612c0361d2f6c684bdfeffd53992cb72773e3d7d7a8f6badc",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        },
+        {
+          "strategy": "signal_direction_guard_regression",
+          "library_text_module_sha256": "317c64c0dd5bd1136f5295926f9a8a32873e8a8d158bd7ef1c645c47422e067d",
+          "worker_sha256": "4e6c68b88085130ab0ccaf76d94bce8879a9368b900ace2aa5dfb10418458f2e",
+          "protocol_sha256": "287583c4dccaa1540ae7857100bfe9b0c5c6b334d4bb8308b21ace41de028a16",
+          "source_text_sha256": "cec3ee5615444f8612c0361d2f6c684bdfeffd53992cb72773e3d7d7a8f6badc",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 4,
+          "production_default_changed": false,
+          "scope": "Native regression rerun with selected explicit English signal-direction guard; same frozen source/model/prompt/masking/seed/attempt budget. Refusal prevents an observed meaning change, not successful removal."
+        }
+      ]
     },
     {
       "id": "candidate-051",
@@ -973,8 +1727,8 @@
       "configuration_sha256": "38dd40a718482d601342493ed0ab5c7552c2e33ae455617c5d796edc0f4dcb20",
       "source_map_sha256": "1cee4e2b349ae957c9f692f4cd94f8d9996cf8218681f2658957502891a67c5b",
       "watermark_class": "lm_wm_tools.watermarks.logits_processors.unisonmark.UnisonMarkWatermark",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "status": "author_reference_positive_control_and_library_refusal",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Llama3.2-1B MPS float32 bridge. Full tokenizer semantics match the pinned declared Llama3.1 reference; the selected published canonical map is checked active and unchanged in generation and detection. Direct author model logprob/top8 signals match separate teacher-forced forwards, and fresh-process recomputation reproduces source/shared-control scores. All three native first-cluster rewrite attempts are refused; there is no complete after output. No embedded asset-build tokenizer identity, independent FPR calibration, native paper-model/vLLM parity or private-provider coverage is claimed. The shared baseline and its prompt metadata date are explicitly frozen. The plain-only replay command remains disabled for this weighted method.",
       "requirements_audit": {
         "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
         "required_auxiliary_signals": [
@@ -998,6 +1752,40 @@
         ],
         "processor_class": "UnisonMarkWatermark",
         "detector_class": "UnisonMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 3.878070286214731e-61,
+          "baseline": 1.0
+        },
+        "removal_status": "no_after_output",
+        "quality_equivalent": null,
+        "quality_basis": "No complete after text to assess.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_backend": "transformers",
+        "generator_repo": "unsloth/Llama-3.2-1B-Instruct",
+        "generator_revision": "5a8abab4a5d6f164389b1079fb721cfab8d7126c",
+        "canonical_assets": {
+          "reference_tokenizer_sha256": "79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4",
+          "tokenizer_sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b",
+          "canonical_tokenizer_equal": true,
+          "vocab_size": 128256,
+          "mode": "alnum",
+          "changed_token_ids": 58030,
+          "canonical_asset_sha256": "a9fffd5c560773a5ca6cfd8b40b6a1a68f321f8a15c49401b85fbd0cc9235382",
+          "embedded_tokenizer_metadata": null,
+          "reference_basis": "Declared Llama evaluation reference; asset-build tokenizer identity is not embedded"
+        },
+        "signal_provider_sha256": "5faccad3a0766f56cb72ee362293af6a23a44f53e65720d6959f4d49241f8541",
+        "scored_tokens": {
+          "source": 297,
+          "baseline": 213
+        },
+        "native_rewrite_attempts": 3,
+        "production_default_changed": false
       }
     },
     {
@@ -1008,8 +1796,8 @@
       "configuration_sha256": "9f549f0b051538bf734813f65b26399b12dbcb6b42479c51dc0bf1e863c8afef",
       "source_map_sha256": "79a2c7e4860adac5d55ea5e7191f17d99abb238d5b489d52b1d8e3de309b9713",
       "watermark_class": "lm_wm_tools.watermarks.logits_processors.concordmark.ConcordMarkWatermark",
-      "status": "not_executed",
-      "reason": "Individual content-addressed submission; selected-package results do not qualify a differently packaged candidate.",
+      "status": "author_reference_non_detection_with_meaning_change",
+      "reason": "Exact published source state executed with unchanged CPU author processing/detection on a Llama3.2-1B MPS float32 bridge. Full tokenizer semantics match the pinned declared Llama3.1 reference; the selected published canonical map is checked active and unchanged in generation and detection. Direct author model logprob/top8 signals match separate teacher-forced forwards, and fresh-process recomputation reproduces source/shared-control scores. Complete native output is not detected at the frozen diagnostic alpha, but a communal notebook becomes a personalized notebook for each tool. This is changed-meaning non-detection, not faithful removal. No embedded asset-build tokenizer identity, independent FPR calibration, native paper-model/vLLM parity or private-provider coverage is claimed. The shared baseline and its prompt metadata date are explicitly frozen. The plain-only replay command remains disabled for this weighted method.",
       "requirements_audit": {
         "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
         "required_auxiliary_signals": [
@@ -1033,6 +1821,236 @@
         ],
         "processor_class": "ConcordMarkWatermark",
         "detector_class": "ConcordMarkWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 3.011309491140639e-43,
+          "baseline": 0.8868942059384302,
+          "after": 0.393058158960657
+        },
+        "removal_status": "not_detected_at_reference_alpha",
+        "quality_equivalent": false,
+        "quality_basis": "Manual source/output review before after-text detector replay: shared versus per-item record organization changed.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_backend": "transformers",
+        "generator_repo": "unsloth/Llama-3.2-1B-Instruct",
+        "generator_revision": "5a8abab4a5d6f164389b1079fb721cfab8d7126c",
+        "canonical_assets": {
+          "reference_tokenizer_sha256": "79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4",
+          "tokenizer_sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b",
+          "canonical_tokenizer_equal": true,
+          "vocab_size": 128256,
+          "mode": "sense",
+          "changed_token_ids": 70702,
+          "canonical_asset_sha256": "603bdb28761306b7fcb3757f51dc8c1ae756c31f46d0e860757a1699822556cd",
+          "embedded_tokenizer_metadata": null,
+          "reference_basis": "Declared Llama evaluation reference; asset-build tokenizer identity is not embedded"
+        },
+        "signal_provider_sha256": "5faccad3a0766f56cb72ee362293af6a23a44f53e65720d6959f4d49241f8541",
+        "scored_tokens": {
+          "source": 229,
+          "baseline": 213,
+          "after": 203
+        },
+        "native_rewrite_attempts": 4,
+        "production_default_changed": false
+      },
+      "record_scope_guard_followup": {
+        "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+        "native_runtime_library_sha256": "c9750d4ff63304bb2df450f7d2898a9f0c4840cb6a592ad7bcc4449645c87574",
+        "final_library_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+        "post_run_change": "Local set[str] annotation and exclusion of hyphenated compounds such as notebook-shaped. Every frozen native candidate reproduces the recorded guard decision under the final core.",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_backend": "Unmodified native transformers prompt/masking, MPS float16, seed0, three attempts per cluster.",
+        "outcome": "native_library_refusal",
+        "guard_candidates_checked": 5,
+        "before_guard_accepts_per_item_record_candidate": true,
+        "after_guard_accepts_per_item_record_candidate": false,
+        "quality_equivalent": null,
+        "scope": "Same frozen generated source. A newly generated intermediate per-tool notebook candidate passes the preceding guard and is rejected by the added explicit record-distribution guard. The complete new rewrite refuses. No after-detector verdict or faithful removal is credited; the earlier diagnostic is retained under its original code hash."
+      },
+      "experimental_rewrite_followups": [
+        {
+          "strategy": "experimental_indexed_sentence_proposals",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "proposal_worker_sha256": "1fa02bc3eebc1c3c7606b23999220ff7005b096939a20661c93b1b82c1fcde8e",
+          "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+          "after_text_sha256": "f07cfa23b5965a036e1659cfec3c89590da72765ccf739fef5fbcc34bd0239b8",
+          "pvalues": {
+            "source": 3.011309491140639e-43,
+            "baseline": 0.8868942059384302,
+            "after": 1.0710947799540541e-20
+          },
+          "removal_status": "retained",
+          "quality_equivalent": null,
+          "quality_basis": "Manual comparison before detector scoring leaves the added exchange-borrowed-tools wording and signed-off versus signed nuance unresolved. No faithful removal credited.",
+          "retained_sentence_ids_by_accepted_paragraph": [
+            [
+              1,
+              2,
+              3,
+              4
+            ],
+            []
+          ],
+          "retention_accounting": "Four sentence originals retained in the first paragraph; the paragraph-level retained_prose_spans field does not measure sentence edits.",
+          "signal_checks": {
+            "source": {
+              "independent_forward_matches": true,
+              "frozen_signal_matches": true,
+              "active_tokens": 229,
+              "weighted": true
+            },
+            "baseline": {
+              "independent_forward_matches": true,
+              "frozen_signal_matches": true,
+              "active_tokens": 213,
+              "weighted": true
+            },
+            "after": {
+              "independent_forward_matches": true,
+              "frozen_signal_matches": false,
+              "active_tokens": 220,
+              "weighted": true
+            }
+          },
+          "independent_replay_sha256": "87839e16980fdc4fc917a214b0f50cc57f532738da1db1a2d197769474a8a6bb",
+          "source_generation_repeated": false,
+          "production_default_changed": false,
+          "scope": "Examined frozen development source. Exact canonical assets and required author model/top-row signals are verified. Shared controls, smaller generation bridge and partial editing do not establish provider coverage, native paper parity or independently calibrated FPR."
+        },
+        {
+          "strategy": "experimental_raw_local_transport",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "aa0bd894c99a1997c595e278ea703ac8929a293469c35d23ae5c114f040f87d9",
+          "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+          "rewriter_tag": "qwen3:4b-instruct-2507-q4_K_M",
+          "rewriter_original_manifest_sha256": "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0",
+          "rewriter_local_manifest_sha256": "6214d088d3846e16c9fe00adcbabdbfddc61ce4a70daacc46cb2310c38603054",
+          "tokenizer_identity_proof_sha256": "f2a0cb6abcef794af204771229cc3fb9c3066d86b54ba59bcd5fd4113268191d",
+          "native_factory_prompt_masking_retry_guards_unchanged": true,
+          "transport": "Temporary raw local Ollama transport with a matched Qwen3 tokenizer. Unused GGUF padding ids and numerical parity with HF are not claimed. This is not a shipped backend.",
+          "status": "returned_not_quality_certified",
+          "guard_candidates_checked": 2,
+          "production_default_changed": false,
+          "after_text_sha256": "ae28fabb56c40931f84822d86802b5ee279040b07e78af4cabafab14e3c95ed5",
+          "quality_equivalent": false,
+          "quality_basis": "Carefulness moved from returning to inspecting; explicit quick inspection and the occasional-creak qualifier were not retained.",
+          "pvalues": {
+            "source": 3.011309491140639e-43,
+            "baseline": 0.8868942059384302,
+            "ours_ollama": 6.318753717978301e-09
+          },
+          "removal_status": "retained",
+          "signal_checks": {
+            "weighted": true,
+            "separate_forward_verified": true,
+            "frozen_signals_match": false,
+            "scored_tokens": 218
+          },
+          "oracle_report_sha256": "4e70038241bb073b6d5e0683d14e21e64f5cda0ef384bd12fec8c81e002c8ea9"
+        },
+        {
+          "strategy": "qwen30b_capacity_native",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "63fec39330b77e91c280a8412bce7c5b691905a157a3a2c8d4cd1a16c25e1c44",
+          "protocol_sha256": "77dac9a18ed23805dc42f9b8b6c226321573f32f3d3b34e4e74a549ada72ffb0",
+          "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "returned_not_quality_certified",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change.",
+          "after_text_sha256": "b648d3fdaacf1f6b29eff458a12f1dbf34001610cbe975a78c52258eff83099e",
+          "quality_equivalent": false,
+          "quality_basis": "The inspection is no longer explicitly quick. Routine describes recurrence or normal procedure, not speed.",
+          "pvalues": {
+            "source": 3.011309491140639e-43,
+            "baseline": 0.8868942059384302,
+            "native": 4.396006241694741e-05
+          },
+          "removal_status": "retained",
+          "signal_checks": {
+            "weighted": true,
+            "separate_forward_verified": true,
+            "frozen_signals_match": false,
+            "scored_tokens": 224
+          },
+          "oracle_report_sha256": "c270955da57111e45c8e04bcd5859461c0461412d751fdaeab21f8df44217eed"
+        },
+        {
+          "strategy": "qwen30b_capacity_greedy",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "63fec39330b77e91c280a8412bce7c5b691905a157a3a2c8d4cd1a16c25e1c44",
+          "protocol_sha256": "77dac9a18ed23805dc42f9b8b6c226321573f32f3d3b34e4e74a549ada72ffb0",
+          "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "returned_not_quality_certified",
+          "guard_candidates_checked": 2,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change.",
+          "after_text_sha256": "ac5f705f28eb044b8b080ea23fe4ecf54dd024e981c0f0cd5597c97f2bab9862",
+          "quality_equivalent": false,
+          "quality_basis": "The inspection is no longer explicitly quick. Routine describes recurrence or normal procedure, not speed.",
+          "pvalues": {
+            "source": 3.011309491140639e-43,
+            "baseline": 0.8868942059384302,
+            "greedy": 0.000960678250921086
+          },
+          "removal_status": "retained",
+          "signal_checks": {
+            "weighted": true,
+            "separate_forward_verified": true,
+            "frozen_signals_match": false,
+            "scored_tokens": 223
+          },
+          "oracle_report_sha256": "c270955da57111e45c8e04bcd5859461c0461412d751fdaeab21f8df44217eed"
+        },
+        {
+          "strategy": "qwen30b_capacity_bundled",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "5d69ec724d5e15e7abd1d3ae70027c014f2a96d4fc128c5333e810b2a97d20c2",
+          "protocol_sha256": "c25fb8d67c46f030be5ce472d93396e4298a7f53d0e835c36399d2e68aeee245",
+          "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        },
+        {
+          "strategy": "qwen30b_capacity_bundled_readable_expanded",
+          "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+          "worker_sha256": "5d69ec724d5e15e7abd1d3ae70027c014f2a96d4fc128c5333e810b2a97d20c2",
+          "protocol_sha256": "c25fb8d67c46f030be5ce472d93396e4298a7f53d0e835c36399d2e68aeee245",
+          "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+          "rewriter_repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+          "rewriter_revision": "e9675aa3ca5f900ccef55267914466d55ab325fa",
+          "rewriter_files_proof_sha256": "d6c696b0c4834ab6a3e94973b425915072e09e9c9bc766fcc1f348f2cc379d2c",
+          "status": "refused_or_runtime_error",
+          "guard_candidates_checked": 3,
+          "production_default_changed": false,
+          "scope": "Examined reused English development source. Native library factory, prompt and attempt policy; greedy changes sampler only. Bundle variants are private constraint prototypes. No independent holdout, provider coverage or production model change."
+        }
+      ],
+      "current_native_rewrite_retest": {
+        "library_text_module_sha256": "5f8851b7093d3c34675b312c9770ed14bc267bec9e04a781bc38524ace6def03",
+        "source_text_sha256": "93c0ca5f688e9edfffe14b9e6210ffc7d323040a20e6253cd5e26c6fe9210c49",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "status": "native_library_refusal",
+        "guard_candidates_checked": 5,
+        "scope": "Unchanged frozen source; native MPS float16/default prompt/masking and three attempts per cluster. Whole output refused. No new source generation or successful removal."
       }
     },
     {
@@ -1044,8 +2062,8 @@
       "configuration_sha256": "a2b4330000ac9ef99c9c742e03f93c52de1430f0d14c0031033cac8bf2bf6c63",
       "source_tree_sha256": "4409572252e2cccf94174a73ece564ce423ddd6a45718ae9369587ab788f4cf1",
       "watermark_class": "TextSeal",
-      "status": "not_executed",
-      "reason": "Baseline source is in the declared project, not a content-addressed submission map. Other-reference results do not establish execution of this source state.",
+      "status": "author_reference_generation_unqualified",
+      "reason": "Exact baseline tree, configuration, required default Gemma entropies and weighted author scores are independently verified. The frozen generated sequence does not round-trip through the generator tokenizer, so the predeclared qualification gate rejects the trial before library rewriting. The low source p-value does not repair this failure. No replacement generation, removal success, FPR calibration or provider coverage is claimed.",
       "requirements_audit": {
         "scope": "Exact-source constructor and declared signals only; not source/control model execution or removal coverage.",
         "required_auxiliary_signals": [
@@ -1053,6 +2071,50 @@
         ],
         "processor_class": "TextSealWatermark",
         "detector_class": "TextSealWatermark"
+      },
+      "diagnostic": {
+        "alpha": 0.01,
+        "pvalues": {
+          "source": 1.115464734630519e-61,
+          "baseline": 0.43812575192893866
+        },
+        "removal_status": "unqualified_generation",
+        "quality_equivalent": null,
+        "quality_basis": "Generation failed token round-trip qualification; no rewrite was attempted.",
+        "library_text_module_sha256": "9ed88b90330089bf8ef9ff8e05b2c506db77c2ad0c0e071b20072287b8de50f4",
+        "generator_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "generator_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "rewriter_repo": "Qwen/Qwen2.5-1.5B-Instruct",
+        "rewriter_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+        "generator_backend": "transformers, MPS float32/eager; unchanged CPU author processor; stochastic top-k sampling",
+        "rewriter_backend": "native library transformers default, MPS float16",
+        "auxiliary": {
+          "declared_model": "google/gemma-3-270m-it",
+          "declared_revision": "ac82b4e820549b854eebf28ce6dedaf9fdfa17b3",
+          "download_model": "daniel-dona/gemma-3-270m-it",
+          "download_revision": "99073d6b6edb0e298d163f964ec2b9d970b3408d",
+          "identity_proof_sha256": "cc52e80bd8dbf9ba356524bb81d72b5594029d3a66978f0ff12f465447cffe29",
+          "device": "cpu",
+          "loader": "Unchanged author SignalEngine/EntropySignalProvider/_lazy_load_causal_lm from exact source file; loaded directly to avoid unrelated evaluation package dataset imports. No dtype/attention overrides. Raw generator IDs, no retokenization.",
+          "validation": "Independent model forward, declared Float32 log_softmax, Float64 entropy reduction, then separate fresh-process author engine replay. Fully Float64 normalization difference retained as precision diagnostic, not substituted."
+        },
+        "signal_method": "Unchanged default Gemma provider consumes raw generator IDs. CPU bfloat16/sdpa model, float32 log_softmax and entropy reduction; separate forward with float32 normalization and independent float64 summation. Fresh-process author entropy arrays match exactly. No retokenization into Gemma vocabulary.",
+        "provider_source_sha256": "6ede6a263c6069d51b4102e03454060a56b87778d82b0118c2a5220b5b58f6ad",
+        "signal_validator_sha256": "170dc6634587dbd8bd3285c5ef247af98b92e5be19eaa84f8ddc8ca4672324ea",
+        "scored_tokens": {
+          "source": 261,
+          "baseline": 283
+        },
+        "signal_max_absolute_errors": {
+          "source": 8.032561797932658e-07,
+          "baseline": 5.79910214071333e-07
+        },
+        "native_rewrite_attempts": 0,
+        "generation_token_roundtrip_exact": false,
+        "protocol_sha256": "7a84190344a793e231759940b1f4b5bb4902ec62cf36b8ba7e996cea447a9f47",
+        "independent_replay_sha256": "eb0f2669b0633c42e0feb81d52d51747228a4f587b8cd726e5de3580e4b002d8",
+        "source_text_sha256": "1de58fa430db22eaf3e1a521d10bcb506044c9cd6ba8ba6ab898adfdcd80d18e",
+        "production_default_changed": false
       }
     },
     {

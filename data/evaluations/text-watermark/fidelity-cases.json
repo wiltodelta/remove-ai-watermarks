@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "provenance": "Handwritten synthetic English/Russian/Bulgarian meaning-preservation pairs. These are judge-calibration inputs, not watermarked model outputs or proof of complete semantic coverage.",
-  "history": "The first 8B critic saw development pairs before held-out pairs. The held-out partition is now public development evidence, not a fresh holdout for future tuning. Residency/citizenship pairs were added after a separate generated candidate exposed that confusion. Visitor/tourist and child-age cases were added after a full-document 27B judge missed category narrowing, despite accepting or rejecting the earlier short calibration pairs correctly. The mobility positive was clarified to retain the reader category after a label review exposed its broader people wording. Duration-expansion and omitted-supervision pairs were added after the independent AliMark trial. Earlier measurements refer to their archived input hash and do not evaluate this revision. Split place-name and owner/employee pairs were added after the Q64 AliMark sentence trial exposed these failures. They are examined development cases, not fresh holdout. Supplied-object roles, cleanup timing, plan realization and optional-demonstration pairs were added after the stronger-inserter PostMark trial exposed these failures. They are handwritten examined development evidence, not fresh held-out measurements. Resource availability/abundance pairs were added after reviewing the accepted MLX follow-up. Season loss/range and maintenance/visit frequency pairs were added after the selected AutoMark trial exposed these issues. These handwritten examined cases are not a fresh holdout; the season guard does not establish preservation of daily/occasional frequency or full event binding. Reopening, oldest-harvest and visitor-beneficiary pairs were added after the visible-names experiment produced more complete but factually changed outputs. These are examined development cases, not a new holdout or proof that the default fact checker catches them. Russian whole/scaled cardinal, bound and duration-adjective pairs were added after reviewing unsupported spelled quantities. These are examined regression evidence. The earlier English-only MiniCheck trial refers to its archived input hash and does not evaluate these added pairs. Whole English cardinal, signed/exponent value, literal-address and whole-bound-binding pairs were added after numeric-parser regressions. These are examined synthetic regression cases. Earlier NLI, LLM and MiniCheck results refer to their archived input hashes, not this revised corpus. Scheduling certainty, intended allocation versus dispatch, explicit visitor/staff instruction roles and during-versus-throughout pairs were added after a pinned Qwen3.5-9B MLX trial exposed meaning changes. These short handwritten pairs disambiguate the observed failure types. They are examined development evidence, not a fresh holdout. Earlier judge measurements do not cover this revised corpus or its added Bulgarian cases. Selected unit, unit/value/bound binding and Russian duration-unit pairs were added after adjacent-measurement regressions. A measurement-role pair records a fresh unmarked default-model precision invention despite intact units. These are examined development cases, not held-out evidence or a complete semantic guarantee; earlier judge metrics do not evaluate this revised hash. Alternate-day recurrence and invented weekly scheduling pairs were added after the exact FreshRace/RenewalRace source-state cohort returned detector-negative but meaning-changed prose. These are examined synthetic development cases. Earlier judge results refer to their archived corpus hashes and do not evaluate this revision. Indefinite English duration and conditional-light pairs were added after a native recurrence-guard follow-up still dropped the source's for-a-day condition. These are examined synthetic development cases; previous judge measurements remain bound to their archived corpus hashes. Bare-number multiplicity, frequency-to-event binding and resident/tool provenance pairs were added after paired native 9B rewrite experiments exposed duplicate numbers and role/scope changes. These are examined, disambiguated synthetic development cases, not fresh holdout measurements; ambiguous model wording is not treated as a definite binary-label contradiction. Earlier judge results remain bound to their archived corpus hashes. Added examined English/Russian approval, responsibility and permission development counterparts after native Qwen3-4B observations. Earlier judge measurements remain bound to their earlier corpus hash; these additions are not an independent holdout. Added examined honorific/surname and initials development counterparts after a native ChoirMark output lost a surname. These are not new held-out judge measurements.",
+  "history": "The first 8B critic saw development pairs before held-out pairs. The held-out partition is now public development evidence, not a fresh holdout for future tuning. Residency/citizenship pairs were added after a separate generated candidate exposed that confusion. Visitor/tourist and child-age cases were added after a full-document 27B judge missed category narrowing, despite accepting or rejecting the earlier short calibration pairs correctly. The mobility positive was clarified to retain the reader category after a label review exposed its broader people wording. Duration-expansion and omitted-supervision pairs were added after the independent AliMark trial. Earlier measurements refer to their archived input hash and do not evaluate this revision. Split place-name and owner/employee pairs were added after the Q64 AliMark sentence trial exposed these failures. They are examined development cases, not fresh holdout. Supplied-object roles, cleanup timing, plan realization and optional-demonstration pairs were added after the stronger-inserter PostMark trial exposed these failures. They are handwritten examined development evidence, not fresh held-out measurements. Resource availability/abundance pairs were added after reviewing the accepted MLX follow-up. Season loss/range and maintenance/visit frequency pairs were added after the selected AutoMark trial exposed these issues. These handwritten examined cases are not a fresh holdout; the season guard does not establish preservation of daily/occasional frequency or full event binding. Reopening, oldest-harvest and visitor-beneficiary pairs were added after the visible-names experiment produced more complete but factually changed outputs. These are examined development cases, not a new holdout or proof that the default fact checker catches them. Russian whole/scaled cardinal, bound and duration-adjective pairs were added after reviewing unsupported spelled quantities. These are examined regression evidence. The earlier English-only MiniCheck trial refers to its archived input hash and does not evaluate these added pairs. Whole English cardinal, signed/exponent value, literal-address and whole-bound-binding pairs were added after numeric-parser regressions. These are examined synthetic regression cases. Earlier NLI, LLM and MiniCheck results refer to their archived input hashes, not this revised corpus. Scheduling certainty, intended allocation versus dispatch, explicit visitor/staff instruction roles and during-versus-throughout pairs were added after a pinned Qwen3.5-9B MLX trial exposed meaning changes. These short handwritten pairs disambiguate the observed failure types. They are examined development evidence, not a fresh holdout. Earlier judge measurements do not cover this revised corpus or its added Bulgarian cases. Selected unit, unit/value/bound binding and Russian duration-unit pairs were added after adjacent-measurement regressions. A measurement-role pair records a fresh unmarked default-model precision invention despite intact units. These are examined development cases, not held-out evidence or a complete semantic guarantee; earlier judge metrics do not evaluate this revised hash. Alternate-day recurrence and invented weekly scheduling pairs were added after the exact FreshRace/RenewalRace source-state cohort returned detector-negative but meaning-changed prose. These are examined synthetic development cases. Earlier judge results refer to their archived corpus hashes and do not evaluate this revision. Indefinite English duration and conditional-light pairs were added after a native recurrence-guard follow-up still dropped the source's for-a-day condition. These are examined synthetic development cases; previous judge measurements remain bound to their archived corpus hashes. Bare-number multiplicity, frequency-to-event binding and resident/tool provenance pairs were added after paired native 9B rewrite experiments exposed duplicate numbers and role/scope changes. These are examined, disambiguated synthetic development cases, not fresh holdout measurements; ambiguous model wording is not treated as a definite binary-label contradiction. Earlier judge results remain bound to their archived corpus hashes. Added examined English/Russian approval, responsibility and permission development counterparts after native Qwen3-4B observations. Earlier judge measurements remain bound to their earlier corpus hash; these additions are not an independent holdout. Added examined honorific/surname and initials development counterparts after a native ChoirMark output lost a surname. These are not new held-out judge measurements. Added examined, disambiguated borrower/lender-role and enumerated-tool counterparts after an exact RowMark rewrite trial exposed accepted intermediate meaning changes. The complete rewrite was refused in a later cluster. These are development cases and known gaps, not claims that the fact checker catches them or fresh held-out judge measurements. Added examined, disambiguated communal-record versus per-item-record counterparts after an exact ConcordMark rewrite changed one shared notebook into a personalized notebook for each tool. These are development cases and known checker gaps, not fresh held-out measurements. Earlier judge/parser/competitor reports retain their archived corpus hashes. A subsequent native guard revision rejects selected explicit English communal/shared record containers becoming separate containers per item, or the reverse. The existing shared-record development pair is used as regression evidence. Mixed or implicit distributions, record entries and actor/item binding remain unresolved; earlier judge and competitor measurements retain their archived corpus hashes. Added examined, disambiguated signal-direction and inspection-speed counterparts after pinned Qwen3-30B-A3B native outputs changed these relations. The selected explicit English signal-direction guard covers the matching literal source/recipient reversal, while general approval actors and modifier-to-event binding remain unresolved. These are development regressions, not a fresh holdout. Earlier judge, parser and competitor results remain bound to their archived code and corpus hashes. Added examined technical-capability versus permission and installation-availability versus actual-start development counterparts after a pinned larger-model curated SynthID trial. Paired technical-frame cue normalization prevents a selected false refusal; it is not a general permission or full-fidelity guarantee. The complete inline output still invents an installation start, and the native output remains semantically unresolved. These are examined development cases, not fresh held-out judge measurements. Earlier results retain their original code and corpus hashes. Added examined development-stage versus implementation counterparts after a source-anchor trial replaced strategies being developed with implementation. These disambiguated synthetic pairs are development evidence, not held-out judge measurements or a claim that the default fact checker detects event-stage changes. Earlier model, judge, parser and competitor reports keep their original code and corpus hashes. Added examined compound-duration, annual-recurrence and monetary-period counterparts after native Mistral source-trace signature differences. These are disambiguated synthetic regression examples, not fresh held-out quality measurements. Earlier judge, parser and competitor results retain their original code/corpus hashes. Selected signature normalization does not certify full meaning or bind rates and durations to all actors/events. Added examined initial-appositive first-name counterparts after a native Mistral trace exposed partial masking of a full name. The selected ASCII appositive extension checks the full recognized phrase, not general person identity or role binding. These are development regression cases; earlier judge/parser/competitor results remain bound to their original corpus hashes. Added examined each-type versus various-types coverage counterparts after a complete native Qwen27 curated-source output weakened universal checklist coverage. These are development cases and a known semantic-check gap, not a new holdout or a claim that the default checker catches the loss. Earlier judge/model/parser results keep their archived code and corpus hashes. Added examined development pairs for unsupported paper medium in a Qwen27 thinking output and unambiguous synthetic event/date binding. The original model paragraph has ambiguous date attachment and is not labeled a proven date contradiction. Earlier calibration metrics retain their recorded corpus hashes. The later selected explicit English type-coverage guard rejects the examined each-type/various-types loss; event/date binding and unsupported medium remain unresolved. This does not retrospectively change archived judge/model measurements. Added examined synthetic work/residence, beneficiary narrowing, goal/achievement, likelihood and immediate/priority counterparts prompted by native model reviews. These are development probes, not held-out judge evidence or completed semantic fixes. Earlier measurements retain their original corpus hashes. Added examined synthetic membership/criticism counterparts after a lexical-substitution output changed series membership to a critical stance. The selected affirmative English copular frame guard compares matching literal participant descriptions only. Different descriptions, unsupported grammar, modality, negation and mixed claims remain unresolved. These are development regressions, not held-out judge evidence. Earlier comparisons retain their executed code and corpus hashes. Added examined synthetic estimate-status pairs after a local sentence paraphrase dropped an explicit numerical estimate. Selected adjacent estimate forms retain a distinct kind, value and supported unit; nonadjacent descriptors and general uncertainty remain unresolved. These are development regressions, not independent holdout evidence. Earlier NLI and generation comparisons retain their original corpus and core hashes.",
   "cases": [
     {
       "id": "development-00",
@@ -1570,6 +1570,438 @@
       "source": "The librarian called Prof. J. R. Tolkien.",
       "candidate": "The librarian called Prof. J. R. Jones.",
       "equivalent": false
+    },
+    {
+      "id": "discovered-weighted-borrower_lender_roles-1",
+      "partition": "discovered_failure_after_weighted_rewrite_trial",
+      "name": "borrower_lender_roles",
+      "language": "en",
+      "source": "Residents borrow tools from volunteers.",
+      "candidate": "Volunteers lend tools to residents.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-weighted-borrower_lender_roles-0",
+      "partition": "discovered_failure_after_weighted_rewrite_trial",
+      "name": "borrower_lender_roles",
+      "language": "en",
+      "source": "Residents borrow tools from volunteers.",
+      "candidate": "Residents lend tools to volunteers.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-weighted-enumerated_tool_loss-1",
+      "partition": "discovered_failure_after_weighted_rewrite_trial",
+      "name": "enumerated_tool_loss",
+      "language": "en",
+      "source": "The shelf holds a fork, a shovel, and a ladder.",
+      "candidate": "A fork, a shovel, and a ladder are kept on the shelf.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-weighted-enumerated_tool_loss-0",
+      "partition": "discovered_failure_after_weighted_rewrite_trial",
+      "name": "enumerated_tool_loss",
+      "language": "en",
+      "source": "The shelf holds a fork, a shovel, and a ladder.",
+      "candidate": "The shelf holds a fork and a shovel.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-canonical-shared_record_distribution-1",
+      "partition": "discovered_failure_after_canonical_rewrite_trial",
+      "name": "shared_record_distribution",
+      "language": "en",
+      "source": "A communal notebook records all the tools.",
+      "candidate": "All the tools are recorded in a shared notebook.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-canonical-shared_record_distribution-0",
+      "partition": "discovered_failure_after_canonical_rewrite_trial",
+      "name": "shared_record_distribution",
+      "language": "en",
+      "source": "A communal notebook records all the tools.",
+      "candidate": "Each tool has its own notebook.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen30b-signal_direction_en-0",
+      "partition": "development",
+      "name": "signal_direction_en",
+      "language": "en",
+      "source": "Borrowers receive a nod from the community.",
+      "candidate": "Borrowers give a nod to the community.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen30b-signal_direction_en-1",
+      "partition": "development",
+      "name": "signal_direction_en",
+      "language": "en",
+      "source": "Borrowers receive a nod from the community.",
+      "candidate": "Borrowers get a nod from the community.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen30b-inspection_speed_en-0",
+      "partition": "development",
+      "name": "inspection_speed_en",
+      "language": "en",
+      "source": "Volunteers perform a quick routine inspection of the tools.",
+      "candidate": "Volunteers perform a routine inspection of the tools.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen30b-inspection_speed_en-1",
+      "partition": "development",
+      "name": "inspection_speed_en",
+      "language": "en",
+      "source": "Volunteers perform a quick routine inspection of the tools.",
+      "candidate": "Volunteers routinely inspect the tools quickly.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-synthid30b-technical_capability_en-1",
+      "partition": "development",
+      "name": "technical_capability_en",
+      "language": "en",
+      "source": "A calculator allows students to calculate totals.",
+      "candidate": "A calculator enables students to compute totals.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-synthid30b-technical_capability_en-0",
+      "partition": "development",
+      "name": "technical_capability_en",
+      "language": "en",
+      "source": "The manager granted staff permission to record data.",
+      "candidate": "The manager installed a tool that enabled staff to record data.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-synthid30b-installation_availability_en-0",
+      "partition": "development",
+      "name": "installation_availability_en",
+      "language": "en",
+      "source": "Both devices were available for installation and configuration starting from April 1st.",
+      "candidate": "Installation and configuration of both devices began on April 1st.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-synthid30b-installation_availability_en-1",
+      "partition": "development",
+      "name": "installation_availability_en",
+      "language": "en",
+      "source": "Both devices were available for installation and configuration starting from April 1st.",
+      "candidate": "Starting on April 1st, both devices were available for installation and configuration.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-anchor-development_stage_en-0",
+      "partition": "development",
+      "name": "development_stage_en",
+      "language": "en",
+      "source": "Staff were developing a communication strategy when scores increased.",
+      "candidate": "Staff implemented a communication strategy when scores increased.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-anchor-development_stage_en-1",
+      "partition": "development",
+      "name": "development_stage_en",
+      "language": "en",
+      "source": "Staff were developing a communication strategy when scores increased.",
+      "candidate": "A communication strategy was being developed by staff when scores increased.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-duration-frequency-0",
+      "partition": "development",
+      "name": "compound_duration_en",
+      "language": "en",
+      "source": "The program ran for a four-week period.",
+      "candidate": "The program ran for four weeks.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-duration-frequency-1",
+      "partition": "development",
+      "name": "compound_duration_en",
+      "language": "en",
+      "source": "The program ran for a four-week period.",
+      "candidate": "The program ran for a four-day period.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-duration-frequency-2",
+      "partition": "development",
+      "name": "annual_recurrence_en",
+      "language": "en",
+      "source": "The association held its annual meeting.",
+      "candidate": "The association held its yearly meeting.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-duration-frequency-3",
+      "partition": "development",
+      "name": "annual_recurrence_en",
+      "language": "en",
+      "source": "The association held its annual meeting.",
+      "candidate": "The association held its semi-annual meeting.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-duration-frequency-4",
+      "partition": "development",
+      "name": "monetary_period_en",
+      "language": "en",
+      "source": "The service costs $500 per week.",
+      "candidate": "The service costs $500 weekly.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-duration-frequency-5",
+      "partition": "development",
+      "name": "monetary_period_en",
+      "language": "en",
+      "source": "The service costs $500 per week.",
+      "candidate": "The service costs $500 per month.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-appositive-name-0",
+      "partition": "development",
+      "name": "initial_appositive_name_en",
+      "language": "en",
+      "source": "Alice Parker, the coordinator, signed the report.",
+      "candidate": "Mary Parker, the coordinator, signed the report.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-appositive-name-1",
+      "partition": "development",
+      "name": "initial_appositive_name_en",
+      "language": "en",
+      "source": "Alice Parker, the coordinator, signed the report.",
+      "candidate": "The coordinator, Alice Parker, signed the report.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen27-coverage-0",
+      "partition": "development",
+      "name": "appliance_type_coverage_en",
+      "language": "en",
+      "source": "Volunteers provided maintenance checklists for each type of appliance.",
+      "candidate": "Volunteers provided maintenance checklists for various appliance types.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen27-coverage-1",
+      "partition": "development",
+      "name": "appliance_type_coverage_en",
+      "language": "en",
+      "source": "Volunteers provided maintenance checklists for each type of appliance.",
+      "candidate": "Volunteers provided maintenance checklists for every appliance type.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen27-thinking-medium-0",
+      "partition": "development",
+      "name": "manual_process_medium_en",
+      "language": "en",
+      "source": "Swimmers used a manual booking process.",
+      "candidate": "Swimmers used a paper-based manual booking process.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen27-thinking-medium-1",
+      "partition": "development",
+      "name": "manual_process_medium_en",
+      "language": "en",
+      "source": "Swimmers used a manual booking process.",
+      "candidate": "Swimmers relied on a manual booking process.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-qwen27-thinking-date-binding-0",
+      "partition": "development",
+      "name": "event_date_binding_en",
+      "language": "en",
+      "source": "Sarah White reviewed the irregularities on April 17th. Phil Adams reported them on April 16th.",
+      "candidate": "Sarah White reviewed the irregularities on April 16th. Phil Adams reported them on April 17th.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-qwen27-thinking-date-binding-1",
+      "partition": "development",
+      "name": "event_date_binding_en",
+      "language": "en",
+      "source": "Sarah White reviewed the irregularities on April 17th. Phil Adams reported them on April 16th.",
+      "candidate": "Sarah White examined the irregularities on April 17th. Phil Adams reported them on April 16th.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-native-role-modality-work_residence_en-0",
+      "partition": "development",
+      "name": "work_residence_en",
+      "language": "en",
+      "source": "James Patton manages the Greedsville office.",
+      "candidate": "James Patton lives in Greedsville.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-native-role-modality-work_residence_en-1",
+      "partition": "development",
+      "name": "work_residence_en",
+      "language": "en",
+      "source": "James Patton manages the Greedsville office.",
+      "candidate": "James Patton is the manager of the Greedsville office.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-native-role-modality-beneficiary_residence_en-0",
+      "partition": "development",
+      "name": "beneficiary_residence_en",
+      "language": "en",
+      "source": "Individuals in Greenbrook Village can use the service.",
+      "candidate": "Residents in Greenbrook Village can use the service.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-native-role-modality-beneficiary_residence_en-1",
+      "partition": "development",
+      "name": "beneficiary_residence_en",
+      "language": "en",
+      "source": "Individuals in Greenbrook Village can use the service.",
+      "candidate": "Individuals in Greenbrook Village can make use of the service.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-native-role-modality-goal_achievement_en-0",
+      "partition": "development",
+      "name": "goal_achievement_en",
+      "language": "en",
+      "source": "The goal was to improve the library workflow.",
+      "candidate": "The library workflow has improved.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-native-role-modality-goal_achievement_en-1",
+      "partition": "development",
+      "name": "goal_achievement_en",
+      "language": "en",
+      "source": "The goal was to improve the library workflow.",
+      "candidate": "Improving the library workflow was the goal.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-native-role-modality-conflict_likelihood_en-0",
+      "partition": "development",
+      "name": "conflict_likelihood_en",
+      "language": "en",
+      "source": "The double booking created a potential conflict.",
+      "candidate": "The double booking created a likely conflict.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-native-role-modality-conflict_likelihood_en-1",
+      "partition": "development",
+      "name": "conflict_likelihood_en",
+      "language": "en",
+      "source": "The double booking created a potential conflict.",
+      "candidate": "The double booking created a possible conflict.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-native-role-modality-immediate_priority_en-0",
+      "partition": "development",
+      "name": "immediate_priority_en",
+      "language": "en",
+      "source": "The team scheduled a meeting to fix the issues immediately.",
+      "candidate": "The team scheduled a meeting to address the issues on a priority basis.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-native-role-modality-immediate_priority_en-1",
+      "partition": "development",
+      "name": "immediate_priority_en",
+      "language": "en",
+      "source": "The team scheduled a meeting to fix the issues immediately.",
+      "candidate": "The team arranged a meeting to resolve the issues immediately.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-lexical-membership-0",
+      "partition": "development",
+      "name": "membership_to_criticism_en",
+      "language": "en",
+      "source": "This blog is part of the series.",
+      "candidate": "The blog is critical of the series.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-lexical-membership-1",
+      "partition": "development",
+      "name": "membership_to_criticism_en",
+      "language": "en",
+      "source": "This blog is part of the series.",
+      "candidate": "The blog is part of the series.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-lexical-membership-2",
+      "partition": "development",
+      "name": "criticism_to_membership_en",
+      "language": "en",
+      "source": "The publication is critical of the collection.",
+      "candidate": "The publication is part of the collection.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-lexical-membership-3",
+      "partition": "development",
+      "name": "criticism_to_membership_en",
+      "language": "en",
+      "source": "The publication is critical of the collection.",
+      "candidate": "The publication takes a critical stance toward the collection.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-explicit-estimate-0",
+      "partition": "development",
+      "name": "estimate_status_loss",
+      "language": "en",
+      "source": "The pilot reduced costs by an estimated 40%.",
+      "candidate": "The pilot reduced costs by 40%.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-explicit-estimate-1",
+      "partition": "development",
+      "name": "estimate_form_preserved",
+      "language": "en",
+      "source": "The pilot reduced costs by an estimated 40%.",
+      "candidate": "The pilot reduced costs by an estimate of 40%.",
+      "equivalent": true
+    },
+    {
+      "id": "discovered-explicit-estimate-2",
+      "partition": "development",
+      "name": "estimated_duration_loss",
+      "language": "en",
+      "source": "The duration was estimated at two hours.",
+      "candidate": "The duration was two hours.",
+      "equivalent": false
+    },
+    {
+      "id": "discovered-explicit-estimate-3",
+      "partition": "development",
+      "name": "estimated_duration_preserved",
+      "language": "en",
+      "source": "The duration was estimated at two hours.",
+      "candidate": "The duration was an estimate of 2 hours.",
+      "equivalent": true
     }
   ]
 }

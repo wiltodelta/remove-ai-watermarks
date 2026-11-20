@@ -360,6 +360,10 @@ Optional `--allow-partial` keeps rejected paragraph clusters unchanged and print
 `PARTIAL`; it requires regeneration and can leave marked prose. An explicitly
 requested partial output returns 0. All-prose refusal still fails without replacing
 the destination; default strict mode aborts on the first rejected cluster.
+For local server backends and a second pass over retained sentences, check
+the installed command's help for availability. See the
+[CLI guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md)
+for setup and constraints.
 
 ## MCP server
 

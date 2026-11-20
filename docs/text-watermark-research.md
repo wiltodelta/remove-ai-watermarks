@@ -112,7 +112,12 @@ The body between the headers holds either an external manifest URI
 base64 JUMBF). When inline JUMBF bytes are present, `remove-ai-watermarks`
 decodes and inspects the JUMBF payload for AI provenance signals and removes
 the block (along with an enclosing HTML/Markdown comment `<!-- ... -->` when
-the comment contains only the C2PA manifest block).
+the comment contains only the C2PA manifest block). A.9 also defines a
+single-line form in a host comment. Removal follows the exclusion range
+for that form, including the following line ending at the beginning or
+in the middle of a file and the preceding line ending at the end. This
+preserves LF and CRLF in the remaining text. Delimiters inside Markdown
+fenced code examples are kept as literal content.
 
 ### C2PA 2.3/2.4 Appendix A.7: HTML (`text/html`)
 
@@ -150,8 +155,11 @@ contiguous suffix:
 | `7..7+N` | `payload` | `bytes` | UTF-8 provenance payload (e.g. manifest ID, author, or JSON claim) |
 | `7+N..11+N` | `crc32` | `>I` (`uint32` big-endian) | `zlib.crc32(magic + version + length + payload) & 0xFFFFFFFF` |
 
-Validating both the `b"VSR1"` header and the 32-bit CRC guarantees zero false
-positives on ordinary text while recovering the exact embedded payload string.
+The detector requires both the `b"VSR1"` header and the 32-bit CRC. When
+interleaving puts a frame byte between a base character and its registered
+variation selector, the detector can retry without the registered selector.
+The retry still requires the complete frame and matching CRC. The cleaner
+removes those confirmed frame bytes before classifying the remaining selector.
 
 ### Unicode Tags (`U+E0000`..`U+E007F`), Private Use Area, and zero-width steganography
 
@@ -173,24 +181,33 @@ positives on ordinary text while recovering the exact embedded payload string.
   annotation controls), mid-text `U+FEFF`, and Unicode Private Use Area markers
   (`U+E000..U+F8FF`, `U+F0000..U+FFFFD`, `U+100000..U+10FFFD`, including ChatGPT
   citation delimiters `U+E200..U+E203`).
+  For `U+034F`, preserve the canonical mark order barrier when its adjoining
+  combining runs demonstrate the effect. This covers the Hebrew and double
+  diacritic patterns described in the
+  [Unicode 17 core specification](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-23/).
 - **Emoji, subdivision flag, and joining-script preservation invariants**:
   - A naive strip of `U+E0000`..`U+E007F` breaks ISO 3166-2 regional subdivision
     flags (England `🏴󠁧󠁢󠁥󠁮󠁧󠁿`, Scotland `🏴󠁧󠁢󠁳󠁣󠁴󠁿`, Wales `🏴󠁧󠁢󠁷󠁬󠁳󠁿`), which are encoded as
     `U+1F3F4` (`WAVING BLACK FLAG`) followed by `U+E0020..U+E007E` tag characters
     and terminated by `U+E007F` (`CANCEL TAG`). [`text.py`](../src/remove_ai_watermarks/text.py)
     identifies and preserves valid `U+1F3F4..U+E007F` subdivision flag sequences
-    (`_subdivision_flag_tag_indices`) while stripping standalone tag payloads.
+    (`_subdivision_flag_tag_indices`) using the CLDR validity criteria in
+    [UTS #51 Annex C](https://www.unicode.org/reports/tr51/#Valid_Emoji_Tag_Sequences).
+    It strips standalone payloads before classifying adjacent selectors and
+    joiners, preserving glyph components when a payload was inserted between them.
   - A naive strip of `U+FE0E`/`U+FE0F` or `U+200D` breaks standard emoji rendering
     (such as `❤️` = `U+2764 U+FE0F` or skin-tone/profession ZWJ sequences
     `👨🏻❤️👨🏻` = `U+1F468 U+1F3FB U+200D U+2764 U+FE0F U+200D U+1F468 U+1F3FB`),
     while unconditionally keeping `U+200D` fails to strip `U+200D` delimiters in
     zero-width encoders (`zengkan0703/text-watermark`). [`text.py`](../src/remove_ai_watermarks/text.py)
-    preserves single `U+FE0E`/`U+FE0F` presentation selectors immediately following
-    an emoji base, preserves `U+200D` only when joining two emoji pictographs
+    preserves single `U+FE0E`/`U+FE0F` presentation selectors in registered
+    Unicode emoji variation pairs, preserves `U+200D` when joining two emoji pictographs
     (skipping intermediate skin-tone/VS16 modifiers via `_neighbor_skipping_modifiers`)
     or two joining-script characters (`_is_joining_script_char`: Arabic, Syriac,
-    Indic, Sinhala, Tibetan, Myanmar, Khmer, Mongolian), and preserves `U+200C`
-    (`ZWNJ`) only inside joining scripts.
+    Indic, Sinhala, Tibetan, Myanmar, Khmer, Mongolian). Explicit virama
+    sequences also preserve ZWJ in standalone Devanagari half forms, legacy
+    Malayalam chillus, and Saurashtra conjuncts. `U+200C` (`ZWNJ`) is
+    preserved inside joining scripts.
 
 ---
 
@@ -221,18 +238,24 @@ the specific generator/detector configuration saved with a run.
    an $m$-layer single-elimination tournament draws $2^m$ candidate tokens i.i.d.
    from the model's next-token distribution $P(\cdot \mid y_{<t})$ (implemented
    efficiently via iterative probability updates $p^{(\ell+1)}_v = p^{(\ell)}_v (1 + g_{t,v,\ell} - \mu_\ell)$
-   where $\mu_\ell = \sum_v g_{t,v,\ell} p^{(\ell)}_v$, using a 20-round Threefry
-   2x32 PRNG in `google-deepmind/synthid-text` v0.3.0). At layer
+   where $\mu_\ell = \sum_v g_{t,v,\ell} p^{(\ell)}_v$, using a sampling table
+   in the historical 30-key implementation). At layer
    $\ell \in \{1, \dots, m\}$, competing candidates are scored by a keyed binary
    hash $g_\ell(y, c_t; k_\ell) \in \{0, 1\}$. Under the null hypothesis $H_0$
    (unwatermarked text or wrong key), $g_\ell \sim \operatorname{Bernoulli}(1/2)$
    with mean $\mu_0 = 0.5$ and variance $\sigma_0^2 = 1 / (4m)$ per token. Across
-   $T$ unmasked tokens (after deduplicating repeated $H$-grams), the standardized
+   $T$ unmasked tokens (after masking recent repeated contexts), the standardized
    $z$-score is:
 
    $$
    z_{\text{SynthID}} = \frac{\frac{1}{T m} \sum_{t=1}^{T} \sum_{\ell=1}^{m} g_\ell(y_t, c_t) - 0.5}{\sqrt{1 / (4 m T)}}
    $$
+
+   The newer open [Threefry implementation](https://github.com/google-deepmind/synthid-text/tree/72810caf309d51f5985dc871a4bce42c3d0cb54d)
+   derives the tournament bits from a single master key and the context, token
+   ID and bit-block index. Its frequentist detector counts ones before EOS
+   and uses the binomial upper tail. Our single-key scorer follows this path.
+   Dual-key speculative decoding has a separate detector.
 
    DeepMind's reference library also defines a depth-weighted mean detector
    ($w_\ell \propto \operatorname{linspace}(10, 1, m)$, emphasizing earlier layers
@@ -391,15 +414,18 @@ exponent $s = 1.05$).
      locks **only** structural and low-entropy technical spans (fenced code
      blocks, inline code, LaTeX math, URLs, file paths, HTML tags, and Markdown
      structural markers) and regenerates **100%** of unlocked prose paragraphs.
-3. **Why cloud LLM APIs must never be used as the rewriter (Last-Writer-Wins re-watermarking).**
+3. **How a rewriter can introduce a new watermark (Last-Writer-Wins simulations).**
    When a passage watermarked with `SynthID-Text` Key A ($z_A = +6.73$, 100%
    detected) is paraphrased by a second model watermarked with `SynthID-Text`
-   Key B (such as calling Anthropic Claude Fable 5.2 or OpenAI GPT-6 Astra in a
-   watermarked region), Key A drops to the null floor ($z_A = +0.04 \pm 0.97$,
+   Key B, Key A drops to the null floor ($z_A = +0.04 \pm 0.97$,
    **1.6%** detected), **but Key B rises to $z_B = +5.92 \pm 0.96$ (100.0%
-   detected)**. Removing a token watermark without planting a new vendor's
-   watermark requires running an **unwatermarked local open-weights causal LM**
-   (or a verified unwatermarked local endpoint).
+   detected)**. These two-key simulations do not test any commercial model's
+   own marking. They show why disappearance of Key A does not establish an
+   unmarked output. Local generation remains the default; an API endpoint is
+   an explicitly configured optional Python rewriter. Its own output marking
+   needs independent verification, and unavailable provider detectors remain
+   unverified. Merely using local weights or an API does not prove that a
+   checkpoint or service is unwatermarked.
 
 ---
 
@@ -428,7 +454,8 @@ composable stages exposed through both the Python API and the
        `zlib.crc32` verification).
      - Unicode Tags (`U+E0000`..`U+E007F`) and steganographic zero-width /
        Variation Selector sequences while preserving valid Emoji `U+FE0E`/`U+FE0F`
-       presentation selectors and Emoji `U+200D` ZWJ sequences.
+       presentation selectors and contextual `U+200D` ZWJ sequences in Emoji
+       and supported scripts.
 2. **Span-protected local prose regeneration (`remove_text_invisible`, `remove_text_all`, `remove-ai-watermarks text invisible`, `remove-ai-watermarks text all`)**:
    - Segments the document via `split_protected_text_spans` into locked
      structural/technical spans (fenced code blocks, inline code, LaTeX math,
@@ -439,9 +466,28 @@ composable stages exposed through both the Python API and the
      `Qwen/Qwen2.5-1.5B-Instruct` on `cuda` -> `mps` -> `cpu`, with `.train(False)`
      inference mode) or a caller-supplied `rewriter` callable.
    - Verifies that every locked technical span is restored byte-for-byte in the
-     final output, and checks numeral and NegEx negation-polarity preservation on
+     final output, and checks selected facts, including numerals, NegEx polarity
+     explicit English shared/per-item record-container contradictions and selected
+     explicit signal source/recipient reversals, on
      rewritten passages via `verify_text_rewrite_facts` (retrying up to 3 seeds
      if a small local model drops a numeral or flips sentence negation).
+     Matching selected English technical-capability frames can retain an
+     `allow`/`enable` paraphrase without asserting permission; explicit permission
+     elsewhere and unmatched subjects, actors, actions or objects remain checked.
+     A film-advance frame also checks that repeated capture of the same scene
+     still occurs without manual rewinding.
+     Matching physical frames distinguish moisture evaporation and air circulation
+     from permission cues. The air-circulation frame requires the same location
+     when one is specified.
+     Matching mechanical opening and closing or fiber sliding can also preserve
+     a physical capability paraphrase. Freely swinging and swinging without
+     restriction preserve polarity for the same object and direction.
+     The heuristic recognizes `necessitate` as a requirement. It treats
+     the generic subject in an explanatory phrase such as "To understand
+     the mechanism, one must know ..." and the reciprocal "over one another"
+     as nonnumeric.
+     The guard rejects changes between possibility and assertion in matched
+     English conditional clauses with two coordinated outcomes.
      Exhausted retries now raise rather than publishing the first failed
      candidate, and an unchanged paragraph cannot count as regeneration.
      List prefixes are structural locked spans; their numbering is not a fact
@@ -471,9 +517,9 @@ repositories across four domains:
 
 ### 1. Capability matrix across open-source text watermark cleaners
 
-| Repository | C2PA 2.3/2.4 `C2PATXT\0` & HTML/Armor | `VSRMark` (`VSR1` + CRC32) | Covert Stego Forensics (`Innamark`, `StegCloak`, `Subtext`, `StegMoji`, `ZW`) | Emoji `FE0E/FE0F`, CJK IVS, RTL Bidi & Joining Context | Subdivision Flag Bounds (`2..6` `[0-9a-z]`) | Invisible HTML Entities & Citation Artifacts | Statistical Token Watermark Removal & Span/Fact Gate |
+| Repository | C2PA 2.3/2.4 `C2PATXT\0` & HTML/Armor | `VSRMark` (`VSR1` + CRC32) | Covert Stego Forensics (`Innamark`, `StegCloak`, `Subtext`, `StegMoji`, `ZW`) | Emoji `FE0E/FE0F`, CJK IVS, RTL Bidi & Joining Context | Subdivision flag handling | Invisible HTML Entities & Citation Artifacts | Statistical Token Watermark Removal & Span/Fact Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`remove-ai-watermarks`** (ours) | **Yes** (decodes JUMBF + strips) | **Yes** (verifies CRC32 + strips) | **Yes** (`decode_stego_payloads`, `encode_innamark`) | **Yes** (emoji, CJK IVS, Mongolian/Khmer/Hangul, RTL Bidi, non-joining Arabic `200C` rule) | **Yes** (`U+1F3F4` + `2..6` `[0-9a-z]` + `U+E007F`) | **Yes** (entity decode + PUA/Gemini/Grok citations + mixed-script homoglyphs) | **Yes** (span-locked local causal LM + numerals, spelled numbers, proper nouns, NegEx & 8 antonym poles) |
+| **`remove-ai-watermarks`** (ours) | **Yes** (decodes JUMBF + strips) | **Yes** (verifies CRC32 + strips) | **Yes** (`decode_stego_payloads`, `encode_innamark`) | **Yes** (emoji, CJK IVS, Mongolian/Khmer/Hangul, RTL Bidi, non-joining Arabic `200C` rule) | **Yes** (CLDR-valid subdivision and numeric region codes) | **Yes** (entity decode + PUA/Gemini/Grok citations + mixed-script homoglyphs) | **Yes** (span-locked local causal LM + numerals, spelled numbers, proper nouns, NegEx & 8 antonym poles) |
 | `guillaumemeyer/watermarks-remover` | No (blindly strips VS) | No | Tags only | Yes (emoji, CJK IVS, Mongolian/Khmer, Bidi stack) | Loose (`<= 32` tags) | No entity decode | Whole-text LLM prompt, `roberta-large` mask-infill, or black-box n-gram stealer; no span lock or fact gate |
 | `norandom/watermarks-remover` (`wm_hook`) | No | No | Tags, VS, 2-symbol ZW binary, `wm1:` HMAC signing | Yes (escaped literal guard `\uXXXX`, joining scripts) | Yes (`2..6` `[0-9a-z]` tags) | Protects Markdown/YAML regions | Out of scope |
 | `dimitar-grigorov/clean-ai-watermarks` | No | No | No | Splits into `FIX_RANGES` vs `DETECT_RANGES` (does not strip `VS`, `200C/200D`, or Bidi) | Only `gbeng`, `gbsct`, `gbwls` | No | Out of scope |
@@ -528,7 +574,7 @@ repositories across four domains:
 ### 3. Deep code audit of Unicode & container scrubbers (17 repositories)
 
 1. **`guillaumemeyer/watermarks-remover` (`service/scripts/{text_unicode.py,container_meta.py,humanize_pass.py,score_stylometry.py}`, `stealer/`)**:
-   - **Unicode layer (`text_unicode.py`)**: Preserves a single CJK Ideographic Variation Selector (`U+FE00..U+FE0D` or `U+E0100..U+E01EF`) after a CJK ideograph (`3400..4DBF`, `4E00..9FFF`, `F900..FAFF`, `20000..323AF`), Mongolian FVS (`180B..180F`) after Mongolian (`1800..18AF`), Khmer inherent vowels (`17B4..17B5`) after Khmer (`1780..17FF`), and stack-balanced Bidi embeddings (`U+202A/202B..202C`) on RTL lines while stripping `U+202D/202E` overrides. We adopted all four script-preservation rules into `_extract_and_strip_stego_codepoints`.
+   - **Unicode layer (`text_unicode.py`)**: Preserves a single CJK Ideographic Variation Selector (`U+FE00..U+FE0D` or `U+E0100..U+E01EF`) after a CJK ideograph (`3400..4DBF`, `4E00..9FFF`, `F900..FAFF`, `20000..323AF`), Mongolian FVS (`180B..180F`) after Mongolian (`1800..18AF`), Khmer inherent vowels (`17B4..17B5`) after Khmer (`1780..17FF`), and stack-balanced Bidi embeddings (`U+202A/202B..202C`) on RTL lines while stripping `U+202D/202E` overrides. The library uses contextual rules for the script formatters and BiDi. Its variation-selector rules use the exact published standardized and ideographic pairs.
    - **Container metadata (`container_meta.py`)**: Scrubs Markdown YAML frontmatter (`AI_FRONTMATTER_KEYS`), HTML `<meta name="generator">` (exempting CMS names like WordPress/Hugo/Next.js) and JSON-LD `DigitalSourceType`, SVG `<metadata>`, LaTeX `\hypersetup`/`\pdfinfo`, and OOXML (`docx/xlsx/pptx`) `customXml` + webextensions.
    - **Stylometry & humanizer (`score_stylometry.py`, `humanize_pass.py`)**: Scores sentence-length burstiness ($\text{CV} = \sigma / \mu$), 50-word MATTR ($0.68\text{-}0.76$), and 42 weighted AI phrase regexes; `humanize_pass.py` performs deterministic regex swaps (`in order to -> to`, `utilize -> use`, dash/quote normalization).
    - **Black-box watermark stealer (`stealer/{steal.py,scorer.py,tokens.py}`)**: Implements Jovanović et al. (ICML 2024) 8-gram add-$\alpha$ smoothed log-ratio scoring:
@@ -539,7 +585,7 @@ repositories across four domains:
    - `mishan/no-ai-marks` introduces the **right-non-joining Arabic ZWNJ rule**: even inside Arabic script, `U+200C` (`ZWNJ`) placed after a right-non-joining Arabic letter (`{0x0622, 0x0623, 0x0624, 0x0625, 0x0627, 0x062F, 0x0630, 0x0631, 0x0632, 0x0648, 0x0698}` - Alef variants, Dal, Thal, Reh, Zain, Waw, Jeh) has zero calligraphic shaping effect and is a hidden watermark. We adopted this exact rule (`_NON_JOINING_ARABIC_CPS`) in [`text.py`](../src/remove_ai_watermarks/text.py).
 
 3. **`norandom/watermarks-remover` (`src/wm_hook/`) & `obrenoalvim/no-watermark` (`src/nowatermark/`)**:
-   - Both enforce **forward-bounded subdivision flag validation**: `U+1F3F4` followed by `2..6` alphanumeric tag characters (`0xE0030..0xE0039`, `0xE0061..0xE007A`) terminated by `U+E007F`, preventing an attacker from smuggling arbitrary tag payloads after a valid flag's cancel tag. We adopted this exact `2..6` forward bound in `_subdivision_flag_tag_indices`.
+   - Both enforce **forward-bounded subdivision flag validation**: `U+1F3F4` followed by `2..6` alphanumeric tag characters (`0xE0030..0xE0039`, `0xE0061..0xE007A`) terminated by `U+E007F`, preventing an attacker from smuggling arbitrary tag payloads after a valid flag's cancel tag. The library now checks CLDR validity for the enclosed subdivision or numeric region code.
 
 4. **`pixelstrunk/watermark-cleaner` (`python/watermark_cleaner/layers/`, `rules/*.json`) & `BitJacker/no-watermark` (`crates/nowm-core/src/homoglyph.rs`)**:
    - `pixelstrunk/watermark-cleaner` decodes invisible HTML entities (`&ZeroWidthSpace;`, `&zwnj;`, `&zwj;`, `&shy;`, `&#8203;`, `&#x200B;`) before character scrubbing, strips ChatGPT PUA citation blocks (`\ue200cite\ue202turn0search0\ue201`), Gemini `[cite_start]`/`[span_0](start_span)` markers, and Grok `grok_render_citation_card_json`, and preserves typographic NBSP (`00A0, 202F, 2007, 2009`) next to digits or French guillemets (`« » : ; ! ?`).

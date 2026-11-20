@@ -194,3 +194,174 @@ def test_custom_validator_retries_an_echo_without_approving_it():
     )
     assert result.cleaned_text == "The room was used by visitors."
     assert seen == [result.cleaned_text]
+
+
+def test_document_rewriter_and_validator_use_protected_assembly(tmp_path):
+    source = "Visitors used the room.\r\n\r\n`value = 12`\r\n\r\nVisitors used the room."
+    draft = "Staff used the room.\r\n\r\n`value = 12`\r\n\r\nGuests used the room."
+    output = tmp_path / "output.txt"
+    seen = []
+
+    def rewrite(passages):
+        assert passages == ("Visitors used the room.", "Visitors used the room.")
+        return ["Staff used the room.", "Guests used the room."]
+
+    def validate(before, after):
+        seen.append((before, after))
+        return True
+
+    result = lib.remove_text_invisible(source, output, document_rewriter=rewrite, document_validator=validate)
+    assert result.cleaned_text == draft
+    assert result.rewritten_spans == 2
+    assert result.locked_spans == 1
+    assert output.read_bytes() == draft.encode()
+    assert seen == [(source, draft)]
+
+
+@pytest.mark.parametrize("result", [[], ["A new paragraph.", "Extra."], [" "], ["Use `different`."], "New text."])
+def test_document_rewriter_rejects_invalid_output_before_writing(tmp_path, result):
+    output = tmp_path / "output.txt"
+    output.write_text("Previous output.")
+    with pytest.raises(RuntimeError):
+        lib.remove_text_invisible("Old text.", output, document_rewriter=lambda _: result)
+    assert output.read_text() == "Previous output."
+
+
+def test_combined_document_validator_veto_is_transactional(tmp_path):
+    output = tmp_path / "output.txt"
+    output.write_text("Previous output.")
+    with pytest.raises(RuntimeError, match="document_validator"):
+        lib.remove_text_all(
+            "Visitors used the room.",
+            output,
+            include_invisible=True,
+            document_rewriter=lambda _: ("Guests used the room.",),
+            document_validator=lambda *_: False,
+        )
+    assert output.read_text() == "Previous output."
+
+
+def test_document_rewriter_reports_explicitly_retained_prose():
+    result = lib.remove_text_invisible(
+        "Visitors used the room.\n\nReaders borrowed books.",
+        document_rewriter=lambda _: ("Guests used the room.", "Readers borrowed books."),
+    )
+    assert result.rewritten_spans == result.retained_prose_spans == 1
+    assert result.token_watermark_action == "partial_regeneration"
+
+
+def test_document_veto_applies_to_passage_rewrites_with_partial_enabled(tmp_path):
+    output = tmp_path / "output.txt"
+    source = "Visitors used the room.\n\nReaders borrowed books."
+    seen = []
+
+    def validate(before, after):
+        seen.append((before, after))
+        return False
+
+    with pytest.raises(RuntimeError, match="document_validator"):
+        lib.remove_text_invisible(
+            source,
+            output,
+            rewriter=lambda text: f"Yesterday, {text.lower()}",
+            allow_partial=True,
+            document_validator=validate,
+        )
+    assert not output.exists()
+    assert seen == [(source, "Yesterday, visitors used the room.\n\nYesterday, readers borrowed books.")]
+
+
+def test_document_callbacks_skip_protected_only_input():
+    def unexpected(*_):
+        pytest.fail("Protected-only input must not invoke either document callback")
+
+    result = lib.remove_text_invisible(
+        "`value = 12`",
+        document_rewriter=unexpected,
+        document_validator=unexpected,
+    )
+    assert result.cleaned_text == "`value = 12`"
+    assert result.token_watermark_action == "no_prose_spans"
+
+
+@pytest.mark.parametrize("accept_draft", [True, False])
+def test_document_repair_rechecks_complete_document_before_writing(tmp_path, accept_draft):
+    source = "Visitors used the room.\r\n\r\n`value = 12`\r\n\r\nReaders borrowed books."
+    draft = "Staff used the room.\r\n\r\n`value = 12`\r\n\r\nReaders borrowed books."
+    repaired = "Guests used the room.\r\n\r\n`value = 12`\r\n\r\nReaders borrowed books."
+    output = tmp_path / "output.txt"
+    calls = []
+
+    def validate(before, after):
+        assert before == source
+        assert not output.exists()
+        calls.append(after)
+        return accept_draft or after == repaired
+
+    def repair(original, rejected):
+        assert calls == [draft]
+        assert original == ("Visitors used the room.", "Readers borrowed books.")
+        assert rejected == ("Staff used the room.", original[1])
+        return ("Guests used the room.", original[1])
+
+    result = lib.remove_text_all(
+        source,
+        output,
+        include_invisible=True,
+        document_rewriter=lambda prose: ("Staff used the room.", prose[1]),
+        document_validator=validate,
+        document_repairer=repair,
+    )
+    expected = draft if accept_draft else repaired
+    assert calls == ([draft] if accept_draft else [draft, repaired])
+    assert result.cleaned_text == expected
+    assert output.read_bytes() == expected.encode()
+
+
+@pytest.mark.parametrize(
+    ("repair_result", "reviews", "message"),
+    [
+        (None, 1, "document_validator"),
+        (("Draft text.",), 1, "rejected draft"),
+        (("Repaired text.",), 2, "document_validator"),
+        (("New `code`.",), 1, "protected text structure"),
+        ((), 1, "one replacement"),
+    ],
+)
+def test_document_repair_refusal_preserves_destination(tmp_path, repair_result, reviews, message):
+    output = tmp_path / "output.txt"
+    output.write_bytes(b"Previous output.\r\n")
+    reviewed = []
+    repaired = []
+
+    def validate(_, candidate):
+        reviewed.append(candidate)
+        return False
+
+    def repair(*args):
+        repaired.append(args)
+        return repair_result
+
+    with pytest.raises(RuntimeError, match=message):
+        lib.remove_text_invisible(
+            "Old text.",
+            output,
+            document_rewriter=lambda _: ("Draft text.",),
+            document_validator=validate,
+            document_repairer=repair,
+            allow_partial=True,
+        )
+    assert len(repaired) == 1
+    assert len(reviewed) == reviews
+    assert output.read_bytes() == b"Previous output.\r\n"
+
+
+@pytest.mark.parametrize("missing", ["document_rewriter", "document_validator"])
+def test_document_repair_requires_rewriter_and_validator(missing):
+    callbacks = {
+        "document_rewriter": lambda _: ("Guests used the room.",),
+        "document_validator": lambda *_: False,
+    }
+    del callbacks[missing]
+    with pytest.raises(ValueError, match=missing):
+        lib.remove_text_invisible("Visitors used the room.", document_repairer=lambda *_: None, **callbacks)

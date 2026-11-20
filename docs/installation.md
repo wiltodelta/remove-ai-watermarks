@@ -281,6 +281,7 @@ application actually uses:
 | `text-restoration` | Opt-in verified profile-VAE glyph restoration | `qwen-zimage`, `lama` | Yes |
 | `text-draft` | Draft OCR proposals for operator verification | PaddleOCR, PaddlePaddle | Model download, no Torch |
 | `text` | Local text regeneration with the default Transformers backend | Torch, Transformers, packaged py3langid language model | Yes |
+| `text-api` | Explicit Python API text regeneration and the local Ollama CLI backend | Packaged py3langid language model, standard-library HTTP client | Model served separately |
 | `text-mlx` | Optional local text regeneration on Apple silicon | MLX LM, Transformers tokenizer, packaged py3langid language model | Yes, on Apple silicon |
 | `all` | Production removal and default classifier backends | All runtime branches except proposal-only OCR | Yes |
 | `dev` | Tests, linting, typing, upstream parity checks, and development oracles | `video`, `detect`, OpenAI SDK, upstream invisible-watermark | Yes, for parity tests |
@@ -290,6 +291,14 @@ The `text` extra does not install Diffusers or image runtimes. The historical
 checker for compatibility. The language model ships inside `py3langid`; loading
 it needs no service or model download. Generation checkpoints are downloaded
 separately unless already cached.
+
+`text-api` installs the shared language checker without Torch, Transformers or an
+API-provider SDK. Configure `build_text_api_rewriter` explicitly with your
+endpoint, model and optional key, then pass it as `rewriter=`. The library reads
+no API environment settings and never switches a local request to an API.
+See [the API example](python-api.md#optional-api-text-rewriter).
+The same extra supports an explicit Ollama backend for the CLI. Start Ollama
+with a locally installed model before using [the text CLI](cli.md#identify-and-clean-text).
 
 Dependency composition:
 
