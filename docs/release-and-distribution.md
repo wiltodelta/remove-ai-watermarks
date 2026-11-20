@@ -83,14 +83,23 @@ factory rebuild runs, which reinstalls whatever version is already pinned.
 The Space repo's callback smoke tests still run on every push; they are the
 scenario check for the demo surface.
 
-The Hugging Face **model** `wiltodelta/raiw-source-classify` is not part of that
-release fan-out. It is published separately with
+The Hugging Face **model** `wiltodelta/raiw-source-classify` and its companion
+20-model open benchmark Space `wiltodelta/ai-image-detector-leaderboard` are not
+part of the package release fan-out. They are published together with
 `.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
 derivative `multi-provider-source-v8.npz` artifact from the declared GitHub
-model freeze, verifies its SHA-256, and uploads only that file plus the tracked
+model freeze, verifies its SHA-256, uploads that file plus the tracked
 `README.md`, `metrics.json`, `infer.py`, `benchmark.py`, and `demo.ipynb` under
-`docs/source-classify-hf/` and a
-synthesized `config.json` (while deleting retired Hub model repositories). A library version bump alone
+`docs/source-classify-hf/` and a synthesized `config.json` (while deleting
+retired Hub model repositories), then runs
+`scripts/sync_ai_detector_leaderboard.py` to verify parity against
+`metrics.json` (optionally re-evaluating the 578-image open benchmark on CPU via
+`recompute_leaderboard=true`), synchronize
+`docs/ai-image-detector-leaderboard/` onto the Hugging Face Space
+`wiltodelta/ai-image-detector-leaderboard`, and write an external arena and
+baseline-drift status table (covering the Space, the Hugging Face blog report,
+`aidetectarena.com`, and the pinned Hub baseline revisions) to the workflow
+summary. A library version bump alone
 does not upload new weights - bump `WEIGHTS_REVISION` in
 `src/remove_ai_watermarks/source_classify.py` when a new Hub commit must reach
 installed clients. The private corpus, catalog, paths, hashes, embeddings, and

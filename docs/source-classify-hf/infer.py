@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11,<3.15"
 # dependencies = [
-#     "remove-ai-watermarks[source-classify]>=0.62.0",
+#     "remove-ai-watermarks[source-classify]>=0.64.0",
 # ]
 # ///
 """Standalone reference runner and pickle-free `.npz` weight inspector for `wiltodelta/raiw-source-classify`.

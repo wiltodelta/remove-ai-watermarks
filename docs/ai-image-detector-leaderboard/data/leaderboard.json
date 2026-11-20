@@ -1,0 +1,3996 @@
+{
+  "non_ai_count": 200,
+  "native_ai_count": 125,
+  "arena_ai_count": 253,
+  "native_ai_providers": {
+    "flux": 25,
+    "google": 25,
+    "midjourney": 25,
+    "openai": 25,
+    "stable_diffusion": 25
+  },
+  "native_ai_formats": {
+    "flux": {
+      "PNG:1024x1024": 25
+    },
+    "openai": {
+      "PNG:1024x1024": 25
+    },
+    "stable_diffusion": {
+      "PNG:1024x1024": 25
+    },
+    "midjourney": {
+      "PNG:1024x1024": 12,
+      "PNG:1456x816": 10,
+      "PNG:1584x752": 2,
+      "PNG:1680x704": 1
+    },
+    "google": {
+      "PNG:1408x768": 18,
+      "PNG:1584x672": 1,
+      "JPEG:1408x768": 5,
+      "PNG:1200x896": 1
+    }
+  },
+  "arena_ai_providers": {
+    "bytedance": 6,
+    "flux": 35,
+    "google": 57,
+    "ideogram": 27,
+    "midjourney": 29,
+    "openai": 35,
+    "stable_diffusion": 33,
+    "xai": 31
+  },
+  "arena_ai_formats": {
+    "xai": {
+      "PNG:1024x768": 31
+    },
+    "openai": {
+      "WEBP:1024x1024": 20,
+      "JPEG:1024x1024": 15
+    },
+    "flux": {
+      "JPEG:1024x1024": 35
+    },
+    "ideogram": {
+      "PNG:1280x800": 27
+    },
+    "google": {
+      "JPEG:1024x1024": 32,
+      "PNG:1024x1024": 25
+    },
+    "midjourney": {
+      "JPEG:1024x1024": 28,
+      "JPEG:512x512": 1
+    },
+    "stable_diffusion": {
+      "JPEG:1024x1024": 33
+    },
+    "bytedance": {
+      "JPEG:1280x720": 6
+    }
+  },
+  "results": [
+    {
+      "model_id": "wiltodelta/raiw-source-classify",
+      "tier": "raiw",
+      "revision": "ebc2dcf0cface677535fe7c1903dd68793ee1f30",
+      "license": "apache-2.0",
+      "weights_mb": 57.8,
+      "runtime": "NumPy + ONNX Runtime (CPU)",
+      "median_cpu_ms": 385.9,
+      "non_ai_total": 200,
+      "non_ai_fp": 0,
+      "non_ai_fpr_pct": 0.0,
+      "slice_fpr_pct": {
+        "camera_photo": 0.0,
+        "ui_screenshot": 0.0,
+        "science_diagram": 0.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 351,
+      "ai_recall_pct": 92.9,
+      "precision_pct": 100.0,
+      "provider_attribution_pct": 42.6,
+      "provider_attribution_when_classified_pct": 45.9,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 4,
+          "exact_provider": 0,
+          "recall_pct": 66.7,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 54,
+          "exact_provider": 35,
+          "recall_pct": 90.0,
+          "attribution_pct": 58.3
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 79,
+          "exact_provider": 32,
+          "recall_pct": 96.3,
+          "attribution_pct": 39.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 27,
+          "exact_provider": 22,
+          "recall_pct": 100.0,
+          "attribution_pct": 81.5
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 49,
+          "exact_provider": 17,
+          "recall_pct": 90.7,
+          "attribution_pct": 31.5
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 56,
+          "exact_provider": 28,
+          "recall_pct": 93.3,
+          "attribution_pct": 46.7
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 52,
+          "exact_provider": 27,
+          "recall_pct": 89.7,
+          "attribution_pct": 46.6
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 30,
+          "exact_provider": 0,
+          "recall_pct": 96.8,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 123,
+        "recall_pct": 98.4,
+        "precision_pct": 100.0,
+        "provider_attribution_pct": 80.8,
+        "provider_attribution_when_classified_pct": 82.1,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 21,
+            "recall_pct": 100.0,
+            "attribution_pct": 84.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 24,
+            "exact_provider": 21,
+            "recall_pct": 96.0,
+            "attribution_pct": 84.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 24,
+            "exact_provider": 14,
+            "recall_pct": 96.0,
+            "attribution_pct": 56.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 21,
+            "recall_pct": 100.0,
+            "attribution_pct": 84.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 24,
+            "recall_pct": 100.0,
+            "attribution_pct": 96.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 228,
+        "recall_pct": 90.1,
+        "precision_pct": 100.0,
+        "provider_attribution_pct": 23.7,
+        "provider_attribution_when_classified_pct": 26.3,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 4,
+            "exact_provider": 0,
+            "recall_pct": 66.7,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 29,
+            "exact_provider": 14,
+            "recall_pct": 82.9,
+            "attribution_pct": 40.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 55,
+            "exact_provider": 11,
+            "recall_pct": 96.5,
+            "attribution_pct": 19.3
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 27,
+            "exact_provider": 22,
+            "recall_pct": 100.0,
+            "attribution_pct": 81.5
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 25,
+            "exact_provider": 3,
+            "recall_pct": 86.2,
+            "attribution_pct": 10.3
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 31,
+            "exact_provider": 7,
+            "recall_pct": 88.6,
+            "attribution_pct": 20.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 27,
+            "exact_provider": 3,
+            "recall_pct": 81.8,
+            "attribution_pct": 9.1
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 30,
+            "exact_provider": 0,
+            "recall_pct": 96.8,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-11-19T06:46:33+00:00",
+      "repo_updated_at": "2026-11-19T06:46:33+00:00",
+      "weights_updated_epoch": 1795070793.0
+    },
+    {
+      "model_id": "s-gehring/detectra-openfake",
+      "tier": "frontier",
+      "revision": "c84565e5bf8969d95908e12844f551e77ae87105",
+      "license": "cc-by-nc-4.0",
+      "weights_mb": 28.9,
+      "runtime": "ONNX Runtime INT8 (CPU)",
+      "median_cpu_ms": 304.9,
+      "non_ai_total": 200,
+      "non_ai_fp": 0,
+      "non_ai_fpr_pct": 0.0,
+      "slice_fpr_pct": {
+        "camera_photo": 0.0,
+        "ui_screenshot": 0.0,
+        "science_diagram": 0.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 346,
+      "ai_recall_pct": 91.5,
+      "precision_pct": 100.0,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 5,
+          "exact_provider": 0,
+          "recall_pct": 83.3,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 52,
+          "exact_provider": 0,
+          "recall_pct": 86.7,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 77,
+          "exact_provider": 0,
+          "recall_pct": 93.9,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 25,
+          "exact_provider": 0,
+          "recall_pct": 92.6,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 50,
+          "exact_provider": 0,
+          "recall_pct": 92.6,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 54,
+          "exact_provider": 0,
+          "recall_pct": 90.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 52,
+          "exact_provider": 0,
+          "recall_pct": 89.7,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 118,
+        "recall_pct": 94.4,
+        "precision_pct": 100.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 21,
+            "exact_provider": 0,
+            "recall_pct": 84.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 88.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 228,
+        "recall_pct": 90.1,
+        "precision_pct": 100.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 5,
+            "exact_provider": 0,
+            "recall_pct": 83.3,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 88.6,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 55,
+            "exact_provider": 0,
+            "recall_pct": 96.5,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 92.6,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 86.2,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 82.9,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 81.8,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-10-22T18:35:20+00:00",
+      "repo_updated_at": "2026-10-22T18:35:20+00:00",
+      "weights_updated_epoch": 1792694120.0
+    },
+    {
+      "model_id": "OwensLab/commfor-model-384",
+      "tier": "frontier",
+      "revision": "6076002bf0",
+      "license": "mit",
+      "weights_mb": 83.22,
+      "runtime": "PyTorch + timm (Official CVPR 2025)",
+      "median_cpu_ms": 259.6,
+      "non_ai_total": 200,
+      "non_ai_fp": 0,
+      "non_ai_fpr_pct": 0.0,
+      "slice_fpr_pct": {
+        "camera_photo": 0.0,
+        "ui_screenshot": 0.0,
+        "science_diagram": 0.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 216,
+      "ai_recall_pct": 57.1,
+      "precision_pct": 100.0,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 2,
+          "exact_provider": 0,
+          "recall_pct": 33.3,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 28,
+          "exact_provider": 0,
+          "recall_pct": 46.7,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 33,
+          "exact_provider": 0,
+          "recall_pct": 40.2,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 25,
+          "exact_provider": 0,
+          "recall_pct": 92.6,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 28,
+          "exact_provider": 0,
+          "recall_pct": 51.9,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 23,
+          "exact_provider": 0,
+          "recall_pct": 38.3,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 48,
+          "exact_provider": 0,
+          "recall_pct": 82.8,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 29,
+          "exact_provider": 0,
+          "recall_pct": 93.5,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 69,
+        "recall_pct": 55.2,
+        "precision_pct": 100.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 14,
+            "exact_provider": 0,
+            "recall_pct": 56.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 4,
+            "exact_provider": 0,
+            "recall_pct": 16.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 15,
+            "exact_provider": 0,
+            "recall_pct": 60.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 11,
+            "exact_provider": 0,
+            "recall_pct": 44.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 147,
+        "recall_pct": 58.1,
+        "precision_pct": 100.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 2,
+            "exact_provider": 0,
+            "recall_pct": 33.3,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 14,
+            "exact_provider": 0,
+            "recall_pct": 40.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 50.9,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 92.6,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 13,
+            "exact_provider": 0,
+            "recall_pct": 44.8,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 12,
+            "exact_provider": 0,
+            "recall_pct": 34.3,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 23,
+            "exact_provider": 0,
+            "recall_pct": 69.7,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 93.5,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2025-08-28T20:41:20+00:00",
+      "repo_updated_at": "2025-08-28T20:49:56+00:00",
+      "weights_updated_epoch": 1756413680.0
+    },
+    {
+      "model_id": "buildborderless/CommunityForensics-DeepfakeDet-ViT",
+      "tier": "frontier",
+      "revision": "ac6ee457bea904a373065754107451793b56db00",
+      "license": "mit",
+      "weights_mb": 83.2,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 345.8,
+      "non_ai_total": 200,
+      "non_ai_fp": 1,
+      "non_ai_fpr_pct": 0.5,
+      "slice_fpr_pct": {
+        "camera_photo": 0.0,
+        "ui_screenshot": 2.0,
+        "science_diagram": 0.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 191,
+      "ai_recall_pct": 50.5,
+      "precision_pct": 99.5,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 2,
+          "exact_provider": 0,
+          "recall_pct": 33.3,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 21,
+          "exact_provider": 0,
+          "recall_pct": 35.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 34,
+          "exact_provider": 0,
+          "recall_pct": 41.5,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 24,
+          "exact_provider": 0,
+          "recall_pct": 88.9,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 25,
+          "exact_provider": 0,
+          "recall_pct": 46.3,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 17,
+          "exact_provider": 0,
+          "recall_pct": 28.3,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 40,
+          "exact_provider": 0,
+          "recall_pct": 69.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 28,
+          "exact_provider": 0,
+          "recall_pct": 90.3,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 63,
+        "recall_pct": 50.4,
+        "precision_pct": 98.4,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 13,
+            "exact_provider": 0,
+            "recall_pct": 52.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 5,
+            "exact_provider": 0,
+            "recall_pct": 20.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 13,
+            "exact_provider": 0,
+            "recall_pct": 52.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 7,
+            "exact_provider": 0,
+            "recall_pct": 28.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 128,
+        "recall_pct": 50.6,
+        "precision_pct": 99.2,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 2,
+            "exact_provider": 0,
+            "recall_pct": 33.3,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 8,
+            "exact_provider": 0,
+            "recall_pct": 22.9,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 50.9,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 88.9,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 12,
+            "exact_provider": 0,
+            "recall_pct": 41.4,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 10,
+            "exact_provider": 0,
+            "recall_pct": 28.6,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 15,
+            "exact_provider": 0,
+            "recall_pct": 45.5,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 28,
+            "exact_provider": 0,
+            "recall_pct": 90.3,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-08-08T15:39:29+00:00",
+      "repo_updated_at": "2026-08-12T20:14:59+00:00",
+      "weights_updated_epoch": 1786203569.0
+    },
+    {
+      "model_id": "bendavidsteel/openfake-swinv2-base + textgraphics-lora",
+      "tier": "frontier",
+      "revision": "90837e19c4+b319ab4689",
+      "license": "cc-by-nc-4.0",
+      "weights_mb": 358.03,
+      "runtime": "PyTorch + PEFT",
+      "median_cpu_ms": 1817.0,
+      "non_ai_total": 200,
+      "non_ai_fp": 5,
+      "non_ai_fpr_pct": 2.5,
+      "slice_fpr_pct": {
+        "camera_photo": 2.0,
+        "ui_screenshot": 8.0,
+        "science_diagram": 0.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 371,
+      "ai_recall_pct": 98.1,
+      "precision_pct": 98.7,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 96.7,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 77,
+          "exact_provider": 0,
+          "recall_pct": 93.9,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 27,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 54,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 121,
+        "recall_pct": 96.8,
+        "precision_pct": 96.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 96.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 88.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 250,
+        "recall_pct": 98.8,
+        "precision_pct": 98.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 34,
+            "exact_provider": 0,
+            "recall_pct": 97.1,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 55,
+            "exact_provider": 0,
+            "recall_pct": 96.5,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-11-02T19:28:27+00:00",
+      "repo_updated_at": "2026-11-02T20:55:40+00:00",
+      "weights_updated_epoch": 1793647707.0
+    },
+    {
+      "model_id": "Bombek1/ai-image-detector-siglip-dinov2",
+      "tier": "frontier",
+      "revision": "6455cf7914",
+      "license": "mit (OpenFake cc-by-nc-4.0 data)",
+      "weights_mb": 2007.95,
+      "runtime": "PyTorch SigLIP2-SO400M + DINOv2-L (740M)",
+      "median_cpu_ms": 2300.5,
+      "non_ai_total": 200,
+      "non_ai_fp": 7,
+      "non_ai_fpr_pct": 3.5,
+      "slice_fpr_pct": {
+        "camera_photo": 0.0,
+        "ui_screenshot": 10.0,
+        "science_diagram": 2.0,
+        "scanned_document": 2.0
+      },
+      "ai_total": 378,
+      "ai_tp": 377,
+      "ai_recall_pct": 99.7,
+      "precision_pct": 98.2,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 82,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 27,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 53,
+          "exact_provider": 0,
+          "recall_pct": 98.1,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 125,
+        "recall_pct": 100.0,
+        "precision_pct": 94.7,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 252,
+        "recall_pct": 99.6,
+        "precision_pct": 97.3,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 57,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 28,
+            "exact_provider": 0,
+            "recall_pct": 96.6,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-01-09T15:31:00+00:00",
+      "repo_updated_at": "2026-01-10T12:28:49+00:00",
+      "weights_updated_epoch": 1767972660.0
+    },
+    {
+      "model_id": "abacusai/Smaug-AI-Image-Detector",
+      "tier": "frontier",
+      "revision": "c7c95951e04a87b884a4ad479401b1128c3903bd",
+      "license": "apache-2.0",
+      "weights_mb": 836.95,
+      "runtime": "PyTorch + SentenceTransformers",
+      "median_cpu_ms": 29473.0,
+      "non_ai_total": 200,
+      "non_ai_fp": 7,
+      "non_ai_fpr_pct": 3.5,
+      "slice_fpr_pct": {
+        "camera_photo": 0.0,
+        "ui_screenshot": 12.0,
+        "science_diagram": 0.0,
+        "scanned_document": 2.0
+      },
+      "ai_total": 378,
+      "ai_tp": 322,
+      "ai_recall_pct": 85.2,
+      "precision_pct": 97.9,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 4,
+          "exact_provider": 0,
+          "recall_pct": 66.7,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 49,
+          "exact_provider": 0,
+          "recall_pct": 81.7,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 70,
+          "exact_provider": 0,
+          "recall_pct": 85.4,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 16,
+          "exact_provider": 0,
+          "recall_pct": 59.3,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 54,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 46,
+          "exact_provider": 0,
+          "recall_pct": 76.7,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 52,
+          "exact_provider": 0,
+          "recall_pct": 89.7,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 102,
+        "recall_pct": 81.6,
+        "precision_pct": 93.6,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 18,
+            "exact_provider": 0,
+            "recall_pct": 72.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 20,
+            "exact_provider": 0,
+            "recall_pct": 80.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 14,
+            "exact_provider": 0,
+            "recall_pct": 56.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 220,
+        "recall_pct": 87.0,
+        "precision_pct": 96.9,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 4,
+            "exact_provider": 0,
+            "recall_pct": 66.7,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 88.6,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 50,
+            "exact_provider": 0,
+            "recall_pct": 87.7,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 16,
+            "exact_provider": 0,
+            "recall_pct": 59.3,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 32,
+            "exact_provider": 0,
+            "recall_pct": 91.4,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 81.8,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-10-17T04:53:36+00:00",
+      "repo_updated_at": "2026-10-21T06:54:14+00:00",
+      "weights_updated_epoch": 1792212816.0
+    },
+    {
+      "model_id": "TensorFold/detectra-v1",
+      "tier": "frontier",
+      "revision": "2bbc31161daa46932e05ee6f96e7016ee817bbde",
+      "license": "mit",
+      "weights_mb": 41.7,
+      "runtime": "PyTorch + timm / ONNX",
+      "median_cpu_ms": 295.6,
+      "non_ai_total": 200,
+      "non_ai_fp": 8,
+      "non_ai_fpr_pct": 4.0,
+      "slice_fpr_pct": {
+        "camera_photo": 2.0,
+        "ui_screenshot": 0.0,
+        "science_diagram": 14.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 313,
+      "ai_recall_pct": 82.8,
+      "precision_pct": 97.5,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 50,
+          "exact_provider": 0,
+          "recall_pct": 83.3,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 52,
+          "exact_provider": 0,
+          "recall_pct": 63.4,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 22,
+          "exact_provider": 0,
+          "recall_pct": 81.5,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 50,
+          "exact_provider": 0,
+          "recall_pct": 92.6,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 44,
+          "exact_provider": 0,
+          "recall_pct": 73.3,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 74,
+        "recall_pct": 59.2,
+        "precision_pct": 90.2,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 15,
+            "exact_provider": 0,
+            "recall_pct": 60.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 2,
+            "exact_provider": 0,
+            "recall_pct": 8.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 21,
+            "exact_provider": 0,
+            "recall_pct": 84.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 11,
+            "exact_provider": 0,
+            "recall_pct": 44.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 239,
+        "recall_pct": 94.5,
+        "precision_pct": 96.8,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 50,
+            "exact_provider": 0,
+            "recall_pct": 87.7,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 81.5,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 94.3,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-08-13T17:17:50+00:00",
+      "repo_updated_at": "2026-10-01T19:26:41+00:00",
+      "weights_updated_epoch": 1786641470.0
+    },
+    {
+      "model_id": "haywoodsloan/ai-image-detector-deploy",
+      "tier": "legacy",
+      "revision": "4ae1822603cb1ec980c217cfde1ef1b8e0477a16",
+      "license": "apache-2.0",
+      "weights_mb": 744.7,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 1938.0,
+      "non_ai_total": 200,
+      "non_ai_fp": 12,
+      "non_ai_fpr_pct": 6.0,
+      "slice_fpr_pct": {
+        "camera_photo": 2.0,
+        "ui_screenshot": 16.0,
+        "science_diagram": 6.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 326,
+      "ai_recall_pct": 86.2,
+      "precision_pct": 96.4,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 2,
+          "exact_provider": 0,
+          "recall_pct": 33.3,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 49,
+          "exact_provider": 0,
+          "recall_pct": 81.7,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 69,
+          "exact_provider": 0,
+          "recall_pct": 84.1,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 22,
+          "exact_provider": 0,
+          "recall_pct": 81.5,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 48,
+          "exact_provider": 0,
+          "recall_pct": 88.9,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 55,
+          "exact_provider": 0,
+          "recall_pct": 91.7,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 50,
+          "exact_provider": 0,
+          "recall_pct": 86.2,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 114,
+        "recall_pct": 91.2,
+        "precision_pct": 90.5,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 18,
+            "exact_provider": 0,
+            "recall_pct": 72.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 21,
+            "exact_provider": 0,
+            "recall_pct": 84.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 212,
+        "recall_pct": 83.8,
+        "precision_pct": 94.6,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 2,
+            "exact_provider": 0,
+            "recall_pct": 33.3,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 68.6,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 51,
+            "exact_provider": 0,
+            "recall_pct": 89.5,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 81.5,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 23,
+            "exact_provider": 0,
+            "recall_pct": 79.3,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 34,
+            "exact_provider": 0,
+            "recall_pct": 97.1,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 75.8,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2025-06-16T20:32:39+00:00",
+      "repo_updated_at": "2026-08-24T18:02:27+00:00",
+      "weights_updated_epoch": 1750105959.0
+    },
+    {
+      "model_id": "Smogy/SMOGY-Ai-images-detector",
+      "tier": "popular",
+      "revision": "fb9aadb85642d707f05b40191689d60f75b9a3e6",
+      "license": "cc-by-nc-4.0",
+      "weights_mb": 331.4,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 632.7,
+      "non_ai_total": 200,
+      "non_ai_fp": 14,
+      "non_ai_fpr_pct": 7.0,
+      "slice_fpr_pct": {
+        "camera_photo": 26.0,
+        "ui_screenshot": 0.0,
+        "science_diagram": 2.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 288,
+      "ai_recall_pct": 76.2,
+      "precision_pct": 95.4,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 4,
+          "exact_provider": 0,
+          "recall_pct": 66.7,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 45,
+          "exact_provider": 0,
+          "recall_pct": 75.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 70.7,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 17,
+          "exact_provider": 0,
+          "recall_pct": 63.0,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 43,
+          "exact_provider": 0,
+          "recall_pct": 79.6,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 43,
+          "exact_provider": 0,
+          "recall_pct": 71.7,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 50,
+          "exact_provider": 0,
+          "recall_pct": 86.2,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 28,
+          "exact_provider": 0,
+          "recall_pct": 90.3,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 90,
+        "recall_pct": 72.0,
+        "precision_pct": 86.5,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 16,
+            "exact_provider": 0,
+            "recall_pct": 64.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 14,
+            "exact_provider": 0,
+            "recall_pct": 56.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 23,
+            "exact_provider": 0,
+            "recall_pct": 92.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 12,
+            "exact_provider": 0,
+            "recall_pct": 48.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 198,
+        "recall_pct": 78.3,
+        "precision_pct": 93.4,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 4,
+            "exact_provider": 0,
+            "recall_pct": 66.7,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 82.9,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 44,
+            "exact_provider": 0,
+            "recall_pct": 77.2,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 17,
+            "exact_provider": 0,
+            "recall_pct": 63.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 20,
+            "exact_provider": 0,
+            "recall_pct": 69.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 88.6,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 75.8,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 28,
+            "exact_provider": 0,
+            "recall_pct": 90.3,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2024-12-02T12:21:44+00:00",
+      "repo_updated_at": "2025-03-04T12:46:18+00:00",
+      "weights_updated_epoch": 1733142104.0
+    },
+    {
+      "model_id": "NYUAD-ComNets/NYUAD_AI-generated_images_detector",
+      "tier": "popular",
+      "revision": "b0a2e665f6",
+      "license": "apache-2.0",
+      "weights_mb": 327.33,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 210.0,
+      "non_ai_total": 200,
+      "non_ai_fp": 14,
+      "non_ai_fpr_pct": 7.0,
+      "slice_fpr_pct": {
+        "camera_photo": 22.0,
+        "ui_screenshot": 0.0,
+        "science_diagram": 4.0,
+        "scanned_document": 2.0
+      },
+      "ai_total": 378,
+      "ai_tp": 165,
+      "ai_recall_pct": 43.7,
+      "precision_pct": 92.2,
+      "provider_attribution_pct": 11.4,
+      "provider_attribution_when_classified_pct": 26.1,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 0,
+          "exact_provider": 0,
+          "recall_pct": 0.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 29,
+          "exact_provider": 0,
+          "recall_pct": 48.3,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 39,
+          "exact_provider": 0,
+          "recall_pct": 47.6,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 3,
+          "exact_provider": 0,
+          "recall_pct": 11.1,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 18,
+          "exact_provider": 0,
+          "recall_pct": 33.3,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 35,
+          "exact_provider": 21,
+          "recall_pct": 58.3,
+          "attribution_pct": 35.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 33,
+          "exact_provider": 22,
+          "recall_pct": 56.9,
+          "attribution_pct": 37.9
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 8,
+          "exact_provider": 0,
+          "recall_pct": 25.8,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 56,
+        "recall_pct": 44.8,
+        "precision_pct": 80.0,
+        "provider_attribution_pct": 20.8,
+        "provider_attribution_when_classified_pct": 46.4,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 16,
+            "exact_provider": 0,
+            "recall_pct": 64.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 1,
+            "exact_provider": 0,
+            "recall_pct": 4.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 7,
+            "exact_provider": 0,
+            "recall_pct": 28.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 10,
+            "exact_provider": 6,
+            "recall_pct": 40.0,
+            "attribution_pct": 24.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 22,
+            "exact_provider": 20,
+            "recall_pct": 88.0,
+            "attribution_pct": 80.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 109,
+        "recall_pct": 43.1,
+        "precision_pct": 88.6,
+        "provider_attribution_pct": 6.7,
+        "provider_attribution_when_classified_pct": 15.6,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 13,
+            "exact_provider": 0,
+            "recall_pct": 37.1,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 38,
+            "exact_provider": 0,
+            "recall_pct": 66.7,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 3,
+            "exact_provider": 0,
+            "recall_pct": 11.1,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 11,
+            "exact_provider": 0,
+            "recall_pct": 37.9,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 25,
+            "exact_provider": 15,
+            "recall_pct": 71.4,
+            "attribution_pct": 42.9
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 11,
+            "exact_provider": 2,
+            "recall_pct": 33.3,
+            "attribution_pct": 6.1
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 8,
+            "exact_provider": 0,
+            "recall_pct": 25.8,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2024-04-10T14:24:33+00:00",
+      "repo_updated_at": "2025-01-13T06:44:06+00:00",
+      "weights_updated_epoch": 1712759073.0
+    },
+    {
+      "model_id": "dima806/ai_vs_human_generated_image_detection",
+      "tier": "legacy",
+      "revision": "341594f2b003d185db789becf48a2286c177b926",
+      "license": "apache-2.0",
+      "weights_mb": 327.3,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 650.8,
+      "non_ai_total": 200,
+      "non_ai_fp": 16,
+      "non_ai_fpr_pct": 8.0,
+      "slice_fpr_pct": {
+        "camera_photo": 0.0,
+        "ui_screenshot": 18.0,
+        "science_diagram": 14.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 15,
+      "ai_recall_pct": 4.0,
+      "precision_pct": 48.4,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 0,
+          "exact_provider": 0,
+          "recall_pct": 0.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 1,
+          "exact_provider": 0,
+          "recall_pct": 1.7,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 1,
+          "exact_provider": 0,
+          "recall_pct": 1.2,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 0,
+          "exact_provider": 0,
+          "recall_pct": 0.0,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 1,
+          "exact_provider": 0,
+          "recall_pct": 1.9,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 0,
+          "exact_provider": 0,
+          "recall_pct": 0.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 12,
+          "exact_provider": 0,
+          "recall_pct": 20.7,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 0,
+          "exact_provider": 0,
+          "recall_pct": 0.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 1,
+        "recall_pct": 0.8,
+        "precision_pct": 5.9,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 1,
+            "exact_provider": 0,
+            "recall_pct": 4.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 14,
+        "recall_pct": 5.5,
+        "precision_pct": 46.7,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 1,
+            "exact_provider": 0,
+            "recall_pct": 2.9,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 1,
+            "exact_provider": 0,
+            "recall_pct": 1.8,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 12,
+            "exact_provider": 0,
+            "recall_pct": 36.4,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2025-01-25T15:18:52+00:00",
+      "repo_updated_at": "2026-01-28T11:56:26+00:00",
+      "weights_updated_epoch": 1737818332.0
+    },
+    {
+      "model_id": "Organika/sdxl-detector",
+      "tier": "legacy",
+      "revision": "b37fede8562cb72b89ec201c0987f96ba21b518a",
+      "license": "cc-by-nc-3.0",
+      "weights_mb": 331.4,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 961.4,
+      "non_ai_total": 200,
+      "non_ai_fp": 21,
+      "non_ai_fpr_pct": 10.5,
+      "slice_fpr_pct": {
+        "camera_photo": 28.0,
+        "ui_screenshot": 2.0,
+        "science_diagram": 2.0,
+        "scanned_document": 10.0
+      },
+      "ai_total": 378,
+      "ai_tp": 312,
+      "ai_recall_pct": 82.5,
+      "precision_pct": 93.7,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 5,
+          "exact_provider": 0,
+          "recall_pct": 83.3,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 44,
+          "exact_provider": 0,
+          "recall_pct": 73.3,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 62,
+          "exact_provider": 0,
+          "recall_pct": 75.6,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 24,
+          "exact_provider": 0,
+          "recall_pct": 88.9,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 43,
+          "exact_provider": 0,
+          "recall_pct": 79.6,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 52,
+          "exact_provider": 0,
+          "recall_pct": 86.7,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 54,
+          "exact_provider": 0,
+          "recall_pct": 93.1,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 28,
+          "exact_provider": 0,
+          "recall_pct": 90.3,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 85,
+        "recall_pct": 68.0,
+        "precision_pct": 80.2,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 12,
+            "exact_provider": 0,
+            "recall_pct": 48.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 11,
+            "exact_provider": 0,
+            "recall_pct": 44.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 19,
+            "exact_provider": 0,
+            "recall_pct": 76.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 18,
+            "exact_provider": 0,
+            "recall_pct": 72.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 227,
+        "recall_pct": 89.7,
+        "precision_pct": 91.5,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 5,
+            "exact_provider": 0,
+            "recall_pct": 83.3,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 32,
+            "exact_provider": 0,
+            "recall_pct": 91.4,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 51,
+            "exact_provider": 0,
+            "recall_pct": 89.5,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 88.9,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 82.8,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 34,
+            "exact_provider": 0,
+            "recall_pct": 97.1,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 87.9,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 28,
+            "exact_provider": 0,
+            "recall_pct": 90.3,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2023-12-31T04:54:44+00:00",
+      "repo_updated_at": "2024-09-06T12:17:24+00:00",
+      "weights_updated_epoch": 1703998484.0
+    },
+    {
+      "model_id": "bendavidsteel/openfake-swinv2-base + attribution-head",
+      "tier": "frontier",
+      "revision": "90837e19c4+000944122b",
+      "license": "cc-by-nc-4.0",
+      "weights_mb": 332.7,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 369.2,
+      "non_ai_total": 200,
+      "non_ai_fp": 24,
+      "non_ai_fpr_pct": 12.0,
+      "slice_fpr_pct": {
+        "camera_photo": 2.0,
+        "ui_screenshot": 24.0,
+        "science_diagram": 8.0,
+        "scanned_document": 14.0
+      },
+      "ai_total": 378,
+      "ai_tp": 373,
+      "ai_recall_pct": 98.7,
+      "precision_pct": 94.0,
+      "provider_attribution_pct": 37.0,
+      "provider_attribution_when_classified_pct": 37.5,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 8,
+          "recall_pct": 100.0,
+          "attribution_pct": 13.3
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 77,
+          "exact_provider": 6,
+          "recall_pct": 93.9,
+          "attribution_pct": 7.3
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 27,
+          "exact_provider": 13,
+          "recall_pct": 100.0,
+          "attribution_pct": 48.1
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 54,
+          "exact_provider": 30,
+          "recall_pct": 100.0,
+          "attribution_pct": 55.6
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 42,
+          "recall_pct": 100.0,
+          "attribution_pct": 70.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 58,
+          "exact_provider": 15,
+          "recall_pct": 100.0,
+          "attribution_pct": 25.9
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 26,
+          "recall_pct": 100.0,
+          "attribution_pct": 83.9
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 122,
+        "recall_pct": 97.6,
+        "precision_pct": 83.6,
+        "provider_attribution_pct": 30.4,
+        "provider_attribution_when_classified_pct": 31.1,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 2,
+            "recall_pct": 100.0,
+            "attribution_pct": 8.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 22,
+            "exact_provider": 1,
+            "recall_pct": 88.0,
+            "attribution_pct": 4.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 5,
+            "recall_pct": 100.0,
+            "attribution_pct": 20.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 18,
+            "recall_pct": 100.0,
+            "attribution_pct": 72.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 12,
+            "recall_pct": 100.0,
+            "attribution_pct": 48.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 251,
+        "recall_pct": 99.2,
+        "precision_pct": 91.3,
+        "provider_attribution_pct": 40.3,
+        "provider_attribution_when_classified_pct": 40.6,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 6,
+            "recall_pct": 100.0,
+            "attribution_pct": 17.1
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 55,
+            "exact_provider": 5,
+            "recall_pct": 96.5,
+            "attribution_pct": 8.8
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 27,
+            "exact_provider": 13,
+            "recall_pct": 100.0,
+            "attribution_pct": 48.1
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 25,
+            "recall_pct": 100.0,
+            "attribution_pct": 86.2
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 24,
+            "recall_pct": 100.0,
+            "attribution_pct": 68.6
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 33,
+            "exact_provider": 3,
+            "recall_pct": 100.0,
+            "attribution_pct": 9.1
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 26,
+            "recall_pct": 100.0,
+            "attribution_pct": 83.9
+          }
+        }
+      },
+      "weights_updated_at": "2026-11-03T19:37:08+00:00",
+      "repo_updated_at": "2026-11-03T19:37:08+00:00",
+      "weights_updated_epoch": 1793734628.0
+    },
+    {
+      "model_id": "Thermostatic/community-forensics-frontier-detector-2026-08",
+      "tier": "frontier",
+      "revision": "16db135220b318d811b207db576d90368980b595",
+      "license": "mit",
+      "weights_mb": 41.8,
+      "runtime": "PyTorch + timm / ONNX",
+      "median_cpu_ms": 332.8,
+      "non_ai_total": 200,
+      "non_ai_fp": 34,
+      "non_ai_fpr_pct": 17.0,
+      "slice_fpr_pct": {
+        "camera_photo": 2.0,
+        "ui_screenshot": 26.0,
+        "science_diagram": 28.0,
+        "scanned_document": 12.0
+      },
+      "ai_total": 378,
+      "ai_tp": 372,
+      "ai_recall_pct": 98.4,
+      "precision_pct": 91.6,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 96.7,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 80,
+          "exact_provider": 0,
+          "recall_pct": 97.6,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 27,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 53,
+          "exact_provider": 0,
+          "recall_pct": 98.1,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 59,
+          "exact_provider": 0,
+          "recall_pct": 98.3,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 121,
+        "recall_pct": 96.8,
+        "precision_pct": 78.1,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 23,
+            "exact_provider": 0,
+            "recall_pct": 92.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 96.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 96.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 251,
+        "recall_pct": 99.2,
+        "precision_pct": 88.1,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 94.3,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 57,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2026-08-16T18:02:54+00:00",
+      "repo_updated_at": "2026-08-16T18:18:08+00:00",
+      "weights_updated_epoch": 1786903374.0
+    },
+    {
+      "model_id": "umm-maybe/AI-image-detector",
+      "tier": "legacy",
+      "revision": "c7e223baf11bc40528af364ba7bdea030ef42f9e",
+      "license": "cc-by-4.0",
+      "weights_mb": 331.5,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 1079.3,
+      "non_ai_total": 200,
+      "non_ai_fp": 54,
+      "non_ai_fpr_pct": 27.0,
+      "slice_fpr_pct": {
+        "camera_photo": 10.0,
+        "ui_screenshot": 94.0,
+        "science_diagram": 4.0,
+        "scanned_document": 0.0
+      },
+      "ai_total": 378,
+      "ai_tp": 53,
+      "ai_recall_pct": 14.0,
+      "precision_pct": 49.5,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 0,
+          "exact_provider": 0,
+          "recall_pct": 0.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 12,
+          "exact_provider": 0,
+          "recall_pct": 20.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 9,
+          "exact_provider": 0,
+          "recall_pct": 11.0,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 2,
+          "exact_provider": 0,
+          "recall_pct": 7.4,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 5,
+          "exact_provider": 0,
+          "recall_pct": 9.3,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 10.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 11,
+          "exact_provider": 0,
+          "recall_pct": 19.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 8,
+          "exact_provider": 0,
+          "recall_pct": 25.8,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 11,
+        "recall_pct": 8.8,
+        "precision_pct": 16.9,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 3,
+            "exact_provider": 0,
+            "recall_pct": 12.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 3,
+            "exact_provider": 0,
+            "recall_pct": 12.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 4,
+            "exact_provider": 0,
+            "recall_pct": 16.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 1,
+            "exact_provider": 0,
+            "recall_pct": 4.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 42,
+        "recall_pct": 16.6,
+        "precision_pct": 43.8,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 0,
+            "exact_provider": 0,
+            "recall_pct": 0.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 9,
+            "exact_provider": 0,
+            "recall_pct": 25.7,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 10.5,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 2,
+            "exact_provider": 0,
+            "recall_pct": 7.4,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 1,
+            "exact_provider": 0,
+            "recall_pct": 3.4,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 5,
+            "exact_provider": 0,
+            "recall_pct": 14.3,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 11,
+            "exact_provider": 0,
+            "recall_pct": 33.3,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 8,
+            "exact_provider": 0,
+            "recall_pct": 25.8,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2022-10-04T17:19:32+00:00",
+      "repo_updated_at": "2024-01-03T02:51:55+00:00",
+      "weights_updated_epoch": 1664903972.0
+    },
+    {
+      "model_id": "Sumsub/Sumsub-ffs-synthetic-2.0",
+      "tier": "frontier",
+      "revision": "8042781650",
+      "license": "cc-by-sa-3.0",
+      "weights_mb": 758.42,
+      "runtime": "PyTorch + timm ConvNeXt-Large",
+      "median_cpu_ms": 2536.6,
+      "non_ai_total": 200,
+      "non_ai_fp": 63,
+      "non_ai_fpr_pct": 31.5,
+      "slice_fpr_pct": {
+        "camera_photo": 28.0,
+        "ui_screenshot": 8.0,
+        "science_diagram": 62.0,
+        "scanned_document": 28.0
+      },
+      "ai_total": 378,
+      "ai_tp": 339,
+      "ai_recall_pct": 89.7,
+      "precision_pct": 84.3,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 5,
+          "exact_provider": 0,
+          "recall_pct": 83.3,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 48,
+          "exact_provider": 0,
+          "recall_pct": 80.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 78,
+          "exact_provider": 0,
+          "recall_pct": 95.1,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 20,
+          "exact_provider": 0,
+          "recall_pct": 74.1,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 53,
+          "exact_provider": 0,
+          "recall_pct": 98.1,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 57,
+          "exact_provider": 0,
+          "recall_pct": 95.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 56,
+          "exact_provider": 0,
+          "recall_pct": 96.6,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 22,
+          "exact_provider": 0,
+          "recall_pct": 71.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 115,
+        "recall_pct": 92.0,
+        "precision_pct": 64.6,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 21,
+            "exact_provider": 0,
+            "recall_pct": 84.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 88.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 24,
+            "exact_provider": 0,
+            "recall_pct": 96.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 23,
+            "exact_provider": 0,
+            "recall_pct": 92.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 224,
+        "recall_pct": 88.5,
+        "precision_pct": 78.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 5,
+            "exact_provider": 0,
+            "recall_pct": 83.3,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 77.1,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 56,
+            "exact_provider": 0,
+            "recall_pct": 98.2,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 20,
+            "exact_provider": 0,
+            "recall_pct": 74.1,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 34,
+            "exact_provider": 0,
+            "recall_pct": 97.1,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 93.9,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 71.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2023-09-26T08:43:06+00:00",
+      "repo_updated_at": "2023-09-29T13:18:16+00:00",
+      "weights_updated_epoch": 1695717786.0
+    },
+    {
+      "model_id": "Ateeqq/ai-vs-human-image-detector",
+      "tier": "legacy",
+      "revision": "60e82406916921b823616bee33397baab38af3f0",
+      "license": "apache-2.0",
+      "weights_mb": 354.4,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 850.9,
+      "non_ai_total": 200,
+      "non_ai_fp": 91,
+      "non_ai_fpr_pct": 45.5,
+      "slice_fpr_pct": {
+        "camera_photo": 18.0,
+        "ui_screenshot": 68.0,
+        "science_diagram": 22.0,
+        "scanned_document": 74.0
+      },
+      "ai_total": 378,
+      "ai_tp": 293,
+      "ai_recall_pct": 77.5,
+      "precision_pct": 76.3,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 4,
+          "exact_provider": 0,
+          "recall_pct": 66.7,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 51,
+          "exact_provider": 0,
+          "recall_pct": 85.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 61,
+          "exact_provider": 0,
+          "recall_pct": 74.4,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 15,
+          "exact_provider": 0,
+          "recall_pct": 55.6,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 44,
+          "exact_provider": 0,
+          "recall_pct": 81.5,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 39,
+          "exact_provider": 0,
+          "recall_pct": 65.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 50,
+          "exact_provider": 0,
+          "recall_pct": 86.2,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 29,
+          "exact_provider": 0,
+          "recall_pct": 93.5,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 94,
+        "recall_pct": 75.2,
+        "precision_pct": 50.8,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 88.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 16,
+            "exact_provider": 0,
+            "recall_pct": 64.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 23,
+            "exact_provider": 0,
+            "recall_pct": 92.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 11,
+            "exact_provider": 0,
+            "recall_pct": 44.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 22,
+            "exact_provider": 0,
+            "recall_pct": 88.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 199,
+        "recall_pct": 78.7,
+        "precision_pct": 68.6,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 4,
+            "exact_provider": 0,
+            "recall_pct": 66.7,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 82.9,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 45,
+            "exact_provider": 0,
+            "recall_pct": 78.9,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 15,
+            "exact_provider": 0,
+            "recall_pct": 55.6,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 21,
+            "exact_provider": 0,
+            "recall_pct": 72.4,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 28,
+            "exact_provider": 0,
+            "recall_pct": 80.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 28,
+            "exact_provider": 0,
+            "recall_pct": 84.8,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 93.5,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2025-03-31T20:57:51+00:00",
+      "repo_updated_at": "2025-12-24T16:55:44+00:00",
+      "weights_updated_epoch": 1743454671.0
+    },
+    {
+      "model_id": "prithivMLmods/Deep-Fake-Detector-v2-Model",
+      "tier": "popular",
+      "revision": "3a99ae26f52c7ac7c3a53103b6cf3a8b617f7093",
+      "license": "apache-2.0",
+      "weights_mb": 327.32,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 386.5,
+      "non_ai_total": 200,
+      "non_ai_fp": 189,
+      "non_ai_fpr_pct": 94.5,
+      "slice_fpr_pct": {
+        "camera_photo": 92.0,
+        "ui_screenshot": 96.0,
+        "science_diagram": 92.0,
+        "scanned_document": 98.0
+      },
+      "ai_total": 378,
+      "ai_tp": 374,
+      "ai_recall_pct": 98.9,
+      "precision_pct": 66.4,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 81,
+          "exact_provider": 0,
+          "recall_pct": 98.8,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 27,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 52,
+          "exact_provider": 0,
+          "recall_pct": 96.3,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 59,
+          "exact_provider": 0,
+          "recall_pct": 98.3,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 123,
+        "recall_pct": 98.4,
+        "precision_pct": 39.4,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 23,
+            "exact_provider": 0,
+            "recall_pct": 92.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 251,
+        "recall_pct": 99.2,
+        "precision_pct": 57.0,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 56,
+            "exact_provider": 0,
+            "recall_pct": 98.2,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 34,
+            "exact_provider": 0,
+            "recall_pct": 97.1,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2025-02-01T18:59:24+00:00",
+      "repo_updated_at": "2025-02-02T11:12:09+00:00",
+      "weights_updated_epoch": 1738436364.0
+    },
+    {
+      "model_id": "prithivMLmods/AI-vs-Deepfake-vs-Real-Siglip2",
+      "tier": "frontier",
+      "revision": "4b0c6081b9c9d890cf0251d7a5e736adc10f2d49",
+      "license": "apache-2.0",
+      "weights_mb": 354.36,
+      "runtime": "PyTorch + Transformers",
+      "median_cpu_ms": 521.1,
+      "non_ai_total": 200,
+      "non_ai_fp": 198,
+      "non_ai_fpr_pct": 99.0,
+      "slice_fpr_pct": {
+        "camera_photo": 96.0,
+        "ui_screenshot": 100.0,
+        "science_diagram": 100.0,
+        "scanned_document": 100.0
+      },
+      "ai_total": 378,
+      "ai_tp": 378,
+      "ai_recall_pct": 100.0,
+      "precision_pct": 65.6,
+      "provider_attribution_pct": 0.0,
+      "provider_attribution_when_classified_pct": 0.0,
+      "per_provider": {
+        "bytedance": {
+          "count": 6,
+          "detected_ai": 6,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "flux": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "google": {
+          "count": 82,
+          "detected_ai": 82,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "ideogram": {
+          "count": 27,
+          "detected_ai": 27,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "midjourney": {
+          "count": 54,
+          "detected_ai": 54,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "openai": {
+          "count": 60,
+          "detected_ai": 60,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "stable_diffusion": {
+          "count": 58,
+          "detected_ai": 58,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        },
+        "xai": {
+          "count": 31,
+          "detected_ai": 31,
+          "exact_provider": 0,
+          "recall_pct": 100.0,
+          "attribution_pct": 0.0
+        }
+      },
+      "native_ai": {
+        "total": 125,
+        "tp": 125,
+        "recall_pct": 100.0,
+        "precision_pct": 38.7,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "flux": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 25,
+            "detected_ai": 25,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "arena_ai": {
+        "total": 253,
+        "tp": 253,
+        "recall_pct": 100.0,
+        "precision_pct": 56.1,
+        "provider_attribution_pct": 0.0,
+        "provider_attribution_when_classified_pct": 0.0,
+        "per_provider": {
+          "bytedance": {
+            "count": 6,
+            "detected_ai": 6,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "flux": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "google": {
+            "count": 57,
+            "detected_ai": 57,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "ideogram": {
+            "count": 27,
+            "detected_ai": 27,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "midjourney": {
+            "count": 29,
+            "detected_ai": 29,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "openai": {
+            "count": 35,
+            "detected_ai": 35,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "stable_diffusion": {
+            "count": 33,
+            "detected_ai": 33,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          },
+          "xai": {
+            "count": 31,
+            "detected_ai": 31,
+            "exact_provider": 0,
+            "recall_pct": 100.0,
+            "attribution_pct": 0.0
+          }
+        }
+      },
+      "weights_updated_at": "2025-02-25T10:06:56+00:00",
+      "repo_updated_at": "2025-02-25T20:18:22+00:00",
+      "weights_updated_epoch": 1740478016.0
+    }
+  ]
+}

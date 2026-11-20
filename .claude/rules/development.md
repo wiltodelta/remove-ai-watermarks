@@ -61,7 +61,7 @@ From a worktree without its own `.venv`, `uv run` imports the package from the m
 
 Keep any research script that needs a cloud GPU account outside this repository; `scripts/` carries no `modal` import, and `test_scripts_carry_no_cloud_gpu_harness` is the canary. Leave only the offline analysis step here, as `scripts/analyze_engine_selection_study.py` is. Do not mechanize the identifier half of the boundary audit in a tracked file: a tracked denylist publishes the strings it exists to keep out.
 
-Classifier training scripts and local training caches/datasets live exclusively in the private `wiltodelta/raiw-classifier-training` repository (with `images/`, `data/`, `.npz`, `.joblib`, and `.pt` gitignored); this repository keeps only runtime inference (`source_classify.py`) and its Hugging Face Hub publisher (`scripts/publish_source_classify_hf.py`).
+Classifier training scripts and local training caches/datasets live exclusively in the private `wiltodelta/raiw-classifier-training` repository (with `images/`, `data/`, `.npz`, `.joblib`, and `.pt` gitignored); this repository keeps only runtime inference (`source_classify.py`), its Hugging Face Hub publisher (`scripts/publish_source_classify_hf.py`), and the public leaderboard/arena synchronizer (`scripts/sync_ai_detector_leaderboard.py` and `docs/ai-image-detector-leaderboard/`).
 
 ## Visible-mark example gallery
 

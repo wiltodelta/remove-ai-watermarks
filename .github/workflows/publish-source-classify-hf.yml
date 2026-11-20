@@ -2,6 +2,8 @@ name: Publish source classifier to Hugging Face
 
 # Manual only. The derivative model weights live in a GitHub model-freeze
 # release; the private training corpus and caches never enter this repository.
+# Also synchronizes `wiltodelta/ai-image-detector-leaderboard` and audits
+# external benchmark/arena surfaces so public leaderboards never lag a freeze.
 
 on:
   workflow_dispatch:
@@ -13,12 +15,17 @@ on:
         description: "GitHub Release tag holding the frozen source-classify weights"
         required: true
         default: source-classify-v8-freeze-2026-11-18
+      recompute_leaderboard:
+        description: "Re-evaluate the 578-image open benchmark on CPU before syncing the leaderboard Space"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   publish:
     if: ${{ github.event.inputs.confirm == 'publish' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -52,7 +59,7 @@ jobs:
           test "${#expected}" -eq 64
           echo "$expected  weights/$artifact" | sha256sum --check
 
-      - name: Publish to Hugging Face
+      - name: Publish model card and weights to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           SHA: ${{ github.sha }}
@@ -65,4 +72,32 @@ jobs:
           uv run --no-project --with huggingface-hub \
             python scripts/publish_source_classify_hf.py \
             --src weights \
+            --revision-out weights/published_revision.txt \
             --message "Source-classify freeze (GitHub ${SHA:0:7})"
+
+      - name: Sync Open AI Image Detector Leaderboard and audit external arenas
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SHA: ${{ github.sha }}
+          RECOMPUTE: ${{ github.event.inputs.recompute_leaderboard }}
+        run: |
+          set -euo pipefail
+          artifact="$(jq -r .artifact_file docs/source-classify-hf/metrics.json)"
+          pub_rev="$(tr -d '[:space:]' < weights/published_revision.txt)"
+          uv_args=(--no-project --with huggingface-hub)
+          extra_args=()
+          if [ "${RECOMPUTE}" = "true" ]; then
+            uv_args=(--extra source-classify --with pyarrow)
+            extra_args=(--recompute-raiw)
+          fi
+          uv run "${uv_args[@]}" \
+            python scripts/sync_ai_detector_leaderboard.py \
+            --weights "weights/$artifact" \
+            --raiw-revision "$pub_rev" \
+            "${extra_args[@]}" \
+            --refresh-hub-dates \
+            --publish \
+            --message "Sync leaderboard to $artifact (GitHub ${SHA:0:7})" \
+            --check-external-arenas \
+            --summary-md weights/arena_summary.md
+          cat weights/arena_summary.md >> "$GITHUB_STEP_SUMMARY"

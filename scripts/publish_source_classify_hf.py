@@ -15,7 +15,10 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 
@@ -74,12 +77,31 @@ def stage_release(dest: Path, src: Path) -> None:
     )
 
 
-def publish(stage: Path, *, token: str, message: str) -> str:
+def publish(stage: Path, *, token: str, message: str, dry_run: bool = False) -> str:
     """Upload the exact staged allowlist, delete retired weights/repos, and return the Hub revision."""
+    if dry_run:
+        staged_files = sorted(path.name for path in stage.iterdir() if path.is_file())
+        log.info(
+            "dry-run: staged %s for %s (allow=%s, delete=%s)",
+            staged_files,
+            HUB_REPO,
+            list(PUBLIC_FILES),
+            list(RETIRED_FILES),
+        )
+        return "(dry-run)"
+
     from huggingface_hub import HfApi
 
     api = HfApi(token=token)
+    log.info("HF API request: create_repo repo_id=%s repo_type=model private=False", HUB_REPO)
     api.create_repo(HUB_REPO, repo_type="model", exist_ok=True, private=False)
+    log.info(
+        "HF API request: upload_folder repo_id=%s allow_patterns=%s delete_patterns=%s message=%r",
+        HUB_REPO,
+        list(PUBLIC_FILES),
+        list(RETIRED_FILES),
+        message,
+    )
     commit = api.upload_folder(
         folder_path=str(stage),
         repo_id=HUB_REPO,
@@ -88,24 +110,32 @@ def publish(stage: Path, *, token: str, message: str) -> str:
         allow_patterns=list(PUBLIC_FILES),
         delete_patterns=list(RETIRED_FILES),
     )
+    oid = getattr(commit, "oid", "") or ""
+    log.info("HF API response: upload_folder repo_id=%s oid=%s", HUB_REPO, oid or "(unchanged)")
     for retired_repo in RETIRED_HUB_REPOS:
+        log.info("HF API request: delete_repo repo_id=%s repo_type=model missing_ok=True", retired_repo)
         api.delete_repo(retired_repo, repo_type="model", missing_ok=True)
-    return getattr(commit, "oid", "") or ""
+    return oid
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", type=Path, required=True)
     parser.add_argument("--message", default="Publish source-pipeline classifier")
-    args = parser.parse_args()
+    parser.add_argument("--revision-out", type=Path, default=None, help="Optional file to record the published OID.")
+    parser.add_argument("--dry-run", action="store_true", help="Stage and validate in a temp dir without Hub writes.")
+    args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     token = os.environ.get("HF_TOKEN", "").strip()
-    if not token:
+    if not args.dry_run and not token:
         raise SystemExit("HF_TOKEN is not set (write role required)")
     with tempfile.TemporaryDirectory(prefix="raiw-source-hf-") as tmp:
         stage = Path(tmp)
         stage_release(stage, args.src)
-        revision = publish(stage, token=token, message=args.message)
+        revision = publish(stage, token=token, message=args.message, dry_run=args.dry_run)
+    if args.revision_out is not None and not args.dry_run:
+        args.revision_out.parent.mkdir(parents=True, exist_ok=True)
+        args.revision_out.write_text(revision + "\n", encoding="utf-8")
     log.info("published %s revision=%s", HUB_REPO, revision or "(unknown)")
     return 0
 

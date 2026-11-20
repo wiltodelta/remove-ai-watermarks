@@ -83,6 +83,8 @@ The artifact contains only learned parameters, weight-fp16 ONNX graph bytes, nor
 
 ### Open 578-image multi-regime benchmark (`benchmark.py`)
 
+Interactive 20-model comparison matrix: [`wiltodelta/ai-image-detector-leaderboard`](https://huggingface.co/spaces/wiltodelta/ai-image-detector-leaderboard).
+
 Evaluated end-to-end via `classify_source` on `200` non-AI false-positive traps (`50` camera photos, `50` UI screenshots, `50` science diagrams, `50` scanned documents), `125` untouched native AI exports (`25` each across FLUX.1-dev, GPT-Image-1, Gemini Nano Banana Pro, SDXL, Midjourney v6.1), and `253` square-resized/transcoded crowd-arena AI images (`Rapidata` and `bitmind` `1024x1024` JPEG/WebP/PNG):
 
 - **Non-AI false-positive rate (`200` traps):** **`0.0%` (`0 / 200`)** across all four slices (`0%` camera photo, `0%` UI screenshot, `0%` science diagram, `0%` scanned document) and **`100.0%` precision**.

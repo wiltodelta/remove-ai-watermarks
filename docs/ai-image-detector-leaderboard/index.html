@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Open AI image detector and attribution leaderboard</title>
+    <meta
+      name="description"
+      content="Reproducible forensic benchmark of open-weights AI image detectors across 200 real non-AI graphics traps, 125 native 2026 exports, and 253 transcoded arena outputs. Made by Victor Kuznetsov."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="preload" href="./data/leaderboard.json" as="fetch" crossorigin />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="masthead">
+        <div class="masthead-top">
+          <p class="byline">
+            Reproducible open-weights calibration suite by
+            <a href="https://wiltodelta.com/" target="_blank" rel="noopener">Victor Kuznetsov</a>
+          </p>
+          <nav class="nav-links" aria-label="Resources">
+            <a href="https://huggingface.co/wiltodelta/raiw-source-classify/blob/main/benchmark.py" target="_blank" rel="noopener">Benchmark script</a>
+            <a href="https://huggingface.co/blog/wiltodelta/ai-image-detector-false-positives-benchmark" target="_blank" rel="noopener">Technical report</a>
+            <a href="https://huggingface.co/wiltodelta/raiw-source-classify" target="_blank" rel="noopener">Model card</a>
+            <a href="https://raiw.cc/which-ai-made-this-image" target="_blank" rel="noopener">Test your own image</a>
+            <a href="https://github.com/wiltodelta/remove-ai-watermarks" target="_blank" rel="noopener">GitHub</a>
+          </nav>
+        </div>
+        <h1 class="headline">Open AI image detector and attribution leaderboard</h1>
+        <p class="lede">
+          Standard AI detector benchmarks test stock photos and hide born-digital false positives. Every checkpoint below is scored on the exact same 578 SHA-deduplicated files streamed at immutable Hugging Face commit SHAs, separating real human screenshots, diagrams, and scanned documents from untouched native exports and container-laundered arena images.
+        </p>
+        <div class="protocol-bar" role="region" aria-label="Dataset slices">
+          <span><strong>200 real non-AI traps:</strong> 50 camera photos, 50 ScreenSpot UI screenshots, 50 AI2D diagrams, 50 DocVQA scanned documents</span>
+          <span><strong>125 native exports:</strong> FLUX.1-dev, SDXL, GPT-Image-1, Gemini Nano Banana Pro, Midjourney v6.1</span>
+          <span><strong>253 arena transcodes:</strong> square 1024x1024 JPEG and WebP preference shards</span>
+        </div>
+      </header>
+
+      <main>
+        <div class="controls-row">
+          <div class="filter-group" role="group" aria-label="Filter detectors">
+            <button type="button" id="btn-permissive" class="filter-btn" aria-pressed="false">
+              Commercial license only (Apache-2.0 / MIT)
+            </button>
+            <button type="button" id="btn-zero-fpr" class="filter-btn" aria-pressed="false">
+              Zero false positives (0% FPR)
+            </button>
+            <button type="button" id="btn-attribution" class="filter-btn" aria-pressed="false">
+              Supports generator attribution
+            </button>
+          </div>
+          <div class="sort-group">
+            <span id="visible-count" aria-live="polite">Loading benchmark matrix...</span>
+            <label for="sort-select">Sort by</label>
+            <select id="sort-select" class="sort-select">
+              <option value="default">Curated forensic order</option>
+              <option value="fpr:asc">Lowest non-AI FPR</option>
+              <option value="native_attr:desc">Highest native attribution</option>
+              <option value="native_recall:desc">Highest native AI recall</option>
+              <option value="arena_recall:desc">Highest arena AI recall</option>
+              <option value="precision:desc">Highest precision</option>
+              <option value="weights:asc">Smallest weights</option>
+              <option value="latency:asc">Fastest CPU latency</option>
+              <option value="updated:desc">Newest model update</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="matrix-frame">
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th class="col-left">Model (click a row to inspect slices)</th>
+                <th class="col-left">License</th>
+                <th><button type="button" class="th-sort" data-col="updated">Updated</button></th>
+                <th><button type="button" class="th-sort" data-col="weights">Weights</button></th>
+                <th><button type="button" class="th-sort" data-col="latency">CPU median</button></th>
+                <th><button type="button" class="th-sort" data-col="fpr">Non-AI FPR (200)</button></th>
+                <th>Photo / UI / Diag / Doc</th>
+                <th><button type="button" class="th-sort" data-col="native_recall">Native recall (125)</button></th>
+                <th><button type="button" class="th-sort" data-col="native_attr">Native attr (125)</button></th>
+                <th><button type="button" class="th-sort" data-col="arena_recall">Arena recall (253)</button></th>
+                <th><button type="button" class="th-sort" data-col="precision">Precision</button></th>
+              </tr>
+            </thead>
+            <tbody id="matrix-body">
+              <tr>
+                <td colspan="11" class="empty-state">Loading measured results...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <section class="lower-grid" aria-label="Reproduction and submissions">
+          <div class="panel-box">
+            <h2>Reproduce every number locally in one command</h2>
+            <p>
+              No private files and no manual dataset downloads. The standalone PEP 723 script streams all 578 pinned files over HTTP byte-ranges, verifies SHA-256 deduplication, warms each model on CPU, and writes the full JSON report.
+            </p>
+            <div class="cmd-block">
+              <code>uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/benchmark.py --json-out benchmark_results.json</code>
+              <button type="button" id="copy-cmd-btn" class="copy-btn">Copy benchmark command</button>
+            </div>
+            <ul class="slice-notes">
+              <li><strong>Zero training overlap:</strong> all 578 SHA-256 file hashes are verified disjoint against every training, calibration, and test hash of <code>raiw-source-classify</code>.</li>
+              <li><strong>Scope boundary:</strong> pixel-pipeline attribution is distinct from cryptographic provenance (<code>C2PA</code>, <code>SynthID</code>, vendor metadata), which is handled deterministically by <code>remove-ai-watermarks identify</code>.</li>
+            </ul>
+          </div>
+
+          <div class="panel-box">
+            <h2>Submit an open-weights detector</h2>
+            <p>
+              Any public checkpoint on Hugging Face Hub with reproducible inference code and a declared license can be added to this matrix.
+            </p>
+            <ul class="slice-notes">
+              <li><strong>1. Pin an immutable commit SHA</strong> for your model repository on Hugging Face Hub.</li>
+              <li><strong>2. Add an evaluator</strong> to <code>benchmark.py</code> using your model card's documented preprocessing and threshold (no test-set threshold tuning on the 578 benchmark files).</li>
+              <li><strong>3. Open a discussion or pull request</strong> on <a href="https://huggingface.co/wiltodelta/raiw-source-classify/discussions" target="_blank" rel="noopener">wiltodelta/raiw-source-classify</a> or <a href="https://github.com/wiltodelta/remove-ai-watermarks/issues" target="_blank" rel="noopener">GitHub Issues</a> with the resulting JSON output.</li>
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>Apache-2.0 open benchmark suite. Made by <a href="https://wiltodelta.com/" target="_blank" rel="noopener">Victor Kuznetsov</a>.</span>
+        <span>Raw telemetry: <a href="./data/leaderboard.json">data/leaderboard.json</a></span>
+      </footer>
+    </div>
+  </body>
+</html>

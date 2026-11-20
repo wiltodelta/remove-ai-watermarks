@@ -110,6 +110,38 @@ def test_stage_release_includes_standalone_scripts_and_colab_notebook() -> None:
     assert all((publish.CARD_DIR / name).is_file() for name in publish.TRACKED_CARD_FILES)
 
 
+def test_published_scripts_and_notebook_require_v8_compatible_package_floor() -> None:
+    floor_re = re.compile(r"remove-ai-watermarks\[source-classify\]>=(\d+)\.(\d+)\.(\d+)")
+    for rel_name in ("benchmark.py", "infer.py", "demo.ipynb"):
+        content = (publish.CARD_DIR / rel_name).read_text(encoding="utf-8")
+        match = floor_re.search(content)
+        assert match is not None, f"Missing package floor in {rel_name}"
+        ver = tuple(int(part) for part in match.groups())
+        assert ver >= (0, 64, 0), f"{rel_name} floor {ver} predates v8 runtime (0.64.0)"
+
+
+def test_publish_dry_run_performs_zero_hub_mutations_and_revision_out_records_oid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import huggingface_hub
+
+    class ForbiddenApi:
+        def __init__(self, **_kwargs: object) -> None:
+            raise AssertionError("HfApi must not be instantiated during --dry-run")
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", ForbiddenApi)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+
+    src_dir = tmp_path / "weights"
+    src_dir.mkdir()
+    (src_dir / publish.MODEL_FILE).write_bytes(b"weights")
+    rev_file = tmp_path / "rev.txt"
+
+    rc = publish.main(["--src", str(src_dir), "--revision-out", str(rev_file), "--dry-run"])
+    assert rc == 0
+    assert not rev_file.exists()
+
+
 def _load_module(name: str, path: Path) -> Any:
     import importlib.util
 

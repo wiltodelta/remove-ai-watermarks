@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11,<3.15"
 # dependencies = [
-#     "remove-ai-watermarks[source-classify]>=0.62.1",
+#     "remove-ai-watermarks[source-classify]>=0.64.0",
 #     "huggingface-hub>=0.26.0",
 #     "onnxruntime>=1.24.0",
 #     "peft>=0.14.0",
@@ -722,11 +722,16 @@ def _evaluate_rgb_detector(
     )
 
 
-def evaluate_raiw(samples: list[SampleItem]) -> dict[str, Any]:
+def evaluate_raiw(
+    samples: list[SampleItem],
+    *,
+    weights_path: Path | None = None,
+    revision: str | None = None,
+) -> dict[str, Any]:
     """Evaluate `wiltodelta/raiw-source-classify` on CPU."""
     from remove_ai_watermarks import source_classify as sc
 
-    weights_file = sc.resolve_weights_path()
+    weights_file = sc.resolve_weights_path(weights_path)
     weights_mb = round(weights_file.stat().st_size / (1024 * 1024), 2)
 
     def _classify_one(raw_bytes: bytes) -> dict[str, Any]:
@@ -755,7 +760,7 @@ def evaluate_raiw(samples: list[SampleItem]) -> dict[str, Any]:
 
     return _summarize_predictions(
         model_id=sc.WEIGHTS_REPO,
-        revision=sc.WEIGHTS_REVISION,
+        revision=revision or sc.WEIGHTS_REVISION,
         runtime="NumPy + ONNX Runtime (CPU)",
         weights_mb=weights_mb,
         license_id="apache-2.0",
