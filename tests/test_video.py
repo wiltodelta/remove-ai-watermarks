@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from remove_ai_watermarks.cli import main
 from remove_ai_watermarks.metadata import C2PA_UUID, KLING_SEI_TAG
+from remove_ai_watermarks.video import VIDEO_VISIBLE_MARKS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1270,12 +1271,20 @@ class TestVideoProvenanceApi:
             "sora",
             "veo",
             "dreamina",
+            "jimeng",
+            "jimeng_pill",
             "seedance",
             "doubao",
             "dola",
             "hailuo",
             "vidu",
             "wan",
+            "qwen",
+            "yuanbao",
+            "baidu",
+            "runninghub",
+            "microsoft",
+            "generic_ai_label",
             "kling",
         )
 
@@ -1552,7 +1561,7 @@ class TestVideoAllApi:
         from remove_ai_watermarks import video
         from remove_ai_watermarks.video import remove_video_all
 
-        source = _video_with_tc260_ebml(tmp_path / "source.webm")
+        source = _video_with_tc260_avi(tmp_path / "source.avi")
         monkeypatch.setattr(
             video,
             "remove_video_visible",
@@ -1993,10 +2002,10 @@ class TestVideoInvisibleApi:
 
         assert result.output == tmp_path / "source_clean.mp4"
 
-    def test_rejects_webm_regeneration(self, tmp_path: Path):
+    def test_rejects_avi_regeneration(self, tmp_path: Path):
         from remove_ai_watermarks.video import remove_video_invisible
 
-        source = _video_with_tc260_ebml(tmp_path / "source.webm")
+        source = _video_with_tc260_avi(tmp_path / "source.avi")
 
         with pytest.raises(ValueError, match="requires one of"):
             remove_video_invisible(source)
@@ -3350,18 +3359,7 @@ class TestVideoVisibleApi:
         )
 
         def fake_scan(_source: Path, marks: tuple[str, ...]):
-            assert marks == (
-                "sora",
-                "veo",
-                "dreamina",
-                "seedance",
-                "doubao",
-                "dola",
-                "hailuo",
-                "vidu",
-                "wan",
-                "kling",
-            )
+            assert marks == tuple(VIDEO_VISIBLE_MARKS)
             return {
                 "sora": sora_scan,
                 "veo": sora_scan,
@@ -3581,7 +3579,8 @@ class TestVideoVisibleCli:
 
         assert result.exit_code == 0, result.output
         assert "temporally stable" in result.output
-        assert "auto|sora|veo|dreamina|seedance|doubao|dola|hailuo|vidu|wan|kling" in result.output
+        normalized_help = "".join(result.output.split())
+        assert "auto|" + "|".join(VIDEO_VISIBLE_MARKS) in normalized_help
         assert "--temporal-consistency" in result.output
 
     def test_reports_removed_frames(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -241,28 +241,35 @@ def _iter_sampled_frames(
     duration: float | None,
     effective_fps: float,
     size: tuple[int, int],
+    _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> Generator[NDArray[Any], None, None]:
     """Yield uniformly sampled frames without retaining the full video."""
-    capture = open_video_capture(source)
-    if not capture.isOpened():
-        raise ValueError(f"Could not open video: {source}")
     sample_period = 1.0 / effective_fps
     next_sample_time = 0.0
-    frame_index = 0
-    try:
-        while True:
-            ok, frame = capture.read()
-            if not ok:
-                break
-            timestamp = frame_index / source_fps
-            if duration is not None and timestamp + 1e-9 >= duration:
-                break
-            if timestamp + 1e-9 >= next_sample_time:
-                yield cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
-                next_sample_time += sample_period
-            frame_index += 1
-    finally:
-        capture.release()
+
+    def _raw_frames() -> Generator[NDArray[Any], None, None]:
+        if _frame_stream is not None:
+            yield from _frame_stream
+            return
+        capture = open_video_capture(source)
+        if not capture.isOpened():
+            raise ValueError(f"Could not open video: {source}")
+        try:
+            while True:
+                ok, frm = capture.read()
+                if not ok:
+                    break
+                yield frm
+        finally:
+            capture.release()
+
+    for frame_index, frame in enumerate(_raw_frames()):
+        timestamp = frame_index / source_fps
+        if duration is not None and timestamp + 1e-9 >= duration:
+            break
+        if timestamp + 1e-9 >= next_sample_time:
+            yield cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
+            next_sample_time += sample_period
 
 
 # Shared sampling policy for delivered-file measurements and bounded writers.
@@ -390,6 +397,7 @@ def regenerate_video_candidate(
     duration: float | None = None,
     runtime: VideoVaeRuntime | None = None,
     temporal_stabilize: bool = False,
+    _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> RegenerationMetrics:
     """Regenerate video pixels and return fidelity metrics.
 
@@ -451,13 +459,15 @@ def regenerate_video_candidate(
         previous_candidate_f32: np.ndarray | None = None
         shared_noise: Any | None = None
         try:
-            sampled_frames = _iter_sampled_frames(
-                source,
-                source_fps=source_fps,
-                duration=duration,
-                effective_fps=effective_fps,
-                size=size,
-            )
+            sample_kwargs: dict[str, Any] = {
+                "source_fps": source_fps,
+                "duration": duration,
+                "effective_fps": effective_fps,
+                "size": size,
+            }
+            if _frame_stream is not None:
+                sample_kwargs["_frame_stream"] = _frame_stream
+            sampled_frames = _iter_sampled_frames(source, **sample_kwargs)
 
             def _regenerated_pairs() -> Generator[tuple[NDArray[Any], NDArray[Any]], None, None]:
                 nonlocal shared_noise

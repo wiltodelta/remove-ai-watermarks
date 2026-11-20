@@ -240,7 +240,7 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
     import numpy as np
     import soundfile as sf
 
-    from remove_ai_watermarks._internal import audio_dac, audio_focalcodec, audioseal, perth, wavmark
+    from remove_ai_watermarks._internal import audio_dac, audio_focalcodec, audio_snac, audioseal, perth, wavmark
     from remove_ai_watermarks.video_decode import open_video_capture
     from remove_ai_watermarks.video_encoding import (
         finish_raw_video_encoder,
@@ -566,6 +566,38 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
                     )
             except Exception:
                 log.info("Skipping optional dac builtin cases because weights are not cached locally")
+        if audio_snac.is_available():
+            try:
+                from huggingface_hub import hf_hub_download
+
+                hf_hub_download(
+                    repo_id=audio_snac.MODEL_REPOSITORY,
+                    filename=audio_snac.CHECKPOINT_FILENAME,
+                    revision=audio_snac.MODEL_REVISION,
+                    local_files_only=True,
+                )
+                add_row(
+                    "perth-marked-snac",
+                    "audio_invisible",
+                    "perth",
+                    p_marked_p,
+                    ".wav",
+                    "verified_removed",
+                    method="snac",
+                )
+                if (fixtures_dir / "audioseal-stereo-music-48k-marked.wav").is_file():
+                    add_row(
+                        "audioseal-stereo-music-48k-snac",
+                        "audio_invisible",
+                        "audioseal",
+                        fixtures_dir / "audioseal-stereo-music-48k-marked.wav",
+                        ".wav",
+                        "verified_removed",
+                        method="snac",
+                        generation_id="music-48k-104",
+                    )
+            except Exception:
+                log.info("Skipping optional snac builtin cases because weights are not cached locally")
 
     # 4. VideoSeal 36-frame 512x288 @ 12 fps MP4
     ref_fixture = REPO / "data/fixtures/visible/veo/provider-original.mp4"

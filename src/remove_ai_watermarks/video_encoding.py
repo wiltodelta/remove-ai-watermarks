@@ -11,6 +11,7 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from fractions import Fraction
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from typing import Any, BinaryIO
 
+from remove_ai_watermarks._internal.constants import VIDEO_ENCODERS
 from remove_ai_watermarks.video_tools import find_video_tool, require_video_tool
 
 log = logging.getLogger(__name__)
@@ -371,16 +373,84 @@ def atomic_video_output(output: Path) -> Generator[Path]:
         os.replace(temporary_output, output)
 
 
-def _video_codec_args(suffix: str, *, crf: int, profile: VideoEncodeProfile) -> list[str]:
+@lru_cache(maxsize=4)
+def _available_ffmpeg_encoders(ffmpeg_path: str) -> frozenset[str]:
+    result = subprocess.run(  # noqa: S603
+        [ffmpeg_path, "-hide_banner", "-encoders"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return frozenset()
+    names: set[str] = set()
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if len(stripped) > 8 and stripped[0] == "V":
+            parts = stripped.split()
+            if len(parts) >= 2:
+                names.add(parts[1])
+    return frozenset(names)
+
+
+def _resolve_hw_codec(encoder: str, ffmpeg_path: str, *, high_depth: bool) -> tuple[str, str]:
+    if encoder == "software":
+        return "software", ""
+    avail = _available_ffmpeg_encoders(ffmpeg_path)
+    vt_codec = "hevc_videotoolbox" if high_depth else "h264_videotoolbox"
+    nv_codec = "hevc_nvenc" if high_depth else "h264_nvenc"
+    if encoder == "videotoolbox":
+        return ("videotoolbox", vt_codec) if vt_codec in avail else ("software", "")
+    if encoder == "nvenc":
+        return ("nvenc", nv_codec) if nv_codec in avail else ("software", "")
+    if encoder == "auto":
+        if nv_codec in avail:
+            return "nvenc", nv_codec
+        if vt_codec in avail:
+            return "videotoolbox", vt_codec
+    return "software", ""
+
+
+def _video_codec_args(
+    suffix: str,
+    *,
+    crf: int,
+    profile: VideoEncodeProfile,
+    encoder: str = "software",
+    ffmpeg_path: str | None = None,
+) -> list[str]:
     high_depth = profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
+    is_isobmff = suffix in {".mp4", ".mov", ".m4v"}
     if suffix == ".webm":
-        vp9_args = ["-c:v", "libvpx-vp9", "-crf", str(crf), "-b:v", "0"]
+        vp9_args = ["-c:v", "libvpx-vp9", "-row-mt", "1", "-deadline", "good", "-cpu-used", "2"]
+        if crf == 0:
+            vp9_args.extend(["-lossless", "1"])
+        else:
+            vp9_args.extend(["-crf", str(crf), "-b:v", "0"])
         if high_depth:
             vp9_args.extend(["-profile:v", "2"])
         return vp9_args
+
+    hw_mode, hw_codec = (
+        _resolve_hw_codec(encoder, ffmpeg_path or require_video_tool("ffmpeg"), high_depth=high_depth)
+        if encoder != "software" and crf > 0 and profile.pixel_format in {"yuv420p", "yuv420p10le"}
+        else ("software", "")
+    )
+    if hw_mode == "videotoolbox":
+        q_val = max(35, min(92, round(100 - crf * 2.0)))
+        args = ["-c:v", hw_codec, "-allow_sw", "1", "-q:v", str(q_val)]
+        if high_depth and is_isobmff:
+            args.extend(["-tag:v", "hvc1"])
+        return args
+    if hw_mode == "nvenc":
+        args = ["-c:v", hw_codec, "-preset", "p4", "-rc", "vbr", "-cq", str(crf), "-b:v", "0"]
+        if high_depth and is_isobmff:
+            args.extend(["-tag:v", "hvc1"])
+        return args
+
     if high_depth:
         args = ["-c:v", "libx265", "-preset", "medium", "-crf", str(crf)]
-        if suffix in {".mp4", ".mov", ".m4v"}:
+        if is_isobmff:
             args.extend(["-tag:v", "hvc1"])
         x265_params = ["log-level=error"]
         if profile.color_primaries in {"bt2020", "bt709"}:
@@ -435,8 +505,11 @@ def raw_video_command(
     timestamped_input: bool = False,
     copy_input_timestamps: bool = False,
     input_pix_fmt: str = "bgr24",
+    encoder: str = "software",
 ) -> list[str]:
     """Build an ffmpeg command for BGR/BGR48LE frames on standard input."""
+    if encoder not in VIDEO_ENCODERS:
+        raise ValueError("encoder must be software, auto, videotoolbox, or nvenc")
     ffmpeg = require_video_tool("ffmpeg")
     frame_input = (
         ["-f", "nut", "-i", "pipe:0"]
@@ -463,7 +536,7 @@ def raw_video_command(
         *frame_input,
         "-map",
         "0:v:0",
-        *_video_codec_args(output.suffix.lower(), crf=crf, profile=profile),
+        *_video_codec_args(output.suffix.lower(), crf=crf, profile=profile, encoder=encoder, ffmpeg_path=ffmpeg),
         *_profile_args(profile),
         "-map_metadata",
         "-1",
@@ -488,6 +561,7 @@ def mux_encoded_video(
     *,
     strip_metadata: bool,
     copy_input_timestamps: bool = False,
+    trim_end_seconds: float | None = None,
 ) -> None:
     """Copy encoded video and source audio into the final container."""
     ffmpeg = require_video_tool("ffmpeg")
@@ -499,6 +573,7 @@ def mux_encoded_video(
         *(["-copyts"] if copy_input_timestamps else []),
         "-i",
         str(encoded_video),
+        *(["-to", f"{trim_end_seconds:.6f}"] if trim_end_seconds is not None else []),
         "-i",
         str(source),
         "-map",

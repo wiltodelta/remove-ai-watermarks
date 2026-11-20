@@ -673,7 +673,13 @@ overlap-window streaming on tracks over 30 seconds. EnCodec bandwidth is
 ignored, and `auto` selects DAC automatically when pre-strip metadata or an
 explicit `vendor` cohort (`"suno"`, `"udio"`, `"elevenlabs"`, `"google"`, etc.)
 asserts a wideband AI audio generator. Tagged `5.1` / `7.1` tracks under
-`encodec` and `combined` use the same stem decomposition.
+`encodec` and `combined` use the same stem decomposition. Explicit `method="snac"`
+uses the `audio-codec` extra and fixed FP32 3-codebook 44.1 kHz Multi-Scale Neural
+Audio Codec (`hubertsiuzdak/snac_44khz` at revision
+`873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT weights, `vq_strides = (8, 4, 2)`)
+on `vocoder_device` (`"cpu"`, `"mps"`, or `"cuda"`), sharing the same mono, raw
+mid/side stereo, tagged `5.1` / `7.1` surround stem decomposition, and
+overlap-window streaming while remaining excluded from `auto`.
 
 `remove_audio_invisible`, `remove_audio_all`, `remove_audio_batch`,
 `remove_video_audio`, and `remove_video_audio_all_streams` accept `vendor`
@@ -951,8 +957,8 @@ pre-encoding `prompt_embeds` once so the T5 text encoder is freed before 3D
 denoising), returning
 `VideoWanExperimentalResult` (which exposes `strength` alongside the compatible
 `noise_std` mirror). `profile="auto"` selects `wan21-seedance-experimental` on
-eligible BF16 CUDA MP4, MOV, and M4V sources (`<= 1280x720` frame area and `>= 16 GiB` total VRAM;
-`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V or when the auto Wan budget is
+eligible BF16 CUDA MP4, MOV, and M4V sources (`<= 1920x1080` frame area and `>= 8 GiB` total VRAM, stepping down to 81-frame chunks on 1080p or `< 16 GiB` CUDA and skipping `UMT5-XXL` when the static prompt embedding is cached locally;
+`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V/MKV/WebM or when the auto Wan budget is
 exceeded) when ByteDance/Seedance metadata or visible marks are present, and
 `wan21-synthid-experimental` (`synthid` fallback) otherwise. `wan21-synthid-experimental` uses `strength=0.38`
 and `wan21-seedance-experimental` uses `strength=0.12`. Both accept

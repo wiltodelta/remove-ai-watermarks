@@ -429,6 +429,7 @@ def remove_all(
     sensitivity: Sensitivity = "auto",
     invisible: InvisibleOptions | None = None,
     force: bool = False,
+    include_invisible: bool = True,
     engine: Any | None = None,
     progress: Callable[[str, str], None] | None = None,
 ) -> RemoveAllResult:
@@ -499,7 +500,11 @@ def remove_all(
             raise OSError(f"failed to write the staged intermediate: {staged}")
 
         # ── 2. Invisible watermark ──
-        outcome = _run_invisible(src, staged, staged, opts, engine, say, evidence, force)
+        outcome: InvisibleOutcome = (
+            _run_invisible(src, staged, staged, opts, engine, say, evidence, force)
+            if include_invisible
+            else "no-signal"
+        )
 
         if alpha is not None and outcome == "removed":
             # Diffusion bakes EXIF into its RGB pixels. Apply the same transform to
@@ -653,6 +658,7 @@ def remove_batch(
     sensitivity: Sensitivity = "auto",
     invisible: InvisibleOptions | None = None,
     force: bool = False,
+    include_invisible: bool = True,
     engine: Any | None = None,
     progress: Callable[[Path, str, str], None] | None = None,
 ) -> BatchSummary:
@@ -690,7 +696,18 @@ def remove_batch(
     for img_path in sources:
         out_path = out_dir / img_path.name
         try:
-            result = _run_batch_one(img_path, out_path, mode, backend, sensitivity, invisible, force, engine, say)
+            result = _run_batch_one(
+                img_path,
+                out_path,
+                mode,
+                backend,
+                sensitivity,
+                invisible,
+                force,
+                include_invisible,
+                engine,
+                say,
+            )
         except Exception as exc:
             # A missing pixel stack is a property of the ENVIRONMENT, not of this
             # file, and per-file handling turned one absent package into an error
@@ -721,6 +738,7 @@ def _run_batch_one(
     sensitivity: Sensitivity,
     invisible: InvisibleOptions | None,
     force: bool,
+    include_invisible: bool,
     engine: Any | None,
     say: Callable[[Path, str, str], None],
 ) -> BatchItemResult:
@@ -736,6 +754,7 @@ def _run_batch_one(
             sensitivity=sensitivity,
             invisible=invisible,
             force=force,
+            include_invisible=include_invisible,
             engine=engine,
             progress=lambda stage, detail: say(img_path, stage, detail),
         )

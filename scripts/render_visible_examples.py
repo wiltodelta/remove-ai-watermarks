@@ -302,6 +302,62 @@ def _video_mark_frame(key: str, w: int, h: int) -> np.ndarray:
         tw = max(16, round(tmpl.shape[1] * th / tmpl.shape[0]))
         x, y = w - tw - round(short * 0.015), h - th - round(short * 0.015)
         return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 250)
+    elif key == "jimeng":
+        tmpl = templates["jimeng"]
+        tw = max(20, round(w * 0.20))
+        th = max(10, round(tmpl.shape[0] * tw / tmpl.shape[1]))
+        x, y = w - tw - round(w * 0.012), h - th - round(h * 0.015)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 245)
+    elif key == "jimeng_pill":
+        tmpl = templates["jimeng_pill"]
+        tw = max(24, round(w * 0.161))
+        th = max(12, round(tmpl.shape[0] * tw / tmpl.shape[1]))
+        x, y = round(w * 0.012), round(h * 0.012)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 245)
+    elif key == "qwen":
+        tmpl = templates["qwen"]
+        th = max(10, round(short * 0.042))
+        tw = max(16, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = w - tw - round(short * 0.020), h - th - round(short * 0.022)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 245)
+    elif key == "yuanbao":
+        tmpl = templates["yuanbao"]
+        th = max(12, round(short * 0.044))
+        tw = max(16, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = w - tw - round(short * 0.015), h - th - round(short * 0.015)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 245)
+    elif key == "baidu":
+        tmpl = templates["baidu"]
+        th = max(12, round(short * 0.046))
+        tw = max(16, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = w - tw - round(w * 0.020), h - th - round(h * 0.015)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 245)
+    elif key == "runninghub":
+        tmpl = templates["runninghub"]
+        tw = max(32, round(w * 0.32))
+        th = max(8, round(tmpl.shape[0] * tw / tmpl.shape[1]))
+        x, y = round(w * 0.008), round(h * 0.008)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 225)
+    elif key == "microsoft":
+        tmpl = templates["microsoft"]
+        long_side = max(w, h)
+        pw = max(24, round(long_side * 0.152))
+        ph = max(8, round(tmpl.shape[0] * pw / tmpl.shape[1]))
+        pad = round(long_side * 0.010)
+        pill = cv2.resize(tmpl, (pw, ph)).astype(np.float32) / 255.0
+        x, y = w - pad - pw, pad
+        out = base.copy()
+        bright = (pill > 0.6)[:, :, None]
+        target = np.where(bright, 245.0, 46.0).astype(np.float32)
+        roi = out[y : y + ph, x : x + pw].astype(np.float32)
+        out[y : y + ph, x : x + pw] = np.clip(roi * 0.08 + target * 0.92, 0, 255).astype(np.uint8)
+        return out
+    elif key == "generic_ai_label":
+        tmpl = templates["generic_ai_label"]
+        tw = max(24, round(w * 0.172))
+        th = max(10, round(tmpl.shape[0] * tw / tmpl.shape[1]))
+        x, y = w - tw - round(w * 0.012), h - th - round(h * 0.014)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 245)
     elif key == "kling":
         # The FULL mark: swirl logo left of the text run, flush against the
         # bottom-right EDGE. The font arm is edge-gated (region must reach

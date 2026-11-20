@@ -342,6 +342,17 @@ surround pair as mid/side stems and only low-passes the LFE channel below
 120 Hz (`test_surround_5_1_stem_processing_preserves_channels_and_lowpasses_lfe`);
 BigVGAN, Mimi and FocalCodec stay mono/stereo.
 
+`_internal/audio_snac.py` and `_internal/_snac_network.py` implement the
+separately selected experimental 44.1 kHz Multi-Scale Neural Audio Codec profile
+(`hubertsiuzdak/snac_44khz@873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT weights
+and adaptation notices in `licenses/snac/`) via a pure-PyTorch lazy builder with
+SHA-256-verified configuration and 286-key checkpoint (`weights_only=True`),
+post-load weight-norm fusion, fixed `n_quantizers=3` (`vq_strides` `8, 4, 2`,
+dropping the finest `stride=1` residual codebook where `Perth` survives), rational
+half-open resampling around the 44.1 kHz hop-3072 grid, raw mid/side stereo and
+`5.1`/`7.1` surround stem routing, and overlap-window streaming on `cpu`, `mps`,
+or `cuda`.
+
 The default `auto` sequence is fixed by requested scheme: spectral then combined
 for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, combined for all. Inspection
 of the source is reused across candidates. Failed intermediate candidates are
@@ -582,6 +593,19 @@ The same structural walk also collects `ai_sei_spans`: a non-x264
 through emulation-prevention bytes and skipped when that mapping would change
 the span length (`test_h264_ai_sei_payload_scrubbed_in_place`).
 
+[`_internal/av1_obu.py`](../src/remove_ai_watermarks/_internal/av1_obu.py) extends
+bitstream-level AI metadata detection and lossless scrubbing to AV1 (`av01` `av1C`
+and `mdat` samples in `_internal/isobmff.py`, plus Matroska/WebM `V_AV1`
+`CodecPrivate` and laced `SimpleBlock`/`Block` frames in `_internal/ebml.py`).
+`is_ai_obu_metadata_payload` reports `ai_obu` for `OBU_METADATA` (`obu_type == 5`)
+carrying C2PA, TC260 `AIGC`, IPTC AI, or Kling payloads (including `ITU-T T.35`
+`metadata_type == 4`) while preserving `METADATA_TYPE_HDR_CLL` (`1`),
+`METADATA_TYPE_HDR_MDCV` (`2`), `METADATA_TYPE_SCALABILITY` (`3`), and
+`METADATA_TYPE_TIMECODE` (`5`). `patch_av1_obu_to_padding` rewrites matching units
+in-place into same-length `OBU_PADDING` (`obu_type == 15`) with valid AV1 trailing
+bits (`0x80`), and `ebml.scrub_ebml_av1_ai_obus` recomputes any parent `Tracks` or
+`Cluster` EBML `CRC-32` (`0xBF`) element in-place.
+
 [`_internal/ebml.py`](../src/remove_ai_watermarks/_internal/ebml.py) provides the
 corresponding bounded Matroska/WebM reader. It seeks over clusters and accepts
 only a `Segment.Tags.Tag.SimpleTag` pairing `TagName=AIGC` with a JSON
@@ -795,18 +819,19 @@ guidance_scale=1.0)`, pre-encodes `WAN21_DEFAULT_PROMPT` on CPU into cached
 `prompt_embeds` and releases the `9.4 GB` `UMT5-XXL` `text_encoder` / `tokenizer` *before* moving the DiT + VAE onto `cuda`/`mps` (`~3.4 GiB` accelerator footprint),
 and streams `_stream_wan_windows` (`chunk_frames=193` / `overlap_frames=17`
 raised-cosine temporal crossfades with symmetric 16-pixel reflection padding and
-`4k+1` tail-frame causal padding) directly into `_finalize_experimental_output`
+`4k+1` tail-frame causal padding) directly into `_finalize_wan_output` (encoding `crf=18` `delivery` or `crf=0`
+`master` in one pass without an intermediate lossless video file, and caching
+the static neutral prompt embedding on disk via `_wan_prompt_cache_path` so
+`UMT5-XXL` is not downloaded or loaded on warm cache hits)
 without buffering the full decoded video in host RAM. `WAN_SUPPORTED_EXTENSIONS`
-covers `.mp4`, `.mov`, and `.m4v`, staging `master<suffix>` in the matching
-container so QuickTime `.mov` sources with uncompressed PCM audio mux losslessly
-without MP4 codec rejection. `video.py` also exposes
-`profile="auto"`, routing eligible ByteDance/Seedance MP4, MOV, and M4V clips (`WAN21_AUTO_MAX_FRAME_PIXELS = 1280 * 720`
-and `WAN21_MIN_CUDA_VRAM_BYTES = 16 GiB`) to `wan21-seedance-experimental` on BF16 CUDA
-(`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V or when the auto Wan budget is
+covers `.mp4`, `.mov`, and `.m4v`. `video.py` also exposes
+`profile="auto"`, routing eligible ByteDance/Seedance MP4, MOV, and M4V clips (`WAN21_AUTO_MAX_FRAME_PIXELS = 1920 * 1080`
+and `WAN21_MIN_CUDA_VRAM_BYTES = 8 GiB`, stepping down to `WAN21_COMPACT_CHUNK_FRAMES = 81` on `1080p`, `mps`, or `< 16 GiB` CUDA) to `wan21-seedance-experimental` on BF16 CUDA
+(`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V/MKV/WebM or when the auto Wan budget is
 exceeded) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental` on BF16 CUDA
 (`synthid` fallback otherwise). The invisible stage of `remove_video_all`
-accepts `_REGENERATED_VIDEO_EXTENSIONS` (MP4, MOV, M4V and `.mkv`); an MKV
-source never qualifies for Wan, so `auto` resolves it to `synthid`. Coverage in
+accepts `_REGENERATED_VIDEO_EXTENSIONS` (MP4, MOV, M4V, `.mkv`, and `.webm`); MKV and WebM
+sources never qualify for Wan, so `auto` resolves them to `synthid`. Coverage in
 `tests/test_video_seedance.py` includes source-detail separation, quantization,
 VFR/nonzero-start/audio-tail preservation, and failure-before-publication.
 
@@ -901,8 +926,17 @@ normalized representations across all detectors, and caches resized synthetic
 template features for the fixed stream geometry. Provider confidence scales
 are not comparable: selection applies each provider's temporal arbiter and
 takes the first stable result in specificity order (`VIDEO_VISIBLE_MARKS`:
-`sora`, `veo`, `dreamina`, `seedance`, `doubao`, `dola`, `hailuo`, `vidu`, `wan`,
-`kling`). `vidu` precedes `kling` because the
+`sora`, `veo`, `dreamina`, `jimeng`, `jimeng_pill`, `seedance`, `doubao`, `dola`,
+`hailuo`, `vidu`, `wan`, `qwen`, `yuanbao`, `baidu`, `runninghub`, `microsoft`,
+`generic_ai_label`, `kling`), co-selecting spatially disjoint vendor-compatible
+marks (such as `jimeng` + `jimeng_pill`) in a single pass and splitting disjoint
+connected mask components (`_split_disjoint_masks`) so optical-flow donor recovery
+and inpainting stay bounded to each local corner ROI. `video_temporal.py` also
+provides `detect_ai_bumper_start` for `--trim-bumper` static end-card trimming and
+`track_video_regions` (pyramidal Lucas-Kanade flow + Sobel/NCC template refinement)
+for `--track` moving overlay removal, while `iter_clean_video_frames` streams
+cleaned BGR frames directly into `remove_video_invisible` without an intermediate
+lossy encode. `vidu` precedes `kling` because the
 Kling detector also scores the Vidu wordmark. An explicit mark uses the same scan path with one
 candidate. Removal also collects authoritative per-frame timestamps for the
 encoder, while identification omits that unused ffprobe pass.

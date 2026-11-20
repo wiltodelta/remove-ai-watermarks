@@ -272,12 +272,14 @@ def remove_video_audio(
     Packet durations may differ by one source or output time-base tick.
     """
     source, output = Path(source).expanduser().resolve(), Path(output).expanduser()
-    if output.suffix.lower() not in {".mkv", ".mov", ".mp4", ".m4v"}:
-        raise ValueError("Audio-only video output must be MKV, MOV, MP4, or M4V")
-    lossy = output.suffix.lower() in {".mp4", ".m4v"}
+    out_ext = output.suffix.lower()
+    if out_ext not in {".mkv", ".mov", ".mp4", ".m4v", ".webm"}:
+        raise ValueError("Audio-only video output must be MKV, MOV, MP4, M4V, or WebM")
+    lossy = out_ext in {".mp4", ".m4v", ".webm"}
+    codec_label = "Opus/Vorbis" if out_ext == ".webm" else "AAC"
     caveats = (
         *_CAVEATS,
-        "The selected track uses lossy AAC with a target bitrate of 192 kbps; "
+        f"The selected track uses lossy {codec_label} with a target bitrate of 192 kbps; "
         "verification and fidelity cover the delivered decoded audio."
         if lossy
         else _PCM_CAVEAT,
@@ -324,9 +326,7 @@ def remove_video_audio(
             True,
             method=first,
             bandwidth_kbps=bandwidth_kbps if first in {"encodec", "combined"} else None,
-            vocoder_device=vocoder_device
-            if first in {"bigvgan", "mimi", "focalcodec", "dac", "encodec", "combined"}
-            else None,
+            vocoder_device=vocoder_device if first != "spectral" else None,
             caveats=caveats,
         )
     if (
@@ -385,12 +385,16 @@ def remove_video_audio(
                         flags = "+".join(k for k, v in s.get("disposition", {}).items() if v) or "0"
                         command.extend([f"-disposition:{s['index']}", flags])
                         command.extend([f"-map_metadata:s:{s['index']}", f"0:s:{s['index']}"])
+                    webm_audio_codec = (
+                        "libopus" if info.sample_rate in {8000, 12000, 16000, 24000, 48000} else "libvorbis"
+                    )
+                    target_audio_codec = webm_audio_codec if out_ext == ".webm" else ("aac" if lossy else "pcm_f32le")
                     command.extend(
                         [
                             "-c",
                             "copy",
                             f"-c:{info.index}",
-                            "aac" if lossy else "pcm_f32le",
+                            target_audio_codec,
                             "-map_metadata",
                             "0",
                             "-map_chapters",
@@ -639,8 +643,8 @@ def remove_video_audio_all_streams(
 ) -> VideoAudioMultiStreamResult:
     """Inspect and clean every watermarked audio track while preserving video and clean tracks."""
     source_path, output_path = Path(source).expanduser().resolve(), Path(output).expanduser()
-    if output_path.suffix.lower() not in {".mkv", ".mov", ".mp4", ".m4v"}:
-        raise ValueError("Audio-only video output must be MKV, MOV, MP4, or M4V")
+    if output_path.suffix.lower() not in {".mkv", ".mov", ".mp4", ".m4v", ".webm"}:
+        raise ValueError("Audio-only video output must be MKV, MOV, MP4, M4V, or WebM")
     if output_path.resolve() == source_path or (output_path.exists() and output_path.samefile(source_path)):
         raise ValueError("Video output must differ from the source")
     explicit_vendor = audio.normalize_audio_vendor(vendor)
@@ -662,7 +666,7 @@ def remove_video_audio_all_streams(
     if not audio_global_indices:
         raise ValueError("Source has no audio stream")
     selected_set = set(_resolve_selected_ordinals(streams, len(audio_global_indices)))
-    lossy = output_path.suffix.lower() in {".mp4", ".m4v"}
+    lossy = output_path.suffix.lower() in {".mp4", ".m4v", ".webm"}
     caveats = (
         "All source-positive audio tracks are processed; clean tracks and video marks remain unchanged.",
         "Metadata is not intentionally stripped; container conversion can change it. "
@@ -710,9 +714,7 @@ def remove_video_audio_all_streams(
                 True,
                 method=first,
                 bandwidth_kbps=bandwidth_kbps if first in {"encodec", "combined"} else None,
-                vocoder_device=vocoder_device
-                if first in {"bigvgan", "mimi", "focalcodec", "dac", "encodec", "combined"}
-                else None,
+                vocoder_device=vocoder_device if first != "spectral" else None,
                 caveats=caveats,
             )
             for rep in befores

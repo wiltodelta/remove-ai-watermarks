@@ -170,7 +170,14 @@ bandwidth), and bitexact WAV writer. EnCodec bandwidth does not apply;
 `--vocoder-device` accepts `cpu` (default), `mps`, or `cuda`. `auto` selects DAC only when pre-strip metadata identifies
 ElevenLabs (falling back to `encodec` / `combined` if DAC is absent or the
 layout is unsupported) or Google SynthID (failing closed rather than falling back to
-`encodec` if DAC is absent or the layout is unsupported), or when `--vendor` names a cohort. Long audio tracks (`> 30 s`) are verified across
+`encodec` if DAC is absent or the layout is unsupported), or when `--vendor` names a cohort.
+`--method snac` selects the separate experimental FP32 44.1 kHz 3-codebook
+Multi-Scale Neural Audio Codec (`audio-codec` extra, pinned to
+`hubertsiuzdak/snac_44khz@873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT weights in
+`licenses/snac/NOTICE.txt`), accepting mono, raw mid/side stereo, and tagged 5.1/7.1
+layouts with single-pass resynthesis up to 30 seconds and overlap-window streaming
+on longer tracks across `--vocoder-device [cpu|mps|cuda]`; `auto` excludes `snac`.
+Long audio tracks (`> 30 s`) are verified across
 bounded `<= 30 s` whole-clip segments in addition to sliding windows, missing
 requested decoders emit actionable install hints, and JSON output includes
 `quality_passed`. Each method must pass
@@ -371,7 +378,9 @@ remove-ai-watermarks erase image.png \
 
 `erase` accepts `cv2` (the default for images), `migan`, `lama`, and `auto`, which
 selects the best installed backend. The corresponding optional extra must be
-installed for a learned backend. A video input is routed to `video erase`.
+installed for a learned backend. A video input is routed to `video erase`, where
+`--track` tracks moving user-specified boxes across frames via pyramidal Lucas-Kanade
+flow and Sobel/NCC template refinement.
 
 Two more knobs tune the fill. `--dilate N` (default 3) grows every box by `N`
 pixels before inpainting, which helps when a mark has a soft edge or a drop
@@ -767,9 +776,12 @@ the conservative decoded-frame budget (`<= 1920x1080` frame area and
 frames through overlapping 3D causal windows with 17-frame raised-cosine
 temporal crossfades directly to the encoder without buffering the full clip in
 host RAM), and `--profile auto` automatically routes eligible ByteDance/Seedance
-MP4, MOV, and M4V clips (`<= 1280x720` frame area and `>= 16 GiB` total GPU VRAM) to
+MP4, MOV, and M4V clips (`<= 1920x1080` frame area and `>= 8 GiB` total GPU VRAM,
+stepping down from 193-frame to 81-frame chunks on 1080p or `< 16 GiB` CUDA and
+skipping the UMT5 text encoder whenever the static neutral prompt embedding is
+cached locally) to
 `wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` on CPU/MPS
-for MP4, or `synthid` for MOV/M4V or when the auto Wan budget is exceeded) and
+for MP4, or `synthid` for MOV/M4V/MKV/WebM or when the auto Wan budget is exceeded) and
 other eligible SDR 8-bit MP4, MOV, and M4V clips to
 `wan21-synthid-experimental` on BF16 CUDA (`synthid` fallback otherwise):
 
@@ -812,13 +824,15 @@ must also remain anchored instead of drifting with a scene object. Matching
 provider provenance may relax the visual score only for registered
 provenance-aware marks; metadata alone never creates a detection.
 
-`--mark auto` is the default. It evaluates all ten providers in one decode pass and
-selects the first stable match in specificity order: Sora, Veo, Dreamina, Seedance,
-Doubao, Dola, Hailuo AI, Vidu, Wan, then Kling AI. Their confidence scores are independently calibrated and
+`--mark auto` is the default. It evaluates all eighteen supported video marks in one decode pass and
+selects the first stable match in specificity order (`sora`, `veo`, `dreamina`, `jimeng`,
+`jimeng_pill`, `seedance`, `doubao`, `dola`, `hailuo`, `vidu`, `wan`, `qwen`, `yuanbao`,
+`baidu`, `runninghub`, `microsoft`, `generic_ai_label`, then `kling`), co-selecting spatially
+disjoint vendor-compatible marks (such as `jimeng` + `jimeng_pill`) in a single pass. Their confidence scores are independently calibrated and
 are not compared across providers. Valid Google AI-video provenance resolves a
 stable Sora/Veo match in favor of Veo when their regions overlap or Veo spans
 the full clip while Sora does not; it does not create a visual detection.
-Pass an explicit `--mark` to scan only that provider.
+Pass an explicit `--mark` to scan only that provider, or `--trim-bumper` (also available on `video all`) to detect and trim a trailing full-screen static AI end-card bumper.
 
 The video stream is transcoded and the complete original audio stream is
 copied without truncating an audio tail that extends beyond the final video
@@ -863,7 +877,8 @@ remove-ai-watermarks video erase input.mp4 --region 24,24,180,56 --frames 0:120 
 remove-ai-watermarks erase input.mp4 --region 24,24,180,56 --frames 0:120 --dilate 5 --backend auto --json
 ```
 
-Pass one or more `--region x,y,w,h` boxes, optional inclusive `--frames START:END`
+Pass one or more `--region x,y,w,h` boxes, optional `--track` to track moving
+overlays across frames, optional inclusive `--frames START:END`
 to restrict erasing to a frame interval, `--dilate`, `--backend` (default `auto`),
 `--strip-metadata` / `--keep-metadata`, `--temporal-consistency` /
 `--no-temporal-consistency`, and `--json`. Top-level `erase` on a video always
@@ -1089,12 +1104,15 @@ The command runs:
 2. invisible watermark removal when available and applicable;
 3. AI metadata stripping.
 
-The visible options and diffusion options are also available on `all`.
+The visible options, diffusion options, and `--preset [lossless-fast|balanced|deep-clean]`
+(`lossless-fast` restricts `all` to metadata + visible stages without pixel/waveform
+regeneration, `balanced` enables learned visible fills and detector-gated audio
+cleaning, and `deep-clean` activates `--force` pixel/waveform regeneration) are also available on `all`.
 
 `all` also routes other media by file suffix, with fixed defaults: a video runs
-`video all` with audio inspection (pixel regeneration only with `--force` or an
+`video all` with audio inspection (pixel regeneration only with `--force`, `--preset deep-clean`, or an
 explicit `--vendor`), an audio file runs `audio all --invisible --scheme auto`,
-and a text file runs `text all` (regeneration only with `--force`). On these
+and a text file runs `text all` (regeneration only with `--force` or `--preset deep-clean`). On these
 inputs `--vendor` also accepts the audio cohorts (`elevenlabs`, `suno`, `udio`,
 `cartesia`, `resemble`); an audio-only cohort on an image is a usage error. Use
 the media-specific commands for any other option.
@@ -1130,14 +1148,18 @@ Modes:
 Set an output directory:
 
 ```bash
-remove-ai-watermarks batch ./images \
+remove-ai-watermarks batch ./media \
   --mode all \
+  --preset balanced \
   --output-dir ./clean
 ```
 
-The invisible and full modes accept the same main diffusion controls as their
-single image counterparts. Run `batch --help` for the authoritative option
-list.
+`batch` discovers images and videos in `--mode visible` (ignoring sidecar audio or
+text notes), and discovers images, videos, audio tracks, and text files under
+`--mode metadata`, `--mode invisible`, `--mode all`, or `--preset [lossless-fast|balanced|deep-clean]`
+alongside the invisible and full-pipeline diffusion controls (`--vendor` accepts both
+image and audio cohorts on mixed directories). Run `batch --help` for the authoritative
+option list.
 
 For `visible` and `all` modes, the final summary includes counts for
 `no watermark`, `cleaned`, `partial`, and `unvalidated`. Partial and unavailable

@@ -38,7 +38,7 @@ TC260_PRODUCERS = (
         video_platform="ByteDance Volcano Engine",
         image_platform="ByteDance Volcano Engine",
     ),
-    Tc260Producer("qwen", ("91440101MA9Y9T4H7A",), "Alibaba", "qwen", video_platform="Alibaba Cloud Qwen"),
+    Tc260Producer("qwen", ("91440101MA9Y9T4H7A",), "Alibaba", "qwen", "qwen", video_platform="Alibaba Cloud Qwen"),
     # Tongyi Yunqi (Hangzhou), owned by Alibaba Cloud and Tongyi Lab, signs
     # both Wan and HappyHorse exports, not just one model.
     Tc260Producer(
@@ -51,6 +51,7 @@ TC260_PRODUCERS = (
         ("91440300708461136T", "9144030071526726XG", "91440101327598294H"),
         "Tencent",
         "yuanbao",
+        "yuanbao",
         video_platform="Tencent Yuanbao",
         image_platform="Tencent Yuanbao",
     ),
@@ -61,8 +62,8 @@ TC260_PRODUCERS = (
         "workbuddy",
         image_platform="Tencent WorkBuddy",
     ),
-    Tc260Producer("runninghub", ("91340100MAEB4N8H76", "RunningHub"), "RunningHub", "runninghub"),
-    Tc260Producer("baidu", ("91110000802100433B",), "Baidu", "baidu", video_platform="Baidu"),
+    Tc260Producer("runninghub", ("91340100MAEB4N8H76", "RunningHub"), "RunningHub", "runninghub", "runninghub"),
+    Tc260Producer("baidu", ("91110000802100433B",), "Baidu", "baidu", "baidu", video_platform="Baidu"),
     Tc260Producer("liblib", ("91110105MACJ6K1C8A",), "LiblibAI", "liblib"),
     Tc260Producer("meitu", ("913502007378955153",), "Meitu", image_platform="Meitu"),
     Tc260Producer("vivo", ("91441900557262083U",), "vivo", image_platform="vivo"),

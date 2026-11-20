@@ -87,12 +87,12 @@ Vendor cohorts: `auto`, `openai`, `google`, `microsoft`, `meta`. `auto` derives
 the strength from C2PA provenance and falls back to a resolution curve. Naming a
 cohort asserts the watermark IS present, so it also runs the scrub without a
 local signal, exactly like `--force`. Set it only when the USER says where the
-file came from. Image cohorts apply to `invisible` and `batch`; multimodal `all`
-accepts the full audio/video superset below.
+file came from. Image cohorts apply to `invisible`; multimodal `all` and `batch`
+accept the full audio/video superset below.
 
 Audio vendor cohorts: `auto`, `google`, `elevenlabs`, `suno`, `udio`, `openai`,
 `cartesia`, `meta`, `resemble`, `microsoft`. Naming an audio cohort on `all`,
-`audio invisible`, `audio all`, `audio batch`, `video audio` (`--vendor`), or
+`batch`, `audio invisible`, `audio all`, `audio batch`, `video audio` (`--vendor`), or
 `video all` / `video batch` (`--audio-vendor`) asserts the waveform mark is
 present, selects a vendor-matched profile sequence (`dac` first for most cohorts,
 `spectral` first for `meta`) when metadata was already stripped, and runs without needing `--allow-unverified` while keeping the audio
@@ -125,10 +125,11 @@ Google image instead of switching engines.
 
 ```bash
 remove-ai-watermarks all image.png -o clean.png
-remove-ai-watermarks batch ./images --mode visible --output-dir ./clean
+remove-ai-watermarks all track.mp3 --preset deep-clean -o clean.mp3
+remove-ai-watermarks batch ./media --mode all --preset balanced --output-dir ./clean
 ```
 
-`batch` modes: `visible`, `invisible`, `metadata`, `all`.
+`batch` modes: `visible`, `invisible`, `metadata`, `all`. Both `all` and `batch` accept `--preset [lossless-fast|balanced|deep-clean]` (which switches default `batch` mode to `all`); `batch` processes visual media (images and videos) in `--mode visible` and mixed directories of images, videos, audio, and text files in `metadata`, `invisible`, and `all` modes.
 
 ## Video
 
@@ -154,11 +155,15 @@ remove-ai-watermarks video invisible input.mp4 -o clean.mp4
 remove-ai-watermarks video batch ./videos --mode all
 ```
 
-Video mark keys: `sora`, `veo`, `dreamina`, `seedance`, `doubao`, `dola`, `hailuo`,
-`vidu`, `wan`, `kling`. Default `--mark auto` picks the first temporally stable match in that
-order.
+Video mark keys: `sora`, `veo`, `dreamina`, `jimeng`, `jimeng_pill`, `seedance`, `doubao`,
+`dola`, `hailuo`, `vidu`, `wan`, `qwen`, `yuanbao`, `baidu`, `runninghub`, `microsoft`,
+`generic_ai_label`, `kling`. Default `--mark auto` selects the first temporally stable match in
+that order and co-selects spatially disjoint vendor-compatible marks (such as `jimeng` +
+`jimeng_pill`) in a single pass. Pass `--trim-bumper` on `video visible` or `video all` to trim
+a trailing static AI outro card, and `--track` on `erase` or `video erase` to track moving
+user-specified `--region` boxes across frames.
 
-`video invisible` and `video all --invisible` accept MP4, MOV, and M4V only.
+`video invisible` and `video all --invisible` accept MP4, MOV, M4V, MKV, and WebM.
 That is the default SynthID profile. It is lossy; its shipped noise profile
 is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only, and `focalcodec` failed on a held-out 10 s Gemini audio track).
 
@@ -188,9 +193,9 @@ rate on SDR 8-bit MP4, MOV, and M4V clips within the conservative decoded-frame 
 (`<= 1920x1080` frame area and `<= 552,960,000` decoded pixel-frames, streaming
 clips over 193 frames via overlapping 3D causal windows, since CLI 0.63.0), and
 `--profile auto` automatically routes eligible ByteDance/Seedance MP4, MOV, and M4V clips
-(`<= 1280x720` frame area and `>= 16 GiB` total GPU VRAM) to
+(`<= 1920x1080` frame area and `>= 8 GiB` total GPU VRAM, stepping down from 193-frame to 81-frame chunks on 1080p or `< 16 GiB` CUDA) to
 `wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` fallback on
-CPU/MPS MP4, or `synthid` on MOV/M4V or over budget) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental`
+CPU/MPS MP4, or `synthid` on MOV/M4V/MKV/WebM or over budget) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental`
 on BF16 CUDA (`synthid` fallback otherwise):
 
 ```bash
@@ -296,6 +301,13 @@ decomposition with `<120 Hz` LFE filtering while preserving full 22.05 kHz
 bandwidth. `--vocoder-device` accepts `cpu` (default), `mps`, or `cuda`; EnCodec
 bandwidth does not apply, and `auto` selects `dac` when pre-strip metadata or an
 explicit `--vendor` cohort identifies a wideband AI audio generator.
+
+`--method snac` selects the 44.1 kHz Multi-Scale Neural Audio Codec profile
+(`hubertsiuzdak/snac_44khz`, MIT weights) fixed at 3 multi-scale codebooks
+(strides 8, 4, 2) on FP32 with the `audio-codec` extra. Like `dac`, it runs
+single-pass resynthesis up to 30 seconds and overlap-window streaming on longer
+audio (`> 30 s`), supporting mono, raw mid/side stereo, and tagged `5.1`/`7.1`
+surround stems on `--vocoder-device [cpu|mps|cuda]`; `auto` excludes `snac`.
 
 `--allow-unverified` permits processing without a local source-positive decoder match (or with `--no-verify`) while keeping the audio SNR/RMS/window integrity gate active (`--allow-positive` permits a still-positive final candidate; `--allow-quality-override` overrides the integrity gate; `--force` enables all three).
 `--method spectral --allow-unverified --no-verify` only needs the `audio` extra. Other

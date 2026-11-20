@@ -189,7 +189,7 @@ detect on its own example, so regeneration is the fix point for drift.
     <mark-key>/provider-original.*
                              Documented real provider-marked source where available
     <mark-key>/example.mp4   960x540 90-frame clip, one per video mark
-                            (kling carries both: it is registered in both registries)
+                            (marks registered in both image and video registries carry both example.png and example.mp4)
 
 Special cases: `gemini` composites the sparkle alpha map at the provider's
 configured position; `jimeng_pill` uses the measured 3:4 portrait geometry;

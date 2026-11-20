@@ -451,16 +451,16 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
     assert frames_decoded == []
     assert wan.can_run_wan_on_source(source, device="auto") is False
 
-    # 1080p is rejected for auto (capped at evidenced 1280x720) but allowed for explicit wan21-* within total budget
+    # 1080p is accepted for both auto and explicit wan21-* within total budget, while >1080p is rejected
     monkeypatch.setattr(
         wan,
         "validate_experimental_mp4_source",
         lambda *_a, **_k: (1920, 1080, 24.0, tuple(range(10))),
     )
-    assert wan.can_run_wan_on_source(source, device="auto", for_auto=True) is False
+    assert wan.can_run_wan_on_source(source, device="auto", for_auto=True) is True
     assert wan.can_run_wan_on_source(source, device="auto", for_auto=False) is True
 
-    # Insufficient VRAM (< 16 GiB) skips Wan under auto
+    # 8 GiB VRAM satisfies auto floor, while < 8 GiB skips Wan under auto
     monkeypatch.setattr(
         torch.cuda,
         "get_device_properties",
@@ -471,7 +471,22 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
         "validate_experimental_mp4_source",
         lambda *_a, **_k: (1280, 720, 24.0, tuple(range(10))),
     )
+    assert wan.can_run_wan_on_source(source, device="auto", for_auto=True) is True
+    monkeypatch.setattr(
+        torch.cuda,
+        "get_device_properties",
+        lambda _d=0: SimpleNamespace(total_memory=6 * 1024**3, major=8),
+    )
     assert wan.can_run_wan_on_source(source, device="auto", for_auto=True) is False
+
+    # Explicit device='mps' works for wan21-* (for_auto=False); --profile auto (for_auto=True) skips MPS.
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    assert wan.can_run_wan_on_source(source, device="mps", for_auto=False) is True
+    assert wan.can_run_wan_on_source(source, device="mps", for_auto=True) is False
+    assert wan._effective_chunk_frames(193, 17, width=1920, height=1080, resolved_device="cuda") == 81
+    assert wan._effective_chunk_frames(193, 17, width=1280, height=720, resolved_device="mps") == 81
+    assert wan._effective_chunk_frames(193, 17, width=1280, height=720, resolved_device="cuda") == 193
 
     # Unknown component_depth=None must be rejected by validate_experimental_mp4_source
     from remove_ai_watermarks import video_seedance

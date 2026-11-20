@@ -8,16 +8,33 @@ their payloads.
 
 from __future__ import annotations
 
+import zlib
 from typing import TYPE_CHECKING, BinaryIO
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+from remove_ai_watermarks._internal.av1_obu import (
+    patch_av1_obu_to_padding,
+    scan_av1_obu_ai_spans,
+    scan_av1_obu_stream_spans,
+)
 from remove_ai_watermarks.metadata import MAX_TC260_VALUE_BYTES, parse_tc260_aigc_json
 
 EBML_MAGIC = b"\x1aE\xdf\xa3"
 _SEGMENT_ID = 0x18538067
+_TRACKS_ID = 0x1654AE6B
+_TRACK_ENTRY_ID = 0xAE
+_TRACK_NUMBER_ID = 0xD7
+_CODEC_ID = 0x86
+_CODEC_PRIVATE_ID = 0x63A2
+_CONTENT_ENCODINGS_ID = 0x6D80
+_CLUSTER_ID = 0x1F43B675
+_SIMPLE_BLOCK_ID = 0xA3
+_BLOCK_GROUP_ID = 0xA0
+_BLOCK_ID = 0xA1
+_CRC32_ID = 0xBF
 _TAGS_ID = 0x1254C367
 _TAG_ID = 0x7373
 _SIMPLE_TAG_ID = 0x67C8
@@ -230,3 +247,244 @@ def attachment_ordinals(path: str | Path) -> tuple[int, tuple[int, ...]]:
     except OSError:
         return 0, ()
     return ordinal, tuple(ordinals)
+
+
+_MAX_AV1_BLOCK_BYTES = 4 * 1024 * 1024
+
+
+def _read_ebml_vint_value(data: bytes, pos: int) -> tuple[int, int] | None:
+    if pos >= len(data):
+        return None
+    length = _vint_length(data[pos], maximum=8)
+    if length is None or pos + length > len(data):
+        return None
+    marker = 1 << (8 - length)
+    raw = bytes([data[pos] & (marker - 1)]) + data[pos + 1 : pos + length]
+    return int.from_bytes(raw, "big"), pos + length
+
+
+def _read_ebml_signed_vint(data: bytes, pos: int) -> tuple[int, int] | None:
+    parsed = _read_ebml_vint_value(data, pos)
+    if parsed is None:
+        return None
+    val, next_pos = parsed
+    length = next_pos - pos
+    bias = (1 << (7 * length - 1)) - 1
+    return val - bias, next_pos
+
+
+def _block_frame_spans(
+    header_bytes: bytes,
+    block_file_start: int,
+    total_len: int,
+    av1_tracks: set[int],
+) -> list[tuple[int, int]]:
+    """Parse an EBML SimpleBlock/Block header prefix and return ``(file_start, file_end)`` per laced AV1 frame."""
+    parsed = _read_ebml_vint_value(header_bytes, 0)
+    if parsed is None:
+        return []
+    track_num, pos = parsed
+    if track_num not in av1_tracks or pos + 3 > len(header_bytes) or pos + 3 > total_len:
+        return []
+    flags = header_bytes[pos + 2]
+    pos += 3
+    lacing = (flags >> 1) & 0x03
+    if lacing == 0:
+        return [(block_file_start + pos, block_file_start + total_len)] if pos < total_len else []
+    if pos >= len(header_bytes):
+        return []
+    frame_count = header_bytes[pos] + 1
+    pos += 1
+    sizes: list[int] = []
+    if lacing == 1:  # Xiph lacing
+        for _ in range(frame_count - 1):
+            sz = 0
+            while pos < len(header_bytes) and header_bytes[pos] == 0xFF:
+                sz += 255
+                pos += 1
+            if pos >= len(header_bytes):
+                return []
+            sz += header_bytes[pos]
+            pos += 1
+            sizes.append(sz)
+    elif lacing == 2:  # Fixed-size lacing
+        rem = total_len - pos
+        if rem < 0 or rem % frame_count != 0:
+            return []
+        sizes = [rem // frame_count] * (frame_count - 1)
+    else:  # EBML lacing
+        first = _read_ebml_vint_value(header_bytes, pos)
+        if first is None:
+            return []
+        cur_sz, pos = first
+        sizes.append(cur_sz)
+        for _ in range(frame_count - 2):
+            delta = _read_ebml_signed_vint(header_bytes, pos)
+            if delta is None:
+                return []
+            d_val, pos = delta
+            cur_sz += d_val
+            if cur_sz < 0:
+                return []
+            sizes.append(cur_sz)
+    used = sum(sizes)
+    if pos + used > total_len:
+        return []
+    sizes.append(total_len - pos - used)
+    spans: list[tuple[int, int]] = []
+    cur = pos
+    for sz in sizes:
+        if sz > 0:
+            spans.append((block_file_start + cur, block_file_start + cur + sz))
+        cur += sz
+    return spans
+
+
+def _scan_av1_block(
+    stream: BinaryIO,
+    b_start: int,
+    b_end: int,
+    av1_tracks: set[int],
+    patches: list[tuple[int, int, int, int]],
+    *,
+    stop_on_first: bool,
+) -> bool:
+    total_len = b_end - b_start
+    if total_len <= 4 or total_len > _MAX_AV1_BLOCK_BYTES:
+        return False
+    stream.seek(b_start)
+    prefix = stream.read(min(1024, total_len))
+    spans = _block_frame_spans(prefix, b_start, total_len, av1_tracks)
+    if not spans:
+        return False
+
+    def _read_at(off: int, n: int) -> bytes:
+        stream.seek(off)
+        return stream.read(n)
+
+    for f0, f1 in spans:
+        found = scan_av1_obu_stream_spans(_read_at, f0, f1, stop_on_first=stop_on_first)
+        if found:
+            patches.extend(found)
+            if stop_on_first:
+                return True
+    return False
+
+
+def _scan_ebml_av1_stream(
+    stream: BinaryIO,
+    *,
+    stop_on_first: bool = False,
+) -> tuple[list[tuple[int, int, int, int]], list[tuple[int, int, int]]]:
+    """Return ``(av1_obu_patches, crc_containers_touched)`` for ``V_AV1`` tracks in ``stream``."""
+    if stream.read(4) != EBML_MAGIC:
+        return [], []
+    stream.seek(0, 2)
+    file_size = stream.tell()
+    av1_tracks: set[int] = set()
+    patches: list[tuple[int, int, int, int]] = []
+    crc_parents: list[tuple[int, int, int]] = []  # (crc_payload_start, body_after_crc_start, parent_end)
+
+    for top_id, seg_start, seg_end in _iter_elements(stream, 0, file_size):
+        if top_id != _SEGMENT_ID:
+            continue
+        for child_id, child_start, child_end in _iter_elements(stream, seg_start, seg_end):
+            if child_id == _TRACKS_ID:
+                crc_info: tuple[int, int, int] | None = None
+                before_cnt = len(patches)
+                for idx, (t_id, t_start, t_end) in enumerate(_iter_elements(stream, child_start, child_end)):
+                    if idx == 0 and t_id == _CRC32_ID and t_end - t_start == 4:
+                        crc_info = (t_start, t_end, child_end)
+                        continue
+                    if t_id != _TRACK_ENTRY_ID:
+                        continue
+                    track_num: int | None = None
+                    codec_id: bytes | None = None
+                    priv_span: tuple[int, int] | None = None
+                    has_encodings = False
+                    for f_id, f_start, f_end in _iter_elements(stream, t_start, t_end):
+                        if f_id == _TRACK_NUMBER_ID and 1 <= f_end - f_start <= 8:
+                            raw_n = _read_bounded(stream, f_start, f_end, 8)
+                            if raw_n is not None:
+                                track_num = int.from_bytes(raw_n, "big")
+                        elif f_id == _CODEC_ID:
+                            codec_id = _read_bounded(stream, f_start, f_end, 64)
+                        elif f_id == _CODEC_PRIVATE_ID:
+                            priv_span = (f_start, f_end)
+                        elif f_id == _CONTENT_ENCODINGS_ID:
+                            has_encodings = True
+                    if (
+                        track_num is not None
+                        and codec_id is not None
+                        and codec_id.strip(b"\x00") == b"V_AV1"
+                        and not has_encodings
+                    ):
+                        av1_tracks.add(track_num)
+                        if priv_span is not None and priv_span[1] - priv_span[0] > 4:
+                            cfg_raw = _read_bounded(stream, priv_span[0] + 4, priv_span[1], _MAX_AV1_BLOCK_BYTES)
+                            if cfg_raw is not None:
+                                patches.extend(scan_av1_obu_ai_spans(cfg_raw, priv_span[0] + 4))
+                                if stop_on_first and patches:
+                                    return patches[:1], []
+                if crc_info is not None and len(patches) > before_cnt:
+                    crc_parents.append(crc_info)
+
+            elif child_id == _CLUSTER_ID and av1_tracks:
+                crc_info = None
+                before_cnt = len(patches)
+                for idx, (c_id, c_start, c_end) in enumerate(_iter_elements(stream, child_start, child_end)):
+                    if idx == 0 and c_id == _CRC32_ID and c_end - c_start == 4:
+                        crc_info = (t_start := c_start, c_end, child_end)
+                        del t_start
+                        continue
+                    if c_id == _SIMPLE_BLOCK_ID:
+                        if _scan_av1_block(stream, c_start, c_end, av1_tracks, patches, stop_on_first=stop_on_first):
+                            return patches[:1], []
+                    elif c_id == _BLOCK_GROUP_ID:
+                        for g_id, g_start, g_end in _iter_elements(stream, c_start, c_end):
+                            if g_id == _BLOCK_ID and _scan_av1_block(
+                                stream, g_start, g_end, av1_tracks, patches, stop_on_first=stop_on_first
+                            ):
+                                return patches[:1], []
+                if crc_info is not None and len(patches) > before_cnt:
+                    crc_parents.append(crc_info)
+
+    return patches, crc_parents
+
+
+def scan_ebml_av1_ai_obus(
+    path: str | Path,
+    *,
+    stop_on_first: bool = False,
+) -> tuple[tuple[int, int, int, int], ...]:
+    """Scan Matroska/WebM ``V_AV1`` tracks for AI ``OBU_METADATA`` payloads."""
+    try:
+        with open(path, "rb") as stream:
+            patches, _crc = _scan_ebml_av1_stream(stream, stop_on_first=stop_on_first)
+            return tuple(patches)
+    except OSError:
+        return ()
+
+
+def scrub_ebml_av1_ai_obus(path: str | Path) -> int:
+    """In-place rewrite AI ``OBU_METADATA`` units to ``OBU_PADDING`` and refresh EBML CRC-32s."""
+    with open(path, "r+b") as stream:
+        patches, crc_parents = _scan_ebml_av1_stream(stream)
+        if not patches:
+            return 0
+        for hdr_off, orig_b0, pay_start, pay_end in patches:
+            patch_av1_obu_to_padding(stream, hdr_off, orig_b0, pay_start, pay_end)
+        for crc_pos, body_start, body_end in crc_parents:
+            stream.seek(body_start)
+            rem = body_end - body_start
+            crc = 0
+            while rem > 0:
+                chunk = stream.read(min(rem, 1024 * 1024))
+                if not chunk:
+                    break
+                crc = zlib.crc32(chunk, crc)
+                rem -= len(chunk)
+            stream.seek(crc_pos)
+            stream.write((crc & 0xFFFFFFFF).to_bytes(4, "little"))
+        stream.flush()
+    return len(patches)

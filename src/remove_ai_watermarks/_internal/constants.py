@@ -8,8 +8,8 @@ from typing import Literal, get_args
 from remove_ai_watermarks._internal._generated_c2pa_soft_bindings import C2PA_SOFT_BINDING_ROWS
 
 AudioScheme = Literal["audioseal", "wavmark", "perth", "silentcipher", "silentcipher16", "all", "auto"]
-AudioProfile = Literal["spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac"]
-AudioMethod = Literal["auto", "spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac"]
+AudioProfile = Literal["spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac", "snac"]
+AudioMethod = Literal["auto", "spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac", "snac"]
 AudioVendor = Literal[
     "auto",
     "google",
@@ -32,7 +32,16 @@ AUDIO_SCHEMES: tuple[AudioScheme, ...] = (
     "all",
     "auto",
 )
-AUDIO_PROFILES: tuple[AudioProfile, ...] = ("spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac")
+AUDIO_PROFILES: tuple[AudioProfile, ...] = (
+    "spectral",
+    "encodec",
+    "combined",
+    "bigvgan",
+    "mimi",
+    "focalcodec",
+    "dac",
+    "snac",
+)
 AUDIO_METHODS: tuple[AudioMethod, ...] = ("auto", *AUDIO_PROFILES)
 AUDIO_VOCODER_DEVICES: tuple[Literal["cpu", "mps", "cuda"], ...] = ("cpu", "mps", "cuda")
 AUDIO_BANDWIDTHS_KBPS: tuple[int, ...] = (6, 12, 24)
@@ -61,6 +70,10 @@ VIDEO_INVISIBLE_PROFILES: tuple[VideoInvisibleProfile, ...] = (
     "seedance-experimental",
     *WAN_EXPERIMENTAL_PROFILES,
 )
+VideoEncoder = Literal["software", "auto", "videotoolbox", "nvenc"]
+VIDEO_ENCODERS: tuple[VideoEncoder, ...] = get_args(VideoEncoder)
+AllPreset = Literal["lossless-fast", "balanced", "deep-clean"]
+ALL_PRESETS: tuple[AllPreset, ...] = get_args(AllPreset)
 
 DEFAULT_VIDEO_MESSAGE_LONG_SIDE = 512
 VIDEO_MESSAGE_SCHEMES: tuple[Literal["videoseal", "pixelseal", "chunkyseal"], ...] = (

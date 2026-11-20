@@ -640,7 +640,7 @@ def test_documented_vendor_cohorts_match_the_cli() -> None:
     commands = _cli_commands()
 
     assert documented == _choices(commands[("invisible",)], "--vendor")
-    assert _choices(commands[("batch",)], "--vendor") == documented
+    assert _choices(commands[("batch",)], "--vendor") == documented | documented_audio
     assert _choices(commands[("all",)], "--vendor") == documented | documented_audio
     for path in (("audio", "invisible"), ("audio", "all"), ("audio", "batch"), ("video", "audio")):
         assert _choices(commands[path], "--vendor") == documented_audio, f"{path} disagrees with audio vendor cohorts"

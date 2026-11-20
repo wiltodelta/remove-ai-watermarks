@@ -559,9 +559,18 @@ def has_ai_metadata(image_path: Path) -> bool:
     # Higgsfield job marker (hf-job-id PNG text chunk).
     if huggingface_job(image_path):
         return True
-    from remove_ai_watermarks._internal.isobmff import ai_metadata_tags, is_isobmff
+    from remove_ai_watermarks._internal.ebml import EBML_MAGIC, c2pa_attachment_payloads, scan_ebml_av1_ai_obus
+    from remove_ai_watermarks._internal.isobmff import ai_metadata_tags, is_isobmff, scan_isobmff_video_sei
 
-    if is_isobmff(data) and ai_metadata_tags(image_path):
+    if is_isobmff(data):
+        if ai_metadata_tags(image_path):
+            return True
+        sei_quick = scan_isobmff_video_sei(image_path, stop_on_first_kling=True)
+        if sei_quick.kling_tag_offsets or sei_quick.ai_sei_spans or sei_quick.av1_obu_patches:
+            return True
+    elif data[:4] == EBML_MAGIC and (
+        c2pa_attachment_payloads(image_path) or scan_ebml_av1_ai_obus(image_path, stop_on_first=True)
+    ):
         return True
     if image_path.suffix.lower() not in _NON_IMAGE_MEDIA_EXTS:
         head_full = scan_head(image_path)
@@ -1516,20 +1525,25 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
         result.setdefault("kling_sei", "Kling AI encoder tag (H.264 SEI kling-ai)")
     if sei_scan is not None and sei_scan.ai_sei_spans:
         result.setdefault("ai_sei", "AI provenance payload in H.264/HEVC SEI")
+    if sei_scan is not None and sei_scan.av1_obu_patches:
+        result.setdefault("ai_obu", "AI provenance payload in AV1 OBU_METADATA")
     if isobmff.is_isobmff(app_scan[:8]) and re.search(rb"urn:c2pa:", app_scan, re.IGNORECASE):
         result.setdefault("c2pa_manifest", "fMP4 C2PA emsg segment provenance (urn:c2pa:)")
 
-    from remove_ai_watermarks._internal.ebml import EBML_MAGIC, c2pa_attachment_payloads
+    from remove_ai_watermarks._internal.ebml import EBML_MAGIC, c2pa_attachment_payloads, scan_ebml_av1_ai_obus
 
-    if app_scan[:4] == EBML_MAGIC and (c2pa_blobs := c2pa_attachment_payloads(image_path)):
-        from remove_ai_watermarks._internal.c2pa import parse_c2pa_chunk
+    if app_scan[:4] == EBML_MAGIC:
+        if c2pa_blobs := c2pa_attachment_payloads(image_path):
+            from remove_ai_watermarks._internal.c2pa import parse_c2pa_chunk
 
-        for blob in c2pa_blobs:
-            mkv_c2pa: dict[str, Any] = {}
-            parse_c2pa_chunk(blob, mkv_c2pa)
-            for key, val in mkv_c2pa.items():
-                if key not in {"timestamps", "timestamp"}:
-                    result.setdefault(key, str(val))
+            for blob in c2pa_blobs:
+                mkv_c2pa: dict[str, Any] = {}
+                parse_c2pa_chunk(blob, mkv_c2pa)
+                for key, val in mkv_c2pa.items():
+                    if key not in {"timestamps", "timestamp"}:
+                        result.setdefault(key, str(val))
+        if scan_ebml_av1_ai_obus(image_path, stop_on_first=True):
+            result.setdefault("ai_obu", "AI provenance payload in AV1 OBU_METADATA")
 
     # xAI / Grok signature pair in EXIF or an equivalent container-native field.
     if xai_signature(image_path):
@@ -1561,7 +1575,7 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
     """
     import subprocess
 
-    from remove_ai_watermarks._internal.ebml import attachment_ordinals
+    from remove_ai_watermarks._internal.ebml import attachment_ordinals, scrub_ebml_av1_ai_obus
     from remove_ai_watermarks.video_encoding import atomic_video_output
     from remove_ai_watermarks.video_tools import require_video_tool
 
@@ -1596,6 +1610,8 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
         )
         if result.returncode != 0:
             raise RuntimeError(f"ffmpeg failed to strip metadata from {source_path}: {result.stderr.strip()[:300]}")
+        if temporary_output.suffix.lower() in {".mkv", ".webm"}:
+            scrub_ebml_av1_ai_obus(temporary_output)
     logger.info("Stripped container metadata via ffmpeg -> %s", output_path)
     return output_path
 

@@ -7,6 +7,7 @@ import warnings
 # OpenCV exposes incomplete types for optical-flow and remap operations.
 # Public signatures remain annotated while this third-party boundary is relaxed.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false, reportCallIssue=false, reportArgumentType=false, reportUnnecessaryComparison=false
+from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -895,3 +896,235 @@ def unblend_ycbcr_roi(
         rem_roi = (cv2.dilate(rem_roi.astype(np.uint8) * 255, kern) > 0) & roi_mask
     out_mask[y0:y1, x0:x1] = rem_roi.astype(np.uint8) * 255
     return out_bgr, out_mask
+
+
+def sobel_magnitude(gray: NDArray[Any]) -> NDArray[Any]:
+    """Compute 3x3 float32 Sobel gradient magnitude for a single-channel image."""
+    f32 = gray.astype(np.float32)
+    gx = cv2.Sobel(f32, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(f32, cv2.CV_32F, 0, 1, ksize=3)
+    return cv2.magnitude(gx, gy)
+
+
+_sobel_mag = sobel_magnitude
+
+
+def _match_patch_in_roi(
+    roi_gray: NDArray[Any],
+    roi_edge: NDArray[Any],
+    ref_gray: NDArray[Any],
+    ref_edge: NDArray[Any],
+) -> tuple[float, int, int]:
+    s_edge = cv2.matchTemplate(roi_edge, ref_edge, cv2.TM_CCOEFF_NORMED)
+    s_gray = cv2.matchTemplate(roi_gray.astype(np.float32), ref_gray, cv2.TM_CCOEFF_NORMED)
+    combined = 0.65 * np.nan_to_num(s_edge, nan=0.0) + 0.35 * np.nan_to_num(s_gray, nan=0.0)
+    _, best_val, _, best_loc = cv2.minMaxLoc(combined)
+    return float(best_val), int(best_loc[0]), int(best_loc[1])
+
+
+def track_video_regions(
+    frames_bgr: Iterable[NDArray[Any]],
+    initial_regions: Sequence[tuple[int, int, int, int]],
+    *,
+    start_frame: int = 0,
+    end_frame: int | None = None,
+) -> list[tuple[tuple[int, int, int, int], ...] | None]:
+    """Track one or more user-specified boxes across frames using PyrLK + Sobel/NCC matching."""
+    if not initial_regions:
+        raise ValueError("initial_regions must be non-empty")
+    results: list[tuple[tuple[int, int, int, int], ...] | None] = []
+    states: list[dict[str, Any]] = []
+    prev_gray: NDArray[Any] | None = None
+
+    for idx, frame_bgr in enumerate(frames_bgr):
+        fh, fw = frame_bgr.shape[:2]
+        if idx < start_frame:
+            results.append(None)
+            continue
+        if end_frame is not None and idx > end_frame:
+            results.append(None)
+            continue
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        full_edge: NDArray[Any] | None = None
+        if idx == start_frame or not states:
+            states.clear()
+            cur_boxes: list[tuple[int, int, int, int]] = []
+            for rx, ry, rw, rh in initial_regions:
+                cx = max(0, min(int(rx), fw - 1))
+                cy = max(0, min(int(ry), fh - 1))
+                cw = max(1, min(int(rw), fw - cx))
+                ch = max(1, min(int(rh), fh - cy))
+                p_x0, p_y0 = max(0, cx - 1), max(0, cy - 1)
+                p_x1, p_y1 = min(fw, cx + cw + 1), min(fh, cy + ch + 1)
+                crop_edge = sobel_magnitude(gray[p_y0:p_y1, p_x0:p_x1])
+                states.append(
+                    {
+                        "x": cx,
+                        "y": cy,
+                        "w": cw,
+                        "h": ch,
+                        "ref_gray": gray[cy : cy + ch, cx : cx + cw].astype(np.float32),
+                        "ref_edge": crop_edge[cy - p_y0 : cy - p_y0 + ch, cx - p_x0 : cx - p_x0 + cw].copy(),
+                    }
+                )
+                cur_boxes.append((cx, cy, cw, ch))
+            prev_gray = gray
+            results.append(tuple(cur_boxes))
+            continue
+
+        cur_boxes = []
+        for st in states:
+            px, py, cw, ch = int(st["x"]), int(st["y"]), int(st["w"]), int(st["h"])
+            dx, dy = 0.0, 0.0
+            if prev_gray is not None and cw >= 6 and ch >= 6:
+                patch_prev = prev_gray[py : py + ch, px : px + cw]
+                pts0 = cv2.goodFeaturesToTrack(patch_prev, maxCorners=32, qualityLevel=0.05, minDistance=3)
+                if pts0 is not None and len(pts0) >= 3:
+                    pts0_abs = pts0.astype(np.float32) + np.array([[[px, py]]], dtype=np.float32)
+                    pts1, ok_fwd, _ = cv2.calcOpticalFlowPyrLK(
+                        prev_gray, gray, pts0_abs, None, winSize=(15, 15), maxLevel=2
+                    )
+                    pts0_back, ok_bwd, _ = cv2.calcOpticalFlowPyrLK(
+                        gray, prev_gray, pts1, None, winSize=(15, 15), maxLevel=2
+                    )
+                    fb_err = np.linalg.norm((pts0_abs - pts0_back).reshape(-1, 2), axis=1)
+                    good = (ok_fwd.reshape(-1) == 1) & (ok_bwd.reshape(-1) == 1) & (fb_err < 1.5)
+                    if int(np.count_nonzero(good)) >= 3:
+                        flow_d = (pts1 - pts0_abs).reshape(-1, 2)[good]
+                        dx = float(np.median(flow_d[:, 0]))
+                        dy = float(np.median(flow_d[:, 1]))
+
+            pred_x = max(0, min(round(px + dx), fw - cw))
+            pred_y = max(0, min(round(py + dy), fh - ch))
+            rad = max(36, round(max(cw, ch) * 0.85))
+            sx0 = max(0, pred_x - rad)
+            sy0 = max(0, pred_y - rad)
+            sx1 = min(fw, pred_x + cw + rad)
+            sy1 = min(fh, pred_y + ch + rad)
+
+            nx, ny = pred_x, pred_y
+            best_score = 0.0
+            if (sx1 - sx0) >= cw and (sy1 - sy0) >= ch and cw >= 4 and ch >= 4:
+                ex0, ey0 = max(0, sx0 - 1), max(0, sy0 - 1)
+                ex1, ey1 = min(fw, sx1 + 1), min(fh, sy1 + 1)
+                local_edge = sobel_magnitude(gray[ey0:ey1, ex0:ex1])[sy0 - ey0 : sy1 - ey0, sx0 - ex0 : sx1 - ex0]
+                best_score, lx, ly = _match_patch_in_roi(
+                    gray[sy0:sy1, sx0:sx1],
+                    local_edge,
+                    st["ref_gray"],
+                    st["ref_edge"],
+                )
+                nx, ny = sx0 + lx, sy0 + ly
+
+            # Jump recovery when a moving overlay teleports across the frame
+            if best_score < 0.42 and fw >= cw and fh >= ch and cw >= 8 and ch >= 8:
+                if full_edge is None:
+                    full_edge = sobel_magnitude(gray)
+                global_score, gx, gy = _match_patch_in_roi(gray, full_edge, st["ref_gray"], st["ref_edge"])
+                if global_score >= 0.58:
+                    nx, ny = gx, gy
+
+            nx = max(0, min(nx, fw - cw))
+            ny = max(0, min(ny, fh - ch))
+            st["x"], st["y"] = nx, ny
+            cur_boxes.append((nx, ny, cw, ch))
+
+        prev_gray = gray
+        results.append(tuple(cur_boxes))
+    return results
+
+
+def detect_ai_bumper_start(
+    frames_bgr: Iterable[NDArray[Any]],
+    *,
+    fps: float,
+    max_bumper_seconds: float = 4.0,
+    min_bumper_seconds: float = 0.5,
+) -> int | None:
+    """Return the 0-based start frame of a trailing full-screen static AI outro bumper, or None."""
+    eff_fps = fps if fps > 0 else 24.0
+    min_frames = max(6, round(min_bumper_seconds * eff_fps))
+    max_frames = max(min_frames + 1, round(max_bumper_seconds * eff_fps))
+    keep_tail = max_frames + min_frames
+    raw_tail: deque[NDArray[Any]] = deque(maxlen=keep_tail)
+    total = 0
+    for frame in frames_bgr:
+        raw_tail.append(frame)
+        total += 1
+    if total < max(18, min_frames * 2):
+        return None
+
+    offset = total - len(raw_tail)
+    thumbs_gray: list[NDArray[Any]] = []
+    hists: list[NDArray[Any]] = []
+    for frame in raw_tail:
+        small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
+        thumbs_gray.append(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY))
+        hist = cv2.calcHist([small], [0, 1, 2], None, [4, 4, 4], [0, 256, 0, 256, 0, 256])
+        cv2.normalize(hist, hist)
+        hists.append(hist.reshape(-1))
+
+    border_mask = np.ones((90, 160), dtype=bool)
+    border_mask[22:68, 32:128] = False  # Exclude central 60%x50% logo zone
+
+    search_lo = max(min_frames, total - max_frames) - offset
+    search_hi = (total - min_frames) - offset
+    if search_lo > search_hi or search_lo < 1:
+        return None
+
+    best_cut: int | None = None
+    best_jump = 0.0
+    for cut in range(search_lo, search_hi + 1):
+        # Require an abrupt visual cut from scene into card
+        h_prev, h_curr = hists[cut - 1], hists[cut]
+        denom = float(np.linalg.norm(h_prev) * np.linalg.norm(h_curr))
+        hist_corr = float(np.dot(h_prev, h_curr) / denom) if denom > 1e-8 else 1.0
+        luma_jump = float(
+            np.mean(np.abs(thumbs_gray[cut].astype(np.float32) - thumbs_gray[cut - 1].astype(np.float32)))
+        )
+        if hist_corr >= 0.65 and luma_jump < 26.0:
+            continue
+
+        tail = thumbs_gray[cut:]
+        outer_stds = [float(np.std(t[border_mask])) for t in tail]
+        if float(np.median(outer_stds)) > 18.0:
+            continue
+        tail_settle = tail[min(2, len(tail) - 1) :]
+        if len(tail_settle) >= 2:
+            diffs = [
+                float(
+                    np.mean(
+                        np.abs(
+                            tail_settle[i][border_mask].astype(np.float32)
+                            - tail_settle[i - 1][border_mask].astype(np.float32)
+                        )
+                    )
+                )
+                for i in range(1, len(tail_settle))
+            ]
+            if float(np.median(diffs)) > 2.5:
+                continue
+
+        # Ensure pre-cut video was not the exact same flat card from frame 0
+        pre = thumbs_gray[max(0, cut - min_frames) : cut]
+        pre_outer_std = float(np.median([float(np.std(t[border_mask])) for t in pre]))
+        pre_motion = (
+            float(
+                np.mean(
+                    [
+                        float(np.mean(np.abs(pre[i].astype(np.float32) - pre[i - 1].astype(np.float32))))
+                        for i in range(1, len(pre))
+                    ]
+                )
+            )
+            if len(pre) >= 2
+            else 0.0
+        )
+        if pre_outer_std < 18.0 and pre_motion < 1.5 and abs(float(np.mean(pre[-1])) - float(np.mean(tail[0]))) < 20.0:
+            continue
+
+        cut_strength = (1.0 - hist_corr) * 50.0 + luma_jump
+        if cut_strength > best_jump:
+            best_jump = cut_strength
+            best_cut = offset + cut
+    return best_cut

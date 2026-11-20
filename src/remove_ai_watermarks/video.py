@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from remove_ai_watermarks._internal.constants import (
     ISOBMFF_VIDEO_EXTENSIONS,
@@ -29,7 +29,7 @@ from remove_ai_watermarks.video_synthid import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from remove_ai_watermarks._internal.constants import (
         AudioMethod,
@@ -43,13 +43,32 @@ if TYPE_CHECKING:
     from remove_ai_watermarks.video_wan import VideoWanRuntime
 
 VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".flv"})
-VIDEO_VISIBLE_MARKS = ("sora", "veo", "dreamina", "seedance", "doubao", "dola", "hailuo", "vidu", "wan", "kling")
+VIDEO_VISIBLE_MARKS = (
+    "sora",
+    "veo",
+    "dreamina",
+    "jimeng",
+    "jimeng_pill",
+    "seedance",
+    "doubao",
+    "dola",
+    "hailuo",
+    "vidu",
+    "wan",
+    "qwen",
+    "yuanbao",
+    "baidu",
+    "runninghub",
+    "microsoft",
+    "generic_ai_label",
+    "kling",
+)
 _EXPECTED_VIDEO_MARKS = f"{', '.join(('auto', *VIDEO_VISIBLE_MARKS[:-1]))}, or {VIDEO_VISIBLE_MARKS[-1]}"
 _ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = ISOBMFF_VIDEO_EXTENSIONS
 _EBML_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".webm", ".mkv"})
 _RIFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".avi"})
 _FLV_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".flv"})
-_REGENERATED_VIDEO_EXTENSIONS: frozenset[str] = frozenset({*_ISOBMFF_VIDEO_EXTENSIONS, ".mkv"})
+_REGENERATED_VIDEO_EXTENSIONS: frozenset[str] = frozenset({*_ISOBMFF_VIDEO_EXTENSIONS, ".mkv", ".webm"})
 _EXPECTED_REGENERATED_VIDEO_EXTENSIONS = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
 _EXPECTED_WAN_VIDEO_EXTENSIONS = ", ".join(sorted(_ISOBMFF_VIDEO_EXTENSIONS))
 
@@ -126,6 +145,7 @@ class VideoProvenanceReport:
     invisible_watermark_hints: tuple[str, ...] = ()
     audio_streams: tuple[AudioProvenanceReport, ...] = ()
     recommended_recipe: str | None = None
+    visible_marks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -139,6 +159,8 @@ class VideoVisibleResult(_VideoAudioBoundary):
     detected_frames: int
     removed_frames: int
     remaining_metadata: dict[str, str]
+    marks: tuple[str, ...] = ()
+    trimmed_bumper_frames: int = 0
 
 
 @dataclass(frozen=True)
@@ -153,6 +175,7 @@ class VideoEraseResult(_VideoAudioBoundary):
     frame_range: tuple[int, int] | None
     backend: str
     remaining_metadata: dict[str, str]
+    tracked: bool = False
 
 
 @dataclass(frozen=True)
@@ -241,6 +264,8 @@ class VideoAllResult(_VideoAudioBoundary):
     audio_processed_streams: tuple[int, ...] = ()
     audio_verification_scope: tuple[str, ...] = ()
     audio_quality_passed: bool | None = None
+    visible_marks: tuple[str, ...] = ()
+    trimmed_bumper_frames: int = 0
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -262,6 +287,7 @@ class VideoBatchItem(_VideoAudioBoundary):
     audio_status: VideoAudioStatus | None = None
     audio_verification_scope: tuple[str, ...] = ()
     audio_quality_passed: bool | None = None
+    visible_marks: tuple[str, ...] = ()
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -293,14 +319,57 @@ class VideoBatchResult:
 _VISIBLE_PLATFORM = {
     "sora": "OpenAI Sora",
     "veo": "Google Veo",
+    "jimeng": "ByteDance Jimeng",
+    "jimeng_pill": "ByteDance Jimeng",
     "seedance": "ByteDance Seedance",
     "dola": "ByteDance Dola",
+    "runninghub": "RunningHub",
+    "microsoft": "Microsoft",
+    "generic_ai_label": "AI-generated content (GB 45438-2025 label)",
     **{
         row.video_mark: row.video_platform
         for row in TC260_PRODUCERS
         if row.video_mark is not None and row.video_platform is not None
     },
 }
+
+_VIDEO_MARK_VENDOR_GROUP: dict[str, str] = {
+    "sora": "openai",
+    "veo": "google",
+    "dreamina": "bytedance",
+    "jimeng": "bytedance",
+    "jimeng_pill": "bytedance",
+    "seedance": "bytedance",
+    "doubao": "bytedance",
+    "dola": "bytedance",
+    "hailuo": "minimax",
+    "vidu": "shengshu",
+    "wan": "alibaba",
+    "qwen": "alibaba",
+    "yuanbao": "tencent",
+    "baidu": "baidu",
+    "runninghub": "runninghub",
+    "microsoft": "microsoft",
+    "generic_ai_label": "generic_tc260",
+    "kling": "kuaishou",
+}
+
+
+def _boxes_overlap(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+    ax0, ay0, aw, ah = a
+    bx0, by0, bw, bh = b
+    return min(ax0 + aw, bx0 + bw) > max(ax0, bx0) and min(ay0 + ah, by0 + bh) > max(ay0, by0)
+
+
+def _union_box(regions: Sequence[tuple[int, int, int, int] | None]) -> tuple[int, int, int, int] | None:
+    present = [r for r in regions if r is not None]
+    if not present:
+        return None
+    x0 = min(r[0] for r in present)
+    y0 = min(r[1] for r in present)
+    x1 = max(r[0] + r[2] for r in present)
+    y1 = max(r[1] + r[3] for r in present)
+    return (x0, y0, x1 - x0, y1 - y0)
 
 
 def _video_source(source: str | Path) -> Path:
@@ -376,7 +445,61 @@ def _visible_removal_plan(
     return regions, policy.padding_fraction, policy.mask_style
 
 
-def _select_stable_visible_mark(
+def _select_stable_visible_marks(
+    scans: dict[str, VideoScan],
+    markers: dict[str, str],
+    candidate_marks: tuple[str, ...],
+    *,
+    explicit_multi: bool = False,
+) -> tuple[
+    tuple[
+        str,
+        VideoScan,
+        list[tuple[int, int, int, int] | None],
+        float,
+        Literal["box", "veo"],
+    ],
+    ...,
+]:
+    """Select one or more spatially disjoint stable marks without cross-vendor false merges."""
+    accepted: list[
+        tuple[
+            str,
+            VideoScan,
+            list[tuple[int, int, int, int] | None],
+            float,
+            Literal["box", "veo"],
+            tuple[int, int, int, int],
+        ]
+    ] = []
+    for candidate_mark in candidate_marks:
+        if accepted and not explicit_multi:
+            primary_group = _VIDEO_MARK_VENDOR_GROUP.get(accepted[0][0])
+            if primary_group is None or _VIDEO_MARK_VENDOR_GROUP.get(candidate_mark) != primary_group:
+                continue
+        candidate_scan = scans.get(candidate_mark)
+        if candidate_scan is None:
+            continue
+        regions, padding, mask_style = _visible_removal_plan(candidate_mark, candidate_scan, markers)
+        ubox = _union_box(regions)
+        if ubox is None:
+            continue
+        if not accepted:
+            accepted.append((candidate_mark, candidate_scan, regions, padding, mask_style, ubox))
+            continue
+        if any(_boxes_overlap(ubox, prev_ubox) for *_, prev_ubox in accepted):
+            continue
+        if any(
+            r_cur is not None and r_prev is not None and _boxes_overlap(r_cur, r_prev)
+            for _m, _s, prev_regs, _p, _ms, _ub in accepted
+            for r_cur, r_prev in zip(regions, prev_regs, strict=True)
+        ):
+            continue
+        accepted.append((candidate_mark, candidate_scan, regions, padding, mask_style, ubox))
+    return tuple((m, s, r, p, ms) for m, s, r, p, ms, _ub in accepted)
+
+
+def _select_stable_visible_mark(  # pyright: ignore[reportUnusedFunction]
     scans: dict[str, VideoScan],
     markers: dict[str, str],
     candidate_marks: tuple[str, ...],
@@ -391,11 +514,80 @@ def _select_stable_visible_mark(
     | None
 ):
     """Select the first stable mark in specificity order that provenance does not veto."""
-    for candidate_mark in candidate_marks:
-        regions, padding, mask_style = _visible_removal_plan(candidate_mark, scans[candidate_mark], markers)
-        if any(region is not None for region in regions):
-            return candidate_mark, scans[candidate_mark], regions, padding, mask_style
-    return None
+    selected = _select_stable_visible_marks(scans, markers, candidate_marks)
+    return selected[0] if selected else None
+
+
+def _merge_selected_visible_marks(
+    selected_all: tuple[
+        tuple[str, VideoScan, list[tuple[int, int, int, int] | None], float, Literal["box", "veo"]],
+        ...,
+    ],
+    total_frames: int,
+) -> tuple[
+    tuple[str, ...],
+    str,
+    VideoScan,
+    list[Any],
+    int,
+    float,
+    Literal["box", "veo"],
+    tuple[float, ...] | None,
+    tuple[Literal["box", "veo"], ...] | None,
+]:
+    marks_tuple = tuple(item[0] for item in selected_all)
+    primary_mark = marks_tuple[0]
+    scan = selected_all[0][1]
+    padding_fraction = selected_all[0][3]
+    mask_style = selected_all[0][4]
+    if len(selected_all) == 1:
+        single_regions = selected_all[0][2]
+        return (
+            marks_tuple,
+            primary_mark,
+            scan,
+            list(single_regions),
+            sum(r is not None for r in single_regions),
+            padding_fraction,
+            mask_style,
+            None,
+            None,
+        )
+    slot_pads = tuple(item[3] for item in selected_all)
+    slot_styles: tuple[Literal["box", "veo"], ...] = tuple(item[4] for item in selected_all)
+    merged_regions: list[Any] = []
+    detected_frames = 0
+    for idx in range(total_frames):
+        slot_tuple = tuple(item[2][idx] for item in selected_all)
+        if any(r is not None for r in slot_tuple):
+            merged_regions.append(slot_tuple)
+            detected_frames += 1
+        else:
+            merged_regions.append(None)
+    return (
+        marks_tuple,
+        primary_mark,
+        scan,
+        merged_regions,
+        detected_frames,
+        padding_fraction,
+        mask_style,
+        slot_pads,
+        slot_styles,
+    )
+
+
+def _parse_mark_selector(mark: str) -> tuple[tuple[str, ...], bool]:
+    if mark == "auto":
+        return VIDEO_VISIBLE_MARKS, False
+    if "," in mark:
+        parts = tuple(dict.fromkeys(part.strip() for part in mark.split(",") if part.strip()))
+        if not parts or any(part not in VIDEO_VISIBLE_MARKS for part in parts):
+            raise ValueError(f"Unsupported visible video mark; expected {_EXPECTED_VIDEO_MARKS}")
+        return parts, len(parts) > 1
+    if mark not in VIDEO_VISIBLE_MARKS:
+        raise ValueError(f"Unsupported visible video mark; expected {_EXPECTED_VIDEO_MARKS}")
+    return (mark,), False
 
 
 def _video_markers_claim_ai(markers: dict[str, str]) -> bool:
@@ -556,6 +748,7 @@ def identify_video(
     source_path = _video_source(source)
     markers = get_ai_metadata(source_path)
     selected_mark: str | None = None
+    selected_marks_tuple: tuple[str, ...] = ()
     detected_frames = 0
     total_frames: int | None = None
 
@@ -569,10 +762,11 @@ def identify_video(
             collect_timestamps=False,
         )
         total_frames = len(scans[VIDEO_VISIBLE_MARKS[0]].detections)
-        selected = _select_stable_visible_mark(scans, markers, VIDEO_VISIBLE_MARKS)
-        if selected is not None:
-            selected_mark, _scan, regions, _padding, _mask_style = selected
-            detected_frames = sum(region is not None for region in regions)
+        selected_all = _select_stable_visible_marks(scans, markers, VIDEO_VISIBLE_MARKS)
+        if selected_all:
+            selected_marks_tuple = tuple(item[0] for item in selected_all)
+            selected_mark = selected_marks_tuple[0]
+            detected_frames = sum(any(item[2][idx] is not None for item in selected_all) for idx in range(total_frames))
 
     audio_reports: list[AudioProvenanceReport] = []
     if check_audio:
@@ -640,6 +834,7 @@ def identify_video(
         invisible_watermark_hints=invisible_hints,
         audio_streams=audio_tuple,
         recommended_recipe=recipe,
+        visible_marks=selected_marks_tuple,
     )
 
 
@@ -669,6 +864,30 @@ def remove_video_metadata(
     )
 
 
+def _iter_decoded_bgr_frames(source_path: Path, *, max_frames: int | None = None) -> Iterator[Any]:
+    from remove_ai_watermarks.video_decode import open_video_capture
+
+    cap = open_video_capture(source_path)
+    if not cap.isOpened():
+        return
+    try:
+        idx = 0
+        while max_frames is None or idx < max_frames:
+            ok, raw = cap.read()
+            if not ok or raw is None:
+                break
+            yield raw
+            idx += 1
+    finally:
+        cap.release()
+
+
+def _detect_source_bumper_cut(source_path: Path, fps: float) -> int | None:
+    from remove_ai_watermarks.video_temporal import detect_ai_bumper_start
+
+    return detect_ai_bumper_start(_iter_decoded_bgr_frames(source_path), fps=fps)
+
+
 def remove_video_visible(
     source: str | Path,
     output: str | Path | None = None,
@@ -677,31 +896,17 @@ def remove_video_visible(
     backend: str = "cv2",
     strip_metadata: bool = True,
     temporal_consistency: bool = True,
+    trim_bumper: bool = False,
     _metadata_markers: dict[str, str] | None = None,
 ) -> VideoVisibleResult:
-    """Remove a supported visible AI wordmark from a video.
-
-    ``mark="auto"`` scans every supported provider in one decode pass and selects
-    the first stable match in specificity order, except a Veo diamond nested in
-    a Sora cross-match or spanning the full clip against a partial Sora run,
-    with valid Google AI-video provenance. Explicit marks are
-    ``sora``, ``veo``, ``seedance``, ``doubao``, ``dola``, ``hailuo``, ``vidu``, and ``kling``. The full
-    sequence is scanned before pixels change, and only recurring candidates are
-    accepted. Complete audio is copied without re-encoding; video is transcoded
-    because the pixels change. ``temporal_consistency=True`` motion-aligns a
-    safely covered prior fill after each image-backend pass; scene cuts and
-    disjoint masks keep the independent current fill. Completed output is
-    published atomically. When no stable mark is found, no output is written
-    and ``output`` in the result is ``None``.
-    """
+    """Remove one or more supported visible AI marks (and optional trailing AI bumper) from a video."""
     _require_video_runtime()
 
     from remove_ai_watermarks.metadata import get_ai_metadata
     from remove_ai_watermarks.video_visible import encode_clean_video, scan_video_marks
     from remove_ai_watermarks.watermark_registry import resolve_backend
 
-    if mark not in {"auto", *VIDEO_VISIBLE_MARKS}:
-        raise ValueError(f"Unsupported visible video mark; expected {_EXPECTED_VIDEO_MARKS}")
+    candidate_marks, explicit_multi = _parse_mark_selector(mark)
     if backend not in {"auto", "cv2", "migan", "lama"}:
         raise ValueError("Unsupported fill backend; expected auto, cv2, migan, or lama")
 
@@ -709,46 +914,79 @@ def remove_video_visible(
     output_path = _video_output(source_path, output, operation="visible watermark removal")
     markers = get_ai_metadata(source_path) if _metadata_markers is None else _metadata_markers
 
-    candidate_marks = VIDEO_VISIBLE_MARKS if mark == "auto" else (mark,)
     scans = scan_video_marks(source_path, candidate_marks)
-    selected = _select_stable_visible_mark(scans, markers, candidate_marks)
-    if selected is None:
-        scan = scans[candidate_marks[0]]
+    base_scan = scans[candidate_marks[0]]
+    total_frames = len(base_scan.detections)
+    selected_all = _select_stable_visible_marks(scans, markers, candidate_marks, explicit_multi=explicit_multi)
+    bumper_cut = _detect_source_bumper_cut(source_path, base_scan.fps) if trim_bumper else None
+    trimmed_bumper_frames = (total_frames - bumper_cut) if bumper_cut is not None else 0
+
+    if not selected_all and bumper_cut is None:
         return VideoVisibleResult(
             source=source_path,
             output=None,
             mark=mark,
-            total_frames=len(scan.detections),
+            total_frames=total_frames,
             detected_frames=0,
             removed_frames=0,
             remaining_metadata=markers if strip_metadata else {},
+            marks=(),
+            trimmed_bumper_frames=0,
         )
-    mark, scan, regions, padding_fraction, mask_style = selected
-    detected_frames = sum(region is not None for region in regions)
 
-    # Validate optional model availability before ffmpeg creates or overwrites
-    # the requested output.
     resolve_backend(backend)  # type: ignore[arg-type]
+    encode_extra: dict[str, Any] = {}
+    if bumper_cut is not None:
+        encode_extra["trim_end_frame"] = bumper_cut
+
+    if not selected_all:
+        selected_marks_tuple: tuple[str, ...] = ()
+        primary_mark = mark
+        scan = base_scan
+        merged_regions: list[Any] = [None] * total_frames
+        padding_fraction = 0.12
+        mask_style: Literal["box", "veo"] = "box"
+        detected_frames = 0
+    else:
+        (
+            selected_marks_tuple,
+            primary_mark,
+            scan,
+            merged_regions,
+            detected_frames,
+            padding_fraction,
+            mask_style,
+            slot_pads,
+            slot_styles,
+        ) = _merge_selected_visible_marks(selected_all, total_frames)
+        if slot_pads is not None:
+            encode_extra["slot_padding_fractions"] = slot_pads
+        if slot_styles is not None:
+            encode_extra["slot_mask_styles"] = slot_styles
+
     removed_frames = encode_clean_video(
         source_path,
         output_path,
         scan,
-        regions,
+        merged_regions,
         backend=backend,  # type: ignore[arg-type]
         strip_metadata=strip_metadata,
         padding_fraction=padding_fraction,
         mask_style=mask_style,
         temporal_consistency=temporal_consistency,
+        **encode_extra,
     )
     remaining_metadata = get_ai_metadata(output_path) if strip_metadata else {}
     return VideoVisibleResult(
         source=source_path,
         output=output_path,
-        mark=mark,
-        total_frames=len(scan.detections),
+        mark=primary_mark,
+        total_frames=total_frames,
         detected_frames=detected_frames,
         removed_frames=removed_frames,
         remaining_metadata=remaining_metadata,
+        marks=selected_marks_tuple,
+        trimmed_bumper_frames=trimmed_bumper_frames,
     )
 
 
@@ -762,6 +1000,7 @@ def remove_video_region(
     dilate: int = 3,
     strip_metadata: bool = True,
     temporal_consistency: bool = True,
+    track: bool = False,
 ) -> VideoEraseResult:
     """Erase user-specified (x, y, w, h) region(s) across all or a slice of video frames."""
     import cv2
@@ -834,15 +1073,36 @@ def remove_video_region(
     tuple_boxes = tuple(clipped_boxes)
     frame_entries: list[tuple[int, int, int, int] | tuple[tuple[int, int, int, int], ...] | None] = []
     detections: list[FrameLocalization] = []
-    for idx in range(total_frames):
-        in_slice = norm_range is None or (norm_range[0] <= idx <= norm_range[1])
-        detections.append(FrameLocalization(idx, 1.0 if in_slice else 0.0, tuple_boxes[0] if in_slice else None))
-        if not in_slice:
+    if track:
+        from remove_ai_watermarks.video_temporal import track_video_regions
+
+        t_start = norm_range[0] if norm_range is not None else 0
+        t_end = norm_range[1] if norm_range is not None else None
+        max_decode = (t_end + 1) if t_end is not None else None
+        per_frame_boxes: list[tuple[tuple[int, int, int, int], ...] | None] = track_video_regions(
+            _iter_decoded_bgr_frames(source_path, max_frames=max_decode),
+            tuple_boxes,
+            start_frame=t_start,
+            end_frame=t_end,
+        )
+        if len(per_frame_boxes) < total_frames:
+            per_frame_boxes.extend([None] * (total_frames - len(per_frame_boxes)))
+        if len(per_frame_boxes) != total_frames:
+            raise RuntimeError("Tracked frame count did not match probed video frame count")
+    else:
+        per_frame_boxes = [
+            tuple_boxes if (norm_range is None or (norm_range[0] <= idx <= norm_range[1])) else None
+            for idx in range(total_frames)
+        ]
+
+    for idx, t_regs in enumerate(per_frame_boxes):
+        detections.append(FrameLocalization(idx, 1.0 if t_regs else 0.0, t_regs[0] if t_regs else None))
+        if t_regs is None:
             frame_entries.append(None)
-        elif len(tuple_boxes) == 1:
-            frame_entries.append(tuple_boxes[0])
+        elif len(t_regs) == 1:
+            frame_entries.append(t_regs[0])
         else:
-            frame_entries.append(tuple_boxes)
+            frame_entries.append(t_regs)
 
     scan = VideoScan(width=width, height=height, fps=fps, detections=tuple(detections), timestamps=shared_ts)
     erased_frames = encode_clean_video(
@@ -854,7 +1114,7 @@ def remove_video_region(
         strip_metadata=strip_metadata,
         temporal_consistency=temporal_consistency,
         dilate_px=dilate,
-        allow_unmasked_donors=False,
+        allow_unmasked_donors=bool(track and norm_range is None),
     )
     remaining = get_ai_metadata(output_path) if strip_metadata else {}
     return VideoEraseResult(
@@ -866,6 +1126,7 @@ def remove_video_region(
         frame_range=norm_range,
         backend=resolved_backend,
         remaining_metadata=remaining,
+        tracked=track,
     )
 
 
@@ -907,7 +1168,7 @@ def _is_bytedance_video_provenance(
     metadata_markers: dict[str, str],
     visible_mark: str | None = None,
 ) -> bool:
-    if visible_mark in {"dreamina", "seedance", "doubao", "dola"}:
+    if visible_mark in {"dreamina", "jimeng", "jimeng_pill", "seedance", "doubao", "dola"}:
         return True
     if not metadata_markers:
         return False
@@ -1059,6 +1320,7 @@ def remove_video_all(
     audio_allow_quality_override: bool = False,
     audio_vendor: AudioVendor | None = None,
     audio_streams: Sequence[int] | None = None,
+    trim_bumper: bool = False,
     _invisible_runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _detected_metadata: dict[str, str] | None = None,
     _runtime_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None,
@@ -1110,8 +1372,8 @@ def remove_video_all(
     explicit_audio_vendor = normalize_audio_vendor(audio_vendor)
     eff_include_audio_invisible = include_audio_invisible or explicit_audio_vendor is not None
     if eff_include_audio_invisible:
-        if source_path.suffix.lower() not in {".mp4", ".mov", ".m4v", ".mkv"}:
-            raise ValueError("Video audio watermark processing requires MP4, MOV, M4V, or MKV input")
+        if source_path.suffix.lower() not in {".mp4", ".mov", ".m4v", ".mkv", ".webm"}:
+            raise ValueError("Video audio watermark processing requires MP4, MOV, M4V, MKV, or WebM input")
         from remove_ai_watermarks import video_audio as _video_audio_mod
 
         preflight_befores = _video_audio_mod.preflight_video_audio_workload(
@@ -1143,23 +1405,30 @@ def remove_video_all(
         stage_target = (
             Path(temp_dir) / f"visual-final{source_path.suffix}" if eff_include_audio_invisible else staged_final
         )
-        visible_output = Path(temp_dir) / f"visible{source_path.suffix}" if include_invisible else stage_target
-        visible_result = remove_video_visible(
-            source_path,
-            visible_output,
-            mark=mark,
-            backend=backend,
-            strip_metadata=True,
-            temporal_consistency=temporal_consistency,
-            _metadata_markers=detected_metadata,
-        )
-        current_source = visible_result.output or source_path
         resolved_invisible_profile: VideoInvisibleProfile | None = None
+        can_fuse = (
+            include_invisible
+            and not trim_bumper
+            and remove_video_visible is _ORIG_REMOVE_VIDEO_VISIBLE
+            and remove_video_invisible is _ORIG_REMOVE_VIDEO_INVISIBLE
+        )
+        if can_fuse:
+            from remove_ai_watermarks.video_encoding import HIGH_BIT_DEPTH_PIXEL_FORMATS, probe_video_encode_profile
+            from remove_ai_watermarks.video_visible import encode_clean_video, iter_clean_video_frames, scan_video_marks
+            from remove_ai_watermarks.watermark_registry import resolve_backend
 
-        if include_invisible:
+            candidate_marks, explicit_multi = _parse_mark_selector(mark)
+            resolve_backend(backend)  # type: ignore[arg-type]
+            scans = scan_video_marks(source_path, candidate_marks)
+            base_scan = scans[candidate_marks[0]]
+            total_frames = len(base_scan.detections)
+            selected_all = _select_stable_visible_marks(
+                scans, detected_metadata, candidate_marks, explicit_multi=explicit_multi
+            )
+            vis_mark = selected_all[0][0] if selected_all else None
             resolved_invisible_profile = _resolve_video_invisible_profile(
                 invisible_profile,
-                current_source,
+                source_path,
                 device=device,
                 quality=invisible_quality,
                 noise_std=noise_std,
@@ -1170,7 +1439,7 @@ def remove_video_all(
                 model=model,
                 temporal_stabilize=temporal_stabilize,
                 detected_metadata=detected_metadata,
-                visible_mark=visible_result.mark if visible_result.output is not None else None,
+                visible_mark=vis_mark,
                 runtime=_invisible_runtime,
             )
             active_runtime = _invisible_runtime
@@ -1178,31 +1447,190 @@ def remove_video_all(
                 active_runtime = _runtime_getter(
                     "wan" if resolved_invisible_profile in WAN_EXPERIMENTAL_PROFILES else "vae"
                 )
-            invisible_result = remove_video_invisible(
-                current_source,
-                stage_target,
-                profile=resolved_invisible_profile,
-                quality=invisible_quality,
-                noise_std=noise_std,
-                long_side=long_side,
-                fps=fps,
-                batch_size=batch_size,
-                seed=seed,
-                model=model,
-                device=device,
-                temporal_stabilize=temporal_stabilize,
-                _runtime=active_runtime,
-            )
-            remaining_metadata = invisible_result.remaining_metadata
-        elif visible_result.output is None:
-            metadata_result = remove_video_metadata(
-                source_path,
-                stage_target,
-                _detected_metadata=detected_metadata,
-            )
-            remaining_metadata = metadata_result.remaining
+            if not selected_all:
+                invisible_result = remove_video_invisible(
+                    source_path,
+                    stage_target,
+                    profile=resolved_invisible_profile,
+                    quality=invisible_quality,
+                    noise_std=noise_std,
+                    long_side=long_side,
+                    fps=fps,
+                    batch_size=batch_size,
+                    seed=seed,
+                    model=model,
+                    device=device,
+                    temporal_stabilize=temporal_stabilize,
+                    _runtime=active_runtime,
+                )
+                remaining_metadata = invisible_result.remaining_metadata
+                visible_result = VideoVisibleResult(
+                    source=source_path,
+                    output=None,
+                    mark=mark,
+                    total_frames=total_frames,
+                    detected_frames=0,
+                    removed_frames=0,
+                    remaining_metadata={},
+                    marks=(),
+                    trimmed_bumper_frames=0,
+                )
+            else:
+                (
+                    selected_marks_tuple,
+                    primary_mark,
+                    scan,
+                    merged_regions,
+                    detected_frames,
+                    padding_fraction,
+                    mask_style,
+                    slot_pads,
+                    slot_styles,
+                ) = _merge_selected_visible_marks(selected_all, total_frames)
+
+                src_prof = probe_video_encode_profile(source_path)
+                high_depth = src_prof.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
+                if resolved_invisible_profile == "seedance-experimental" or high_depth:
+                    lossless_vis = Path(temp_dir) / f"visible-lossless{source_path.suffix}"
+                    rem_cnt = encode_clean_video(
+                        source_path,
+                        lossless_vis,
+                        scan,
+                        merged_regions,
+                        backend=backend,  # type: ignore[arg-type]
+                        strip_metadata=True,
+                        padding_fraction=padding_fraction,
+                        mask_style=mask_style,
+                        slot_padding_fractions=slot_pads,
+                        slot_mask_styles=slot_styles,
+                        temporal_consistency=temporal_consistency,
+                        crf=0,
+                    )
+                    invisible_result = remove_video_invisible(
+                        lossless_vis,
+                        stage_target,
+                        profile=resolved_invisible_profile,
+                        quality=invisible_quality,
+                        noise_std=noise_std,
+                        long_side=long_side,
+                        fps=fps,
+                        batch_size=batch_size,
+                        seed=seed,
+                        model=model,
+                        device=device,
+                        temporal_stabilize=temporal_stabilize,
+                        _runtime=active_runtime,
+                    )
+                else:
+                    rem_cnt = 0
+
+                    def _fused_clean_stream() -> Iterator[Any]:
+                        nonlocal rem_cnt
+                        for frm, was_rem in iter_clean_video_frames(
+                            source_path,
+                            scan,
+                            merged_regions,
+                            backend=backend,  # type: ignore[arg-type]
+                            padding_fraction=padding_fraction,
+                            mask_style=mask_style,
+                            slot_padding_fractions=slot_pads,
+                            slot_mask_styles=slot_styles,
+                            temporal_consistency=temporal_consistency,
+                            high_depth=False,
+                        ):
+                            if was_rem:
+                                rem_cnt += 1
+                            yield frm
+
+                    invisible_result = remove_video_invisible(
+                        source_path,
+                        stage_target,
+                        profile=resolved_invisible_profile,
+                        quality=invisible_quality,
+                        noise_std=noise_std,
+                        long_side=long_side,
+                        fps=fps,
+                        batch_size=batch_size,
+                        seed=seed,
+                        model=model,
+                        device=device,
+                        temporal_stabilize=temporal_stabilize,
+                        _runtime=active_runtime,
+                        _frame_stream=_fused_clean_stream(),
+                    )
+                remaining_metadata = invisible_result.remaining_metadata
+                visible_result = VideoVisibleResult(
+                    source=source_path,
+                    output=stage_target,
+                    mark=primary_mark,
+                    total_frames=total_frames,
+                    detected_frames=detected_frames,
+                    removed_frames=rem_cnt if rem_cnt else detected_frames,
+                    remaining_metadata=remaining_metadata,
+                    marks=selected_marks_tuple,
+                    trimmed_bumper_frames=0,
+                )
         else:
-            remaining_metadata = visible_result.remaining_metadata
+            visible_output = Path(temp_dir) / f"visible{source_path.suffix}" if include_invisible else stage_target
+            vis_kwargs: dict[str, Any] = {
+                "mark": mark,
+                "backend": backend,
+                "strip_metadata": True,
+                "temporal_consistency": temporal_consistency,
+                "_metadata_markers": detected_metadata,
+            }
+            if trim_bumper:
+                vis_kwargs["trim_bumper"] = True
+            visible_result = remove_video_visible(source_path, visible_output, **vis_kwargs)
+            current_source = visible_result.output or source_path
+
+            if include_invisible:
+                resolved_invisible_profile = _resolve_video_invisible_profile(
+                    invisible_profile,
+                    current_source,
+                    device=device,
+                    quality=invisible_quality,
+                    noise_std=noise_std,
+                    long_side=long_side,
+                    fps=fps,
+                    batch_size=batch_size,
+                    seed=seed,
+                    model=model,
+                    temporal_stabilize=temporal_stabilize,
+                    detected_metadata=detected_metadata,
+                    visible_mark=visible_result.mark if visible_result.output is not None else None,
+                    runtime=_invisible_runtime,
+                )
+                active_runtime = _invisible_runtime
+                if active_runtime is None and _runtime_getter is not None:
+                    active_runtime = _runtime_getter(
+                        "wan" if resolved_invisible_profile in WAN_EXPERIMENTAL_PROFILES else "vae"
+                    )
+                invisible_result = remove_video_invisible(
+                    current_source,
+                    stage_target,
+                    profile=resolved_invisible_profile,
+                    quality=invisible_quality,
+                    noise_std=noise_std,
+                    long_side=long_side,
+                    fps=fps,
+                    batch_size=batch_size,
+                    seed=seed,
+                    model=model,
+                    device=device,
+                    temporal_stabilize=temporal_stabilize,
+                    _runtime=active_runtime,
+                )
+                remaining_metadata = invisible_result.remaining_metadata
+            elif visible_result.output is None:
+                metadata_result = remove_video_metadata(
+                    source_path,
+                    stage_target,
+                    _detected_metadata=detected_metadata,
+                )
+                remaining_metadata = metadata_result.remaining
+            else:
+                remaining_metadata = visible_result.remaining_metadata
 
         if eff_include_audio_invisible:
             from remove_ai_watermarks import video_audio
@@ -1302,6 +1730,8 @@ def remove_video_all(
         audio_processed_streams=audio_processed_streams,
         audio_verification_scope=audio_verification_scope,
         audio_quality_passed=audio_quality_passed,
+        visible_marks=getattr(visible_result, "marks", ()) if visible_result.output is not None else (),
+        trimmed_bumper_frames=getattr(visible_result, "trimmed_bumper_frames", 0),
     )
 
 
@@ -1506,6 +1936,7 @@ def remove_video_batch(
                         audio_status=all_result.audio_status,
                         audio_verification_scope=all_result.audio_verification_scope,
                         audio_quality_passed=all_result.audio_quality_passed,
+                        visible_marks=all_result.visible_marks,
                     )
                 )
             elif mode == "visible":
@@ -1528,6 +1959,7 @@ def remove_video_batch(
                         changed=visible_result.output is not None,
                         visible_mark=visible_result.mark if visible_result.output is not None else None,
                         invisible_removed=False,
+                        visible_marks=getattr(visible_result, "marks", ()) if visible_result.output is not None else (),
                     )
                 )
             else:
@@ -1581,6 +2013,7 @@ def remove_video_invisible(
     device: str = "auto",
     temporal_stabilize: bool = True,
     _runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
+    _frame_stream: Iterable[Any] | None = None,
 ) -> VideoInvisibleResult:
     """Regenerate video pixels through SynthID, Seedance, or CUDA Wan 2.1 profiles.
 
@@ -1630,6 +2063,9 @@ def remove_video_invisible(
             _runtime=cast("VideoVaeRuntime | None", _runtime),
         )
     if profile in WAN_EXPERIMENTAL_PROFILES:
+        wan_extra: dict[str, Any] = {}
+        if _frame_stream is not None:
+            wan_extra["_frame_stream"] = _frame_stream
         return remove_video_wan_experimental(
             source_path,
             clean_output,
@@ -1638,6 +2074,7 @@ def remove_video_invisible(
             quality=quality,
             seed=seed,
             _runtime=cast("VideoWanRuntime | None", _runtime),
+            **wan_extra,
         )
     if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
@@ -1650,6 +2087,9 @@ def remove_video_invisible(
         clean_output,
         operation="SynthID removal",
     )
+    regen_extra: dict[str, Any] = {}
+    if _frame_stream is not None:
+        regen_extra["_frame_stream"] = _frame_stream
     metrics = regenerate_video_candidate(
         source_path,
         output_path,
@@ -1662,6 +2102,7 @@ def remove_video_invisible(
         device=device,
         runtime=cast("VideoVaeRuntime | None", _runtime),
         temporal_stabilize=temporal_stabilize,
+        **regen_extra,
     )
     return VideoInvisibleResult(
         source=source_path,
@@ -1725,15 +2166,17 @@ def remove_video_wan_experimental(
     seed: int = 0,
     chunk_frames: int = 193,
     overlap_frames: int = 17,
+    inference_steps: int | None = None,
     _runtime: VideoWanRuntime | None = None,
+    _frame_stream: Iterable[Any] | None = None,
 ) -> VideoWanExperimentalResult:
-    """Apply an experimental CUDA 3D Wan 2.1 video-to-video profile to an owned MP4, MOV, or M4V.
+    """Apply an experimental CUDA/MPS 3D Wan 2.1 video-to-video profile to an owned MP4, MOV, or M4V.
 
     Preserves native resolution, exact frame timestamps, and source audio while
     stripping AI metadata. Clips exceeding ``chunk_frames`` are processed through
     overlapping 3D causal windows blended with a raised-cosine ramp. Requires an
-    NVIDIA CUDA GPU unless a preloaded test runtime is supplied. Performs no
-    runtime detector verification.
+    NVIDIA CUDA GPU or explicit Apple Silicon MPS unless a preloaded test runtime
+    is supplied. Performs no runtime detector verification.
     """
     from remove_ai_watermarks.metadata import get_ai_metadata
 
@@ -1750,17 +2193,20 @@ def remove_video_wan_experimental(
     suffix = profile.replace("-", "_")
     clean_output = Path(output) if output is not None else source_path.with_stem(f"{source_path.stem}_{suffix}")
     output_path = _video_output(source_path, clean_output, operation="Experimental Wan 2.1 processing")
-    metrics = regenerate_wan_experimental(
-        source_path,
-        output_path,
-        profile=profile,
-        device=device,
-        quality=quality,
-        seed=seed,
-        chunk_frames=chunk_frames,
-        overlap_frames=overlap_frames,
-        runtime=_runtime,
-    )
+    wan_kwargs: dict[str, Any] = {
+        "profile": profile,
+        "device": device,
+        "quality": quality,
+        "seed": seed,
+        "chunk_frames": chunk_frames,
+        "overlap_frames": overlap_frames,
+        "runtime": _runtime,
+    }
+    if inference_steps is not None:
+        wan_kwargs["inference_steps"] = inference_steps
+    if _frame_stream is not None:
+        wan_kwargs["_frame_stream"] = _frame_stream
+    metrics = regenerate_wan_experimental(source_path, output_path, **wan_kwargs)
     strength = profile_strength(profile)
     return VideoWanExperimentalResult(
         source=source_path,
@@ -1772,3 +2218,7 @@ def remove_video_wan_experimental(
         profile=profile,
         strength=strength,
     )
+
+
+_ORIG_REMOVE_VIDEO_VISIBLE = remove_video_visible
+_ORIG_REMOVE_VIDEO_INVISIBLE = remove_video_invisible

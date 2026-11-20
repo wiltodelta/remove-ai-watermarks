@@ -92,12 +92,13 @@ _X264_SEI_UUID_HEX = "dc45e9bde6d948b7962cd820d923eeef"
 
 @dataclass(frozen=True)
 class IsobmffVideoSeiScan:
-    """Structural H.264/HEVC SEI scan across ISO-BMFF video sample tables."""
+    """Structural H.264/HEVC SEI and AV1 OBU_METADATA scan across ISO-BMFF video sample tables."""
 
     has_parsed_tracks: bool
     kling_tag_offsets: tuple[int, ...] = ()
     unregistered_uuids: tuple[str, ...] = ()
     ai_sei_spans: tuple[tuple[int, int], ...] = ()
+    av1_obu_patches: tuple[tuple[int, int, int, int], ...] = ()
 
 
 # TC260-PG-20257A stores an MP4/MOV label as an ``AIGC`` key in
@@ -619,8 +620,15 @@ def _scan_sei_rbsp(
         pos += payload_size
 
 
-def _parse_video_codec_map(stream: BinaryIO, stsd_payload: int, stsd_end: int) -> dict[int, tuple[str, int]]:
-    """Map 1-based sample_description_index -> ('avc'|'hevc', nal_length_size)."""
+def _parse_video_codec_map(
+    stream: BinaryIO,
+    stsd_payload: int,
+    stsd_end: int,
+    av1_obu_patches: set[tuple[int, int, int, int]] | None = None,
+) -> dict[int, tuple[str, int]]:
+    """Map 1-based sample_description_index -> ('avc'|'hevc'|'av1', nal_length_size)."""
+    from remove_ai_watermarks._internal.av1_obu import scan_av1_obu_ai_spans
+
     if stsd_payload + 8 > stsd_end:
         return {}
     stream.seek(stsd_payload + 4)
@@ -632,9 +640,22 @@ def _parse_video_codec_map(stream: BinaryIO, stsd_payload: int, stsd_end: int) -
     ):
         if idx > entry_count:
             break
-        spec = _VIDEO_NAL_CODEC_SPECS.get(entry_type)
         children_start = entry_payload + 78
-        if spec is None or children_start > entry_end:
+        if children_start > entry_end:
+            continue
+        if entry_type == b"av01":
+            codec_map[idx] = ("av1", 0)
+            if av1_obu_patches is not None:
+                for _cs, c_end, c_type, c_payload in iter_file_boxes(stream, children_start, entry_end):
+                    if c_type == b"av1C" and c_payload + 4 < c_end:
+                        cfg_len = min(c_end - (c_payload + 4), _MAX_SEI_NAL_BYTES)
+                        stream.seek(c_payload + 4)
+                        cfg_obus = stream.read(cfg_len)
+                        av1_obu_patches.update(scan_av1_obu_ai_spans(cfg_obus, c_payload + 4))
+                        break
+            continue
+        spec = _VIDEO_NAL_CODEC_SPECS.get(entry_type)
+        if spec is None:
             continue
         family, cfg_box, len_byte_off = spec
         for _cs, c_end, c_type, c_payload in iter_file_boxes(stream, children_start, entry_end):
@@ -661,18 +682,23 @@ def _scan_video_stbl_sei(
     uuids: set[str],
     *,
     ai_sei_spans: set[tuple[int, int]] | None = None,
+    av1_obu_patches: set[tuple[int, int, int, int]] | None = None,
     stop_on_first_kling: bool = False,
 ) -> bool:
-    """Walk one video track's sample table and scan only H.264/HEVC SEI NALs."""
+    """Walk one video track's sample table and scan H.264/HEVC SEI NALs and AV1 OBU_METADATA."""
+    from remove_ai_watermarks._internal.av1_obu import scan_av1_obu_stream_spans
+
     boxes = {btype: (pay, end) for _s, end, btype, pay in iter_file_boxes(stream, stbl_payload, stbl_end)}
     if b"stsd" not in boxes or b"stsc" not in boxes or b"stsz" not in boxes:
         return False
     if b"stco" not in boxes and b"co64" not in boxes:
         return False
 
-    codec_map = _parse_video_codec_map(stream, *boxes[b"stsd"])
+    codec_map = _parse_video_codec_map(stream, *boxes[b"stsd"], av1_obu_patches=av1_obu_patches)
     if not codec_map:
-        return True  # Parsed valid non-AVC/HEVC video stbl (e.g. av01/vp09); no AVC/HEVC SEI present.
+        return True  # Parsed valid non-AVC/HEVC/AV1 video stbl (e.g. vp09); no bitstream SEI/OBU present.
+    if stop_on_first_kling and av1_obu_patches:
+        return True
 
     stsc_pay, stsc_end = boxes[b"stsc"]
     if stsc_pay + 8 > stsc_end:
@@ -730,6 +756,20 @@ def _scan_video_stbl_sei(
             sample_idx += 1
             if codec_cfg is not None and sz > 0 and cur_off >= 0 and cur_off + sz <= file_size:
                 family, len_size = codec_cfg
+                if family == "av1":
+                    if av1_obu_patches is not None:
+                        av1_obu_patches.update(
+                            scan_av1_obu_stream_spans(
+                                lambda off, n: _pread_or_seek(stream, fd, off, n),
+                                cur_off,
+                                cur_off + sz,
+                                stop_on_first=stop_on_first_kling,
+                            )
+                        )
+                        if stop_on_first_kling and av1_obu_patches:
+                            return True
+                    cur_off += sz
+                    continue
                 sample_end = cur_off + sz
                 nal_pos = cur_off
                 while nal_pos + len_size < sample_end:
@@ -785,6 +825,7 @@ def _scan_stream_video_sei(
     kling_offsets: set[int] = set()
     uuids: set[str] = set()
     ai_sei_spans: set[tuple[int, int]] = set()
+    av1_obu_patches: set[tuple[int, int, int, int]] = set()
     for _start, end, box_type, payload in top_boxes:
         if box_type != b"moov":
             continue
@@ -826,6 +867,7 @@ def _scan_stream_video_sei(
                     kling_offsets,
                     uuids,
                     ai_sei_spans=ai_sei_spans,
+                    av1_obu_patches=av1_obu_patches,
                     stop_on_first_kling=stop_on_first_kling,
                 ):
                     parsed_tracks += 1
@@ -838,6 +880,7 @@ def _scan_stream_video_sei(
         kling_tag_offsets=tuple(sorted(kling_offsets)),
         unregistered_uuids=tuple(sorted(uuids)),
         ai_sei_spans=tuple(sorted(ai_sei_spans)),
+        av1_obu_patches=tuple(sorted(av1_obu_patches)),
     )
 
 
@@ -1285,6 +1328,11 @@ def strip_isobmff_media_file(
                     _overwrite_range(temporary, offset, offset + len(KLING_SEI_TAG), byte=b" ")
                 for span_start, span_end in sei_scan.ai_sei_spans:
                     _overwrite_range(temporary, span_start, span_end, byte=b" ")
+                if sei_scan.av1_obu_patches:
+                    from remove_ai_watermarks._internal.av1_obu import patch_av1_obu_to_padding
+
+                    for hdr_off, orig_b0, pay_start, pay_end in sei_scan.av1_obu_patches:
+                        patch_av1_obu_to_padding(temporary, hdr_off, orig_b0, pay_start, pay_end)
             temporary.flush()
             os.fsync(temporary.fileno())
         shutil.copymode(source_path, temporary_path)
@@ -1298,7 +1346,11 @@ def strip_isobmff_media_file(
     # Every copy of the Kling tag is one tag, however many samples repeat it.
     return (
         len(targets),
-        len(blanked_key_spans) + bool(kling_sei_offsets) + bool(sei_scan.ai_sei_spans) + len(audio_regions),
+        len(blanked_key_spans)
+        + bool(kling_sei_offsets)
+        + bool(sei_scan.ai_sei_spans)
+        + bool(sei_scan.av1_obu_patches)
+        + len(audio_regions),
     )
 
 

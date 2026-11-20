@@ -1,0 +1,23 @@
+SNAC (Multi-Scale Neural Audio Codec) optional model and inference adaptation
+
+Source: https://github.com/hubertsiuzdak/snac
+Model: https://huggingface.co/hubertsiuzdak/snac_44khz
+Revision: 873ebef9718b89660340c6f55a2b515e98cfa1d9
+Source and weights license: MIT License (MIT.txt).
+https://opensource.org/licenses/MIT
+The checkpoint is downloaded separately on explicit use and is not bundled here.
+No endorsement by the upstream authors is implied.
+
+Submodule ancestry acknowledged upstream:
+- Descript Audio Codec (DAC) encoder/decoder/quantizer blocks, Copyright (c)
+  2023 Descript, MIT License (https://github.com/descriptinc/descript-audio-codec).
+- Local windowed attention rotary embeddings, Copyright (c) Phil Wang,
+  MIT License (https://github.com/lucidrains/local-attention).
+
+Modified files: _snac_network.py adapts the inference path of snac/{snac,
+layers,vq,attention}.py for the pinned 44.1 kHz multi-scale configuration using
+lazy PyTorch imports, torch.nn.functional.scaled_dot_product_attention,
+deterministic CPU-seeded decoder noise blocks, and post-load weight-norm fusion.
+Rational native clocks, raw mid/side stereo decomposition, 5.1/7.1 surround
+stem routing, and overlap-window streaming live in audio_snac.py and audio.py.
+Model availability does not establish watermark removal or voice preservation.

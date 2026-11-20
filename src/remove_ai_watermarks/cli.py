@@ -23,6 +23,7 @@ import click
 
 from remove_ai_watermarks import __version__, image_io, watermark_registry
 from remove_ai_watermarks._internal.constants import (
+    ALL_PRESETS,
     AUDIO_BANDWIDTHS_KBPS,
     AUDIO_EXTENSIONS,
     AUDIO_METHODS,
@@ -35,6 +36,7 @@ from remove_ai_watermarks._internal.constants import (
     VIDEO_MESSAGE_DEVICES,
     VIDEO_MESSAGE_METHODS,
     VIDEO_MESSAGE_SCHEMES,
+    AllPreset,
     AudioMethod,
     AudioScheme,
     AudioVendor,
@@ -472,6 +474,13 @@ def _pixels_required(func: Callable[..., None]) -> Callable[..., None]:
 
                 if src_arg.suffix.lower() in (*VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS, *TEXT_EXTENSIONS):
                     raise
+            dir_arg = kwargs.get("directory")
+            if (
+                isinstance(dir_arg, Path)
+                and dir_arg.is_dir()
+                and not any(is_supported_format(p) for p in dir_arg.iterdir() if p.is_file())
+            ):
+                raise
             from remove_ai_watermarks.optional_deps import pixels_available
 
             if pixels_available():
@@ -882,6 +891,11 @@ def _parse_frame_range(spec: str | None) -> tuple[int, int] | None:
     default=None,
     help="Inclusive 0-based START:END frame range when erasing a video clip.",
 )
+@click.option(
+    "--track",
+    is_flag=True,
+    help="Track moving watermark/object box(es) across video frames from the starting frame.",
+)
 @_output_option
 @click.option(
     "--backend",
@@ -901,6 +915,7 @@ def cmd_erase(
     source: Path,
     regions: tuple[str, ...],
     frames: str | None,
+    track: bool,
     output: Path | None,
     backend: Literal["auto", "cv2", "migan", "lama"],
     inpaint_method: str,
@@ -922,6 +937,7 @@ def cmd_erase(
             source=source,
             regions=regions,
             frames=frames,
+            track=track,
             output=output,
             backend=backend,
             dilate=dilate,
@@ -932,6 +948,8 @@ def cmd_erase(
         return
     if frames is not None:
         raise click.UsageError("--frames is only supported for video inputs")
+    if track:
+        raise click.UsageError("--track is only supported for video inputs")
 
     from remove_ai_watermarks.region_eraser import erase
     from remove_ai_watermarks.watermark_registry import resolve_backend
@@ -2174,9 +2192,11 @@ def cmd_video_identify(
     console.print(f"  Verdict: {verdict}  (confidence: {report.confidence})")
     console.print(f"  Platform: {report.platform or 'undetermined'}")
     if report.visible_mark is not None:
+        mark_label = (
+            ", ".join(report.visible_marks) if len(getattr(report, "visible_marks", ())) > 1 else report.visible_mark
+        )
         console.print(
-            f"  Visible mark: {report.visible_mark} "
-            f"({report.visible_detected_frames}/{report.total_frames} stable frames)"
+            f"  Visible mark: {mark_label} ({report.visible_detected_frames}/{report.total_frames} stable frames)"
         )
     else:
         console.print("  Visible mark: none found" if not no_visible else "  Visible mark: not checked")
@@ -2363,6 +2383,7 @@ def cmd_video_invisible(
 @_video_output_option
 @_video_visible_options
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from the transcoded output.")
+@click.option("--trim-bumper", is_flag=True, help="Detect and trim a trailing full-screen static AI outro bumper.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the visible removal result as JSON.")
 def cmd_video_visible(
     source: Path,
@@ -2371,6 +2392,7 @@ def cmd_video_visible(
     backend: str,
     temporal_consistency: bool,
     strip_metadata: bool,
+    trim_bumper: bool,
     as_json: bool,
 ) -> None:
     """Remove a temporally stable visible AI wordmark from video."""
@@ -2381,6 +2403,9 @@ def cmd_video_visible(
         _banner()
         console.print(f"  Scanning {source.name} for a temporally stable {mark} mark...")
     try:
+        vis_extra: dict[str, Any] = {}
+        if trim_bumper:
+            vis_extra["trim_bumper"] = True
         result = remove_video_visible(
             source,
             output,
@@ -2388,6 +2413,7 @@ def cmd_video_visible(
             backend=backend,
             strip_metadata=strip_metadata,
             temporal_consistency=temporal_consistency,
+            **vis_extra,
         )
     except (OSError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -2399,10 +2425,12 @@ def cmd_video_visible(
         console.print(f"  No stable {mark} watermark detected; no output written")
         raise SystemExit(EXIT_NO_VISIBLE_MARK)
     _exit_if_metadata_survived(result)
+    mark_label = ", ".join(result.marks) if len(getattr(result, "marks", ())) > 1 else result.mark
     console.print(
-        f"  Removed {result.mark} watermark from "
-        f"{result.removed_frames}/{result.total_frames} frames -> {result.output}"
+        f"  Removed {mark_label} watermark from {result.removed_frames}/{result.total_frames} frames -> {result.output}"
     )
+    if getattr(result, "trimmed_bumper_frames", 0):
+        console.print(f"  Trimmed {result.trimmed_bumper_frames} trailing AI bumper frame(s)")
     _print_video_audio_unverified()
 
 
@@ -2413,6 +2441,11 @@ def cmd_video_visible(
     "--frames",
     default=None,
     help="Inclusive 0-based START:END frame range (default: all frames).",
+)
+@click.option(
+    "--track",
+    is_flag=True,
+    help="Track moving watermark/object box(es) across video frames from the starting frame.",
 )
 @_video_output_option
 @click.option(
@@ -2435,6 +2468,7 @@ def cmd_video_erase(
     source: Path,
     regions: tuple[str, ...],
     frames: str | None,
+    track: bool,
     output: Path | None,
     backend: str,
     dilate: int,
@@ -2452,6 +2486,9 @@ def cmd_video_erase(
         _banner()
         console.print(f"  Erasing {len(boxes)} region(s) from {source.name}...")
     try:
+        erase_extra: dict[str, Any] = {}
+        if track:
+            erase_extra["track"] = True
         result = remove_video_region(
             source,
             output,
@@ -2461,6 +2498,7 @@ def cmd_video_erase(
             dilate=dilate,
             strip_metadata=strip_metadata,
             temporal_consistency=temporal_consistency,
+            **erase_extra,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -2487,6 +2525,7 @@ def cmd_video_erase(
 )
 @_video_invisible_options
 @_video_audio_invisible_options
+@click.option("--trim-bumper", is_flag=True, help="Detect and trim a trailing full-screen static AI outro bumper.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the complete video cleaning result as JSON.")
 def cmd_video_all(
     source: Path,
@@ -2497,7 +2536,7 @@ def cmd_video_all(
     invisible: bool,
     profile: VideoInvisibleProfile,
     quality: Literal["delivery", "master"],
-    noise_std: float,
+    noise_std: int | float,
     long_side: int,
     fps: float,
     keep_fps: bool,
@@ -2514,6 +2553,7 @@ def cmd_video_all(
     audio_allow_quality_override: bool,
     audio_streams: tuple[int, ...],
     audio_vendor: AudioVendor,
+    trim_bumper: bool,
     as_json: bool,
 ) -> None:
     """Remove stable visible marks, AI metadata, and optional pixel/audio marks from video."""
@@ -2531,6 +2571,9 @@ def cmd_video_all(
         stages = " + ".join(stage_parts)
         console.print(f"  Cleaning {source.name}: {stages}...")
     try:
+        all_extra: dict[str, Any] = {}
+        if trim_bumper:
+            all_extra["trim_bumper"] = True
         result = remove_video_all(
             source,
             output,
@@ -2540,7 +2583,7 @@ def cmd_video_all(
             include_invisible=invisible,
             invisible_profile=profile,
             invisible_quality=quality,
-            noise_std=noise_std,
+            noise_std=float(noise_std),
             long_side=long_side,
             fps=None if keep_fps else fps,
             batch_size=batch_size,
@@ -2556,6 +2599,7 @@ def cmd_video_all(
             audio_allow_quality_override=audio_allow_quality_override,
             audio_vendor=audio_vendor,
             audio_streams=audio_streams or None,
+            **all_extra,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -2569,10 +2613,14 @@ def cmd_video_all(
         detail = "" if result.invisible_removed else "; pixels preserved"
         console.print(f"  Visible mark: none found{detail}")
     else:
-        console.print(
-            f"  Visible mark: removed {result.visible_mark} from "
-            f"{result.visible_removed_frames}/{result.total_frames} frames"
+        mark_label = (
+            ", ".join(result.visible_marks) if len(getattr(result, "visible_marks", ())) > 1 else result.visible_mark
         )
+        console.print(
+            f"  Visible mark: removed {mark_label} from {result.visible_removed_frames}/{result.total_frames} frames"
+        )
+    if getattr(result, "trimmed_bumper_frames", 0):
+        console.print(f"  Trimmed {result.trimmed_bumper_frames} trailing AI bumper frame(s)")
     console.print(f"  AI metadata: stripped -> {result.output}")
     if result.invisible_removed:
         resolved_profile = result.invisible_profile or profile
@@ -3154,10 +3202,32 @@ def cmd_classify_source(source: Path, as_json: bool) -> None:
     console.print("  identify is unchanged. This command does not detect SynthID or prove a file is clean.")
 
 
+_preset_option = click.option(
+    "--preset",
+    type=click.Choice(list(ALL_PRESETS)),
+    default=None,
+    help="Cleaning preset: lossless-fast (metadata + fast visible), balanced (auto backend + verified signals), "
+    "or deep-clean (full studio pixel/audio regeneration).",
+)
+
+
+def _resolve_preset(
+    preset: AllPreset | None,
+    *,
+    force: bool,
+    backend: str,
+) -> tuple[bool, str, bool]:
+    eff_force = force or preset == "deep-clean"
+    eff_backend = "auto" if preset in {"balanced", "deep-clean"} and backend == "cv2" else backend
+    lossless_only = preset == "lossless-fast" and not force
+    return eff_force, eff_backend, lossless_only
+
+
 # ── Combined "all" mode ──
 @main.command("all")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_output_option
+@_preset_option
 @_visible_backend_option
 @_visible_sensitivity_option
 @_strength_option
@@ -3181,6 +3251,7 @@ def cmd_all(
     ctx: click.Context,
     source: Path,
     output: Path | None,
+    preset: AllPreset | None,
     backend: str,
     sensitivity: str,
     strength: float | None,
@@ -3213,36 +3284,40 @@ def cmd_all(
     from remove_ai_watermarks.text import TEXT_EXTENSIONS
     from remove_ai_watermarks.video import VIDEO_EXTENSIONS
 
+    eff_force, eff_backend, lossless_only = _resolve_preset(preset, force=force, backend=backend)
+
     suffix = source.suffix.lower()
     if suffix in VIDEO_EXTENSIONS:
         mapped_audio_vendor: AudioVendor = vendor if vendor in AUDIO_VENDORS else "auto"  # type: ignore[assignment]
+        run_vid_inv = False if lossless_only else bool(eff_force or vendor not in (None, "auto"))
         ctx.invoke(
             cmd_video_all,
             source=source,
             output=output,
             mark="auto",
-            backend=backend,
+            backend=eff_backend,
             temporal_consistency=True,
-            invisible=bool(force or vendor not in (None, "auto")),
-            profile="auto",
+            invisible=run_vid_inv,
+            profile="auto" if run_vid_inv else "synthid",
             quality="delivery",
             noise_std=DEFAULT_VIDEO_SYNTHID_NOISE_STD,
             long_side=DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
             fps=DEFAULT_VIDEO_SYNTHID_FPS,
-            keep_fps=True,
+            keep_fps=run_vid_inv,
             temporal_stabilize=True,
             batch_size=4,
-            seed=seed or 0,
+            seed=(seed or 0) if run_vid_inv else 0,
             device="auto",
-            audio_invisible=True,
+            audio_invisible=not lossless_only,
             audio_scheme="auto",
             audio_method="auto",
-            audio_force=force,
+            audio_force=eff_force,
             audio_allow_unverified=False,
             audio_allow_positive=False,
             audio_allow_quality_override=False,
             audio_streams=(),
             audio_vendor=mapped_audio_vendor,
+            trim_bumper=False,
             as_json=False,
         )
         return
@@ -3252,8 +3327,8 @@ def cmd_all(
             cmd_audio_all,
             source=source,
             output=output,
-            invisible=True,
-            force=force,
+            invisible=not lossless_only,
+            force=eff_force,
             allow_unverified=False,
             allow_positive=False,
             allow_quality_override=False,
@@ -3273,7 +3348,7 @@ def cmd_all(
             cmd_text_all,
             source=source,
             output=output,
-            invisible=force,
+            invisible=False if lossless_only else eff_force,
             seed=seed or 0,
         )
         return
@@ -3282,6 +3357,9 @@ def cmd_all(
     source = _validate_image(source)
     if vendor is not None and vendor not in _IMAGE_VENDOR_CHOICES:
         raise click.UsageError(f"--vendor {vendor} is only supported for audio or video inputs")
+    backend = eff_backend
+    force = eff_force
+    extra_all_kwargs: dict[str, Any] = {"include_invisible": False} if lossless_only else {}
 
     if output is None:
         output = source.with_stem(source.stem + "_clean")
@@ -3353,6 +3431,7 @@ def cmd_all(
             ),
             force=force,
             progress=progress,
+            **extra_all_kwargs,
         )
     except MetadataStripIncomplete as e:
         console.print(f"    Error: metadata stripping was incomplete; {', '.join(sorted(e.surviving))} survived")
@@ -3428,11 +3507,12 @@ def _batch_engine(mode: str, options: InvisibleOptions) -> object | None:
 @click.option(
     "--mode", type=click.Choice(["visible", "invisible", "metadata", "all"]), default="visible", help="Processing mode."
 )
+@_preset_option
 @_strength_option
 @_visible_backend_option
 @_visible_sensitivity_option
 @_humanize_option
-@_vendor_option
+@_all_vendor_option
 @_pipeline_option
 @_seed_option
 @_hf_token_option
@@ -3449,6 +3529,7 @@ def cmd_batch(
     ctx: click.Context,
     directory: Path,
     mode: str,
+    preset: AllPreset | None,
     output_dir: Path | None,
     strength: float | None,
     vendor: str | None,
@@ -3468,92 +3549,225 @@ def cmd_batch(
     force: bool,
     cpu_offload: bool,
 ) -> None:
-    """Process all images in a directory."""
+    """Process all supported media files (images, videos, audio, text) in a directory."""
+    from remove_ai_watermarks.text import TEXT_EXTENSIONS
+    from remove_ai_watermarks.video import VIDEO_EXTENSIONS
+
     _banner()
 
     if output_dir is None:
         output_dir = directory.parent / (directory.name + "_clean")
 
-    images = sorted(p for p in directory.iterdir() if is_supported_format(p))
+    if preset is not None and ctx.get_parameter_source("mode") == click.core.ParameterSource.DEFAULT:
+        mode = "all"
+    eff_force, eff_backend, lossless_only = _resolve_preset(preset, force=force, backend=backend)
 
-    if not images:
+    entries = sorted(p for p in directory.iterdir() if p.is_file())
+    images = [p for p in entries if is_supported_format(p)]
+    videos = [p for p in entries if p.suffix.lower() in VIDEO_EXTENSIONS]
+    # Audio and text have no visible pixel mode; ignore sidecar notes/tracks under --mode visible.
+    audios = [] if mode == "visible" else [p for p in entries if p.suffix.lower() in AUDIO_EXTENSIONS]
+    texts = [] if mode == "visible" else [p for p in entries if p.suffix.lower() in TEXT_EXTENSIONS]
+
+    if not (images or videos or audios or texts):
         # Nothing processed is the no-signal code, not success: a wrapper must not read
         # an empty run as a cleaned directory.
-        console.print(f"No supported images found in {directory}; nothing was processed")
+        console.print(f"No supported images or media files found in {directory}; nothing was processed")
         raise SystemExit(EXIT_NOTHING_PROCESSED)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    console.print(f"  Found {len(images)} images in {directory}")
+    modality_parts: list[str] = []
+    if images:
+        modality_parts.append(f"{len(images)} images")
+    if videos:
+        modality_parts.append(f"{len(videos)} videos")
+    if audios:
+        modality_parts.append(f"{len(audios)} audio files")
+    if texts:
+        modality_parts.append(f"{len(texts)} text files")
+    console.print(f"  Found {', '.join(modality_parts)} in {directory}")
     console.print(f"  Output -> {output_dir}")
-    console.print(f"  Mode: {mode}")
-    from remove_ai_watermarks.api import InvisibleOptions
-    from remove_ai_watermarks.api import remove_batch as api_remove_batch
+    console.print(f"  Mode: {mode}" + (f" (preset: {preset})" if preset else ""))
 
-    invisible_options = InvisibleOptions(
-        strength=strength,
-        vendor=_explicit_vendor(vendor),
-        pipeline=pipeline,
-        seed=seed,
-        hf_token=hf_token,
-        humanize=humanize,
-        unsharp=unsharp,
-        adaptive_polish=adaptive_polish,
-        max_resolution=max_resolution,
-        controlnet_conditioning_scale=controlnet_scale,
-        cpu_offload=cpu_offload,
-        tile=tile,
-        tile_size=tile_size,
-        tile_overlap=tile_overlap,
-    )
+    processed = 0
+    errors = 0
+    synthid_skipped_count = 0
 
-    def on_progress(img: Path, stage: str, detail: str) -> None:
-        if ctx.obj.get("verbose"):
-            console.print(f"  {img.name}: {stage}{f' {detail}' if detail else ''}")
+    if images:
+        if vendor is not None and vendor not in _IMAGE_VENDOR_CHOICES and not (videos or audios):
+            raise click.UsageError(f"--vendor {vendor} is only supported for audio or video inputs")
+        from remove_ai_watermarks.api import InvisibleOptions
+        from remove_ai_watermarks.api import remove_batch as api_remove_batch
 
-    try:
-        engine = _batch_engine(mode, invisible_options)
-    except (OSError, RuntimeError, ValueError) as e:  # e.g. no CUDA device
-        console.print(f"  Error: {e}")
-        raise SystemExit(1) from e
-    summary = api_remove_batch(
-        directory,
-        output_dir,
-        mode=mode,  # type: ignore[arg-type]
-        backend=backend,  # type: ignore[arg-type]
-        sensitivity=_parse_sensitivity(sensitivity),
-        invisible=invisible_options,
-        force=force,
-        engine=engine,
-        progress=on_progress,
-    )
+        img_vendor = vendor if vendor in _IMAGE_VENDOR_CHOICES else None
+        extra_batch_kwargs: dict[str, Any] = {"include_invisible": False} if (lossless_only and mode == "all") else {}
+        invisible_options = InvisibleOptions(
+            strength=strength,
+            vendor=_explicit_vendor(img_vendor),
+            pipeline=pipeline,
+            seed=seed,
+            hf_token=hf_token,
+            humanize=humanize,
+            unsharp=unsharp,
+            adaptive_polish=adaptive_polish,
+            max_resolution=max_resolution,
+            controlnet_conditioning_scale=controlnet_scale,
+            cpu_offload=cpu_offload,
+            tile=tile,
+            tile_size=tile_size,
+            tile_overlap=tile_overlap,
+        )
 
-    processed, errors = summary.processed, summary.failed
-    synthid_skipped_count = len(summary.invisible_unavailable)
+        def on_progress(img: Path, stage: str, detail: str) -> None:
+            if ctx.obj.get("verbose"):
+                console.print(f"  {img.name}: {stage}{f' {detail}' if detail else ''}")
 
-    if errors and ctx.obj.get("verbose"):
-        for failed_path, message in summary.errors:
-            console.print(f"  {failed_path.name}: {message}")
+        try:
+            engine = None if (lossless_only and mode == "all") else _batch_engine(mode, invisible_options)
+        except (OSError, RuntimeError, ValueError) as e:
+            console.print(f"  Error: {e}")
+            raise SystemExit(1) from e
+        summary = api_remove_batch(
+            directory,
+            output_dir,
+            mode=mode,  # type: ignore[arg-type]
+            backend=eff_backend,  # type: ignore[arg-type]
+            sensitivity=_parse_sensitivity(sensitivity),
+            invisible=invisible_options,
+            force=eff_force,
+            engine=engine,
+            progress=on_progress,
+            **extra_batch_kwargs,
+        )
+        processed += summary.processed
+        errors += summary.failed
+        synthid_skipped_count += len(summary.invisible_unavailable)
+
+        if summary.failed and ctx.obj.get("verbose"):
+            for failed_path, message in summary.errors:
+                console.print(f"  {failed_path.name}: {message}")
+
+        status_order = ("no_watermark", "cleaned", "partial", "unvalidated")
+        counts = dict.fromkeys(status_order, 0)
+        for item in summary.items:
+            if item.visible_status is not None:
+                counts[item.visible_status] += 1
+        if sum(counts.values()):
+            details = ", ".join(f"{count} {status.replace('_', ' ')}" for status, count in counts.items() if count)
+            console.print(f"  Visible validation: {details}")
+            partial = counts["partial"]
+            unvalidated = counts["unvalidated"]
+            if partial:
+                console.print(f"  Warning: overlapping visible residual detected in {partial} output(s).")
+            if unvalidated:
+                console.print(f"  Post-removal validation unavailable for {unvalidated} output(s).")
+
+    mapped_av_vendor: AudioVendor = vendor if vendor in AUDIO_VENDORS else "auto"  # type: ignore[assignment]
+    non_image_total = len(videos) + len(audios) + len(texts)
+    if non_image_total:
+        prog_ctx: Any = (
+            click.progressbar(length=non_image_total, label="  Processing media")
+            if getattr(console, "is_terminal", False)
+            else contextlib.nullcontext()
+        )
+        with prog_ctx as bar:
+            if videos:
+                from remove_ai_watermarks.video import remove_video_batch, remove_video_invisible
+
+                if mode == "invisible":
+                    from remove_ai_watermarks.video_invisible import is_available as vae_ok
+                    from remove_ai_watermarks.video_invisible import load_video_vae_runtime
+
+                    shared_vae = load_video_vae_runtime() if vae_ok() and len(videos) > 1 else None
+                    for vp in videos:
+                        try:
+                            remove_video_invisible(
+                                vp,
+                                output_dir / vp.name,
+                                profile="auto",
+                                fps=None,
+                                seed=seed or 0,
+                                _runtime=shared_vae,
+                            )
+                            processed += 1
+                        except Exception as exc:
+                            errors += 1
+                            if ctx.obj.get("verbose"):
+                                console.print(f"  {vp.name}: {exc}")
+                        if bar is not None:
+                            bar.update(1)
+                else:
+                    run_vid_inv = bool(
+                        mode == "all" and not lossless_only and (eff_force or vendor not in (None, "auto"))
+                    )
+                    v_res = remove_video_batch(
+                        directory,
+                        output_dir,
+                        mode=mode,  # type: ignore[arg-type]
+                        mark="auto",
+                        backend=eff_backend,
+                        include_invisible=run_vid_inv,
+                        invisible_profile="auto" if run_vid_inv else "synthid",
+                        fps=None if run_vid_inv else DEFAULT_VIDEO_SYNTHID_FPS,
+                        seed=(seed or 0) if run_vid_inv else 0,
+                        include_audio_invisible=(mode == "all" and not lossless_only),
+                        audio_force=eff_force,
+                        audio_vendor=mapped_av_vendor,
+                    )
+                    processed += v_res.processed
+                    errors += v_res.failed
+                    if v_res.failed and ctx.obj.get("verbose"):
+                        for v_item in v_res.items:
+                            if v_item.error:
+                                console.print(f"  {v_item.source.name}: {v_item.error}")
+                    if bar is not None:
+                        bar.update(len(videos))
+
+            if audios:
+                from remove_ai_watermarks.audio import remove_audio_batch
+
+                a_mode: Literal["all", "metadata"] = "metadata" if (mode == "metadata" or lossless_only) else "all"
+                a_res = remove_audio_batch(
+                    directory,
+                    output_dir,
+                    mode=a_mode,
+                    include_invisible=bool(mode in {"all", "invisible"} and not lossless_only),
+                    force=eff_force,
+                    vendor=mapped_av_vendor,
+                )
+                processed += a_res.processed
+                errors += a_res.failed
+                if a_res.failed and ctx.obj.get("verbose"):
+                    for a_item in a_res.items:
+                        if a_item.error:
+                            console.print(f"  {a_item.source.name}: {a_item.error}")
+                if bar is not None:
+                    bar.update(len(audios))
+
+            if texts:
+                from remove_ai_watermarks.text import remove_text_all
+
+                for tp in texts:
+                    try:
+                        t_res = remove_text_all(
+                            tp,
+                            output_dir / tp.name,
+                            include_invisible=bool(mode in {"all", "invisible"} and not lossless_only and eff_force),
+                            seed=seed or 0,
+                        )
+                        if t_res.remaining_markers:
+                            raise RuntimeError("AI text markers survived")
+                        processed += 1
+                    except Exception as exc:
+                        errors += 1
+                        if ctx.obj.get("verbose"):
+                            console.print(f"  {tp.name}: {exc}")
+                    if bar is not None:
+                        bar.update(1)
 
     console.print(f"\n  {processed} processed" + (f"  {errors} errors" if errors else ""))
 
-    status_order = ("no_watermark", "cleaned", "partial", "unvalidated")
-    counts = dict.fromkeys(status_order, 0)
-    for item in summary.items:
-        if item.visible_status is not None:
-            counts[item.visible_status] += 1
-    if sum(counts.values()):
-        details = ", ".join(f"{count} {status.replace('_', ' ')}" for status, count in counts.items() if count)
-        console.print(f"  Visible validation: {details}")
-        partial = counts["partial"]
-        unvalidated = counts["unvalidated"]
-        if partial:
-            console.print(f"  Warning: overlapping visible residual detected in {partial} output(s).")
-        if unvalidated:
-            console.print(f"  Post-removal validation unavailable for {unvalidated} output(s).")
-
     if synthid_skipped_count:
-        # Mirror the single `all` command: a silently retained SynthID watermark is the
-        # #1 "it didn't work" report, so make the skipped scrub impossible to miss.
         console.print(
             f"\n  WARNING: the invisible (SynthID) watermark was NOT removed on "
             f"{synthid_skipped_count} image(s) -- the GPU dependencies are not installed, "
@@ -3561,8 +3775,6 @@ def cmd_batch(
             f"  Install the extra and rerun: pip install {INVISIBLE_EXTRA}"
         )
 
-    # Non-zero exit so a wrapping service detects an incomplete/failed run (batch used
-    # to always exit 0, hiding both per-image errors and skipped SynthID scrubs).
     if errors or synthid_skipped_count:
         raise SystemExit(1)
 

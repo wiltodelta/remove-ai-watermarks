@@ -17,6 +17,7 @@ from remove_ai_watermarks._internal import (
     audio_focalcodec,
     audio_io,
     audio_mimi,
+    audio_snac,
     audio_spectral,
     audio_vocoder,
     audioseal,
@@ -715,7 +716,7 @@ def _require_base_audio_runtime(method: str) -> None:
             "audio-vocoder"
             if method == "bigvgan"
             else "audio-codec"
-            if method in {"mimi", "focalcodec", "dac"}
+            if method in {"mimi", "focalcodec", "dac", "snac"}
             else "audio"
         )
         raise ImportError(f"Audio processing requires 'remove-ai-watermarks[{extra}]' and ffmpeg")
@@ -731,6 +732,8 @@ def require_audio_profile_runtime(method: AudioProfile) -> None:
         raise ImportError("FocalCodec processing requires remove-ai-watermarks[audio-codec]")
     if method == "dac" and not audio_dac.is_available():
         raise ImportError("DAC processing requires remove-ai-watermarks[audio-codec]")
+    if method == "snac" and not audio_snac.is_available():
+        raise ImportError("SNAC processing requires remove-ai-watermarks[audio-codec]")
     if method == "bigvgan" and not audio_vocoder.is_available():
         raise ImportError("BigVGAN processing requires remove-ai-watermarks[audio-vocoder]")
     _require_base_audio_runtime(method)
@@ -738,6 +741,7 @@ def require_audio_profile_runtime(method: AudioProfile) -> None:
 
 _SURROUND_51_LAYOUTS: frozenset[str] = frozenset({"5.1", "5.1(side)"})
 _SURROUND_71_LAYOUTS: frozenset[str] = frozenset({"7.1", "7.1(wide)", "7.1(wide-side)"})
+_RAW_CODEC_PROFILES: frozenset[str] = frozenset({"bigvgan", "mimi", "focalcodec", "dac", "snac"})
 
 
 def _is_mono_or_stereo(info: audio_io.AudioStreamInfo) -> bool:
@@ -752,9 +756,10 @@ def _is_tagged_surround(info: audio_io.AudioStreamInfo) -> bool:
 
 def validate_audio_stream_for_profile(info: audio_io.AudioStreamInfo, method: AudioProfile) -> None:
     """Validate channel layout and bounded full-track limits for a selected audio profile."""
-    if method == "dac":
+    if method in {"dac", "snac"}:
+        label = "DAC" if method == "dac" else "SNAC"
         if not (_is_mono_or_stereo(info) or _is_tagged_surround(info)):
-            raise ValueError("DAC requires a mono or stereo (or tagged 5.1/7.1) channel layout")
+            raise ValueError(f"{label} requires a mono or stereo (or tagged 5.1/7.1) channel layout")
     elif method in {"bigvgan", "mimi", "focalcodec"} and not _is_mono_or_stereo(info):
         label = {"bigvgan": "BigVGAN", "mimi": "Mimi", "focalcodec": "FocalCodec"}[method]
         raise ValueError(f"{label} requires a mono or stereo channel layout")
@@ -842,11 +847,13 @@ def validate_audio_arguments(
     if not verify and not (force or allow_unverified or explicit_vendor is not None):
         raise ValueError("Disabling verification requires force=True or allow_unverified=True")
     if method not in AUDIO_METHODS:
-        raise ValueError("Audio method must be auto, spectral, encodec, combined, bigvgan, mimi, focalcodec, or dac")
+        raise ValueError(
+            "Audio method must be auto, spectral, encodec, combined, bigvgan, mimi, focalcodec, dac, or snac"
+        )
     if vocoder_device not in AUDIO_VOCODER_DEVICES:
         raise ValueError("Vocoder device must be cpu, mps, or cuda")
     if vocoder_device != "cpu" and method in {"spectral", "mimi", "focalcodec"}:
-        raise ValueError("A non-CPU vocoder device requires method=bigvgan, dac, encodec, combined, or auto")
+        raise ValueError("A non-CPU vocoder device requires method=bigvgan, dac, snac, encodec, combined, or auto")
     if scheme not in _AUTO_PROFILES:
         raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
     if method in {"auto", "encodec", "combined"} and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
@@ -947,9 +954,7 @@ def remove_audio_invisible(
             {},
             method=profile,
             bandwidth_kbps=bandwidth_kbps if profile in {"encodec", "combined"} else None,
-            vocoder_device=vocoder_device
-            if profile in {"bigvgan", "mimi", "focalcodec", "dac", "encodec", "combined"}
-            else None,
+            vocoder_device=vocoder_device if profile != "spectral" else None,
         )
     if not verify or before.watermark_status != "detected" or (not eff_unverified and _missing_decoder_reason(before)):
         profiles = profiles[:1]
@@ -1017,7 +1022,7 @@ def _remove_audio_profile(
     if not verify and not eff_unverified:
         raise ValueError("Disabling verification requires force=True or allow_unverified=True")
     if method not in AUDIO_PROFILES:
-        raise ValueError("Audio method must be spectral, encodec, combined, bigvgan, mimi, focalcodec, or dac")
+        raise ValueError("Audio method must be spectral, encodec, combined, bigvgan, mimi, focalcodec, dac, or snac")
     neural = method in {"encodec", "combined"}
     if neural and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
         raise ValueError("EnCodec bandwidth must be 6, 12, or 24 kbps")
@@ -1042,7 +1047,7 @@ def _remove_audio_profile(
             {},
             method=method,
             bandwidth_kbps=bandwidth_kbps if neural else None,
-            vocoder_device=vocoder_device if method in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
+            vocoder_device=vocoder_device if method in _RAW_CODEC_PROFILES else None,
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -1112,11 +1117,13 @@ def _remove_audio_profile(
             transformed = _focalcodec_full_track(transformed, before.stream.sample_rate)
         if method == "dac":
             transformed = _dac_full_track(transformed, before.stream.sample_rate, vocoder_device)
+        if method == "snac":
+            transformed = _snac_full_track(transformed, before.stream.sample_rate, vocoder_device)
         frames_written = audio_io.write_audio(
             before.stream,
             staged,
             _guard_full_scale(transformed),
-            bitexact=method in {"bigvgan", "mimi", "focalcodec", "dac"} and staged.suffix.lower() == ".wav",
+            bitexact=method in _RAW_CODEC_PROFILES and staged.suffix.lower() == ".wav",
         )
         if frames_written != count:
             raise RuntimeError("Audio processing changed the decoded sample-frame count")
@@ -1134,7 +1141,7 @@ def _remove_audio_profile(
                 before.metadata_markers,
                 method=method,
                 bandwidth_kbps=bandwidth_kbps if neural else None,
-                vocoder_device=vocoder_device if method in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
+                vocoder_device=vocoder_device if method in _RAW_CODEC_PROFILES else None,
             )
         fidelity = measure_fidelity(before.source, before.stream, staged)
         quality_ok = audio_quality_passed(fidelity, lossy=staged.suffix.lower() in AUDIO_LOSSY_OUTPUT_EXTENSIONS)
@@ -1168,7 +1175,7 @@ def _remove_audio_profile(
         fidelity=fidelity,
         method=method,
         bandwidth_kbps=bandwidth_kbps if neural else None,
-        vocoder_device=vocoder_device if method in {"bigvgan", "mimi", "focalcodec", "dac"} else None,
+        vocoder_device=vocoder_device if method in _RAW_CODEC_PROFILES else None,
         verification_scope=scope,
         quality_passed=quality_ok,
     )
@@ -1269,25 +1276,43 @@ def _encodec_surround_track(
     )
 
 
+def _surround_codec_full_track(
+    chunks: Iterator[NDArray[Any]],
+    sample_rate: int,
+    label: str,
+    resynthesize_fn: Callable[..., Any],
+    device: str = "cpu",
+) -> Iterator[NDArray[Any]]:
+    def _stem(part: NDArray[Any]) -> NDArray[Any]:
+        if device == "cpu":
+            return resynthesize_fn(part, sample_rate, local_files_only=False)
+        return resynthesize_fn(part, sample_rate, local_files_only=False, device=device)
+
+    yield from _stream_neural_track(
+        chunks,
+        sample_rate,
+        label,
+        lambda samples: _transform_surround_stems(samples, sample_rate, _stem),
+        allow_surround=True,
+    )
+
+
 def _dac_full_track(
     chunks: Iterator[NDArray[Any]],
     sample_rate: int,
     device: str = "cpu",
 ) -> Iterator[NDArray[Any]]:
     """Apply the 44.1 kHz DAC profile across mono, stereo, 5.1, or 7.1 tracks on the selected device."""
+    yield from _surround_codec_full_track(chunks, sample_rate, "DAC", audio_dac.resynthesize, device)
 
-    def _stem(part: NDArray[Any]) -> NDArray[Any]:
-        if device == "cpu":
-            return audio_dac.resynthesize(part, sample_rate, local_files_only=False)
-        return audio_dac.resynthesize(part, sample_rate, local_files_only=False, device=device)
 
-    yield from _stream_neural_track(
-        chunks,
-        sample_rate,
-        "DAC",
-        lambda samples: _transform_surround_stems(samples, sample_rate, _stem),
-        allow_surround=True,
-    )
+def _snac_full_track(
+    chunks: Iterator[NDArray[Any]],
+    sample_rate: int,
+    device: str = "cpu",
+) -> Iterator[NDArray[Any]]:
+    """Apply the 44.1 kHz multi-scale SNAC profile across mono, stereo, 5.1, or 7.1 tracks."""
+    yield from _surround_codec_full_track(chunks, sample_rate, "SNAC", audio_snac.resynthesize, device)
 
 
 def _stream_neural_track(

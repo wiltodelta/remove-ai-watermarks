@@ -183,3 +183,45 @@ In the Phase 1-3 audio/video architecture pass (2026-11-18):
   (`1024`-bit) presence detection (`video message detect`), and CPU prompt-offloaded
   `Wan 2.1` (`~3.4 GiB` accelerator footprint, `cuda` and explicit `mps`, up to 5-minute
   1080p streaming budget) all shipped with unit and integration coverage.
+
+
+In the Wave 2 audio/video market-leadership pass (2026-11-20):
+- **Pure-PyTorch `SNAC 44.1 kHz` (`--method snac`, `hubertsiuzdak/snac_44khz@873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT)**:
+  across `q in {2, 3, 4}` multi-scale RVQ codebooks (`vq_strides = [8, 4, 2, 1]`),
+  retaining all 4 codebooks (`q=4`) preserved `Perth` on 16 kHz speech via the
+  finest `stride=1` residual, whereas fixing `FIXED_QUANTIZERS = 3` (`strides = 8, 4, 2`)
+  cleared `AudioSeal`, `WavMark`, and `Perth` (`3/3` `not_detected`, `quality_passed=True`,
+  `Side/Mid drift = 2.66 dB`) while running in `4.56 s` on Apple Silicon `mps` (`3.85x`
+  faster than CPU `DAC`). `DAC` (`MR-STFT = 1.11`, `Mel = 4.06 dB`) remains the
+  highest-fidelity `--vendor` default, while `--method snac` ships as the fast
+  pure-PyTorch 44.1 kHz alternative across mono, raw M/S stereo, and `5.1`/`7.1`
+  surround stems.
+- **Wan 2.1 Zero-UMT5 Prompt Cache, 18-Mark Visible Video Suite & AV1 `OBU_METADATA` Scrubbing**:
+  persisting the static neutral prompt embedding on disk skips downloading and loading
+  the `22.7 GB` `UMT5-XXL` encoder on warm cache hits, unlocking `WAN21_AUTO_MAX_FRAME_PIXELS = 1920 * 1080`
+  and `WAN21_MIN_CUDA_VRAM_BYTES = 8 GiB` (with `WAN21_COMPACT_CHUNK_FRAMES = 81` step-down,
+  while keeping `--profile auto` off `mps`). Eight additional visible video detectors
+  (`jimeng`, `jimeng_pill`, `qwen`, `yuanbao`, `baidu`, `runninghub`, `microsoft`,
+  `generic_ai_label`) calibrated at `0/71` false positives across tracked `data/` MP4s
+  expanded `VIDEO_VISIBLE_MARKS` to `18`, paired with spatially disjoint dual-mark
+  co-selection, `--trim-bumper` outro trimming, `erase --track` pyramidal LK + Sobel/NCC
+  tracking, single-pass `visible -> invisible` frame streaming, `.webm` video/audio
+  support, and HDR-preserving AV1 `OBU_METADATA` -> `OBU_PADDING` lossless scrubbing
+  across ISOBMFF `av01` and Matroska/WebM `V_AV1` (recomputing EBML `0xBF` `CRC-32`).
+- **Head-to-Head Multi-Surface Competitor Benchmark (`scripts/media_removal_benchmark.py`)**:
+  evaluated across a 10-case manifest spanning clean negative controls (`audioseal-mono-clean`,
+  `videoseal-clean`), 48 kHz stereo music (`AudioSeal` under `auto`, `dac`, and `snac`),
+  stereo M/S `WavMark`, 16 kHz `Perth` (`dac` and `snac`), `VideoSeal` video, and the
+  4-layer audiovisual clip (`TC260 AIGC` metadata + visible `Kling` + `VideoSeal` pixels +
+  `AudioSeal` audio):
+  - `remove-ai-watermarks` (Wave 2): **`10/10 passed (100%)`** (`0` failed, byte-exact
+    skip on both clean controls, `verified_removed=True` and `quality_passed=True` on all
+    8 marked cases, `31.38 dB PSNR` / `0.9641 SSIM` on `video-all-4layer-marked`).
+  - Open-source lossy transcode + resample baseline (`ShadowMarkDefense`-style `24 kHz`
+    `AAC 96k` bounce + `H.264 CRF 28`): **`1/10 passed (10%)`**, `9/10 failed` (retained
+    `AudioSeal`, `WavMark`, and `Perth`, left visible `Kling` + `TC260 AIGC` + `AudioSeal`
+    on `video-all-4layer-marked`, and degraded both clean controls).
+  - Open-source spectral bandstop + blur baseline (`watermarks-remover`-style `3-7 kHz`
+    bandreject + `10 kHz` lowpass + `gblur=1.8` + `H.264 CRF 26`): **`1/10 passed (10%)`**,
+    `9/10 failed` (retained `AudioSeal`, `WavMark`, and `Perth`, left visible `Kling` +
+    `AudioSeal` on `video-all-4layer-marked`, and degraded both clean controls).

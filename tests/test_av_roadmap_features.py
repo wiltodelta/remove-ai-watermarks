@@ -314,12 +314,13 @@ class TestPhase2VisibleAndErase:
 
 class TestPhase3WanAndBlindDetect:
     def test_wan21_cpu_prompt_offload_releases_text_encoder_before_accelerator_move(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import sys
         import types
 
         torch = pytest.importorskip("torch")
+        monkeypatch.setenv("HF_HOME", str(tmp_path / "hf-cache"))
 
         from remove_ai_watermarks import video_wan
 
@@ -342,19 +343,22 @@ class TestPhase3WanAndBlindDetect:
                 return cls()
 
         class FakePipe:
-            def __init__(self) -> None:
-                self.text_encoder: Any = object()
-                self.tokenizer: Any = object()
+            def __init__(self, *, text_encoder: Any = "default", tokenizer: Any = "default") -> None:
+                self.text_encoder: Any = object() if text_encoder == "default" else text_encoder
+                self.tokenizer: Any = object() if tokenizer == "default" else tokenizer
                 self.scheduler: Any = types.SimpleNamespace(config={})
 
             @classmethod
-            def from_pretrained(cls, *_a: Any, **_kw: Any) -> FakePipe:
+            def from_pretrained(cls, *_a: Any, **kw: Any) -> FakePipe:
+                if "text_encoder" in kw and kw["text_encoder"] is None:
+                    events.append("from_pretrained_no_text_encoder")
+                    return cls(text_encoder=None, tokenizer=kw.get("tokenizer"))
                 return cls()
 
             def encode_prompt(self, **_kwargs: Any) -> tuple[Any, Any]:
                 assert self.text_encoder is not None
                 events.append("encode_prompt_on_cpu")
-                return torch.zeros((1, 4, 8)), torch.zeros((1, 4, 8))
+                return torch.ones((1, 4, 8), dtype=torch.float32) * 0.25, torch.zeros((1, 4, 8))
 
             def to(self, device: str) -> FakePipe:
                 assert self.text_encoder is None, "text_encoder must be released before moving DiT+VAE to accelerator"
@@ -391,6 +395,14 @@ class TestPhase3WanAndBlindDetect:
         rt = video_wan.load_video_wan_runtime(device="cpu", local_files_only=True)
         assert rt.prompt_embeds is not None
         assert events == ["vae_tiling", "vae_slicing", "encode_prompt_on_cpu", "to:cpu"]
+        assert video_wan._wan_prompt_cache_path().is_file()
+
+        # Warm hit: skips UMT5-XXL altogether (text_encoder=None passed to from_pretrained, no encode_prompt call)
+        events.clear()
+        rt_warm = video_wan.load_video_wan_runtime(device="cpu", local_files_only=True)
+        assert rt_warm.prompt_embeds is not None
+        assert torch.allclose(rt_warm.prompt_embeds, rt.prompt_embeds)
+        assert events == ["vae_tiling", "vae_slicing", "from_pretrained_no_text_encoder", "to:cpu"]
 
     def test_blind_video_watermark_presence_cli_and_api(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from remove_ai_watermarks import video_messages

@@ -12,28 +12,35 @@ from __future__ import annotations
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportAttributeAccessIssue=false
 import logging
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
 
 from remove_ai_watermarks._internal.constants import WAN_SUPPORTED_EXTENSIONS
+from remove_ai_watermarks._internal.two_stage_pipeline import (
+    _load_prompt_payload,
+    _prompt_cache_path,
+    _store_prompt_payload,
+)
 from remove_ai_watermarks.optional_deps import module_available
 from remove_ai_watermarks.video_encoding import (
     atomic_video_output,
     probe_video_encode_profile,
+    probe_video_timestamps,
 )
 from remove_ai_watermarks.video_seedance import (
     SeedanceQuality,
-    _finalize_experimental_output,
+    _clock,
+    _encode_frames,
     _frames,
+    _measure,
     validate_experimental_mp4_source,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
+    from pathlib import Path
 
     from remove_ai_watermarks._internal.constants import WanExperimentalProfile
     from remove_ai_watermarks.video_invisible import RegenerationMetrics
@@ -49,15 +56,18 @@ WAN21_SYNTHID_STRENGTH = 0.38
 WAN21_SEEDANCE_STRENGTH = 0.12
 WAN21_SPATIAL_MULTIPLE = 16
 WAN21_DEFAULT_CHUNK_FRAMES = 193
+WAN21_COMPACT_CHUNK_FRAMES = 81
 WAN21_DEFAULT_OVERLAP_FRAMES = 17
-WAN21_AUTO_MAX_FRAME_PIXELS = 1280 * 720
+WAN21_AUTO_MAX_FRAME_PIXELS = 1920 * 1080
 WAN21_MAX_FRAME_PIXELS = 1920 * 1080
 WAN21_MAX_TOTAL_PIXEL_FRAMES = 7200 * 1920 * 1080
-WAN21_MIN_CUDA_VRAM_BYTES = 16 * 1024**3
+WAN21_MIN_CUDA_VRAM_BYTES = 8 * 1024**3
+WAN21_HIGH_VRAM_BYTES = 16 * 1024**3
 WAN21_DEFAULT_PROMPT = "High fidelity natural video, sharp details, accurate motion, clean cinematic lighting."
 WAN21_DEFAULT_NEGATIVE_PROMPT = (
     "blurry, low quality, compression artifacts, flicker, warped edges, text, logo, watermark"
 )
+_WAN21_PROMPT_OUTPUT_PARAMS = ("wan21_v2v_prompt_embeds_v1",)
 
 _PROFILE_STRENGTHS: dict[WanExperimentalProfile, float] = {
     "wan21-synthid-experimental": WAN21_SYNTHID_STRENGTH,
@@ -111,8 +121,49 @@ def resolve_wan_device(requested: str) -> str:
     return "cuda"
 
 
+def _wan_prompt_cache_path() -> Path:
+    """Return the atomic disk cache path for the static Wan 2.1 default prompt embedding."""
+    return _prompt_cache_path(
+        f"{WAN21_MODEL_ID}@{WAN21_MODEL_REVISION}",
+        _WAN21_PROMPT_OUTPUT_PARAMS,
+        WAN21_DEFAULT_PROMPT,
+    )
+
+
+def _cuda_vram_below(limit_bytes: int) -> bool:
+    import torch
+
+    if not torch.cuda.is_available():
+        return False
+    try:
+        dev_idx = torch.cuda.current_device()
+    except Exception:
+        dev_idx = 0
+    try:
+        props = torch.cuda.get_device_properties(dev_idx)
+        return int(getattr(props, "total_memory", limit_bytes)) < limit_bytes
+    except Exception:
+        return False
+
+
+def _effective_chunk_frames(
+    chunk_frames: int,
+    overlap_frames: int,
+    *,
+    width: int,
+    height: int,
+    resolved_device: str,
+) -> int:
+    """Step down the default 193-frame window to 81 frames on 1080p, MPS, or <16 GiB CUDA."""
+    if chunk_frames != WAN21_DEFAULT_CHUNK_FRAMES or overlap_frames >= WAN21_COMPACT_CHUNK_FRAMES:
+        return chunk_frames
+    if width * height > 1280 * 720 or resolved_device == "mps" or _cuda_vram_below(WAN21_HIGH_VRAM_BYTES):
+        return WAN21_COMPACT_CHUNK_FRAMES
+    return chunk_frames
+
+
 def load_video_wan_runtime(*, device: str = "auto", local_files_only: bool = False) -> VideoWanRuntime:
-    """Load pinned Wan 2.1 1.3B V2V, encoding prompt on CPU first so UMT5-XXL never occupies VRAM/MPS."""
+    """Load pinned Wan 2.1 1.3B V2V, serving cached static prompt embeddings without UMT5-XXL when present."""
     if not is_available():
         raise RuntimeError("Wan 2.1 video processing requires 'remove-ai-watermarks[video,diffusion]'")
     resolved = resolve_wan_device(device)
@@ -133,20 +184,33 @@ def load_video_wan_runtime(*, device: str = "auto", local_files_only: bool = Fal
     )
     vae.enable_tiling()
     vae.enable_slicing()
-    pipe = WanVideoToVideoPipeline.from_pretrained(
-        WAN21_MODEL_ID,
-        revision=WAN21_MODEL_REVISION,
-        vae=vae,
-        torch_dtype=dit_dtype,
-        local_files_only=local_files_only,
-    )
+
+    prompt_embeds = None
+    cache_path = _wan_prompt_cache_path() if WAN21_GUIDANCE_SCALE <= 1.0 else None
+    if cache_path is not None and cache_path.is_file():
+        try:
+            prompt_embeds = _load_prompt_payload(cache_path, resolved, dit_dtype)
+        except Exception as exc:
+            log.warning("Ignoring unreadable Wan 2.1 prompt embedding cache %s (%s)", cache_path, exc)
+            prompt_embeds = None
+
+    pipe_kwargs: dict[str, Any] = {
+        "revision": WAN21_MODEL_REVISION,
+        "vae": vae,
+        "torch_dtype": dit_dtype,
+        "local_files_only": local_files_only,
+    }
+    if prompt_embeds is not None:
+        pipe_kwargs["text_encoder"] = None
+        pipe_kwargs["tokenizer"] = None
+
+    pipe = WanVideoToVideoPipeline.from_pretrained(WAN21_MODEL_ID, **pipe_kwargs)
     pipe.scheduler = UniPCMultistepScheduler.from_config(
         pipe.scheduler.config,
         flow_shift=WAN21_FLOW_SHIFT,
     )
-    # Encode static prompt on CPU and release the 9.4 GB UMT5-XXL text encoder BEFORE moving DiT+VAE to GPU/MPS!
-    prompt_embeds = None
-    if hasattr(pipe, "encode_prompt") and WAN21_GUIDANCE_SCALE <= 1.0:
+    # Cold cache miss: encode static prompt on CPU once, persist atomically, and drop UMT5-XXL before GPU/MPS move.
+    if prompt_embeds is None and hasattr(pipe, "encode_prompt") and WAN21_GUIDANCE_SCALE <= 1.0:
         with torch.inference_mode():
             cpu_embeds, _ = pipe.encode_prompt(
                 prompt=WAN21_DEFAULT_PROMPT,
@@ -154,6 +218,11 @@ def load_video_wan_runtime(*, device: str = "auto", local_files_only: bool = Fal
                 num_videos_per_prompt=1,
                 do_classifier_free_guidance=False,
             )
+            if cache_path is not None:
+                try:
+                    _store_prompt_payload(cache_path, cpu_embeds)
+                except OSError as exc:
+                    log.warning("Could not persist Wan 2.1 prompt embedding cache %s (%s)", cache_path, exc)
             prompt_embeds = cpu_embeds.to(device=resolved, dtype=dit_dtype)
         if hasattr(pipe, "text_encoder"):
             pipe.text_encoder = None
@@ -208,6 +277,8 @@ def can_run_wan_on_source(
     """Return whether source, device, VRAM, and runtime satisfy Wan 2.1 eligibility."""
     if source.suffix.lower() not in WAN_SUPPORTED_EXTENSIONS or device not in {"auto", "cuda", "mps"}:
         return False
+    if for_auto and device == "mps":
+        return False
     if runtime is not None:
         if not isinstance(runtime, VideoWanRuntime):
             return False
@@ -217,17 +288,9 @@ def can_run_wan_on_source(
         if not is_available():
             return False
         try:
-            resolve_wan_device(device)
-            if for_auto:
-                import torch
-
-                try:
-                    dev_idx = torch.cuda.current_device()
-                except Exception:
-                    dev_idx = 0
-                props = torch.cuda.get_device_properties(dev_idx)
-                if int(getattr(props, "total_memory", WAN21_MIN_CUDA_VRAM_BYTES)) < WAN21_MIN_CUDA_VRAM_BYTES:
-                    return False
+            resolved = resolve_wan_device(device)
+            if for_auto and resolved == "cuda" and _cuda_vram_below(WAN21_MIN_CUDA_VRAM_BYTES):
+                return False
         except Exception:
             return False
     try:
@@ -256,6 +319,7 @@ def _run_wan_window(
     seed: int,
     orig_h: int,
     orig_w: int,
+    inference_steps: int = WAN21_INFERENCE_STEPS,
 ) -> np.ndarray:
     """Pad spatial/temporal axes on one window, run 3D diffusion, and crop back to BGR."""
     import torch
@@ -285,7 +349,7 @@ def _run_wan_window(
         "video": pil_frames,
         "height": target_h,
         "width": target_w,
-        "num_inference_steps": WAN21_INFERENCE_STEPS,
+        "num_inference_steps": inference_steps,
         "guidance_scale": WAN21_GUIDANCE_SCALE,
         "strength": strength,
         "generator": generator,
@@ -317,6 +381,7 @@ def _stream_wan_windows(
     seed: int,
     chunk_frames: int = WAN21_DEFAULT_CHUNK_FRAMES,
     overlap_frames: int = WAN21_DEFAULT_OVERLAP_FRAMES,
+    inference_steps: int = WAN21_INFERENCE_STEPS,
 ) -> Iterator[np.ndarray]:
     """Stream 3D causal windows while retaining only one active window and the overlap tail."""
     _validate_wan_window_args(chunk_frames, overlap_frames)
@@ -356,6 +421,7 @@ def _stream_wan_windows(
                 seed=seed + window_index,
                 orig_h=orig_h,
                 orig_w=orig_w,
+                inference_steps=inference_steps,
             )
             if out_tail is not None and overlap_frames > 0:
                 blended = (
@@ -385,6 +451,7 @@ def pad_and_run_wan(
     seed: int,
     chunk_frames: int = WAN21_DEFAULT_CHUNK_FRAMES,
     overlap_frames: int = WAN21_DEFAULT_OVERLAP_FRAMES,
+    inference_steps: int = WAN21_INFERENCE_STEPS,
 ) -> np.ndarray:
     """Pad spatial/temporal axes for 3D causal diffusion and restore exact geometry."""
     return np.stack(
@@ -396,6 +463,7 @@ def pad_and_run_wan(
                 seed=seed,
                 chunk_frames=chunk_frames,
                 overlap_frames=overlap_frames,
+                inference_steps=inference_steps,
             )
         ),
         axis=0,
@@ -403,6 +471,27 @@ def pad_and_run_wan(
 
 
 _pad_and_run_wan = pad_and_run_wan
+
+
+def _finalize_wan_output(
+    frames: Iterable[np.ndarray],
+    source: Path,
+    staged: Path,
+    *,
+    quality: SeedanceQuality,
+    fps: float,
+    timestamps: tuple[float, ...],
+) -> RegenerationMetrics:
+    """Encode Wan 2.1 frames directly to delivery (CRF 18) or master (CRF 0) in a single pass."""
+    target_crf = 18 if quality == "delivery" else 0
+    _encode_frames(frames, source, staged, fps, timestamps, crf=target_crf)
+    if probe_video_timestamps(staged) != timestamps:
+        raise RuntimeError("Experimental Wan 2.1 output timestamps changed")
+    staged_dur = float(_clock(staged)["streams"][0]["duration"])
+    source_dur = float(_clock(source)["streams"][0]["duration"])
+    if abs(staged_dur - source_dur) > 0.000002:
+        raise RuntimeError("Experimental Wan 2.1 output duration changed")
+    return _measure(source, staged, fps, len(timestamps))
 
 
 def regenerate_wan_experimental(
@@ -415,7 +504,9 @@ def regenerate_wan_experimental(
     seed: int = 0,
     chunk_frames: int = WAN21_DEFAULT_CHUNK_FRAMES,
     overlap_frames: int = WAN21_DEFAULT_OVERLAP_FRAMES,
+    inference_steps: int | None = None,
     runtime: VideoWanRuntime | None = None,
+    _frame_stream: Iterable[np.ndarray] | None = None,
 ) -> RegenerationMetrics:
     """Run pinned 3D Wan 2.1 video-to-video regeneration and validate timestamps."""
     if profile not in _PROFILE_STRENGTHS:
@@ -424,6 +515,9 @@ def regenerate_wan_experimental(
         raise ValueError("quality must be delivery or master")
     if device not in {"auto", "cuda", "mps"}:
         raise ValueError("Wan 2.1 3D video diffusion requires device='auto', 'cuda', or 'mps'")
+    steps = WAN21_INFERENCE_STEPS if inference_steps is None else inference_steps
+    if steps < 1:
+        raise ValueError("inference_steps must be >= 1")
     _validate_wan_window_args(chunk_frames, overlap_frames)
     if runtime is not None and (runtime.model != WAN21_MODEL_ID or runtime.revision != WAN21_MODEL_REVISION):
         raise ValueError("The supplied Wan 2.1 runtime does not match the pinned model and revision")
@@ -446,16 +540,21 @@ def regenerate_wan_experimental(
         strength,
         quality,
     )
-    with (
-        atomic_video_output(output) as staged,
-        TemporaryDirectory(prefix="wan21-experimental-", dir=output.parent) as directory,
-    ):
+    with atomic_video_output(output) as staged:
         active_runtime = runtime or load_video_wan_runtime(device=device)
+        eff_chunk = _effective_chunk_frames(
+            chunk_frames,
+            overlap_frames,
+            width=width,
+            height=height,
+            resolved_device=active_runtime.resolved_device,
+        )
         decoded_count = 0
 
         def counted_source() -> Iterator[np.ndarray]:
             nonlocal decoded_count
-            for frame in _frames(source):
+            raw_iter = _frame_stream if _frame_stream is not None else _frames(source)
+            for frame in raw_iter:
                 decoded_count += 1
                 yield frame
             if decoded_count != len(timestamps):
@@ -466,20 +565,17 @@ def regenerate_wan_experimental(
             active_runtime,
             strength=strength,
             seed=seed,
-            chunk_frames=chunk_frames,
+            chunk_frames=eff_chunk,
             overlap_frames=overlap_frames,
+            inference_steps=steps,
         )
         if runtime is None:
             del active_runtime
-        master_suffix = output.suffix.lower() if output.suffix.lower() in WAN_SUPPORTED_EXTENSIONS else ".mp4"
-        master = Path(directory) / f"master{master_suffix}"
-        return _finalize_experimental_output(
+        return _finalize_wan_output(
             streamed_bgr,
             source,
-            master,
             staged,
             quality=quality,
             fps=fps,
             timestamps=timestamps,
-            label="Experimental Wan 2.1",
         )
