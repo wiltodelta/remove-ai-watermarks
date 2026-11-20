@@ -7,6 +7,7 @@ import io
 import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -1780,42 +1781,77 @@ class TestVideoBatchApi:
             remove_video_batch(tmp_path, tmp_path)
 
 
-class TestVideoEraseCli:
-    @pytest.mark.parametrize("as_json", [False, True])
-    def test_fails_when_ai_metadata_survives(
+@dataclass(frozen=True)
+class _MediaCommandResult:
+    """The two fields the CLI's shared exit contract reads from every media result."""
+
+    output: Path | None
+    remaining_metadata: dict[str, str]
+
+
+# Every media command whose result carries ``remaining_metadata``: (patched library
+# function in ``remove_ai_watermarks.<group>``, CLI words, extra CLI arguments).
+_METADATA_GATED_COMMANDS = [
+    ("remove_audio_all", ["audio", "all"], []),
+    ("remove_video_invisible", ["video", "invisible"], []),
+    ("remove_video_visible", ["video", "visible"], []),
+    ("remove_video_region", ["video", "erase"], ["--region", "0,0,8,8"]),
+    ("remove_video_all", ["video", "all"], []),
+]
+
+
+class TestMediaCommandExitContract:
+    @pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+    @pytest.mark.parametrize(
+        ("function", "words", "extra"),
+        _METADATA_GATED_COMMANDS,
+        ids=[" ".join(command[1]) for command in _METADATA_GATED_COMMANDS],
+    )
+    def test_surviving_ai_metadata_exits_one_in_both_output_modes(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        function: str,
+        words: list[str],
+        extra: list[str],
         as_json: bool,
     ):
         """JSON and text output must agree on failure when AI metadata survived."""
-        from remove_ai_watermarks import video
-        from remove_ai_watermarks.video import VideoEraseResult
+        suffix = ".wav" if words[0] == "audio" else ".mp4"
+        source = tmp_path / f"source{suffix}"
+        source.write_bytes(b"media")
+        output = tmp_path / f"clean{suffix}"
+        survived = _MediaCommandResult(output=output, remaining_metadata={"c2pa_manifest": "present"})
+        monkeypatch.setattr(f"remove_ai_watermarks.{words[0]}.{function}", lambda *_args, **_kwargs: survived)
 
-        source = tmp_path / "source.mp4"
-        source.write_bytes(b"video")
-        output = tmp_path / "clean.mp4"
-        monkeypatch.setattr(
-            video,
-            "remove_video_region",
-            lambda *_args, **_kwargs: VideoEraseResult(
-                source=source,
-                output=output,
-                regions=((0, 0, 8, 8),),
-                total_frames=3,
-                erased_frames=3,
-                frame_range=None,
-                backend="cv2",
-                remaining_metadata={"c2pa_manifest": "present"},
-            ),
-        )
-
-        args = ["video", "erase", str(source), "--region", "0,0,8,8", "-o", str(output)]
+        args = [*words, str(source), *extra, "-o", str(output)]
         result = CliRunner().invoke(main, [*args, "--json"] if as_json else args)
 
         assert result.exit_code == 1, result.output
         if as_json:
             assert json.loads(result.output)["remaining_metadata"] == {"c2pa_manifest": "present"}
+        else:
+            assert "1 AI metadata marker(s) survived" in result.output
+
+    @pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+    def test_missing_visible_output_takes_precedence_over_surviving_metadata(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        as_json: bool,
+    ):
+        from remove_ai_watermarks import video
+        from remove_ai_watermarks.cli import EXIT_NO_VISIBLE_MARK
+
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"media")
+        nothing = _MediaCommandResult(output=None, remaining_metadata={"c2pa_manifest": "present"})
+        monkeypatch.setattr(video, "remove_video_visible", lambda *_args, **_kwargs: nothing)
+
+        args = ["video", "visible", str(source)]
+        result = CliRunner().invoke(main, [*args, "--json"] if as_json else args)
+
+        assert result.exit_code == EXIT_NO_VISIBLE_MARK, result.output
 
 
 class TestVideoBatchCli:

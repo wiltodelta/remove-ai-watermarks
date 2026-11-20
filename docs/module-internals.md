@@ -94,6 +94,15 @@ Important contracts:
   `cv2/__init__.py` carries `cv2.cv2` and a numpy ABI mismatch carries `None`, so
   a name match let exactly the tracebacks this guard exists for through.
 - Hard processing and write failures exit with code `1`.
+- `audio all`, `video invisible`, `video visible`, `video erase` and `video all`
+  exit `1` when AI metadata survived in the published output, with or without
+  `--json`. Both output modes go through `_emit_json_result` and
+  `_exit_if_metadata_survived`; `video visible` passes `EXIT_NO_VISIBLE_MARK`
+  so a run that wrote nothing keeps the no-signal code. `video erase --json`
+  once exited `0` here because its copy of the block omitted the check (fixed in
+  0.64.0 and folded into the shared helpers afterward).
+  `TestMediaCommandExitContract` in `tests/test_video.py` covers every such
+  command in both modes; add a new command to its table.
 - `all` can still write the completed visible and metadata stages when the
   diffusion dependencies are unavailable, but exits with code `1` so the
   partial result is not reported as complete.

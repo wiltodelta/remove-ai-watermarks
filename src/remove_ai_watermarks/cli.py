@@ -1210,6 +1210,28 @@ def _verification_error(exc: Exception, *, as_json: bool) -> NoReturn:
     raise click.ClickException(str(exc)) from exc
 
 
+def _exit_if_metadata_survived(result: Any) -> None:
+    """Exit 1 when AI metadata survived in a media command's published output."""
+    if result.remaining_metadata:
+        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
+        raise SystemExit(1)
+
+
+def _emit_json_result(result: Any, *, no_output_exit: int | None = None) -> None:
+    """Print a media result as JSON with the same exit code as its text output.
+
+    ``no_output_exit`` is the code for a run that wrote no output; it takes
+    precedence over surviving metadata.
+    """
+    from dataclasses import asdict
+
+    click.echo(json.dumps(asdict(result), indent=2, default=str))
+    if no_output_exit is not None and result.output is None:
+        raise SystemExit(no_output_exit)
+    if result.remaining_metadata:
+        raise SystemExit(1)
+
+
 @main.group("audio")
 def cmd_audio() -> None:
     """Inspect audio watermarks and process supported research marks."""
@@ -1556,7 +1578,6 @@ def cmd_audio_all(
     scheme: AudioScheme,
 ) -> None:
     """Remove AI metadata and optionally clean compatible audio watermarks."""
-    from dataclasses import asdict
 
     from remove_ai_watermarks.audio import remove_audio_all
 
@@ -1582,15 +1603,11 @@ def cmd_audio_all(
         _verification_error(exc, as_json=as_json)
 
     if as_json:
-        click.echo(json.dumps(asdict(result), indent=2, default=str))
-        if result.remaining_metadata:
-            raise SystemExit(1)
+        _emit_json_result(result)
         return
 
     _banner()
-    if result.remaining_metadata:
-        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
-        raise SystemExit(1)
+    _exit_if_metadata_survived(result)
     console.print(f"  AI metadata: stripped -> {result.output}")
     if result.invisible_applied and result.invisible_result is not None:
         console.print(f"  Audio watermark: processed ({result.invisible_result.method})")
@@ -2305,7 +2322,6 @@ def cmd_video_invisible(
     as_json: bool,
 ) -> None:
     """Regenerate video pixels with an explicitly selected profile."""
-    from dataclasses import asdict
 
     from remove_ai_watermarks.video import remove_video_invisible
 
@@ -2330,13 +2346,9 @@ def cmd_video_invisible(
         raise click.ClickException(str(e)) from e
 
     if as_json:
-        click.echo(json.dumps(asdict(result), indent=2, default=str))
-        if result.remaining_metadata:
-            raise SystemExit(1)
+        _emit_json_result(result)
         return
-    if result.remaining_metadata:
-        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
-        raise SystemExit(1)
+    _exit_if_metadata_survived(result)
     console.print(
         f"  Video pixels: regenerated with {_video_profile_label(result.profile)} "
         f"(not a per-file verification): {result.width}x{result.height}, "
@@ -2361,7 +2373,6 @@ def cmd_video_visible(
     as_json: bool,
 ) -> None:
     """Remove a temporally stable visible AI wordmark from video."""
-    from dataclasses import asdict
 
     from remove_ai_watermarks.video import remove_video_visible
 
@@ -2381,18 +2392,12 @@ def cmd_video_visible(
         raise click.ClickException(str(e)) from e
 
     if as_json:
-        click.echo(json.dumps(asdict(result), indent=2, default=str))
-        if result.output is None:
-            raise SystemExit(EXIT_NO_VISIBLE_MARK)
-        if result.remaining_metadata:
-            raise SystemExit(1)
+        _emit_json_result(result, no_output_exit=EXIT_NO_VISIBLE_MARK)
         return
     if result.output is None:
         console.print(f"  No stable {mark} watermark detected; no output written")
         raise SystemExit(EXIT_NO_VISIBLE_MARK)
-    if result.remaining_metadata:
-        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
-        raise SystemExit(1)
+    _exit_if_metadata_survived(result)
     console.print(
         f"  Removed {result.mark} watermark from "
         f"{result.removed_frames}/{result.total_frames} frames -> {result.output}"
@@ -2437,7 +2442,6 @@ def cmd_video_erase(
     as_json: bool,
 ) -> None:
     """Erase user-directed (x,y,w,h) region(s) from a video across all or selected frames."""
-    from dataclasses import asdict
 
     from remove_ai_watermarks.video import remove_video_region
 
@@ -2461,13 +2465,9 @@ def cmd_video_erase(
         raise click.ClickException(str(e)) from e
 
     if as_json:
-        click.echo(json.dumps(asdict(result), indent=2, default=str))
-        if result.remaining_metadata:
-            raise SystemExit(1)
+        _emit_json_result(result)
         return
-    if result.remaining_metadata:
-        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
-        raise SystemExit(1)
+    _exit_if_metadata_survived(result)
     console.print(
         f"  Erased {len(result.regions)} region(s) across "
         f"{result.erased_frames}/{result.total_frames} frames -> {result.output}"
@@ -2516,7 +2516,6 @@ def cmd_video_all(
     as_json: bool,
 ) -> None:
     """Remove stable visible marks, AI metadata, and optional pixel/audio marks from video."""
-    from dataclasses import asdict
 
     from remove_ai_watermarks.video import remove_video_all
 
@@ -2561,14 +2560,10 @@ def cmd_video_all(
         raise click.ClickException(str(e)) from e
 
     if as_json:
-        click.echo(json.dumps(asdict(result), indent=2, default=str))
-        if result.remaining_metadata:
-            raise SystemExit(1)
+        _emit_json_result(result)
         return
 
-    if result.remaining_metadata:
-        console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
-        raise SystemExit(1)
+    _exit_if_metadata_survived(result)
     if result.visible_mark is None:
         detail = "" if result.invisible_removed else "; pixels preserved"
         console.print(f"  Visible mark: none found{detail}")
