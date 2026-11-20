@@ -98,8 +98,8 @@ retired Hub model repositories), then runs
 `docs/ai-image-detector-leaderboard/` onto the Hugging Face Space
 `wiltodelta/ai-image-detector-leaderboard`, and write an external arena and
 baseline-drift status table (covering the Space, the Hugging Face blog report,
-`aidetectarena.com`, and the pinned Hub baseline revisions) to the workflow
-summary. A library version bump alone
+`aidetectarena.com`, `DFBench/Leaderboard-Image-2025`, and the pinned Hub
+baseline revisions) to the workflow summary. A library version bump alone
 does not upload new weights - bump `WEIGHTS_REVISION` in
 `src/remove_ai_watermarks/source_classify.py` when a new Hub commit must reach
 installed clients. The private corpus, catalog, paths, hashes, embeddings, and

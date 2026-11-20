@@ -4,8 +4,9 @@
 Keeps the public 20-model Hugging Face Space leaderboard aligned with the tracked
 `docs/source-classify-hf/metrics.json` manifest, optionally recomputing the 578-image
 open benchmark row from a frozen `.npz` bundle on CPU, exporting predictions for
-external evaluation arenas (`AI Detector Arena`), and checking external surfaces
-for version or baseline drift.
+external evaluation arenas (`AI Detector Arena`, `DFBench Image 2025`), running
+pinned external benchmark suites (`NTIRE 2026`, `OpenFake`, `OmniFake-SET/OOD`,
+`CommunityForensics-Eval`), and checking external surfaces for version or drift.
 """
 
 from __future__ import annotations
@@ -26,11 +27,15 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+import zipfile
+from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
+
+_MetaT = TypeVar("_MetaT")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 _REPO_SRC = REPO_ROOT / "src"
@@ -53,6 +58,27 @@ AIDETECTARENA_VERSIONS_URL = (
     "https://raw.githubusercontent.com/AI-Detect-Arena/benchmark-dataset/main/dataset_versions.md"
 )
 AIDETECTARENA_ISSUE_API_URL = "https://api.github.com/repos/AI-Detect-Arena/benchmark-dataset/issues/1"
+AIDETECTARENA_ISSUE_COMMENTS_API_URL = (
+    "https://api.github.com/repos/AI-Detect-Arena/benchmark-dataset/issues/1/comments"
+)
+
+DFBENCH_SPACE_REPO = "DFBench/Leaderboard-Image-2025"
+DFBENCH_CSV_URL = f"https://huggingface.co/spaces/{DFBENCH_SPACE_REPO}/resolve/main/leaderboard.csv"
+DFBENCH_DATASET_REPO = "DFBench/DFBench_Image25"
+DFBENCH_DATASET_REVISION = "b56428ad354ec838d429ece8dc8af7e2ff3bb7ce"
+DFBENCH_IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".tiff", ".tif"})
+
+NTIRE_TEST_REPO = "deepfakesMSU/NTIRE-RobustAIGenDetection-test-public"
+NTIRE_TEST_REVISION = "7446d42c0ce38305cedc12e1a8ae7925ce2133dd"
+OPENFAKE_REPO = "ComplexDataLab/OpenFake"
+OPENFAKE_REVISION = "00b2f0ae3f5f7684c4b00f794f4c500076a9355d"
+OMNIFAKE_SET_REPO = "Zlatan-Ye/OmniFake-SET"
+OMNIFAKE_SET_REVISION = "cbac9174fc8c7527abc86aedcc91266e8c9e52df"
+OMNIFAKE_OOD_REPO = "Zlatan-Ye/OmniFake-OOD"
+OMNIFAKE_OOD_REVISION = "ece621e95ba94f47043b5d1050f8468b3b6a209e"
+COMMFOR_EVAL_REPO = "OwensLab/CommunityForensics-Eval"
+COMMFOR_EVAL_REVISION = "7d4a74a88d2cac93b513c0853bf92c260eaceea0"
+ALL_EXTERNAL_SUITES: tuple[str, ...] = ("ntire2026", "openfake", "omnifake", "commfor_eval")
 
 CARD_DIR = REPO_ROOT / "docs" / "source-classify-hf"
 LEADERBOARD_DIR = REPO_ROOT / "docs" / "ai-image-detector-leaderboard"
@@ -91,6 +117,89 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _sha256_file(path: Path) -> str:
     with path.open("rb") as handle:
         return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def _binary_roc_auc(labels: Sequence[bool], scores: Sequence[float]) -> float | None:
+    """Compute exact tie-averaged Mann-Whitney U ROC-AUC without external dependencies."""
+    if len(labels) != len(scores) or not labels:
+        return None
+    n_pos = sum(1 for lbl in labels if lbl)
+    n_neg = len(labels) - n_pos
+    if n_pos == 0 or n_neg == 0:
+        return None
+    paired = sorted(zip(scores, labels, strict=True), key=lambda item: item[0])
+    pos_rank_sum = 0.0
+    idx = 0
+    total = len(paired)
+    while idx < total:
+        end = idx + 1
+        while end < total and paired[end][0] == paired[idx][0]:
+            end += 1
+        avg_rank = 0.5 * ((idx + 1) + end)
+        pos_in_tie = sum(1 for k in range(idx, end) if paired[k][1])
+        pos_rank_sum += pos_in_tie * avg_rank
+        idx = end
+    u_stat = pos_rank_sum - 0.5 * n_pos * (n_pos + 1)
+    return float(u_stat / (n_pos * n_neg))
+
+
+def _summarize_binary_records(records: Sequence[tuple[bool, bool, float]]) -> dict[str, Any]:
+    """Summarize `(gt_ai, pred_ai, prob_ai)` tuples into standard detection metrics."""
+    tp = sum(1 for g, p, _ in records if g and p)
+    tn = sum(1 for g, p, _ in records if (not g) and (not p))
+    fp = sum(1 for g, p, _ in records if (not g) and p)
+    fn = sum(1 for g, p, _ in records if g and (not p))
+    tot = len(records)
+    if tot == 0:
+        return {"total": 0}
+    prec = tp / max(1, tp + fp)
+    rec = tp / max(1, tp + fn)
+    f1 = 2.0 * prec * rec / max(1e-9, prec + rec)
+    fpr = fp / max(1, fp + tn)
+    auc = _binary_roc_auc([g for g, _, _ in records], [s for _, _, s in records])
+    return {
+        "total": tot,
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "accuracy_pct": round(100.0 * (tp + tn) / tot, 2),
+        "precision_pct": round(100.0 * prec, 2),
+        "recall_pct": round(100.0 * rec, 2),
+        "f1_pct": round(100.0 * f1, 2),
+        "fpr_pct": round(100.0 * fpr, 2),
+        "roc_auc": round(auc, 4) if auc is not None else None,
+    }
+
+
+_OPENFAKE_PROVIDER_PREFIXES: tuple[tuple[str, str | tuple[str, ...]], ...] = (
+    ("flux", "flux"),
+    ("openai", ("gpt-image", "dall-e", "dalle", "sora")),
+    ("midjourney", "midjourney"),
+    ("google", ("gemini", "imagen", "veo", "nano-banana")),
+    ("ideogram", "ideogram"),
+    ("bytedance", ("seedream", "doubao", "jimeng")),
+    ("stable_diffusion", ("sd", "stable-diffusion", "illustrious", "juggernaut", "playground")),
+    ("xai", ("grok", "aurora")),
+    ("firefly", "firefly"),
+    ("meta", ("emu", "meta-")),
+)
+
+
+def _map_openfake_provider(model_name: str) -> str | None:
+    """Map `ComplexDataLab/OpenFake` generator tags onto our 10-provider taxonomy (`None` for OOD)."""
+    low = model_name.strip().lower()
+    return next((prov for prov, prefixes in _OPENFAKE_PROVIDER_PREFIXES if low.startswith(prefixes)), None)
+
+
+def _warm_source_model(weights_path: Path) -> None:
+    """Populate the model and ONNX Runtime session caches before spawning worker threads."""
+    from remove_ai_watermarks import source_classify as sc
+
+    loaded = sc._load_model(weights_path)  # pyright: ignore[reportPrivateUsage]
+    holder = getattr(loaded, "onnx_holder", None)
+    if holder is not None:
+        holder.get_session()
 
 
 def _load_benchmark_module() -> Any:
@@ -432,6 +541,7 @@ def check_external_arenas(
     expected_artifact = str(loaded_metrics["artifact_file"])
     expected_sha256 = str(loaded_metrics["artifact_sha256"])
     canonical_rev = resolve_canonical_raiw_revision(explicit_revision=expected_revision)
+    api = HfApi()
 
     def _audit_space() -> dict[str, Any]:
         live_url = f"https://huggingface.co/spaces/{LEADERBOARD_SPACE_REPO}/resolve/main/{LEADERBOARD_JSON_REL}"
@@ -494,8 +604,25 @@ def check_external_arenas(
             latest_dataset_ver = ver_matches[0] if ver_matches else "unknown"
             _st_i, issue_raw = _http_get_text(AIDETECTARENA_ISSUE_API_URL, accept="application/vnd.github+json")
             issue_obj = json.loads(issue_raw)
-            issue_body = str(issue_obj.get("body") or "")
-            issue_artifacts = sorted(set(re.findall(r"multi-provider-source-v\d+\.npz", issue_body)))
+            combined_text = str(issue_obj.get("body") or "")
+            comment_cnt = int(issue_obj.get("comments") or 0)
+            if comment_cnt > 0:
+                _st_c, comments_raw = _http_get_text(
+                    AIDETECTARENA_ISSUE_COMMENTS_API_URL,
+                    accept="application/vnd.github+json",
+                )
+                comments_list = json.loads(comments_raw)
+                if isinstance(comments_list, list):
+                    combined_text += "\n" + "\n".join(str(c.get("body") or "") for c in comments_list)
+            issue_artifacts = [
+                name
+                for _, name in sorted(
+                    {
+                        (int(m.group(1)), m.group(0))
+                        for m in re.finditer(r"multi-provider-source-v(\d+)\.npz", combined_text)
+                    }
+                )
+            ]
             _st_h, home_html = _http_get_text(AIDETECTARENA_HOME_URL)
             listed_live = "raiw-source-classify" in home_html.lower() or "remove-ai-watermarks" in home_html.lower()
             return {
@@ -505,8 +632,9 @@ def check_external_arenas(
                 "latest_dataset_version": latest_dataset_ver,
                 "listed_on_live_leaderboard": listed_live,
                 "issue_state": str(issue_obj.get("state") or ""),
-                "issue_comments": int(issue_obj.get("comments") or 0),
+                "issue_comments": comment_cnt,
                 "issue_artifacts": issue_artifacts,
+                "issue_latest_artifact": issue_artifacts[-1] if issue_artifacts else None,
                 "issue_matches_current_artifact": expected_artifact in issue_artifacts,
             }
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
@@ -517,8 +645,39 @@ def check_external_arenas(
                 "error": f"{type(exc).__name__}: {exc}",
             }
 
+    def _audit_dfbench() -> dict[str, Any]:
+        try:
+            _st_csv, csv_body = _http_get_text(DFBENCH_CSV_URL, accept="text/csv,text/plain;q=0.9,*/*;q=0.8")
+            rows = list(csv.DictReader(io.StringIO(csv_body)))
+            listed = any(
+                "raiw-source-classify" in str(r.get("Model") or "").lower()
+                or "remove-ai-watermarks" in str(r.get("Model") or "").lower()
+                for r in rows
+            )
+            top_acc = round(float(rows[0]["Accuracy"]), 2) if rows and rows[0].get("Accuracy") else None
+            log.info("HF API request: repo_info repo_id=%s repo_type=dataset", DFBENCH_DATASET_REPO)
+            ds_info = api.repo_info(repo_id=DFBENCH_DATASET_REPO, repo_type="dataset")
+            ds_sha = str(ds_info.sha or "")
+            log.info("HF API response: repo_id=%s head=%s", DFBENCH_DATASET_REPO, ds_sha[:12])
+            return {
+                "url": f"https://huggingface.co/spaces/{DFBENCH_SPACE_REPO}",
+                "dataset_repo": DFBENCH_DATASET_REPO,
+                "owned": False,
+                "listed_on_live_leaderboard": listed,
+                "entry_count": len(rows),
+                "top_accuracy_pct": top_acc,
+                "dataset_head_sha": ds_sha,
+                "dataset_matches_pinned_sha": ds_sha == DFBENCH_DATASET_REVISION,
+            }
+        except Exception as exc:
+            log.warning("External check failed for %s: %s", DFBENCH_SPACE_REPO, exc)
+            return {
+                "url": f"https://huggingface.co/spaces/{DFBENCH_SPACE_REPO}",
+                "owned": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
     pinned_baselines = _extract_pinned_baselines_from_source(leaderboard=leaderboard)
-    api = HfApi()
 
     def _check_baseline(item: tuple[str, str]) -> dict[str, str] | None:
         repo_id, pinned_sha = item
@@ -537,11 +696,13 @@ def check_external_arenas(
         fut_space = pool.submit(_audit_space)
         fut_blog = pool.submit(_audit_blog)
         fut_arena = pool.submit(_audit_arena)
+        fut_dfbench = pool.submit(_audit_dfbench)
         baseline_results = list(pool.map(_check_baseline, sorted(pinned_baselines.items())))
         surfaces: dict[str, dict[str, Any]] = {
             "hf_leaderboard_space": fut_space.result(),
             "hf_blog_article": fut_blog.result(),
             "ai_detector_arena": fut_arena.result(),
+            "dfbench_image_2025": fut_dfbench.result(),
         }
 
     drifted_baselines = [item for item in baseline_results if item is not None]
@@ -570,6 +731,7 @@ def export_aidetectarena_submission(
     out_dir: Path,
     *,
     weights_path: Path | None = None,
+    explicit_revision: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Generate `predictions.csv`, official metrics, and an issue update for AI Detector Arena."""
@@ -584,10 +746,10 @@ def export_aidetectarena_submission(
 
     resolved_weights = sc.resolve_weights_path(weights_path)
     weights_sha = _sha256_file(resolved_weights)
-    rev = resolve_canonical_raiw_revision(weights_path=resolved_weights)
+    rev = resolve_canonical_raiw_revision(weights_path=resolved_weights, explicit_revision=explicit_revision)
 
     pred_rows: list[tuple[str, str, float]] = []
-    tp = tn = fp = fn = 0
+    bin_records: list[tuple[bool, bool, float]] = []
     with meta_csv.open("r", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             img_path = dataset_dir / row["filename"].strip()
@@ -596,28 +758,25 @@ def export_aidetectarena_submission(
             image_id = row["id"].strip()
             gt_ai = row["is_ai"].strip().lower() == "true"
             res = sc.classify_source(img_path, weights_path=resolved_weights)
-            pred_label = "ai" if res.synthetic_detected else "real"
+            pred_ai = bool(res.synthetic_detected)
+            pred_label = "ai" if pred_ai else "real"
             prob = float(res.synthetic_probability)
-            conf = prob if res.synthetic_detected else (1.0 - prob)
+            conf = prob if pred_ai else (1.0 - prob)
             pred_rows.append((image_id, pred_label, round(conf, 6)))
-            if gt_ai and res.synthetic_detected:
-                tp += 1
-            elif gt_ai and not res.synthetic_detected:
-                fn += 1
-            elif (not gt_ai) and res.synthetic_detected:
-                fp += 1
-            else:
-                tn += 1
+            bin_records.append((gt_ai, pred_ai, prob))
 
-    total = tp + tn + fp + fn
-    if total == 0:
+    if not bin_records:
         raise ValueError(f"Zero evaluable images found under {dataset_dir}")
-    prec = tp / max(1, tp + fp)
-    rec = tp / max(1, tp + fn)
-    f1 = 2.0 * prec * rec / max(1e-9, prec + rec)
-    fpr = fp / max(1, fp + tn)
-    fnr = fn / max(1, tp + fn)
-    combined = 100.0 * (0.5 * f1 + 0.3 * (1.0 - fpr) + 0.2 * (1.0 - fnr))
+    base_metrics = _summarize_binary_records(bin_records)
+    tp = int(base_metrics["tp"])
+    tn = int(base_metrics["tn"])
+    fp = int(base_metrics["fp"])
+    fn = int(base_metrics["fn"])
+    total = int(base_metrics["total"])
+    f1_raw = (2.0 * tp) / max(1, 2 * tp + fp + fn)
+    fpr_raw = fp / max(1, fp + tn)
+    fnr_raw = fn / max(1, tp + fn)
+    combined = 100.0 * (0.5 * f1_raw + 0.3 * (1.0 - fpr_raw) + 0.2 * (1.0 - fnr_raw))
 
     summary: dict[str, Any] = {
         "package_version": __version__,
@@ -629,12 +788,12 @@ def export_aidetectarena_submission(
         "tn": tn,
         "fp": fp,
         "fn": fn,
-        "accuracy_pct": round(100.0 * (tp + tn) / total, 2),
-        "precision_pct": round(100.0 * prec, 2),
-        "recall_pct": round(100.0 * rec, 2),
-        "f1_pct": round(100.0 * f1, 2),
-        "fpr_pct": round(100.0 * fpr, 2),
-        "fnr_pct": round(100.0 * fnr, 2),
+        "accuracy_pct": base_metrics["accuracy_pct"],
+        "precision_pct": base_metrics["precision_pct"],
+        "recall_pct": base_metrics["recall_pct"],
+        "f1_pct": base_metrics["f1_pct"],
+        "fpr_pct": base_metrics["fpr_pct"],
+        "fnr_pct": round(100.0 * fnr_raw, 2),
         "combined_score": round(combined, 2),
     }
 
@@ -653,14 +812,348 @@ def export_aidetectarena_submission(
     md_note = (
         f"Updated `{WEIGHTS_REPO}` results for `{resolved_weights.name}` "
         f"(`remove-ai-watermarks=={__version__}`, Hub revision `{rev}`):\n\n"
-        f"- Accuracy: {summary['accuracy_pct']:.2f}% (TP {tp}, TN {tn}, FP {fp}, FN {fn})\n"
-        f"- Precision: {summary['precision_pct']:.2f}%, Recall: {summary['recall_pct']:.2f}%, "
+        f"* Accuracy: {summary['accuracy_pct']:.2f}% (TP {tp}, TN {tn}, FP {fp}, FN {fn})\n"
+        f"* Precision: {summary['precision_pct']:.2f}%, Recall: {summary['recall_pct']:.2f}%, "
         f"F1: {summary['f1_pct']:.2f}%\n"
-        f"- FPR: {summary['fpr_pct']:.2f}%, FNR: {summary['fnr_pct']:.2f}%, "
+        f"* FPR: {summary['fpr_pct']:.2f}%, FNR: {summary['fnr_pct']:.2f}%, "
         f"Combined Score: {summary['combined_score']:.2f}\n"
     )
     _atomic_write_text(out_dir / "issue_update.md", md_note)
     return summary
+
+
+def export_dfbench_submission(
+    dataset_dir: Path | None,
+    out_dir: Path,
+    *,
+    weights_path: Path | None = None,
+    explicit_revision: str | None = None,
+    model_slug: str = "wiltodelta_raiw-source-classify",
+    max_workers: int = 2,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Export a 2,920-row `filename,label` CSV (`real`/`fake`) for `DFBench/Leaderboard-Image-2025`."""
+    from huggingface_hub import snapshot_download
+
+    from remove_ai_watermarks import __version__
+    from remove_ai_watermarks import source_classify as sc
+
+    resolved_weights = sc.resolve_weights_path(weights_path)
+    weights_sha = _sha256_file(resolved_weights)
+    rev = resolve_canonical_raiw_revision(weights_path=resolved_weights, explicit_revision=explicit_revision)
+
+    if dataset_dir is None:
+        log.info(
+            "HF API request: snapshot_download repo_id=%s revision=%s",
+            DFBENCH_DATASET_REPO,
+            DFBENCH_DATASET_REVISION[:12],
+        )
+        root = Path(
+            snapshot_download(
+                DFBENCH_DATASET_REPO,
+                repo_type="dataset",
+                revision=DFBENCH_DATASET_REVISION,
+            )
+        )
+        log.info("HF API response: snapshot_download path=%s", root)
+    else:
+        root = dataset_dir
+
+    img_dir = root / "dataset" if (root / "dataset").is_dir() else root
+    files = [p for p in img_dir.iterdir() if p.is_file() and p.suffix.lower() in DFBENCH_IMAGE_SUFFIXES]
+    if not files:
+        raise FileNotFoundError(f"No DFBench image files found under {img_dir}")
+
+    def _sort_key(p: Path) -> tuple[int, int, str]:
+        return (0, int(p.stem), p.name) if p.stem.isdigit() else (1, 0, p.name)
+
+    files.sort(key=_sort_key)
+    _warm_source_model(resolved_weights)
+
+    def _score_path(img_path: Path) -> tuple[str, str]:
+        res = sc.classify_source(img_path, weights_path=resolved_weights)
+        return img_path.name, ("fake" if res.synthetic_detected else "real")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
+        scored = list(pool.map(_score_path, files))
+
+    fake_cnt = sum(1 for _, lbl in scored if lbl == "fake")
+    real_cnt = len(scored) - fake_cnt
+    by_ext = dict(Counter(p.suffix.lower().lstrip(".") for p in files))
+    summary: dict[str, Any] = {
+        "benchmark": DFBENCH_SPACE_REPO,
+        "dataset_repo": DFBENCH_DATASET_REPO,
+        "dataset_revision": DFBENCH_DATASET_REVISION,
+        "package_version": __version__,
+        "artifact_file": resolved_weights.name,
+        "artifact_sha256": weights_sha,
+        "hub_revision": rev,
+        "total_images": len(scored),
+        "predicted_fake": fake_cnt,
+        "predicted_real": real_cnt,
+        "by_extension": by_ext,
+    }
+
+    if dry_run:
+        log.info("dry-run: evaluated %d DFBench images (%s); skipping file writes", len(scored), summary)
+        return summary
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_buf = io.StringIO()
+    writer = csv.writer(csv_buf, lineterminator="\n")
+    writer.writerow(["filename", "label"])
+    writer.writerows(scored)
+    csv_name = f"{model_slug}.csv"
+    _atomic_write_text(out_dir / csv_name, csv_buf.getvalue())
+    _atomic_write_text(out_dir / "dfbench_report.json", json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
+def evaluate_external_benchmark_suite(
+    *,
+    weights_path: Path | None = None,
+    explicit_revision: str | None = None,
+    ntire_zip: Path | None = None,
+    suites: Sequence[str] = ALL_EXTERNAL_SUITES,
+    max_workers: int = 2,
+    out_json: Path | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Evaluate `raiw-source-classify` across pinned 2025-2026 external benchmarks on CPU."""
+    import pyarrow.parquet as pq
+    from huggingface_hub import HfFileSystem, hf_hub_download
+    from PIL import Image
+
+    from remove_ai_watermarks import __version__
+    from remove_ai_watermarks import source_classify as sc
+
+    unknown_suites = [s for s in suites if s not in ALL_EXTERNAL_SUITES]
+    if unknown_suites:
+        raise ValueError(f"Unknown external suite(s): {unknown_suites}; valid={ALL_EXTERNAL_SUITES}")
+
+    resolved_weights = sc.resolve_weights_path(weights_path)
+    weights_sha = _sha256_file(resolved_weights)
+    rev = resolve_canonical_raiw_revision(weights_path=resolved_weights, explicit_revision=explicit_revision)
+    _warm_source_model(resolved_weights)
+    fs = HfFileSystem()
+    workers = max(1, max_workers)
+
+    def _score_bytes(raw_bytes: bytes) -> tuple[bool, float, str]:
+        with Image.open(io.BytesIO(raw_bytes)) as im:
+            res = sc.classify_source(im, weights_path=resolved_weights)
+        return bool(res.synthetic_detected), float(res.synthetic_probability), str(res.label)
+
+    suite_results: dict[str, Any] = {}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as score_pool:
+
+        def _dedup_and_score(
+            items: Iterable[tuple[bytes, _MetaT]],
+        ) -> list[tuple[_MetaT, tuple[bool, float, str]]]:
+            seen_shas: set[str] = set()
+            raw_list: list[bytes] = []
+            meta_list: list[_MetaT] = []
+            for raw, meta in items:
+                sha = hashlib.sha256(raw).hexdigest()
+                if sha not in seen_shas:
+                    seen_shas.add(sha)
+                    raw_list.append(raw)
+                    meta_list.append(meta)
+            preds = list(score_pool.map(_score_bytes, raw_list))
+            raw_list.clear()
+            return list(zip(meta_list, preds, strict=True))
+
+        if "ntire2026" in suites:
+            log.info(
+                "HF API request: hf_hub_download repo_id=%s revision=%s (test_labels.csv + test_images.zip)",
+                NTIRE_TEST_REPO,
+                NTIRE_TEST_REVISION[:12],
+            )
+            labels_csv = Path(
+                hf_hub_download(
+                    NTIRE_TEST_REPO,
+                    "test_labels.csv",
+                    repo_type="dataset",
+                    revision=NTIRE_TEST_REVISION,
+                )
+            )
+            images_zip = ntire_zip or Path(
+                hf_hub_download(
+                    NTIRE_TEST_REPO,
+                    "test_images.zip",
+                    repo_type="dataset",
+                    revision=NTIRE_TEST_REVISION,
+                )
+            )
+            log.info("HF API response: NTIRE test archive ready (%s)", images_zip)
+
+            def _iter_ntire() -> Iterable[tuple[bytes, tuple[bool, bool]]]:
+                with zipfile.ZipFile(images_zip, "r") as zf:
+                    by_basename = {Path(name).name: name for name in zf.namelist() if not name.endswith("/")}
+                    with labels_csv.open("r", encoding="utf-8") as fh:
+                        for row in csv.DictReader(fh):
+                            arc_name = by_basename.get(row["image_name"].strip())
+                            if arc_name is None:
+                                continue
+                            gt_ai = row["label"].strip() == "1"
+                            is_dist = row.get("is_distorted", "0").strip() == "1"
+                            yield zf.read(arc_name), (gt_ai, is_dist)
+
+            ntire_scored = _dedup_and_score(_iter_ntire())
+            all_rec = [(gt, pred, prob) for (gt, _), (pred, prob, _) in ntire_scored]
+            clean_rec = [(gt, pred, prob) for (gt, dist), (pred, prob, _) in ntire_scored if not dist]
+            dist_rec = [(gt, pred, prob) for (gt, dist), (pred, prob, _) in ntire_scored if dist]
+            suite_results["ntire2026"] = {
+                "dataset_repo": NTIRE_TEST_REPO,
+                "revision": NTIRE_TEST_REVISION,
+                "overall": _summarize_binary_records(all_rec),
+                "clean_only": _summarize_binary_records(clean_rec),
+                "distorted_only": _summarize_binary_records(dist_rec),
+            }
+
+        if "openfake" in suites:
+            log.info("HF API request: streaming OpenFake core/test & reddit/test @ %s", OPENFAKE_REVISION[:12])
+            core_uri = f"datasets/{OPENFAKE_REPO}@{OPENFAKE_REVISION}/core/test-00000-of-00013.parquet"
+            reddit_uri = f"datasets/{OPENFAKE_REPO}@{OPENFAKE_REVISION}/reddit/test-00000-of-00005.parquet"
+            with fs.open(core_uri, "rb") as f_core:
+                core_rows = (
+                    pq.ParquetFile(f_core)
+                    .read_row_groups([0, 1, 2, 3], columns=["label", "model", "image"])
+                    .to_pylist()
+                )
+            with fs.open(reddit_uri, "rb") as f_red:
+                reddit_rows = pq.ParquetFile(f_red).read_row_groups([0, 1, 2], columns=["label", "image"]).to_pylist()
+            log.info("HF API response: OpenFake loaded core=%d reddit=%d rows", len(core_rows), len(reddit_rows))
+
+            core_scored = _dedup_and_score(
+                (r["image"]["bytes"], (str(r["label"]).lower() == "fake", str(r["model"]))) for r in core_rows
+            )
+            core_rows.clear()
+            red_scored = _dedup_and_score((r["image"]["bytes"], str(r["label"]).lower() == "fake") for r in reddit_rows)
+            reddit_rows.clear()
+
+            in_tax_total = in_tax_exact = in_tax_det = 0
+            ood_total = ood_det = ood_abstain_label = 0
+            for (gt_ai, mdl), (pred_ai, _prob, pred_lbl) in core_scored:
+                if not gt_ai:
+                    continue
+                mapped = _map_openfake_provider(mdl)
+                if mapped is not None:
+                    in_tax_total += 1
+                    if pred_ai:
+                        in_tax_det += 1
+                    if pred_lbl == mapped:
+                        in_tax_exact += 1
+                else:
+                    ood_total += 1
+                    if pred_ai:
+                        ood_det += 1
+                    if pred_lbl == "unknown":
+                        ood_abstain_label += 1
+
+            suite_results["openfake"] = {
+                "dataset_repo": OPENFAKE_REPO,
+                "revision": OPENFAKE_REVISION,
+                "core_test_slice": {
+                    **_summarize_binary_records([(gt, pred, prob) for (gt, _), (pred, prob, _) in core_scored]),
+                    "in_taxonomy_ai_total": in_tax_total,
+                    "in_taxonomy_recall_pct": round(100.0 * in_tax_det / max(1, in_tax_total), 2),
+                    "in_taxonomy_exact_attribution_pct": round(100.0 * in_tax_exact / max(1, in_tax_total), 2),
+                    "ood_ai_total": ood_total,
+                    "ood_synthetic_recall_pct": round(100.0 * ood_det / max(1, ood_total), 2),
+                    "ood_family_abstain_pct": round(100.0 * ood_abstain_label / max(1, ood_total), 2),
+                },
+                "reddit_in_the_wild_slice": _summarize_binary_records(
+                    [(gt, pred, prob) for gt, (pred, prob, _) in red_scored]
+                ),
+            }
+
+        if "omnifake" in suites:
+            log.info(
+                "HF API request: streaming OmniFake-SET (@%s) & OmniFake-OOD (@%s)",
+                OMNIFAKE_SET_REVISION[:12],
+                OMNIFAKE_OOD_REVISION[:12],
+            )
+            set_uri = f"datasets/{OMNIFAKE_SET_REPO}@{OMNIFAKE_SET_REVISION}/data/image/test-00000.parquet"
+            ood_uri = f"datasets/{OMNIFAKE_OOD_REPO}@{OMNIFAKE_OOD_REVISION}/data/image/test-00000.parquet"
+            with fs.open(set_uri, "rb") as f_set:
+                set_rows = (
+                    pq.ParquetFile(f_set).read_row_groups([0, 1, 2, 3, 4], columns=["label", "image"]).to_pylist()
+                )
+            with fs.open(ood_uri, "rb") as f_ood:
+                ood_rows = pq.ParquetFile(f_ood).read_row_groups([0, 1, 2], columns=["label", "image"]).to_pylist()
+            log.info("HF API response: OmniFake loaded set=%d ood=%d rows", len(set_rows), len(ood_rows))
+
+            def _eval_omnifake_split(raw_rows: list[dict[str, Any]]) -> dict[str, Any]:
+                scored_split = _dedup_and_score((r["image"]["bytes"], str(r["label"]).upper()) for r in raw_rows)
+                raw_rows.clear()
+                full_vs_real = [
+                    (lbl == "FULL_SYNTHETIC", pred, prob)
+                    for lbl, (pred, prob, _) in scored_split
+                    if lbl in ("REAL", "FULL_SYNTHETIC")
+                ]
+                any_manip_vs_real = [(lbl != "REAL", pred, prob) for lbl, (pred, prob, _) in scored_split]
+                tamp = [(pred, prob) for lbl, (pred, prob, _) in scored_split if lbl == "TAMPERED"]
+                return {
+                    "full_synthetic_vs_real": _summarize_binary_records(full_vs_real),
+                    "all_forged_including_tampered_vs_real": _summarize_binary_records(any_manip_vs_real),
+                    "tampered_only_count": len(tamp),
+                    "tampered_only_recall_pct": round(100.0 * sum(1 for p, _ in tamp if p) / max(1, len(tamp)), 2),
+                }
+
+            suite_results["omnifake"] = {
+                "omnifake_set_repo": OMNIFAKE_SET_REPO,
+                "omnifake_set_revision": OMNIFAKE_SET_REVISION,
+                "omnifake_ood_repo": OMNIFAKE_OOD_REPO,
+                "omnifake_ood_revision": OMNIFAKE_OOD_REVISION,
+                "in_domain_set": _eval_omnifake_split(set_rows),
+                "out_of_distribution": _eval_omnifake_split(ood_rows),
+            }
+
+        if "commfor_eval" in suites:
+            shard_idxs = list(range(0, 413, 20))
+            log.info(
+                "HF API request: streaming %d evenly spaced CompEval shards from %s @ %s",
+                len(shard_idxs),
+                COMMFOR_EVAL_REPO,
+                COMMFOR_EVAL_REVISION[:12],
+            )
+
+            def _read_cf_shard(idx: int) -> list[dict[str, Any]]:
+                uri = f"datasets/{COMMFOR_EVAL_REPO}@{COMMFOR_EVAL_REVISION}/data/CompEval-{idx:05d}-of-00413.parquet"
+                with fs.open(uri, "rb") as fh:
+                    return pq.ParquetFile(fh).read_row_group(0, columns=["label", "image_data"]).to_pylist()
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(shard_idxs))) as io_pool:
+                cf_batches = list(io_pool.map(_read_cf_shard, shard_idxs))
+            cf_scored = _dedup_and_score(
+                (r["image_data"], int(r["label"]) == 1)
+                for batch in cf_batches
+                for r in batch
+                if isinstance(r["image_data"], bytes)
+            )
+            cf_batches.clear()
+            log.info("HF API response: CommunityForensics-Eval scored %d deduplicated samples", len(cf_scored))
+
+            suite_results["commfor_eval"] = {
+                "dataset_repo": COMMFOR_EVAL_REPO,
+                "revision": COMMFOR_EVAL_REVISION,
+                "shards_sampled": len(shard_idxs),
+                "overall": _summarize_binary_records([(gt, pred, prob) for gt, (pred, prob, _) in cf_scored]),
+            }
+
+    payload: dict[str, Any] = {
+        "package_version": __version__,
+        "artifact_file": resolved_weights.name,
+        "artifact_sha256": weights_sha,
+        "hub_revision": rev,
+        "suites": suite_results,
+    }
+    if out_json is not None and not dry_run:
+        _atomic_write_text(out_json, json.dumps(payload, indent=2) + "\n")
+    elif out_json is not None:
+        log.info("dry-run: skipping write of external benchmark report to %s", out_json)
+    return payload
 
 
 def format_arena_markdown_summary(report: dict[str, Any]) -> str:
@@ -689,10 +1182,21 @@ def format_arena_markdown_summary(report: dict[str, Any]) -> str:
         ar_status = "listed" if ar.get("listed_on_live_leaderboard") else f"issue `{ar.get('issue_state')}`"
         ar_det = (
             f"dataset `v{ar.get('latest_dataset_version')}`, "
-            f"issue artifacts `{ar.get('issue_artifacts', [])}`, "
+            f"latest submitted `{ar.get('issue_latest_artifact')}`, "
             f"comments `{ar.get('issue_comments', 0)}`"
         )
         lines.append(f"| `aidetectarena.com` | {ar_status} | {ar_det} |")
+
+    dfb = sf.get("dfbench_image_2025", {})
+    if "error" in dfb:
+        lines.append(f"| `{DFBENCH_SPACE_REPO}` | check failed | {dfb['error']} |")
+    else:
+        dfb_status = "listed" if dfb.get("listed_on_live_leaderboard") else "not submitted"
+        dfb_det = (
+            f"{dfb.get('entry_count', 0)} models (top `{dfb.get('top_accuracy_pct')}%`), "
+            f"dataset pin match `{dfb.get('dataset_matches_pinned_sha')}`"
+        )
+        lines.append(f"| `{DFBENCH_SPACE_REPO}` | {dfb_status} | {dfb_det} |")
 
     up = sf.get("upstream_hf_baselines", {})
     lines.append(
@@ -964,7 +1468,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--check-external-arenas",
         action="store_true",
-        help="Audit live HF leaderboard, HF blog report, AI Detector Arena, and baseline revisions.",
+        help="Audit live HF leaderboard, HF blog report, AI Detector Arena, DFBench, and baseline revisions.",
     )
     parser.add_argument(
         "--fail-on-stale",
@@ -975,6 +1479,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--summary-md", type=Path, default=None, help="Optional Markdown summary output file.")
     parser.add_argument("--export-aidetectarena", type=Path, default=None, help="Path to AI Detector Arena dataset.")
     parser.add_argument("--arena-out", type=Path, default=None, help="Output directory for AI Detector Arena CSV/MD.")
+    parser.add_argument(
+        "--export-dfbench-out",
+        type=Path,
+        default=None,
+        help="Output directory for DFBench 2025 2,920-image blind submission CSV.",
+    )
+    parser.add_argument(
+        "--dfbench-dataset-dir",
+        type=Path,
+        default=None,
+        help="Optional local checkout of `DFBench/DFBench_Image25` (downloads from Hub if omitted).",
+    )
+    parser.add_argument(
+        "--eval-external-suite",
+        action="store_true",
+        help="Run pinned 2025-2026 external benchmarks (`ntire2026`, `openfake`, `omnifake`, `commfor_eval`).",
+    )
+    parser.add_argument(
+        "--external-suites",
+        default=",".join(ALL_EXTERNAL_SUITES),
+        help="Comma-separated subset of external suites to run with `--eval-external-suite`.",
+    )
+    parser.add_argument(
+        "--external-suite-out",
+        type=Path,
+        default=None,
+        help="Optional JSON output path for `--eval-external-suite`.",
+    )
+    parser.add_argument("--max-workers", type=int, default=2, help="Worker threads for external benchmark evaluation.")
     parser.add_argument("--render-blog-chart", type=Path, default=None, help="Render 2400x1260 PNG chart for HF blog.")
     parser.add_argument("--dry-run", action="store_true", help="Roll back local edits and perform zero Hub writes.")
     args = parser.parse_args(argv)
@@ -1014,7 +1547,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             lb_data["results"][0]["weights_updated_epoch"] = w_ep
             mutated_lb = True
 
-    verify_leaderboard_parity(lb_data, metrics)
+    standalone_eval_only = (
+        args.export_aidetectarena is not None or args.export_dfbench_out is not None or args.eval_external_suite
+    ) and not (
+        args.recompute_raiw
+        or args.refresh_hub_dates
+        or args.publish
+        or args.render_blog_chart is not None
+        or args.check_external_arenas
+    )
+    if not standalone_eval_only:
+        verify_leaderboard_parity(lb_data, metrics)
 
     if mutated_lb and not args.dry_run:
         _atomic_write_text(lb_json_path, json.dumps(lb_data, indent=2) + "\n")
@@ -1059,8 +1602,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.export_aidetectarena,
             arena_out,
             weights_path=args.weights,
+            explicit_revision=args.raiw_revision,
             dry_run=args.dry_run,
         )
+
+    if args.export_dfbench_out is not None:
+        export_dfbench_submission(
+            args.dfbench_dataset_dir,
+            args.export_dfbench_out,
+            weights_path=args.weights,
+            explicit_revision=args.raiw_revision,
+            max_workers=args.max_workers,
+            dry_run=args.dry_run,
+        )
+
+    if args.eval_external_suite:
+        selected = [s.strip() for s in args.external_suites.split(",") if s.strip()]
+        suite_res = evaluate_external_benchmark_suite(
+            weights_path=args.weights,
+            explicit_revision=args.raiw_revision,
+            suites=selected,
+            max_workers=args.max_workers,
+            out_json=args.external_suite_out,
+            dry_run=args.dry_run,
+        )
+        sys.stdout.write(json.dumps(suite_res, indent=2) + "\n")
 
     if args.check_external_arenas:
         report = check_external_arenas(
