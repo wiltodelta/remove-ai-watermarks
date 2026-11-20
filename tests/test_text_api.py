@@ -104,7 +104,7 @@ def test_strict_residual_resends_only_restored_sentences(
     original = "The crew counted 12 crates.\n\nStaff will record the seal number in the log."
     destination = tmp_path / "result.txt"
     source = tmp_path / "source.txt"
-    source.write_text(original)
+    source.write_bytes(original.encode("utf-8"))
     destination.write_bytes(b"existing")
     first = ["The crew counted 13 crates.", "Staff will enter the seal number in the log."]
     result = "The crew tallied 12 crates.\n\nStaff will enter the seal number in the log."
