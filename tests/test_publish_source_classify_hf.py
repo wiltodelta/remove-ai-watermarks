@@ -106,7 +106,7 @@ def test_publish_uploads_allowlist_and_deletes_retired_hub_repos(
 
 
 def test_stage_release_includes_standalone_scripts_and_colab_notebook() -> None:
-    assert {"infer.py", "benchmark.py", "demo.ipynb"} <= set(publish.TRACKED_CARD_FILES)
+    assert {"website-content.json", "infer.py", "benchmark.py", "demo.ipynb"} <= set(publish.TRACKED_CARD_FILES)
     assert all((publish.CARD_DIR / name).is_file() for name in publish.TRACKED_CARD_FILES)
 
 
@@ -140,6 +140,20 @@ def test_publish_dry_run_performs_zero_hub_mutations_and_revision_out_records_oi
     rc = publish.main(["--src", str(src_dir), "--revision-out", str(rev_file), "--dry-run"])
     assert rc == 0
     assert not rev_file.exists()
+
+
+def test_website_content_matches_personal_website_visitor_copy_contract(tmp_path: Path) -> None:
+    publish.validate_website_contract(publish.CARD_DIR)
+    bad_dir = tmp_path / "bad_card"
+    bad_dir.mkdir()
+    (bad_dir / "README.md").write_text((publish.CARD_DIR / "README.md").read_text(encoding="utf-8"), encoding="utf-8")
+    copy = json.loads((publish.CARD_DIR / "website-content.json").read_text(encoding="utf-8"))
+    (bad_dir / "website-content.json").write_text(
+        json.dumps({**copy, "intro": "Run `pip install remove-ai-watermarks`"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match=r"website-content\.json"):
+        publish.validate_website_contract(bad_dir)
 
 
 def _load_module(name: str, path: Path) -> Any:

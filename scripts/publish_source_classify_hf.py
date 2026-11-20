@@ -38,8 +38,64 @@ RETIRED_FILES = (
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CARD_DIR = REPO_ROOT / "docs" / "source-classify-hf"
-TRACKED_CARD_FILES = ("README.md", "metrics.json", "infer.py", "benchmark.py", "demo.ipynb")
+TRACKED_CARD_FILES = (
+    "README.md",
+    "metrics.json",
+    "website-content.json",
+    "infer.py",
+    "benchmark.py",
+    "demo.ipynb",
+)
 PUBLIC_FILES = (*TRACKED_CARD_FILES, CONFIG_FILE, MODEL_FILE)
+WEBSITE_SECTIONS = ("## Model architecture", "## Evaluation")
+FORBIDDEN_VISITOR_COPY = (
+    "<",
+    ">",
+    "`",
+    "{",
+    "}",
+)
+FORBIDDEN_VISITOR_PATTERN = (
+    r"\b(?:sudo|pip install|brew install|npm install|MCP|CLI|CUDA|API)\b"
+    r"|receipt|invoice|raiw-photo-classify"
+)
+
+
+def validate_website_contract(card_dir: Path) -> None:
+    """Enforce wiltodelta-app's import contract before staging Hub files."""
+    import re
+
+    card = (card_dir / "README.md").read_text(encoding="utf-8")
+    for heading in WEBSITE_SECTIONS:
+        if heading not in card:
+            raise SystemExit(f"README.md missing personal-website section: {heading}")
+    value = json.loads((card_dir / "website-content.json").read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or sorted(value) != ["intro", "requirements", "sections"]:
+        raise SystemExit("website-content.json: invalid visitor copy shape")
+    forbidden_re = re.compile(FORBIDDEN_VISITOR_PATTERN)
+
+    def check_plain(text: Any, limit: int) -> None:
+        if (
+            not isinstance(text, str)
+            or not text.strip()
+            or len(text) > limit
+            or any(ch in text for ch in FORBIDDEN_VISITOR_COPY)
+            or forbidden_re.search(text)
+        ):
+            raise SystemExit("website-content.json: visitor copy violates plain-text or scope rules")
+
+    check_plain(value["intro"], 400)
+    check_plain(value["requirements"], 600)
+    sections = value["sections"]
+    if not isinstance(sections, list) or not (1 <= len(sections) <= 6):
+        raise SystemExit("website-content.json: invalid visitor copy sections")
+    for section in sections:
+        if not isinstance(section, list) or len(section) != 2:
+            raise SystemExit("website-content.json: invalid visitor section")
+        check_plain(section[0], 80)
+        check_plain(section[1], 650)
+    if re.search(r"receipt|invoice|raiw-photo-classify", json.dumps(value), re.IGNORECASE):
+        raise SystemExit("website-content.json: prohibited term in visitor copy")
 
 
 def _build_hub_config(metrics: dict[str, Any]) -> dict[str, Any]:
@@ -67,6 +123,7 @@ def stage_release(dest: Path, src: Path) -> None:
     missing = [str(path) for path in sources.values() if not path.is_file()]
     if missing:
         raise SystemExit(f"missing publication files: {', '.join(missing)}")
+    validate_website_contract(CARD_DIR)
     dest.mkdir(parents=True, exist_ok=True)
     for name, path in sources.items():
         shutil.copy2(path, dest / name)

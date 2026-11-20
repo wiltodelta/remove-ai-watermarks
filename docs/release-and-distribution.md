@@ -89,9 +89,9 @@ part of the package release fan-out. They are published together with
 `.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
 derivative `multi-provider-source-v8.npz` artifact from the declared GitHub
 model freeze, verifies its SHA-256, uploads that file plus the tracked
-`README.md`, `metrics.json`, `infer.py`, `benchmark.py`, and `demo.ipynb` under
-`docs/source-classify-hf/` and a synthesized `config.json` (while deleting
-retired Hub model repositories), then runs
+`README.md`, `metrics.json`, `website-content.json`, `infer.py`, `benchmark.py`,
+and `demo.ipynb` under `docs/source-classify-hf/` and a synthesized
+`config.json` (while deleting retired Hub model repositories), then runs
 `scripts/sync_ai_detector_leaderboard.py` to verify parity against
 `metrics.json` (optionally re-evaluating the 578-image open benchmark on CPU via
 `recompute_leaderboard=true`), synchronize
@@ -99,7 +99,15 @@ retired Hub model repositories), then runs
 `wiltodelta/ai-image-detector-leaderboard`, and write an external arena and
 baseline-drift status table (covering the Space, the Hugging Face blog report,
 `aidetectarena.com`, `DFBench/Leaderboard-Image-2025`, and the pinned Hub
-baseline revisions) to the workflow summary. A library version bump alone
+baseline revisions) to the workflow summary. Victor's personal website
+(`wiltodelta/wiltodelta-app`, `/projects/raiw-source-classify/`) polls
+`wiltodelta/raiw-source-classify` via `release-refresh.yml`, imports `README.md`
+("Model architecture" and "Evaluation") and `website-content.json`, and
+redeploys automatically whenever the Hub commit changes; review
+`docs/source-classify-hf/website-content.json` before publishing a model freeze
+that changes supported providers or user-facing behavior (`wiltodelta-app`'s
+`docs/product-updates.md`, "Visitor copy selection" and "What product
+repositories owe the site"). A library version bump alone
 does not upload new weights - bump `WEIGHTS_REVISION` in
 `src/remove_ai_watermarks/source_classify.py` when a new Hub commit must reach
 installed clients. The private corpus, catalog, paths, hashes, embeddings, and

@@ -1,0 +1,22 @@
+{
+  "intro": "Tell which AI tool likely made an image from its pixels alone, even after social apps or screenshots strip the metadata. Free open weights under Apache 2.0 on Hugging Face.",
+  "requirements": "Python 3.10 or newer with ONNX Runtime on any modern computer.",
+  "sections": [
+    [
+      "Says “unknown” instead of guessing",
+      "Most AI image detectors force a yes or no answer and misfire on screenshots, diagrams, vector graphics and edited photos. When an image does not clear its threshold, this model answers “unknown” rather than making up a match."
+    ],
+    [
+      "Ten AI generators and their versions",
+      "When the pixel pattern matches a supported tool, it names both the generator family and the model version across OpenAI, Google, Midjourney, FLUX, Stable Diffusion, Ideogram, Adobe Firefly, Meta, ByteDance and xAI. After heavy resizing removes the generator’s signature, it can still flag whether the image looks AI-made."
+    ],
+    [
+      "Runs on a regular computer",
+      "The weights are free and open source under Apache 2.0, and they run on an ordinary computer without a GPU or heavy setup, standalone with ONNX Runtime or through the Remove AI Watermarks Python package."
+    ],
+    [
+      "Pixel patterns, not watermark proof",
+      "The model reads how each generator renders and saves pixels. It does not decode Google SynthID or any hidden watermark, so “unknown” is not proof that a watermark is gone, and a match is not cryptographic proof of origin."
+    ]
+  ]
+}
