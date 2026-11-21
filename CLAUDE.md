@@ -41,7 +41,7 @@ Victor's personal website (`wiltodelta/wiltodelta-app`) imports the README secti
 
 The published Agent Skill is [`skills/remove-ai-watermarks/`](skills/remove-ai-watermarks/). Update it in the same change as any CLI edit that alters commands, extras, exit codes, mark keys, or the intended-use boundary. Install and publish steps: [`docs/agent-skill.md`](docs/agent-skill.md).
 
-The same skill tree is the Codex plugin (`.codex-plugin/plugin.json`). `remove-ai-watermarks mcp` keeps a standard-library transport, discovering the shared operation catalog and executing optional backends in child processes. Its registry launcher selects the complete backend extras; bare `uvx remove-ai-watermarks mcp` remains supported for metadata-only use ([`docs/mcp-server.md`](docs/mcp-server.md)).
+The same skill tree backs the Codex plugin (`.codex-plugin/plugin.json`), the Cursor plugin (`.cursor-plugin/plugin.json`), and the Gemini CLI extension (`gemini-extension.json`). `remove-ai-watermarks mcp` keeps a standard-library transport, discovering the shared operation catalog and executing optional backends in child processes. Its registry launcher selects the complete backend extras; bare `uvx remove-ai-watermarks mcp` remains supported for metadata-only use ([`docs/mcp-server.md`](docs/mcp-server.md)).
 
 ## Module architecture
 

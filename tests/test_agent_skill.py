@@ -15,6 +15,9 @@ SKILL = ROOT / "skills" / "remove-ai-watermarks" / "SKILL.md"
 PLUGIN = ROOT / "skills" / ".claude-plugin" / "plugin.json"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
 CODEX_PLUGIN = ROOT / ".codex-plugin" / "plugin.json"
+CURSOR_PLUGIN = ROOT / ".cursor-plugin" / "plugin.json"
+GEMINI_EXTENSION = ROOT / "gemini-extension.json"
+SERVER_MANIFEST = ROOT / "server.json"
 AGENT_DOC = ROOT / "docs" / "agent-skill.md"
 INSTALL_DOC = ROOT / "docs" / "installation.md"
 INSTALL_REFERENCE = ROOT / "skills" / "remove-ai-watermarks" / "references" / "install.md"
@@ -87,9 +90,82 @@ def test_skill_version_agrees_with_plugin_and_marketplace() -> None:
     metadata_version = re.search(r"(?m)^  version:\s*(.*)$", frontmatter)
     assert metadata_version is not None, "frontmatter metadata.version is missing"
     skill_version = metadata_version.group(1).strip().strip("'\"")
+    assert re.match(r"^[0-9]", skill_version)
     plugin = json.loads(PLUGIN.read_text(encoding="utf-8"))
     marketplace = json.loads(MARKETPLACE.read_text(encoding="utf-8"))
-    assert skill_version == plugin["version"] == marketplace["metadata"]["version"]
+    codex = json.loads(CODEX_PLUGIN.read_text(encoding="utf-8"))
+    cursor = json.loads(CURSOR_PLUGIN.read_text(encoding="utf-8"))
+    gemini = json.loads(GEMINI_EXTENSION.read_text(encoding="utf-8"))
+    assert (
+        skill_version
+        == plugin["version"]
+        == marketplace["metadata"]["version"]
+        == codex["version"]
+        == cursor["version"]
+        == gemini["version"]
+    )
+
+
+def test_cursor_and_gemini_manifests_agree_with_claude_plugin() -> None:
+    plugin = json.loads(PLUGIN.read_text(encoding="utf-8"))
+    cursor = json.loads(CURSOR_PLUGIN.read_text(encoding="utf-8"))
+    gemini = json.loads(GEMINI_EXTENSION.read_text(encoding="utf-8"))
+    server_pkg = json.loads(SERVER_MANIFEST.read_text(encoding="utf-8"))["packages"][0]
+
+    allowed_cursor_keys = {
+        "name",
+        "displayName",
+        "version",
+        "description",
+        "author",
+        "publisher",
+        "homepage",
+        "repository",
+        "license",
+        "logo",
+        "keywords",
+        "category",
+        "commands",
+        "skills",
+        "rules",
+        "mcp",
+        "mcpServers",
+        "minClientVersions",
+    }
+    assert set(cursor) <= allowed_cursor_keys
+    shared_fields = (
+        "name",
+        "displayName",
+        "version",
+        "description",
+        "author",
+        "homepage",
+        "repository",
+        "license",
+        "keywords",
+    )
+    for field in shared_fields:
+        assert cursor[field] == plugin[field], field
+    assert cursor["skills"] == "./skills/"
+    assert (ROOT / cursor["logo"]).is_file()
+    assert (ROOT / cursor["skills"] / "remove-ai-watermarks" / "SKILL.md").is_file()
+
+    for field in ("name", "version", "description"):
+        assert gemini[field] == plugin[field], field
+    assert gemini["contextFileName"] == "skills/remove-ai-watermarks/SKILL.md"
+    assert (ROOT / gemini["contextFileName"]).is_file()
+    expected_args: list[str] = []
+    for arg in server_pkg.get("runtimeArguments", []):
+        if arg["type"] == "named":
+            expected_args.extend([arg["name"], arg["value"]])
+        else:
+            expected_args.append(arg["value"])
+    expected_args.append(server_pkg["identifier"])
+    for arg in server_pkg.get("packageArguments", []):
+        expected_args.append(arg["value"])
+    server = gemini["mcpServers"]["remove-ai-watermarks"]
+    assert server["command"] == server_pkg["runtimeHint"]
+    assert server["args"] == expected_args
 
 
 def test_skill_stays_under_the_500_line_budget() -> None:
@@ -546,18 +622,6 @@ def test_probe_minimum_version_is_a_release_that_exists() -> None:
     current = tuple(int(part) for part in __version__.split(".")[:3])
 
     assert current >= probe.MIN_CLI_VERSION, "the probe demands a version the project has not released"
-
-
-def test_skill_version_agrees_across_every_manifest() -> None:
-    """Four files carry this version, and a catalog reads a different one from each."""
-    frontmatter = _frontmatter(SKILL.read_text(encoding="utf-8"))
-    match = re.search(r'(?m)^\s+version:\s*"?([0-9][^"\n]*?)"?\s*$', frontmatter)
-    assert match is not None, "SKILL.md frontmatter no longer carries metadata.version"
-    plugin = json.loads(PLUGIN.read_text(encoding="utf-8"))
-    marketplace = json.loads(MARKETPLACE.read_text(encoding="utf-8"))
-    codex = json.loads(CODEX_PLUGIN.read_text(encoding="utf-8"))
-
-    assert match.group(1) == plugin["version"] == marketplace["metadata"]["version"] == codex["version"]
 
 
 def test_a_bad_invocation_shares_the_no_signal_exit_code(tmp_path: Path) -> None:

@@ -540,7 +540,7 @@ Claude Code can add this repository as a plugin marketplace:
 /plugin install remove-ai-watermarks@remove-ai-watermarks
 ```
 
-Codex reads the same skill through [`.codex-plugin/plugin.json`](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/.codex-plugin/plugin.json).
+Codex reads the same skill through [`.codex-plugin/plugin.json`](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/.codex-plugin/plugin.json), Cursor through [`.cursor-plugin/plugin.json`](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/.cursor-plugin/plugin.json), and Gemini CLI through [`gemini-extension.json`](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/gemini-extension.json).
 The skill refuses stock-agency and other third-party paid-asset marks. See
 [the agent skill guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/agent-skill.md).
 

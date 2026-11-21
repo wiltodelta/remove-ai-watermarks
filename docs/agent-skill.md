@@ -213,8 +213,9 @@ that names a command, flag or value the previous release lacked. Left behind, it
 CLI is current right before it types an option that build rejects.
 
 Bump `metadata.version` in `SKILL.md` plus `version` in
-`skills/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and
-`.codex-plugin/plugin.json` when the skill instructions change. That version is independent of the PyPI package
+`skills/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+`.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json` and
+`gemini-extension.json` when the skill instructions change. That version is independent of the PyPI package
 version.
 
 ## Behavior evals

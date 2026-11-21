@@ -170,7 +170,12 @@ The Agent Skill and Claude plugin live in this repository:
   makes the repository a Claude Code marketplace;
 - [`.codex-plugin/plugin.json`](../.codex-plugin/plugin.json) is the Codex
   plugin manifest, pointing at the same `./skills/` tree, with its icon in
-  [`assets/icon.svg`](../assets/icon.svg).
+  [`assets/icon.svg`](../assets/icon.svg);
+- [`.cursor-plugin/plugin.json`](../.cursor-plugin/plugin.json) is the Cursor
+  plugin manifest, pointing at `./skills/` and [`assets/icon.svg`](../assets/icon.svg);
+- [`gemini-extension.json`](../gemini-extension.json) is the Gemini CLI
+  extension manifest, loading `skills/remove-ai-watermarks/SKILL.md` and the
+  `remove-ai-watermarks mcp` server.
 
 They are not a fifth required release surface. A CLI change that affects
 command routing, extras, exit codes, mark keys, or the intended-use boundary
