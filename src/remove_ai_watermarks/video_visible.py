@@ -58,7 +58,7 @@ from remove_ai_watermarks.video_temporal import (
     estimate_clip_alpha_matte,
     recover_unobscured_background,
     sobel_magnitude,
-    stabilize_filled_frame,
+    stabilize_filled_frame_bidirectional,
     unblend_ycbcr_roi,
 )
 
@@ -2300,6 +2300,8 @@ def iter_clean_video_frames(
     previous_source: NDArray[Any] | None = None
     previous_cleaned: NDArray[Any] | None = None
     previous_mask: NDArray[Any] | None = None
+    previous_clean_plate: tuple[NDArray[Any], NDArray[Any] | None] | None = None
+    pending: tuple[NDArray[Any], NDArray[Any], list[NDArray[Any]], NDArray[Any] | None, bool] | None = None
     try:
         resolved_backend: Literal["cv2", "migan", "lama"] = resolve_backend(backend)
         eff_temporal = temporal_consistency and not high_depth
@@ -2307,6 +2309,65 @@ def iter_clean_video_frames(
         total_frames = len(normalized_regions)
         window: deque[tuple[int, NDArray[Any], NDArray[Any] | None]] = deque()
         next_decode = 0
+
+        def _crop_neighbor_mask(
+            nb_mask: NDArray[Any] | None, sub_mask: NDArray[Any], single_sub: bool
+        ) -> NDArray[Any] | None:
+            if nb_mask is None:
+                return None
+            if single_sub:
+                return nb_mask
+            ys, xs = np.where(sub_mask > 0)
+            pad_m = 48
+            y0_m = max(0, int(ys.min()) - pad_m)
+            y1_m = min(nb_mask.shape[0], int(ys.max()) + 1 + pad_m)
+            x0_m = max(0, int(xs.min()) - pad_m)
+            x1_m = min(nb_mask.shape[1], int(xs.max()) + 1 + pad_m)
+            sub = np.zeros_like(nb_mask)
+            sub[y0_m:y1_m, x0_m:x1_m] = nb_mask[y0_m:y1_m, x0_m:x1_m]
+            return sub if np.any(sub > 0) else None
+
+        def _flush_pending(
+            nxt_entry: tuple[NDArray[Any], NDArray[Any], NDArray[Any] | None] | None,
+        ) -> tuple[NDArray[Any], bool] | None:
+            nonlocal pending, previous_source, previous_cleaned, previous_mask
+            if pending is None:
+                return None
+            p_src, p_frame, p_sub_masks, p_stage_mask, p_removed = pending
+            out_frame = p_frame
+            if eff_temporal and p_sub_masks:
+                single_sub = len(p_sub_masks) == 1
+                for sub_mask in p_sub_masks:
+                    prev_sub = (
+                        _crop_neighbor_mask(previous_mask, sub_mask, single_sub)
+                        if (previous_source is not None and previous_cleaned is not None)
+                        else None
+                    )
+                    nxt_sub = _crop_neighbor_mask(nxt_entry[2], sub_mask, single_sub) if nxt_entry is not None else None
+                    prev_arg = (
+                        (previous_source, previous_cleaned, prev_sub)
+                        if (previous_source is not None and previous_cleaned is not None and prev_sub is not None)
+                        else None
+                    )
+                    nxt_arg = (
+                        (nxt_entry[0], nxt_entry[1], nxt_sub)
+                        if (nxt_entry is not None and nxt_sub is not None)
+                        else None
+                    )
+                    if prev_arg is not None or nxt_arg is not None:
+                        out_frame = stabilize_filled_frame_bidirectional(
+                            p_src,
+                            out_frame,
+                            sub_mask,
+                            previous=prev_arg,
+                            nxt=nxt_arg,
+                            copy=False,
+                        )
+            previous_source = p_src
+            previous_cleaned = out_frame
+            previous_mask = p_stage_mask
+            pending = None
+            return out_frame, p_removed
 
         def _pull_frame() -> None:
             nonlocal next_decode
@@ -2336,6 +2397,7 @@ def iter_clean_video_frames(
             frame = source_frame
             stage_source = source_frame
             stage_mask: NDArray[Any] | None = None
+            remaining_sub_masks: list[NDArray[Any]] = []
             was_removed = False
             if mask is not None:
                 working_mask = mask
@@ -2344,30 +2406,46 @@ def iter_clean_video_frames(
                 cur_regs = [r for r in normalized_regions[frame_index] if r is not None]
                 sub_masks = _split_disjoint_masks(working_mask, multi_region=len(cur_regs) > 1)
                 donors: list[tuple[NDArray[Any], NDArray[Any] | None]] = []
-                if eff_temporal and len(window) > 1 and np.any(working_mask > 0):
-                    donors = [
-                        (d_src, d_mask)
-                        for d_idx, d_src, d_mask in sorted(
-                            window,
-                            key=lambda it: (
-                                0
-                                if (
-                                    it[2] is None
-                                    or not cur_regs
-                                    or all(
-                                        _region_iou(dr, cr) < 0.25
-                                        for dr in normalized_regions[it[0]]
-                                        if dr is not None
-                                        for cr in cur_regs
-                                    )
+                if eff_temporal and np.any(working_mask > 0):
+                    if len(window) > 1:
+                        disjoint_donors: list[tuple[int, NDArray[Any], NDArray[Any] | None]] = []
+                        overlap_donors: list[tuple[int, NDArray[Any], NDArray[Any] | None]] = []
+                        for d_idx, d_src, d_mask in window:
+                            if d_idx == frame_index or not (allow_unmasked_donors or d_mask is not None):
+                                continue
+                            is_disjoint = (
+                                d_mask is None
+                                or not cur_regs
+                                or all(
+                                    _region_iou(dr, cr) < 0.25
+                                    for dr in normalized_regions[d_idx]
+                                    if dr is not None
+                                    for cr in cur_regs
                                 )
-                                else 1,
-                                abs(it[0] - frame_index),
-                            ),
-                        )
-                        if d_idx != frame_index and (allow_unmasked_donors or d_mask is not None)
-                    ][:8]
-                remaining_sub_masks: list[NDArray[Any]] = []
+                            )
+                            (disjoint_donors if is_disjoint else overlap_donors).append((d_idx, d_src, d_mask))
+                        disjoint_donors.sort(key=lambda it: abs(it[0] - frame_index))
+                        # For overlapping stationary marks, stride nearest-to-farthest across
+                        # the full +/-donor_radius window so nearby frames get highest weight
+                        # while distant frames still uncover wide logos on slow camera pans.
+                        overlap_donors.sort(key=lambda it: (abs(it[0] - frame_index), it[0] > frame_index))
+                        picked_disjoint = disjoint_donors[:8]
+                        remaining_slots = 8 - len(picked_disjoint)
+                        if remaining_slots > 0 and overlap_donors:
+                            if len(overlap_donors) <= remaining_slots:
+                                picked_overlap = overlap_donors
+                            else:
+                                idxs = np.linspace(0, len(overlap_donors) - 1, remaining_slots, dtype=int)
+                                picked_overlap = [overlap_donors[int(i)] for i in idxs]
+                        else:
+                            picked_overlap = []
+                        donors = [(d_src, d_mask) for _i, d_src, d_mask in (*picked_disjoint, *picked_overlap)]
+                    # Transitive clean-plate donor: genuine unobscured/recovered pixels from t-1
+                    # (strictly before single-frame inpainting) propagate across slow pans > donor_radius.
+                    if previous_clean_plate is not None and (
+                        allow_unmasked_donors or previous_clean_plate[1] is not None
+                    ):
+                        donors.append(previous_clean_plate)
                 for sub_mask in sub_masks:
                     if donors and np.any(sub_mask > 0):
                         stage_source, sub_mask = recover_unobscured_background(stage_source, sub_mask, donors)
@@ -2387,48 +2465,25 @@ def iter_clean_video_frames(
                         )
                     )
                     cur_frame = fill(cur_frame, sub_mask, backend=resolved_backend)
-                    if (
-                        eff_temporal
-                        and previous_source is not None
-                        and previous_cleaned is not None
-                        and previous_mask is not None
-                    ):
-                        if single_sub:
-                            cur_frame = stabilize_filled_frame(
-                                previous_source,
-                                previous_cleaned,
-                                previous_mask,
-                                stage_source,
-                                cur_frame,
-                                sub_mask,
-                                copy=False,
-                            )
-                        else:
-                            ys, xs = np.where(sub_mask > 0)
-                            pad_m = 48
-                            y0_m = max(0, int(ys.min()) - pad_m)
-                            y1_m = min(previous_mask.shape[0], int(ys.max()) + 1 + pad_m)
-                            x0_m = max(0, int(xs.min()) - pad_m)
-                            x1_m = min(previous_mask.shape[1], int(xs.max()) + 1 + pad_m)
-                            prev_sub = np.zeros_like(previous_mask)
-                            prev_sub[y0_m:y1_m, x0_m:x1_m] = previous_mask[y0_m:y1_m, x0_m:x1_m]
-                            if np.any(prev_sub > 0):
-                                cur_frame = stabilize_filled_frame(
-                                    previous_source,
-                                    previous_cleaned,
-                                    prev_sub,
-                                    stage_source,
-                                    cur_frame,
-                                    sub_mask,
-                                    copy=False,
-                                )
                 frame = cur_frame
                 stage_mask = combined_stage_mask
                 was_removed = True
-            previous_source = stage_source
-            previous_cleaned = frame
-            previous_mask = stage_mask
-            yield frame, was_removed
+
+            previous_clean_plate = (stage_source, stage_mask) if eff_temporal else None
+            if eff_temporal:
+                flushed = _flush_pending((stage_source, frame, stage_mask))
+                if flushed is not None:
+                    yield flushed
+                pending = (stage_source, frame, remaining_sub_masks, stage_mask, was_removed)
+            else:
+                previous_source = stage_source
+                previous_cleaned = frame
+                previous_mask = stage_mask
+                yield frame, was_removed
+
+        flushed = _flush_pending(None)
+        if flushed is not None:
+            yield flushed
     finally:
         capture.release()
 

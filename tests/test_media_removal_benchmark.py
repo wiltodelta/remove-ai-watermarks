@@ -842,7 +842,7 @@ def test_benchmark_v3_parity_and_runtime_safety_gates(
             component_depth=10,
         ),
     )
-    with pytest.raises(RuntimeError, match="SDR 8-bit input only"):
+    with pytest.raises(RuntimeError, match="refusing to silently reduce"):
         video_invisible.regenerate_video_candidate(hdr_src, tmp_path / "hdr_out.mp4", device="cpu", model="m")
 
     # 5. Mastered -0.05 dBFS source with filter overshoot > 1.0 writes FLAC cleanly without ValueError

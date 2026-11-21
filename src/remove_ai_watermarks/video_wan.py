@@ -25,6 +25,7 @@ from remove_ai_watermarks._internal.two_stage_pipeline import (
 )
 from remove_ai_watermarks.optional_deps import module_available
 from remove_ai_watermarks.video_encoding import (
+    HIGH_BIT_DEPTH_PIXEL_FORMATS,
     atomic_video_output,
     probe_video_encode_profile,
     probe_video_timestamps,
@@ -298,6 +299,7 @@ def can_run_wan_on_source(
             source,
             label="Experimental Wan 2.1 processing",
             encode_profile=probe_video_encode_profile(source),
+            allow_high_depth=True,
         )
     except Exception:
         return False
@@ -331,9 +333,11 @@ def _run_wan_window(
     left, right = pad_w // 2, pad_w - (pad_w // 2)
     target_h, target_w = orig_h + pad_h, orig_w + pad_w
 
+    high_depth = bgr_window[0].dtype == np.uint16
     pil_frames: list[Image.Image] = []
     for frame_bgr in bgr_window:
-        rgb = frame_bgr[..., ::-1]
+        frame_u8 = (frame_bgr >> 8).astype(np.uint8) if high_depth else frame_bgr
+        rgb = frame_u8[..., ::-1]
         if pad_h or pad_w:
             rgb = np.pad(rgb, ((top, bottom), (left, right), (0, 0)), mode="reflect")
         pil_frames.append(Image.fromarray(np.ascontiguousarray(rgb), mode="RGB"))
@@ -364,7 +368,12 @@ def _run_wan_window(
         generated = runtime.pipe(**call_kwargs).frames[0]
 
     raw_rgb = np.asarray(generated)[:win_t]
-    if raw_rgb.dtype != np.uint8:
+    if high_depth:
+        if raw_rgb.dtype == np.uint8:
+            raw_rgb = raw_rgb.astype(np.uint16) * 257
+        elif raw_rgb.dtype != np.uint16:
+            raw_rgb = np.clip(np.rint(raw_rgb * 65535.0), 0, 65535).astype(np.uint16)
+    elif raw_rgb.dtype != np.uint8:
         raw_rgb = np.clip(np.rint(raw_rgb * 255.0), 0, 255).astype(np.uint8)
     cropped_rgb = raw_rgb[:, top : top + orig_h, left : left + orig_w]
     out_bgr = cropped_rgb[..., ::-1].copy()
@@ -427,7 +436,8 @@ def _stream_wan_windows(
                 blended = (
                     out_tail.astype(np.float32) * fade_out + curr_bgr[:overlap_frames].astype(np.float32) * fade_in
                 )
-                curr_bgr[:overlap_frames] = np.clip(np.rint(blended), 0, 255).astype(np.uint8)
+                peak = 65535.0 if curr_bgr.dtype == np.uint16 else 255.0
+                curr_bgr[:overlap_frames] = np.clip(np.rint(blended), 0, peak).astype(curr_bgr.dtype)
             if next_peek is None:
                 yield from curr_bgr
                 return
@@ -481,6 +491,7 @@ def _finalize_wan_output(
     quality: SeedanceQuality,
     fps: float,
     timestamps: tuple[float, ...],
+    high_depth: bool = False,
 ) -> RegenerationMetrics:
     """Encode Wan 2.1 frames directly to delivery (CRF 18) or master (CRF 0) in a single pass."""
     target_crf = 18 if quality == "delivery" else 0
@@ -491,7 +502,7 @@ def _finalize_wan_output(
     source_dur = float(_clock(source)["streams"][0]["duration"])
     if abs(staged_dur - source_dur) > 0.000002:
         raise RuntimeError("Experimental Wan 2.1 output duration changed")
-    return _measure(source, staged, fps, len(timestamps))
+    return _measure(source, staged, fps, len(timestamps), high_depth=high_depth)
 
 
 def regenerate_wan_experimental(
@@ -522,10 +533,13 @@ def regenerate_wan_experimental(
     if runtime is not None and (runtime.model != WAN21_MODEL_ID or runtime.revision != WAN21_MODEL_REVISION):
         raise ValueError("The supplied Wan 2.1 runtime does not match the pinned model and revision")
 
+    encode_profile = probe_video_encode_profile(source)
+    high_depth = encode_profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
     width, height, fps, timestamps = validate_experimental_mp4_source(
         source,
         label="Experimental Wan 2.1 processing",
-        encode_profile=probe_video_encode_profile(source),
+        encode_profile=encode_profile,
+        allow_high_depth=True,
     )
     _validate_wan_source_budget(width, height, len(timestamps))
     if runtime is None and not is_available():
@@ -553,7 +567,11 @@ def regenerate_wan_experimental(
 
         def counted_source() -> Iterator[np.ndarray]:
             nonlocal decoded_count
-            raw_iter = _frame_stream if _frame_stream is not None else _frames(source)
+            raw_iter = (
+                _frame_stream
+                if _frame_stream is not None
+                else _frames(source, high_depth=high_depth, width=width, height=height)
+            )
             for frame in raw_iter:
                 decoded_count += 1
                 yield frame
@@ -578,4 +596,5 @@ def regenerate_wan_experimental(
             quality=quality,
             fps=fps,
             timestamps=timestamps,
+            high_depth=high_depth,
         )

@@ -103,38 +103,100 @@ def temporal_residual_ratio(
     return measured / max(baseline, 1e-6)
 
 
-def stabilize_filled_frame(
-    previous_source: NDArray[Any],
-    previous_cleaned: NDArray[Any],
-    previous_mask: NDArray[Any],
+def _background_aligned_maps(
+    current_source_crop: NDArray[Any],
+    current_mask_crop: NDArray[Any],
+    neighbor_source_crop: NDArray[Any],
+    neighbor_mask_crop: NDArray[Any],
+    *,
+    fb_tolerance_px: float = 1.75,
+) -> tuple[NDArray[Any], NDArray[Any]]:
+    """Estimate background optical flow inside occluded watermark masks via context affine fit."""
+    crop_h, crop_w = current_mask_crop.shape
+    guard_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    curr_guard = cv2.dilate((current_mask_crop > 0).astype(np.uint8) * 255, guard_kernel)
+    curr_guard_mask = curr_guard > 0
+    nb_guard = cv2.dilate((neighbor_mask_crop > 0).astype(np.uint8) * 255, guard_kernel)
+
+    curr_gray_raw = cv2.cvtColor(current_source_crop, cv2.COLOR_BGR2GRAY)
+    nb_gray_raw = cv2.cvtColor(neighbor_source_crop, cv2.COLOR_BGR2GRAY)
+    curr_gray = (
+        cv2.inpaint(curr_gray_raw, curr_guard, 3.0, cv2.INPAINT_TELEA) if np.any(curr_guard_mask) else curr_gray_raw
+    )
+    nb_gray = cv2.inpaint(nb_gray_raw, nb_guard, 3.0, cv2.INPAINT_TELEA) if np.any(nb_guard > 0) else nb_gray_raw
+
+    flow_to_nb = _flow_field(curr_gray, nb_gray)
+    flow_from_nb = _flow_field(nb_gray, curr_gray)
+    raw_maps = _displacement_to_maps(flow_to_nb)
+    back_flow = _backward_warp(flow_from_nb, raw_maps)
+    fb_err = np.linalg.norm(flow_to_nb + back_flow, axis=2)
+
+    warped_nb_guard = _backward_warp(nb_guard, raw_maps, interpolation=cv2.INTER_NEAREST) > 0
+    context = ~(curr_guard_mask | warped_nb_guard) & (fb_err <= fb_tolerance_px)
+    if int(np.count_nonzero(context)) < 24:
+        return raw_maps
+
+    cy, cx = np.where(context)
+    u_vals = flow_to_nb[cy, cx, 0]
+    v_vals = flow_to_nb[cy, cx, 1]
+    med_u, med_v = float(np.median(u_vals)), float(np.median(v_vals))
+    inliers = (np.abs(u_vals - med_u) <= 3.0) & (np.abs(v_vals - med_v) <= 3.0)
+    cx_in = cx[inliers].astype(np.float32)
+    if len(cx_in) < 24:
+        return raw_maps
+
+    design = np.column_stack((cx_in, cy[inliers].astype(np.float32), np.ones_like(cx_in)))
+    coef_u, *_ = np.linalg.lstsq(design, u_vals[inliers], rcond=None)
+    coef_v, *_ = np.linalg.lstsq(design, v_vals[inliers], rcond=None)
+    grid_x = np.arange(crop_w, dtype=np.float32)[None, :]
+    grid_y = np.arange(crop_h, dtype=np.float32)[:, None]
+    prop_flow = np.empty((crop_h, crop_w, 2), dtype=np.float32)
+    prop_flow[..., 0] = coef_u[0] * grid_x + coef_u[1] * grid_y + coef_u[2]
+    prop_flow[..., 1] = coef_v[0] * grid_x + coef_v[1] * grid_y + coef_v[2]
+    keep_direct = ~curr_guard_mask & (fb_err <= fb_tolerance_px)
+    prop_flow[keep_direct] = flow_to_nb[keep_direct]
+    return _displacement_to_maps(prop_flow)
+
+
+def stabilize_filled_frame_bidirectional(
     current_source: NDArray[Any],
     current_cleaned: NDArray[Any],
     current_mask: NDArray[Any],
     *,
+    previous: tuple[NDArray[Any], NDArray[Any], NDArray[Any]] | None = None,
+    nxt: tuple[NDArray[Any], NDArray[Any], NDArray[Any]] | None = None,
     blend: float = 0.5,
     max_context_residual: float = 12.0,
     copy: bool = True,
 ) -> NDArray[Any]:
-    """Blend a motion-aligned prior fill when nearby source pixels agree.
+    """Blend background-aligned prior and future fills when unmasked context agrees.
 
-    The prior contributes only where its warped removal mask covers the current
-    mask. A context ring outside both masks gates the blend, so scene cuts or
-    non-rigid local changes keep the independent current-frame fill.
+    Motion inside the watermark mask is estimated from the surrounding unmasked
+    background so static corner logos do not pin optical flow to zero during
+    camera pans. Each neighbor is independently gated by overlap and context
+    photometric residual, rejecting scene cuts and occlusions.
     """
     if not 0.0 <= blend <= 1.0:
         raise ValueError("Temporal blend must be between 0 and 1")
     if max_context_residual <= 0.0:
         raise ValueError("Context residual threshold must be positive")
-    if (
-        previous_source.shape != current_source.shape
-        or previous_cleaned.shape != current_cleaned.shape
-        or previous_source.shape != previous_cleaned.shape
-        or previous_mask.shape != current_mask.shape
-        or previous_mask.shape != current_source.shape[:2]
-    ):
+    if current_source.shape != current_cleaned.shape or current_mask.shape != current_source.shape[:2]:
         raise ValueError("Temporal fill inputs must share frame and mask geometry")
 
-    union = (previous_mask > 0) | (current_mask > 0)
+    neighbors = [entry for entry in (previous, nxt) if entry is not None]
+    if not neighbors:
+        return current_cleaned
+    for nb_src, nb_clean, nb_mask in neighbors:
+        if (
+            nb_src.shape != current_source.shape
+            or nb_clean.shape != current_cleaned.shape
+            or nb_mask.shape != current_mask.shape
+        ):
+            raise ValueError("Temporal fill inputs must share frame and mask geometry")
+
+    union = current_mask > 0
+    for _nb_src, _nb_clean, nb_mask in neighbors:
+        union = union | (nb_mask > 0)
     ys, xs = np.where(union)
     if len(xs) == 0:
         return current_cleaned
@@ -147,50 +209,136 @@ def stabilize_filled_frame(
     x1 = min(width, int(xs.max()) + padding + 1)
     y1 = min(height, int(ys.max()) + padding + 1)
 
-    previous_source_crop = previous_source[y0:y1, x0:x1]
     current_source_crop = current_source[y0:y1, x0:x1]
     current_cleaned_crop = current_cleaned[y0:y1, x0:x1]
-    previous_cleaned_crop = previous_cleaned[y0:y1, x0:x1]
-    previous_mask_crop = previous_mask[y0:y1, x0:x1]
     current_mask_crop = current_mask[y0:y1, x0:x1]
-    maps = _backward_map(
-        cv2.cvtColor(current_source_crop, cv2.COLOR_BGR2GRAY),
-        cv2.cvtColor(previous_source_crop, cv2.COLOR_BGR2GRAY),
-    )
-    warped_previous_source = _backward_warp(previous_source_crop, maps)
-    warped_previous_cleaned = _backward_warp(previous_cleaned_crop, maps)
-    warped_previous_mask = _backward_warp(
-        previous_mask_crop,
-        maps,
-        interpolation=cv2.INTER_NEAREST,
-    )
-
     current_hole = current_mask_crop > 0
     if not np.any(current_hole):
         return current_cleaned
-    covered = current_hole & (warped_previous_mask > 0)
-    if float(np.mean(covered[current_hole])) < 0.85:
-        return current_cleaned
 
-    occupied = current_hole | (warped_previous_mask > 0)
     dilation = max(7, round(max(mask_width, mask_height) * 0.25))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation | 1, dilation | 1))
-    context = cv2.dilate(occupied.astype(np.uint8), kernel).astype(bool) & ~occupied
-    if np.count_nonzero(context) < 64:
-        return current_cleaned
-    residual = np.abs(current_source_crop.astype(np.float32) - warped_previous_source.astype(np.float32))
-    context_residual = float(np.mean(residual[context]))
-    if context_residual > max_context_residual:
+
+    accepted: list[tuple[float, NDArray[Any], NDArray[Any]]] = []
+    for nb_src, nb_clean, nb_mask in neighbors:
+        nb_src_crop = nb_src[y0:y1, x0:x1]
+        nb_clean_crop = nb_clean[y0:y1, x0:x1]
+        nb_mask_crop = nb_mask[y0:y1, x0:x1]
+        maps = _background_aligned_maps(current_source_crop, current_mask_crop, nb_src_crop, nb_mask_crop)
+        warped_nb_src = _backward_warp(nb_src_crop, maps)
+        warped_nb_clean = _backward_warp(nb_clean_crop, maps)
+        warped_nb_mask = _backward_warp(nb_mask_crop, maps, interpolation=cv2.INTER_NEAREST)
+
+        covered = current_hole & (warped_nb_mask > 0)
+        if float(np.mean(covered[current_hole])) < 0.85:
+            continue
+
+        occupied = current_hole | (warped_nb_mask > 0)
+        context = cv2.dilate(occupied.astype(np.uint8), kernel).astype(bool) & ~occupied
+        if np.count_nonzero(context) < 64:
+            continue
+        residual = np.abs(current_source_crop.astype(np.float32) - warped_nb_src.astype(np.float32))
+        context_residual = float(np.mean(residual[context]))
+        if context_residual > max_context_residual:
+            continue
+        conf = max(0.0, 1.0 - context_residual / max_context_residual)
+        accepted.append((conf, covered, warped_nb_clean.astype(np.float32)))
+
+    if not accepted:
         return current_cleaned
 
-    effective_blend = blend * (1.0 - context_residual / max_context_residual)
-    blended = (1.0 - effective_blend) * current_cleaned_crop[covered].astype(
-        np.float32
-    ) + effective_blend * warped_previous_cleaned[covered].astype(np.float32)
+    curr_f32 = current_cleaned_crop.astype(np.float32)
+    nb_accum = np.zeros_like(curr_f32)
+    w_accum = np.zeros(current_hole.shape, dtype=np.float32)
+    if len(accepted) == 1:
+        conf, covered, warped = accepted[0]
+        w = blend * conf
+        nb_accum[covered] = w * warped[covered]
+        w_accum[covered] = w
+    else:
+        # Favor the already-stabilized prior frame slightly so frame-to-frame deltas stay smooth
+        # while the future lookahead frame still cuts independent inpaint variance.
+        weighted = [
+            (conf * (1.35 if idx == 0 and previous is not None else 1.0), cov, warped)
+            for idx, (conf, cov, warped) in enumerate(accepted)
+        ]
+        total_conf = sum(c for c, _, _ in weighted)
+        if total_conf <= 1e-6:
+            return current_cleaned
+        max_conf = max(c for c, _, _ in accepted)
+        total_blend = min(0.75, blend * 1.25) * max_conf
+        for conf, covered, warped in weighted:
+            w = total_blend * (conf / total_conf)
+            nb_accum[covered] += w * warped[covered]
+            w_accum[covered] += w
+
+    active = w_accum > 0.0
+    if not np.any(active):
+        return current_cleaned
+    blended = (1.0 - w_accum[active, None]) * curr_f32[active] + nb_accum[active]
     result = current_cleaned.copy() if copy else current_cleaned
     result_crop = result[y0:y1, x0:x1]
-    result_crop[covered] = np.clip(blended, 0, 255).astype(np.uint8)
+    result_crop[active] = np.clip(blended, 0, 255).astype(np.uint8)
     return result
+
+
+def stabilize_filled_frame(
+    previous_source: NDArray[Any],
+    previous_cleaned: NDArray[Any],
+    previous_mask: NDArray[Any],
+    current_source: NDArray[Any],
+    current_cleaned: NDArray[Any],
+    current_mask: NDArray[Any],
+    *,
+    blend: float = 0.5,
+    max_context_residual: float = 12.0,
+    copy: bool = True,
+) -> NDArray[Any]:
+    """Blend a motion-aligned prior fill when nearby source pixels agree."""
+    return stabilize_filled_frame_bidirectional(
+        current_source,
+        current_cleaned,
+        current_mask,
+        previous=(previous_source, previous_cleaned, previous_mask),
+        nxt=None,
+        blend=blend,
+        max_context_residual=max_context_residual,
+        copy=copy,
+    )
+
+
+def _coarse_shifted_flow(
+    curr_gray: NDArray[Any],
+    donor_gray: NDArray[Any],
+) -> tuple[NDArray[Any], NDArray[Any]]:
+    """Estimate dense optical flow with FFT coarse pre-alignment for >4 px camera pans."""
+    h, w = curr_gray.shape[:2]
+    shift, resp = cv2.phaseCorrelate(curr_gray.astype(np.float32), donor_gray.astype(np.float32))
+    cdx, cdy = round(float(shift[0])), round(float(shift[1]))
+    if resp >= 0.15 and max(abs(cdx), abs(cdy)) >= 4 and abs(cdx) < w // 2 and abs(cdy) < h // 2:
+        # phaseCorrelate(src1, src2) returns shift such that src2(x + dx, y + dy) ~= src1(x, y)
+        mat = np.array([[1.0, 0.0, -float(cdx)], [0.0, 1.0, -float(cdy)]], dtype=np.float32)
+        aligned_donor = cv2.warpAffine(donor_gray, mat, (w, h), borderMode=cv2.BORDER_REFLECT)
+        x_lo, x_hi = max(0, -cdx), min(w, w - cdx)
+        y_lo, y_hi = max(0, -cdy), min(h, h - cdy)
+        roi_curr = curr_gray[y_lo:y_hi, x_lo:x_hi].astype(np.float32)
+        raw_mae = float(np.mean(np.abs(roi_curr - donor_gray[y_lo:y_hi, x_lo:x_hi].astype(np.float32))))
+        aligned_mae = float(np.mean(np.abs(roi_curr - aligned_donor[y_lo:y_hi, x_lo:x_hi].astype(np.float32))))
+        if aligned_mae < raw_mae * 0.65:
+            res_to = _flow_field(curr_gray, aligned_donor)
+            res_from = _flow_field(aligned_donor, curr_gray)
+            res_maps = _displacement_to_maps(res_to)
+            fb_err = np.linalg.norm(res_to + _backward_warp(res_from, res_maps), axis=2)
+            flow_to = res_to.copy()
+            flow_to[..., 0] += float(cdx)
+            flow_to[..., 1] += float(cdy)
+            return flow_to, fb_err
+
+    flow_to = _flow_field(curr_gray, donor_gray)
+    flow_from = _flow_field(donor_gray, curr_gray)
+    raw_maps = _displacement_to_maps(flow_to)
+    fb_err = np.linalg.norm(flow_to + _backward_warp(flow_from, raw_maps), axis=2)
+    return flow_to, fb_err
 
 
 def recover_unobscured_background(
@@ -288,11 +436,8 @@ def recover_unobscured_background(
                 donor_guard = cv2.dilate((donor_mask_crop > 0).astype(np.uint8) * 255, guard_kernel)
                 donor_gray_clean = cv2.inpaint(donor_gray_raw, donor_guard, 3.0, cv2.INPAINT_TELEA)
 
-        flow_to_donor = _flow_field(curr_gray_clean, donor_gray_clean)
-        flow_from_donor = _flow_field(donor_gray_clean, curr_gray_clean)
-        raw_maps, _raw_bounds, _raw_donor_masked, raw_context = _project_donor_flow(flow_to_donor, donor_guard)
-        back_flow = _backward_warp(flow_from_donor, raw_maps)
-        fb_err = np.linalg.norm(flow_to_donor + back_flow, axis=2)
+        flow_to_donor, fb_err = _coarse_shifted_flow(curr_gray_clean, donor_gray_clean)
+        _raw_maps, _raw_bounds, _raw_donor_masked, raw_context = _project_donor_flow(flow_to_donor, donor_guard)
 
         consistent_ctx = raw_context & (fb_err <= fb_tolerance_px)
         if int(np.count_nonzero(consistent_ctx)) < 48:
@@ -437,14 +582,18 @@ def _prepare_frame_pair(
 ) -> tuple[tuple[int, ...], NDArray[Any], NDArray[Any], NDArray[Any]]:
     shape = regenerated_frame.shape if expected_shape is None else expected_shape
     if len(shape) != 3 or shape[2] != 3:
-        raise ValueError("Stabilization expects 3-channel uint8 video frames")
+        raise ValueError("Stabilization expects 3-channel uint8 or uint16 video frames")
     if source_frame.shape != shape or regenerated_frame.shape != shape:
         raise ValueError("All source and regenerated frames must share identical geometry")
-    if source_frame.dtype != np.uint8 or regenerated_frame.dtype != np.uint8:
-        raise ValueError("Stabilization expects uint8 video frames")
+    if (
+        source_frame.dtype not in (np.dtype(np.uint8), np.dtype(np.uint16))
+        or regenerated_frame.dtype != source_frame.dtype
+    ):
+        raise ValueError("Stabilization expects matching uint8 or uint16 video frames")
+    gray_src = (source_frame >> 8).astype(np.uint8) if source_frame.dtype == np.uint16 else source_frame
     return (
         shape,
-        cv2.cvtColor(source_frame, cv2.COLOR_BGR2GRAY),
+        cv2.cvtColor(gray_src, cv2.COLOR_BGR2GRAY),
         source_frame.astype(np.float32),
         regenerated_frame.astype(np.float32),
     )
@@ -462,7 +611,11 @@ def _blend_triplet(
     fb_tolerance_px: float,
     photometric_tolerance: float,
     min_valid_fraction: float,
+    out_dtype: np.dtype[Any] | None = None,
 ) -> NDArray[Any]:
+    eff_dtype = np.dtype(np.uint8) if out_dtype is None else out_dtype
+    is_u16 = eff_dtype == np.uint16
+    eff_photo_tol = photometric_tolerance * 257.0 if is_u16 else photometric_tolerance
     accum = curr_reg_f32.copy()
     if prev_entry is not None and prev_flows is not None:
         fwd_prev_to_curr, bwd_curr_to_prev = prev_flows
@@ -474,7 +627,7 @@ def _blend_triplet(
             fwd_prev_to_curr,
             neighbor_weight=neighbor_weight,
             fb_tolerance_px=fb_tolerance_px,
-            photometric_tolerance=photometric_tolerance,
+            photometric_tolerance=eff_photo_tol,
             min_valid_fraction=min_valid_fraction,
         )
         if w_prev is not None and warp_prev is not None:
@@ -489,12 +642,13 @@ def _blend_triplet(
             bwd_next_to_curr,
             neighbor_weight=neighbor_weight,
             fb_tolerance_px=fb_tolerance_px,
-            photometric_tolerance=photometric_tolerance,
+            photometric_tolerance=eff_photo_tol,
             min_valid_fraction=min_valid_fraction,
         )
         if w_next is not None and warp_next is not None:
             accum += w_next[:, :, None] * (warp_next - curr_reg_f32)
-    return np.clip(np.round(accum), 0, 255).astype(np.uint8)
+    peak = 65535.0 if is_u16 else 255.0
+    return np.clip(np.round(accum), 0, peak).astype(eff_dtype)
 
 
 def iter_stabilized_regenerated_frames(
@@ -546,6 +700,7 @@ def iter_stabilized_regenerated_frames(
                 fb_tolerance_px=fb_tolerance_px,
                 photometric_tolerance=photometric_tolerance,
                 min_valid_fraction=min_valid_fraction,
+                out_dtype=curr_raw_reg.dtype,
             ),
         )
         prev_entry = (curr_src_f32, curr_reg_f32)
@@ -572,6 +727,7 @@ def iter_stabilized_regenerated_frames(
                 fb_tolerance_px=fb_tolerance_px,
                 photometric_tolerance=photometric_tolerance,
                 min_valid_fraction=min_valid_fraction,
+                out_dtype=curr_raw_reg.dtype,
             ),
         )
 
@@ -795,7 +951,7 @@ def estimate_clip_alpha_matte(
                         )
                         > 0
                     )
-                    v_px = in_b[hy0:hy1, hx0:hx1] & (~warped_sup[hy0:hy1, hx0:hx1] if _pass < 2 else True)
+                    v_px = in_b[hy0:hy1, hx0:hx1] & ~warped_sup[hy0:hy1, hx0:hx1]
                     cand_stack.append(warped[hy0:hy1, hx0:hx1])
                     cand_valid.append(v_px)
                 if cand_stack:
@@ -846,7 +1002,10 @@ def estimate_clip_alpha_matte(
             )
             c_cr = np.where(ac >= 0.02, np.nan_to_num(ccr_raw, nan=0.0), 0.0).astype(np.float32)
             c_cb = np.where(ac >= 0.02, np.nan_to_num(ccb_raw, nan=0.0), 0.0).astype(np.float32)
-            support_crop[hy0:hy1, hx0:hx1] = (~calibrated) | (alpha_hat >= 0.04)
+            if _pass == 1:
+                support_crop[hy0:hy1, hx0:hx1] = (~calibrated) | (alpha_hat > 0.78)
+            else:
+                support_crop[hy0:hy1, hx0:hx1] = (~calibrated) | (alpha_hat >= 0.04)
 
     if not np.any(alpha_hat >= 0.02):
         return None

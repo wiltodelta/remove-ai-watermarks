@@ -672,16 +672,18 @@ keeps one encoded frame per supplied frame when an older ffmpeg receives a
 fine-grained source encoder time base such as `1/90000`; implicit synchronization
 can otherwise synthesize thousands of duplicate frames between CFR timestamps.
 A source in a `HIGH_BIT_DEPTH_PIXEL_FORMATS` format takes a 16-bit path on the
-visible and region-erase encoder: `video_decode` reads `bgr48le` frames from
-ffmpeg, the encoder is fed `bgr48le`, and `_video_codec_args` switches to
-`libx265` (`hvc1` tag in MP4/MOV/M4V, VP9 profile 2 in WebM) carrying the
-primaries, transfer and matrix tags into `-x265-params`; the stationary-matte
-precalibration is skipped on that path
-(`test_10bit_hdr_bt2020_pq_erase_preserves_depth_and_hdr_color_tags`). Any other
-depth above 8 bits or a PQ/HLG transfer (`_HDR_TRANSFERS`) is still rejected
-before encoding, and invisible video regeneration and the Seedance profile
-reject every source above 8 bits or with a PQ/HLG transfer, so no path silently
-reduces it to SDR 8-bit.
+visible, region-erase, `video invisible` (`sd-vae` + `uint16` temporal
+stabilization), `Wan 2.1`, and single-pass `remove_video_all` encoders:
+`video_decode` reads `bgr48le` frames from ffmpeg, the encoder is fed `bgr48le`,
+and `_video_codec_args` switches to `libx265` (`hvc1` tag in MP4/MOV/M4V, VP9
+profile 2 in WebM) carrying the primaries, transfer and matrix tags into
+`-x265-params`; the stationary-matte precalibration is skipped on that path
+(`test_10bit_hdr_bt2020_pq_erase_preserves_depth_and_hdr_color_tags`,
+`tests/test_av_wave3_features.py`). Any other depth above 8 bits or a PQ/HLG
+transfer (`_HDR_TRANSFERS`) that cannot be represented in
+`HIGH_BIT_DEPTH_PIXEL_FORMATS` is still rejected before encoding (and the
+Seedance profile remains 8-bit SDR only), so no path silently reduces HDR to SDR
+8-bit.
 `probe_video_timestamps` reads authoritative per-frame display PTS through
 ffprobe. The CSV reader consumes the first column and ignores appended SEI
 side-data columns; otherwise a valid first row such as `0.000000,` invalidates
@@ -705,25 +707,32 @@ uncalibrated core before any donor or fill step. Mattes need
 `temporal_consistency` and are skipped on the 16-bit path
 (`test_ycbcr_reverse_alpha_unblending_recovers_moving_textured_background`).
 Visible removal then runs a
-bounded `+/- 12`-frame sliding donor window in `encode_clean_video` (none on
+bounded `+/- 12`-frame sliding donor window in `iter_clean_video_frames` (none on
 the 16-bit path, which also skips stabilization): before
-calling single-frame `fill()`, `recover_unobscured_background` fits a robust
-local affine motion field on the cycle-consistent unmasked context ring and
-warps genuine unobscured background pixels from nearby frames into the hole,
-shrinking `working_mask` (so moving/intermittent marks such as `sora` recover
-real background texture while hard scene cuts fail the context-ring residual
-gate). When stationary mask pixels remain, `fill()` runs on `working_mask`
-followed by `stabilize_filled_frame`: it works on a
-bounded crop around adjacent masks, backward-warps the prior cleaned frame,
-requires high warped-mask coverage, and gates blending on an unmasked
-source-context ring. Only covered current-mask pixels change. Scene cuts,
-disjoint marks, and poor motion matches therefore retain the independent
-current-frame fill. The same module supplies the motion-compensated metric used
-by the invisible-video sweep, plus constant-memory 3-frame streaming
+calling single-frame `fill()`, `recover_unobscured_background` uses FFT coarse
+pre-alignment (`_coarse_shifted_flow`) for `>4 px` pans, fits a robust
+local affine motion field on the cycle-consistent unmasked context ring, and
+warps genuine unobscured background pixels from strided window donors plus the
+previous frame's pre-inpaint clean plate into the hole,
+shrinking `working_mask` (so both moving/intermittent marks such as `sora` and
+slow pans across wide stationary logos recover real background texture while hard
+scene cuts fail the context-ring residual gate; `estimate_clip_alpha_matte` also
+keeps opaque `alpha > 0.78` cores masked on pass 2 so solid logos stay in the
+donor/inpaint mask). When stationary mask pixels remain, `fill()` runs on
+`working_mask` followed by 1-frame lookahead `stabilize_filled_frame_bidirectional`
+(`stabilize_filled_frame` delegates to it for single-neighbor calls): it estimates
+background-locked affine flow (`_background_aligned_maps`) on a bounded crop so
+static corner logos do not pin motion to zero, warps prior and next cleaned frames,
+requires high warped-mask coverage, gates each neighbor on an unmasked
+source-context ring, and feathers the mask boundary. Only covered current-mask
+pixels change. Scene cuts, disjoint marks, and poor motion matches therefore retain
+the independent current-frame fill. The same module supplies the motion-compensated
+metric used by the invisible-video sweep, plus constant-memory 3-frame streaming
 `iter_stabilized_regenerated_frames` (`stabilize_regenerated_frames`), which
-blends forward- and backward-warped neighbor frames (`neighbor_weight=0.25`) gated
-on cycle-consistent Farnebäck flow and source motion-compensated residual before
-the single FFmpeg encode when `temporal_stabilize=True`.
+supports both `uint8` and `uint16` HDR frames and blends forward- and
+backward-warped neighbor frames (`neighbor_weight=0.25`) gated on cycle-consistent
+Farnebäck flow and source motion-compensated residual before the single FFmpeg
+encode when `temporal_stabilize=True`.
 
 [`video_invisible.py`](../src/remove_ai_watermarks/video_invisible.py)
 implements the calibrated video-pixel SynthID-removal engine. It samples frames

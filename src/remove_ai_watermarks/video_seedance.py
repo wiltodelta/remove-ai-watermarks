@@ -22,8 +22,9 @@ from typing import TYPE_CHECKING, Any, Literal
 import cv2
 import numpy as np
 
-from remove_ai_watermarks.video_decode import open_video_capture
+from remove_ai_watermarks.video_decode import open_video_capture, open_video_capture_16bit
 from remove_ai_watermarks.video_encoding import (
+    HIGH_BIT_DEPTH_PIXEL_FORMATS,
     _run_ffprobe,
     abort_raw_video_encoder,
     atomic_video_output,
@@ -63,8 +64,13 @@ SEEDANCE_EXPERIMENTAL_PROFILE = "seedance-texture-v1"
 SeedanceQuality = Literal["delivery", "master"]
 
 
-def _frames(path: Path) -> Iterator[NDArray[Any]]:
-    capture = open_video_capture(path)
+def _frames(path: Path, *, high_depth: bool = False, width: int = 0, height: int = 0) -> Iterator[NDArray[Any]]:
+    if high_depth:
+        if width <= 0 or height <= 0:
+            width, height, _ = probe_video_geometry(path)
+        capture: Any = open_video_capture_16bit(path, width=width, height=height)
+    else:
+        capture = open_video_capture(path)
     if not capture.isOpened():
         raise RuntimeError(f"Could not decode video: {path}")
     try:
@@ -166,9 +172,14 @@ def _encode_frames(
     iterator = iter(frames)
     first = next(iterator)
     height, width = first.shape[:2]
+    high_depth = first.dtype == np.uint16
+    raw_pix_fmt = "bgr48le" if high_depth else "bgr24"
     profile = probe_video_encode_profile(source)
     time_base = _timestamp_time_base(profile.time_base)
-    profile = replace(profile, time_base=str(time_base), pixel_format="yuv420p")
+    target_pix_fmt = (
+        profile.pixel_format if (high_depth and profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS) else "yuv420p"
+    )
+    profile = replace(profile, time_base=str(time_base), pixel_format=target_pix_fmt)
     with staged_video_output(output) as (encoded, temporary):
         encoder = start_raw_video_encoder(
             raw_video_command(
@@ -178,6 +189,7 @@ def _encode_frames(
                 fps=fps,
                 crf=crf,
                 profile=profile,
+                input_pix_fmt=raw_pix_fmt,
                 timestamped_input=True,
                 copy_input_timestamps=True,
             )
@@ -190,6 +202,7 @@ def _encode_frames(
                 height=height,
                 time_base=time_base,
                 start_pts=round(timestamps[0] / float(time_base)),
+                pix_fmt=raw_pix_fmt,
             )
             for frame, timestamp in zip(chain((first,), iterator), timestamps, strict=True):
                 writer.write(frame, timestamp)
@@ -280,7 +293,7 @@ def _encode_delivery(master: Path, source: Path, output: Path) -> None:
     _match_video_end(output, source)
 
 
-def _measure(source: Path, output: Path, fps: float, count: int) -> RegenerationMetrics:
+def _measure(source: Path, output: Path, fps: float, count: int, *, high_depth: bool = False) -> RegenerationMetrics:
     squared_error = 0.0
     pixels = 0
     baseline = 0.0
@@ -289,14 +302,18 @@ def _measure(source: Path, output: Path, fps: float, count: int) -> Regeneration
     previous_output = None
     frames = 0
     width, height, _ = probe_video_geometry(source)
-    for original, delivered in zip(_frames(source), _frames(output), strict=True):
+    src_iter = _frames(source, high_depth=high_depth, width=width, height=height)
+    out_iter = _frames(output, high_depth=high_depth, width=width, height=height)
+    for original, delivered in zip(src_iter, out_iter, strict=True):
         if original.shape != delivered.shape:
             raise RuntimeError("Experimental Seedance output geometry changed")
         difference = original.astype(np.float64) - delivered.astype(np.float64)
         squared_error += float(np.sum(difference * difference))
         pixels += original.size
-        current = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY).astype(np.float32)
-        current_output = cv2.cvtColor(delivered, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        orig_u8 = (original >> 8).astype(np.uint8) if original.dtype == np.uint16 else original
+        deliv_u8 = (delivered >> 8).astype(np.uint8) if delivered.dtype == np.uint16 else delivered
+        current = cv2.cvtColor(orig_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        current_output = cv2.cvtColor(deliv_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
         if previous is not None and previous_output is not None:
             maps = _backward_map(current, previous)
             baseline += _motion_residual(current, previous, maps)
@@ -306,12 +323,13 @@ def _measure(source: Path, output: Path, fps: float, count: int) -> Regeneration
     if frames != count:
         raise RuntimeError("Experimental Seedance decoded frame count changed")
     mse = squared_error / pixels
+    peak = 65535.0 if high_depth else 255.0
     return RegenerationMetrics(
         frames=frames,
         fps=fps,
         width=width,
         height=height,
-        psnr_db=10 * math.log10(255**2 / mse) if mse > 0 else math.inf,
+        psnr_db=10 * math.log10(peak**2 / mse) if mse > 0 else math.inf,
         temporal_residual_ratio=_temporal_ratio(residual, baseline),
     )
 
@@ -327,10 +345,12 @@ def validate_experimental_mp4_source(
     encode_profile: Any = None,
     geometry: tuple[int, int, float] | None = None,
     timestamps: tuple[float, ...] | None = None,
+    allow_high_depth: bool = False,
 ) -> tuple[int, int, float, tuple[float, ...]]:
-    """Validate SDR 8-bit, even-dimension, timestamped video input."""
+    """Validate 8-bit SDR (or 10-bit HDR when allowed), even-dimension, timestamped video input."""
     active_profile = encode_profile if encode_profile is not None else probe_video_encode_profile(source)
-    if active_profile.component_depth != 8 or active_profile.color_transfer in _HDR_TRANSFERS:
+    high_depth = allow_high_depth and active_profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
+    if (active_profile.component_depth != 8 or active_profile.color_transfer in _HDR_TRANSFERS) and not high_depth:
         raise ValueError(f"{label} requires SDR 8-bit video")
     width, height, fps = geometry if geometry is not None else probe_video_geometry(source)
     if width % 2 or height % 2:

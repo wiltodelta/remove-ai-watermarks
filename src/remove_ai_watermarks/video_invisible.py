@@ -20,8 +20,9 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 
-from remove_ai_watermarks.video_decode import open_video_capture
+from remove_ai_watermarks.video_decode import open_video_capture, open_video_capture_16bit
 from remove_ai_watermarks.video_encoding import (
+    HIGH_BIT_DEPTH_PIXEL_FORMATS,
     abort_raw_video_encoder,
     finish_raw_video_encoder,
     mux_encoded_video,
@@ -184,13 +185,14 @@ def _shared_latent_noise(
 
 
 def paired_psnr(reference: np.ndarray, candidate: np.ndarray) -> float:
-    """Return paired PSNR over uint8 frame stacks."""
+    """Return paired PSNR over uint8 or uint16 frame stacks."""
     if reference.shape != candidate.shape:
         raise ValueError("PSNR inputs must have matching shapes")
     mse = float(np.mean((reference.astype(np.float32) - candidate.astype(np.float32)) ** 2))
     if mse == 0.0:
         return math.inf
-    return 20.0 * math.log10(255.0 / math.sqrt(mse))
+    peak = 65535.0 if reference.dtype == np.uint16 else 255.0
+    return 20.0 * math.log10(peak / math.sqrt(mse))
 
 
 def _probe_video(source: Path) -> tuple[int, int, float]:
@@ -241,6 +243,8 @@ def _iter_sampled_frames(
     duration: float | None,
     effective_fps: float,
     size: tuple[int, int],
+    high_depth: bool = False,
+    source_size: tuple[int, int] | None = None,
     _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> Generator[NDArray[Any], None, None]:
     """Yield uniformly sampled frames without retaining the full video."""
@@ -251,7 +255,11 @@ def _iter_sampled_frames(
         if _frame_stream is not None:
             yield from _frame_stream
             return
-        capture = open_video_capture(source)
+        if high_depth:
+            src_w, src_h = source_size if source_size is not None else _probe_video(source)[:2]
+            capture: Any = open_video_capture_16bit(source, width=src_w, height=src_h)
+        else:
+            capture = open_video_capture(source)
         if not capture.isOpened():
             raise ValueError(f"Could not open video: {source}")
         try:
@@ -309,8 +317,12 @@ def _encode_frame_latents(
     with torch.inference_mode():
         for batch in _frame_batches(frames, batch_size):
             rgb = np.stack([frame[:, :, ::-1] for frame in batch])
-            tensor = torch.from_numpy(np.ascontiguousarray(rgb)).permute(0, 3, 1, 2)
-            tensor = tensor.to(device=device, dtype=vae.dtype) / 127.5 - 1.0
+            if rgb.dtype == np.uint16:
+                rgb_f32 = np.ascontiguousarray(rgb, dtype=np.float32) / 32767.5 - 1.0
+                tensor = torch.from_numpy(rgb_f32).permute(0, 3, 1, 2).to(device=device, dtype=vae.dtype)
+            else:
+                tensor = torch.from_numpy(np.ascontiguousarray(rgb)).permute(0, 3, 1, 2)
+                tensor = tensor.to(device=device, dtype=vae.dtype) / 127.5 - 1.0
             latents = vae.encode(tensor).latent_dist.mode() * scaling_factor
             if not torch.isfinite(latents).all():
                 raise RuntimeError("Video VAE encoder returned nonfinite latents")
@@ -325,6 +337,7 @@ def _decode_frame_latents(
     noise_std: float,
     shared_noise: Any,
     scaling_factor: float,
+    high_depth: bool = False,
 ) -> list[np.ndarray]:
     """Decode cached latents with one perturbation shared across time."""
     import torch
@@ -336,9 +349,12 @@ def _decode_frame_latents(
             decoded = vae.decode(perturbed / scaling_factor).sample
             if not torch.isfinite(decoded).all():
                 raise RuntimeError("Video VAE decoder returned nonfinite pixels")
-            decoded = ((decoded / 2.0 + 0.5).clamp(0.0, 1.0) * 255.0).round().to(torch.uint8)
-            decoded = decoded.permute(0, 2, 3, 1).cpu().numpy()
-            output.extend(np.ascontiguousarray(frame[:, :, ::-1]) for frame in decoded)
+            unit = (decoded / 2.0 + 0.5).clamp(0.0, 1.0)
+            if high_depth:
+                quantized = (unit * 65535.0).round().to(torch.int32).permute(0, 2, 3, 1).cpu().numpy().astype(np.uint16)
+            else:
+                quantized = (unit * 255.0).round().to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
+            output.extend(np.ascontiguousarray(frame[:, :, ::-1]) for frame in quantized)
     return output
 
 
@@ -359,6 +375,7 @@ def encode_video_frames(
         if first is None:
             raise ValueError("At least one frame is required for video encoding")
         height, width = first.shape[:2]
+        raw_pix_fmt = "bgr48le" if first.dtype == np.uint16 else "bgr24"
         with staged_video_output(output) as (encoded_video, temporary_output):
             process = start_raw_video_encoder(
                 raw_video_command(
@@ -368,6 +385,7 @@ def encode_video_frames(
                     fps=fps,
                     crf=18,
                     profile=probe_video_encode_profile(source),
+                    input_pix_fmt=raw_pix_fmt,
                 )
             )
             frame_pipe = process.stdin
@@ -427,16 +445,18 @@ def regenerate_video_candidate(
     vae = runtime.vae
 
     encode_profile = probe_video_encode_profile(source)
+    high_depth = getattr(encode_profile, "pixel_format", None) in HIGH_BIT_DEPTH_PIXEL_FORMATS
     comp_depth = getattr(encode_profile, "component_depth", None)
     color_trc = getattr(encode_profile, "color_transfer", None)
-    if (comp_depth or 0) > 8 or color_trc in {"smpte2084", "arib-std-b67"}:
+    if ((comp_depth or 0) > 8 or color_trc in {"smpte2084", "arib-std-b67"}) and not high_depth:
         source_format = getattr(encode_profile, "source_pixel_format", None) or "unknown pixel format"
         raise RuntimeError(
-            "Invisible video regeneration currently supports SDR 8-bit input only; "
+            "Invisible video regeneration cannot preserve this high-bit-depth or HDR stream without "
             f"refusing to silently reduce {source_format} / "
             f"{color_trc or 'unknown transfer'} to 8-bit SDR"
         )
 
+    raw_pix_fmt = "bgr48le" if high_depth else "bgr24"
     with staged_video_output(output) as (encoded_video, temporary_output):
         process = start_raw_video_encoder(
             raw_video_command(
@@ -446,6 +466,7 @@ def regenerate_video_candidate(
                 fps=effective_fps,
                 crf=18,
                 profile=encode_profile,
+                input_pix_fmt=raw_pix_fmt,
             )
         )
         frame_pipe = process.stdin
@@ -465,6 +486,9 @@ def regenerate_video_candidate(
                 "effective_fps": effective_fps,
                 "size": size,
             }
+            if high_depth:
+                sample_kwargs["high_depth"] = True
+                sample_kwargs["source_size"] = (width, height)
             if _frame_stream is not None:
                 sample_kwargs["_frame_stream"] = _frame_stream
             sampled_frames = _iter_sampled_frames(source, **sample_kwargs)
@@ -495,13 +519,15 @@ def regenerate_video_candidate(
                             device=resolved_device,
                             dtype=latents.dtype,
                         )
-                    regenerated = _decode_frame_latents(
-                        latent_batches,
-                        vae=vae,
-                        noise_std=noise_std,
-                        shared_noise=shared_noise,
-                        scaling_factor=runtime.scaling_factor,
-                    )
+                    decode_kwargs: dict[str, Any] = {
+                        "vae": vae,
+                        "noise_std": noise_std,
+                        "shared_noise": shared_noise,
+                        "scaling_factor": runtime.scaling_factor,
+                    }
+                    if high_depth:
+                        decode_kwargs["high_depth"] = True
+                    regenerated = _decode_frame_latents(latent_batches, **decode_kwargs)
                     yield from zip(frames, regenerated, strict=True)
 
             pair_stream: Iterable[tuple[NDArray[Any], NDArray[Any]]] = (
@@ -514,7 +540,8 @@ def regenerate_video_candidate(
                 difference = reference_f32 - candidate_f32
                 squared_error += float(np.sum(difference * difference, dtype=np.float64))
                 pixel_count += reference.size
-                current_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+                ref_u8 = (reference >> 8).astype(np.uint8) if reference.dtype == np.uint16 else reference
+                current_gray = cv2.cvtColor(ref_u8, cv2.COLOR_BGR2GRAY)
                 if (
                     previous_gray is not None
                     and previous_reference_f32 is not None
@@ -540,11 +567,12 @@ def regenerate_video_candidate(
             raise
 
         mse = squared_error / pixel_count
+        peak = 65535.0 if high_depth else 255.0
         return RegenerationMetrics(
             frames=frame_count,
             fps=effective_fps,
             width=size[0],
             height=size[1],
-            psnr_db=math.inf if mse == 0.0 else 20.0 * math.log10(255.0 / math.sqrt(mse)),
+            psnr_db=math.inf if mse == 0.0 else 20.0 * math.log10(peak / math.sqrt(mse)),
             temporal_residual_ratio=temporal_candidate / max(temporal_baseline, 1e-6),
         )

@@ -348,11 +348,10 @@ there is no runtime CapCut detector or external upload. Visible labels must
 be handled before this pixel stage. Temporary guide/master videos need disk
 space, although pixel processing uses bounded batches. It leaves the default
 video SynthID profile as the default unless `--profile auto` (`profile="auto"`)
-or an explicit Seedance profile is chosen. The separate
-`wan21-synthid-experimental` and `wan21-seedance-experimental` 3D diffusion
+or an explicit Seedance profile is chosen. The separate `wan21-synthid-experimental` and `wan21-seedance-experimental` 3D diffusion
 profiles (`remove_video_wan_experimental`) require an Ampere-or-newer BF16 NVIDIA
 CUDA GPU, or an explicit `device="mps"` on Apple Silicon that automatic profile
-selection never chooses, and SDR 8-bit MP4, MOV, or M4V input within
+selection never chooses, and SDR 8-bit or 10-bit HDR (`yuv420p10le`/`yuv422p10le`/`yuv444p10le`, `BT.2020`, `PQ`/`HLG`) MP4, MOV, or M4V input within
 `WAN21_MAX_FRAME_PIXELS` (`1920x1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
 (`7200 * 1920 * 1080`). They stream clips longer than `193` frames across `4k+1`
 3D causal windows (`chunk_frames=193`, `overlap_frames=17`) with raised-cosine

@@ -1490,7 +1490,7 @@ def remove_video_all(
 
                 src_prof = probe_video_encode_profile(source_path)
                 high_depth = src_prof.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
-                if resolved_invisible_profile == "seedance-experimental" or high_depth:
+                if resolved_invisible_profile == "seedance-experimental":
                     lossless_vis = Path(temp_dir) / f"visible-lossless{source_path.suffix}"
                     rem_cnt = encode_clean_video(
                         source_path,
@@ -1536,7 +1536,7 @@ def remove_video_all(
                             slot_padding_fractions=slot_pads,
                             slot_mask_styles=slot_styles,
                             temporal_consistency=temporal_consistency,
-                            high_depth=False,
+                            high_depth=high_depth,
                         ):
                             if was_rem:
                                 rem_cnt += 1
