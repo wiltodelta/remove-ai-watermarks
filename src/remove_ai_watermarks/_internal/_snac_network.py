@@ -186,7 +186,7 @@ def build_snac(config: dict[str, Any]) -> Any:
             self.in_proj = wn_conv1d(input_dim, cb_dim, kernel_size=1)
             self.out_proj = wn_conv1d(cb_dim, input_dim, kernel_size=1)
             self.codebook = nn.Embedding(cb_size, cb_dim)
-            self._cb_norm: Any = None
+            self.register_buffer("_cb_norm", None, persistent=False)
 
         def encode(self, z: Any) -> Any:
             if self.stride > 1:

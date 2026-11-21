@@ -627,3 +627,29 @@ class TestAudioSnacCodec:
         assert res_51.quality_passed is True
         # FL/FR (2ch), FC (1ch), BL/BR (2ch); LFE (ch 3) is lowpassed <120 Hz without neural resynthesis
         assert [ch for _frames, ch in stem_shapes] == [2, 1, 2]
+
+    def test_snac_fuse_weight_norm_registers_codebook_norm_buffer(self) -> None:
+        torch = pytest.importorskip("torch")
+        from remove_ai_watermarks._internal._snac_network import build_snac
+
+        model = build_snac(
+            {
+                "sampling_rate": 44100,
+                "encoder_dim": 16,
+                "encoder_rates": [2, 2],
+                "latent_dim": 64,
+                "decoder_dim": 64,
+                "decoder_rates": [2, 2],
+                "attn_window_size": 4,
+                "codebook_size": 16,
+                "codebook_dim": 4,
+                "vq_strides": [2, 1],
+                "noise": False,
+                "depthwise": True,
+            }
+        )
+        model.fuse_weight_norm()
+        for q in model.quantizer.quantizers:
+            assert q._cb_norm is not None
+        out = model.reconstruct(torch.zeros((1, 1, 32)), n_quantizers=1)
+        assert out.shape == (1, 1, 32)

@@ -67,8 +67,8 @@ when an optional backend is absent.
 | Tool | Runs | Writes |
 | --- | --- | --- |
 | `identify` | `identify --json` for an image, `video identify --json` for a video suffix (`check_audio: true` adds `--audio`), `audio identify --json` for an audio suffix, or `text identify --json` for a text suffix; `check_visible: false` adds `--no-visible` (or `--no-invisible` for audio unless `check_audio` overrides it) | Nothing |
-| `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all --invisible` for audio; `text metadata --remove` or `text all` for text | One output file, `<name>_clean` beside the source unless `output` is given |
-| `batch` | `batch --mode` for images, `video batch --mode` for video (`media: "video"`), or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
+| `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all --invisible` for audio; `text metadata --remove` or `text all` for text (or top-level `all --preset` when `preset` is set) | One output file, `<name>_clean` beside the source unless `output` is given |
+| `batch` | `batch --mode` for images or mixed directories (`media: "all"`), with optional `--preset`; `video batch --mode` for video (`media: "video"`); or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
 | `audio_identify` | `audio identify --json`; `check_invisible: false` skips models | Nothing |
 | `audio_invisible` | `audio invisible --json`, with explicit `stream`, `vendor`, `allow_unverified`, `allow_positive`, `allow_quality_override`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
 | `video_message_identify` | `video message identify --json`, required `reference`, optional `scheme` | Nothing |

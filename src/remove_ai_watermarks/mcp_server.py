@@ -27,6 +27,7 @@ from typing import IO, Any, cast
 
 from remove_ai_watermarks import __version__
 from remove_ai_watermarks._internal.constants import (
+    ALL_PRESETS,
     AUDIO_BANDWIDTHS_KBPS,
     AUDIO_EXTENSIONS,
     AUDIO_METHODS,
@@ -109,6 +110,13 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "path": {"type": "string", "description": "Image, video, audio, or text file to clean."},
                 "mode": {"type": "string", "enum": list(_MODES), "default": "metadata"},
+                "preset": {
+                    "type": "string",
+                    "enum": list(ALL_PRESETS),
+                    "description": (
+                        "Optional high-level preset (lossless-fast, balanced, deep-clean) routed through top-level all."
+                    ),
+                },
                 "output": {"type": "string", "description": "Output file. Must differ from the source."},
             },
             "required": ["path"],
@@ -129,7 +137,14 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "directory": {"type": "string", "description": "Directory of input files."},
                 "mode": {"type": "string", "enum": list(_MODES), "default": "metadata"},
-                "media": {"type": "string", "enum": ["image", "video", "audio"], "default": "image"},
+                "media": {"type": "string", "enum": ["image", "video", "audio", "all"], "default": "image"},
+                "preset": {
+                    "type": "string",
+                    "enum": list(ALL_PRESETS),
+                    "description": (
+                        "Optional high-level preset (lossless-fast, balanced, deep-clean) for multimodal batch."
+                    ),
+                },
                 "output_dir": {"type": "string", "description": "Output directory. Must differ from the input."},
             },
             "required": ["directory"],
@@ -185,7 +200,7 @@ for _name, _description, _options in (
                 "enum": list(AUDIO_METHODS),
                 "default": AUDIO_METHODS[0],
                 "description": (
-                    "Mimi, FocalCodec, DAC, and BigVGAN are explicit experimental full-track profiles, "
+                    "SNAC, Mimi, FocalCodec, DAC, and BigVGAN are explicit full-track neural-codec profiles, "
                     "not SynthID decoders."
                 ),
             },
@@ -386,6 +401,9 @@ def _remove_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
         output,
         message="'output' must differ from the source; the server never overwrites an input",
     )
+    preset = values.get("preset")
+    if preset is not None:
+        return ["all", "--preset", preset, "-o", output, "--", path], output
     if _is_text(path) and mode == "visible":
         raise ToolInputError("text files do not have a visible pixel mode; use mode=metadata or mode=all")
     if _is_audio(path):
@@ -404,6 +422,11 @@ def _batch_command(values: dict[str, Any]) -> tuple[list[str], str | None]:
     output_dir = values.get("output_dir") or str(resolved.with_name(resolved.name + "_clean"))
     if Path(output_dir).resolve() == resolved:
         raise ToolInputError("'output_dir' must differ from the input directory")
+    preset = values.get("preset")
+    if preset is not None:
+        if values["media"] in {"video", "audio"}:
+            raise ToolInputError("preset is supported for media=image or media=all multimodal batch")
+        return ["batch", "--mode", values["mode"], "--preset", preset, "-o", output_dir, "--", directory], output_dir
     if values["media"] == "audio":
         if values["mode"] == "visible":
             raise ToolInputError("audio batch does not have a visible pixel mode; use mode=metadata or mode=all")

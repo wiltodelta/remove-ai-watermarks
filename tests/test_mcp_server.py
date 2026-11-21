@@ -571,3 +571,48 @@ def test_mcp_convenience_tools_route_audio_and_video_audio_all_streams() -> None
     assert "--allow-unverified" in runner.calls[-1]
     assert "--force" not in runner.calls[-1]
     _assert_the_cli_accepts(runner.calls[-1])
+
+    # Wave 2/3 parity: SNAC method, top-level presets on remove/batch, and multimodal batch
+    res_snac = mcp_server.call_tool(
+        "audio_invisible",
+        {"path": "track.wav", "method": "snac", "allow_unverified": True},
+        runner,
+    )
+    assert res_snac["isError"] is False
+    assert runner.calls[-1][runner.calls[-1].index("--method") + 1] == "snac"
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_preset_rm = mcp_server.call_tool(
+        "remove",
+        {"path": "clip.mp4", "preset": "deep-clean", "output": "clip_clean.mp4"},
+        runner,
+    )
+    assert res_preset_rm["isError"] is False
+    assert runner.calls[-1] == ["all", "--preset", "deep-clean", "-o", "clip_clean.mp4", "--", "clip.mp4"]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_preset_batch = mcp_server.call_tool(
+        "batch",
+        {"directory": "mixed", "media": "all", "mode": "all", "preset": "balanced", "output_dir": "mixed_out"},
+        runner,
+    )
+    assert res_preset_batch["isError"] is False
+    assert runner.calls[-1] == [
+        "batch",
+        "--mode",
+        "all",
+        "--preset",
+        "balanced",
+        "-o",
+        "mixed_out",
+        "--",
+        "mixed",
+    ]
+    _assert_the_cli_accepts(runner.calls[-1])
+
+    res_bad_preset_batch = mcp_server.call_tool(
+        "batch",
+        {"directory": "tracks", "media": "audio", "mode": "all", "preset": "balanced", "output_dir": "tracks_out"},
+        runner,
+    )
+    assert res_bad_preset_batch["isError"] is True
