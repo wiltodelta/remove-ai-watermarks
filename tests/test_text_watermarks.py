@@ -547,6 +547,34 @@ def test_innamark_stegcloak_subtext_stegmoji_groundtruth_and_zw_binary_forensics
     assert remove_text_metadata(stegmoji_doc).cleaned_text == "Emoji carrier."
 
 
+@pytest.mark.parametrize(
+    ("marked", "expected"),
+    [
+        ("See the result citeturn0search0 and continue.", "See the result and continue."),
+        ("It is ready citeturn0search0.", "It is ready."),
+        ("Read\tciteturn0search0 citeturn1view2\tthen proceed.", "Read\tthen proceed."),
+        ("Ready citeturn0search0 ?", "Ready ?"),
+        ("Read citeturn0search0 and keep `citeturn0search0`.", "Read and keep `citeturn0search0`."),
+        ("The door closed. citeturn0view1", "The door closed."),
+        ("Wait citeturn2view0…", "Wait…"),
+        ("Read citeturn0search0 `limit`.", "Read `limit`."),
+    ],
+)
+def test_plain_citation_cleanup_preserves_local_spacing(marked: str, expected: str) -> None:
+    result = remove_text_all(marked)
+    assert result.cleaned_text == expected
+    assert "assistant_citation_artifact" in identify_text(marked).signals
+    assert remove_text_all(expected).cleaned_text == expected
+
+
+def test_ordinary_nonbreaking_space_survives_exact_cleanup() -> None:
+    clean = "Keep these two\u00a0words together."
+    marked = "Keep \u200b\u034f\u2060\u200bthese two\u00a0words together."
+    assert identify_text(clean).is_ai_generated is None
+    assert remove_text_all(clean).cleaned_text == clean
+    assert remove_text_all(marked).cleaned_text == clean
+
+
 def test_cjk_ivs_rtl_bidi_non_joining_arabic_and_homoglyph_entity_scrubbing() -> None:
     # Single CJK IVS selector (U+E0100 after CJK ideograph 葛 U+845B) is preserved,
     # and balanced RTL Bidi isolate (U+2067..U+2069) on an Arabic line is preserved,

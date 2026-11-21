@@ -555,6 +555,7 @@ mark reordering. The complete Windows AI watermark sequence is removed before
 classifying its neighbors. Recognized binary and StegCloak streams take
 precedence over the contextual rules for `U+200B`, `U+00AD` and `U+2060`.
 File I/O retains LF, CRLF and CR line endings.
+The cleaner preserves ordinary non-breaking spaces (`U+00A0`) in prose.
 Single selectors in registered standardized and ideographic variation pairs
 also retain their glyph selection.
 

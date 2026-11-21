@@ -1,4 +1,4 @@
-"""Add the pinned local ReFlip paraphrase baseline to a paired text manifest."""
+"""Add a pinned local ReFlip baseline to a paired text manifest."""
 
 from __future__ import annotations
 
@@ -47,14 +47,18 @@ def add_baseline(manifest_path: Path, config_path: Path, reference_root: Path, u
     ):
         raise ValueError("Use an HTTP /v1 endpoint on a literal loopback address.")
     arms, _, trials, manifest_digest = paired._manifest(manifest_path, minimum_arms=1)
-    if ARM in arms:
-        raise ValueError("The input already declares a ReFlip arm.")
     manifest, digest = paired._read(manifest_path)
     if digest != manifest_digest:
         raise ValueError("The manifest changed while loading.")
     config, config_digest = paired._read(config_path)
     if not isinstance(config, dict):
         raise ValueError("Expected a ReFlip plan object.")
+    method = config.get("method", "paraphrase")
+    if method not in ("paraphrase", "infill"):
+        raise ValueError("ReFlip method must be paraphrase or infill.")
+    arm = ARM if method == "paraphrase" else "reflip_infill"
+    if arm in arms:
+        raise ValueError(f"The input already declares the {arm} arm.")
     expected_digest = config.get("model_digest")
     workers = config.get("workers")
     if (
@@ -77,6 +81,7 @@ def add_baseline(manifest_path: Path, config_path: Path, reference_root: Path, u
     sys.path.insert(0, str(reference_root.resolve()))
     from reflip.transforms import Options, llm
 
+    rewrite = llm.paraphrase if method == "paraphrase" else llm.infill
     for module_name, module in sys.modules.copy().items():
         if module_name == "reflip" or module_name.startswith("reflip."):
             relative = Path(module.__file__).resolve().relative_to(reference_root.resolve())
@@ -113,7 +118,7 @@ def add_baseline(manifest_path: Path, config_path: Path, reference_root: Path, u
                 "requests": version("requests"),
                 "ollama": metadata["version"]["version"],
             },
-            "method": "paraphrase",
+            "method": method,
         },
     )
     original_chat = llm.Chat
@@ -166,7 +171,7 @@ def add_baseline(manifest_path: Path, config_path: Path, reference_root: Path, u
                 reason = None
                 notes = {}
                 try:
-                    result = llm.paraphrase(trial.source, options)
+                    result = rewrite(trial.source, options)
                     candidate, notes = result.text, result.notes
                 except (RuntimeError, ValueError) as error:
                     candidate, reason = None, str(error)
@@ -190,8 +195,8 @@ def add_baseline(manifest_path: Path, config_path: Path, reference_root: Path, u
             llm.Chat = original_chat
     for pair in manifest["pairs"]:
         for side in paired.SIDES:
-            pair[side]["outputs"][ARM] = outcomes[pair["id"], side]
-    manifest["arms"].append(ARM)
+            pair[side]["outputs"][arm] = outcomes[pair["id"], side]
+    manifest["arms"].append(arm)
     paired._write(output / "attempts.json", attempts)
     paired._write(output / "trials.json", manifest)
     log.info("Ran ReFlip on %s marked and clean sources.", len(attempts))

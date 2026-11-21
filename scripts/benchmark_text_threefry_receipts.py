@@ -101,10 +101,14 @@ def generate(
     reference_root: Path,
     tokenizer_dir: Path,
     output: Path,
+    *,
+    second_reviews: Path | None = None,
 ) -> None:
     """Emit exact-text detector receipts after independently checking Threefry parity."""
     _, minimum, trials, manifest_digest = paired._manifest(manifest)
-    _, review_digest, packet_digest = paired._sealed_reviews(run, reviews, trials, manifest_digest)
+    _, review_digest, packet_digest = paired._sealed_reviews(
+        run, reviews, trials, manifest_digest, second_reviews=second_reviews
+    )
     config, config_digest = paired._read(config_path)
     if not isinstance(config, dict):
         raise ValueError("Expected a Threefry configuration object.")
@@ -113,6 +117,7 @@ def generate(
     if not trials:
         raise ValueError("The configured detector must match at least one trial in the manifest.")
     _verify_reference(reference_root, config.get("reference_sha256"))
+    paired._verify_file_digests(tokenizer_dir, config.get("tokenizer_sha256"), TOKENIZER_FILES)
     if output.exists():
         raise FileExistsError(output)
 
@@ -169,11 +174,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     for option in ("input", "run", "reviews", "config", "reference-root", "tokenizer-dir", "output-dir"):
         parser.add_argument(f"--{option}", type=Path, required=True)
+    parser.add_argument("--second-reviews", type=Path)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         generate(
-            args.input, args.run, args.reviews, args.config, args.reference_root, args.tokenizer_dir, args.output_dir
+            args.input,
+            args.run,
+            args.reviews,
+            args.config,
+            args.reference_root,
+            args.tokenizer_dir,
+            args.output_dir,
+            second_reviews=args.second_reviews,
         )
     except (OSError, ValueError, RuntimeError, ImportError) as error:
         log.error("%s", error)

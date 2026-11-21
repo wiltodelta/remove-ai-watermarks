@@ -46,9 +46,10 @@ carriers and the two exact Markdown cases.
 
 `benchmark_text_exact.py` has an independent synthetic Unicode panel in the
 script. It inserts the published Windows sequence next to prose that contains
-joining scripts, emoji, bidi isolates, decomposed text, numeric multiplication
-with word joiners, and a fenced CRLF example. Results require byte-identical
-recovery through `remove_text_all` and the CLI's top-level `all`. The harness
+joining scripts, emoji, bidi isolates, decomposed text, an ordinary non-breaking
+space, numeric multiplication with word joiners, and a fenced CRLF example.
+Results require byte-identical recovery through `remove_text_all` and the CLI's
+top-level `all`. The harness
 also checks the clean inputs and source-file preservation. The math control
 covers the supported numeric multiplication form. Letter-based equalities
 with WORD JOINER fall outside that preservation rule.
@@ -63,6 +64,37 @@ The second command adds the published C2PA vectors and the two fenced
 Markdown examples as a separate report group. Reports contain input and
 output hashes and fail the command on mismatches, clean-control changes,
 non-idempotent API output, or residue found by the reference decoder.
+
+#### Reproduce the exact peer comparison
+
+Run from the library worktree with Git and `uv` available. The setup below
+uses a fresh Python environment and checks out each upstream revision in a
+separate scratch directory. It requires no model weights or provider access.
+
+```bash
+exact_run=$(mktemp -d "${TMPDIR:-/tmp}/raiw-exact-review-XXXXXX")
+fetch_peer() {
+  local name=$1 repository=$2 revision=$3
+  git init -q "$exact_run/$name" &&
+    git -C "$exact_run/$name" fetch -q --depth=1 "https://github.com/$repository.git" "$revision" &&
+    git -C "$exact_run/$name" checkout -q --detach FETCH_HEAD
+}
+fetch_peer c2pa-text encypherai/c2pa-text 7e818755818281748c41aef8766037b30ce9fb04
+fetch_peer dewatermark cyzanfar/text-watermark-remover fd620a93b9d96c7a4730d80be2d7aa90d5017575
+fetch_peer no-watermark obrenoalvim/no-watermark 627e77889e051ebbbde1cad050f88cef41fff996
+fetch_peer wm-hook norandom/watermarks-remover 90f4e28c8ebd37427297b5f5c47ed820a96f0861
+UV_PROJECT_ENVIRONMENT="$exact_run/venv" uv run --locked --no-dev --python 3.12 \
+  --with 'requests==2.34.2' python scripts/benchmark_text_exact_peers.py \
+  --checkouts "$exact_run" --output "$exact_run/results.json"
+```
+
+The Unicode panel uses four insertion positions per clean document. The
+serialized panel uses the reference vectors and literal Markdown examples.
+The report compares the library's API and CLI against each peer's native
+sanitizer, including dewatermark's safe and aggressive profiles. It records
+case-level hashes, clean preservation, API idempotence, and decoder residue
+where a reference decoder is applicable. The exit status enforces the library
+contract. Peer mismatches remain visible in the report.
 
 ## Partial regeneration
 
@@ -612,14 +644,20 @@ unchanged output. Supply detector receipts as a JSON list with one
 per distinct detector and text. Run the reference detector separately with
 the same configuration and threshold for every source and output.
 
-For any method that deliberately retains prose spans, record them under
-`retained_prose` as a mapping from arm to the list of exact fragments present in
-the source and output. Score those fragments separately with the same detector.
-The report flags a partial output as `partial_unverified` if any declared
-fragment is positive or has too few scored positions. A faithful, whole-document
-negative with that flag stays in the denominator and earns no joint success.
-The scorer checks declared fragments. It cannot infer which spans were retained
-by an arm.
+For new comparisons, set `"comparison_protocol": "symmetric-v1"` at the
+top level before binding. The benchmark derives retained prose for every arm
+from identical sentence slots in the unlocked prose of the source and candidate.
+It deduplicates slots, ignores their order, and excludes locked code and other
+protected spans. It compares exact slot text after trimming its outer whitespace.
+Arm-provided `retained_prose` has no effect on scoring in this protocol. Changes
+inside a slot and shorter shared phrases require a separate overlap diagnostic.
+
+The reference receipt workers score each retained fragment with the same
+detector. A positive or undersized fragment sets `partial_unverified`.
+A faithful, whole-document negative with that flag stays in the denominator
+and earns no joint success. Existing manifests without a protocol field
+still score the arm-declared `retained_prose` and reproduce their marked-only
+review packets. Switching an old comparison requires a new packet and receipts.
 
 ```bash
 uv run python scripts/benchmark_text_pairs.py bind \
@@ -631,7 +669,10 @@ uv run python scripts/benchmark_text_pairs.py score \
   --detections detections.json --baseline strict --output results.json
 ```
 
-Give reviewers only `paired-run/blind-pairs.json`. Record a boolean
+Give reviewers only `paired-run/blind-pairs.json`. With `symmetric-v1`,
+the same packet includes changed clean and marked outputs without their arm,
+side, or detector labels. Unchanged and refused outputs do not need a review.
+Record a boolean
 `faithful` verdict and a nonempty `reason` for each packet ID in
 `reviews.json` and seal it before inspecting detector results. The script
 checks that every marked source tests positive, every clean source tests
@@ -640,6 +681,16 @@ stays in the denominator. Only changed marked outputs with enough scored
 positions, a negative detector result, and a faithful review count as joint
 successes. The report also gives detector outcomes for changed clean controls
 and exact paired tests against the declared baseline for each detector.
+In `symmetric-v1` it separately counts the reviewed, faithful, and
+unfaithful changed clean outputs for every arm.
+
+For two independent reviews, give each reviewer the same blind packet and
+collect two complete verdict files separately. Add
+`--second-reviews reviews-2.json` to `seal`, both reference receipt workers,
+and `score`. The lock records both file hashes and an ordered aggregate hash.
+Both reviewers must mark an output faithful before it can earn a joint
+success. The clean `unfaithful` count requires agreement that meaning changed.
+The report counts split verdicts under `review_disagreements` on both sides.
 
 #### Generating matched KGW sources locally
 
@@ -795,9 +846,13 @@ and untouched destinations on refusal.
 
 #### Adding the local ReFlip baseline
 
-`scripts/benchmark_text_reflip.py` adds the pinned ReFlip Python
-`paraphrase` pipeline to an existing paired manifest. Use the same marked
-texts and clean controls as the library arms. For the comparison plan, record
+`scripts/benchmark_text_reflip.py` adds a pinned ReFlip Python
+pipeline to an existing paired manifest. The default `paraphrase` method
+adds the `reflip` arm. Set `"method": "infill"` in the plan to run ReFlip's
+native short-span replacements and add the `reflip_infill` arm. Run the
+script again on the resulting manifest with the other method to compare both
+on the same marked texts and clean controls as the library arms. For the
+comparison plan, record
 the ReFlip checkout `revision`, SHA-256 paths in `source_sha256`, the
 `ollama_version`, the Ollama `model_digest` of ReFlip's default checkpoint,
 and a positive `workers` count. Include the imported ReFlip modules and its

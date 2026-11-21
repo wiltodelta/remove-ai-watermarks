@@ -59,10 +59,14 @@ def generate(
     tokenizer_dir: Path,
     output: Path,
     dependency_dir: Path | None = None,
+    *,
+    second_reviews: Path | None = None,
 ) -> None:
     """Produce one receipt per exact text with a separate raw-score record."""
     _, minimum, trials, manifest_digest = paired._manifest(manifest)
-    _, review_digest, packet_digest = paired._sealed_reviews(run, reviews, trials, manifest_digest)
+    _, review_digest, packet_digest = paired._sealed_reviews(
+        run, reviews, trials, manifest_digest, second_reviews=second_reviews
+    )
     config, config_digest = paired._read(config_path)
     if not isinstance(config, dict):
         raise ValueError("Expected a KGW configuration object.")
@@ -154,6 +158,7 @@ def main() -> None:
     for option in ("input", "run", "reviews", "config", "reference-root", "tokenizer-dir", "output-dir"):
         parser.add_argument(f"--{option}", type=Path, required=True)
     parser.add_argument("--dependency-dir", type=Path)
+    parser.add_argument("--second-reviews", type=Path)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
@@ -166,6 +171,7 @@ def main() -> None:
             args.tokenizer_dir,
             args.output_dir,
             args.dependency_dir,
+            second_reviews=args.second_reviews,
         )
     except (OSError, ValueError, RuntimeError, ImportError) as error:
         log.error("%s", error)

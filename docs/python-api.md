@@ -1360,6 +1360,8 @@ The metadata cleaner preserves isolated `U+200B` between Thai word characters
 and inside recognized inline and fenced code. It also preserves paired
 `U+2060` word joiners around `U+00D7` or `U+00F7` between decimal digits.
 Recognized zero-width payloads take precedence over these context rules.
+The cleaner preserves ordinary non-breaking spaces (`U+00A0`) in prose.
+A recognized Innamark payload can still trigger whitespace recovery.
 
 The cleaner also retains `U+034F` when removing it would allow combining
 marks to reorder across its position. This preserves the ordering distinction

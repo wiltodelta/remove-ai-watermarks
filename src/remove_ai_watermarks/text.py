@@ -244,10 +244,16 @@ _INVISIBLE_NAMED_ENTITIES: dict[str, str] = {
 _HTML_ENTITY_RE = re.compile(r"&(?:#(?P<dec>\d{1,7})|#x(?P<hex>[0-9A-Fa-f]{1,6})|(?P<name>[A-Za-z]{2,24}));")
 _ASSISTANT_CITATION_RE = re.compile(
     r"\ue200[^\ue200\ue201]{0,160}\ue201"
-    r"|\bcite(?:turn\d+(?:search|news|view|image|file|fetch|forecast|sports|finance|academia|product|map)\d+)+\b"
     r"|\[cite(?:_start|_end|:\s*\d+(?:\s*,\s*\d+)*)\]"
     r"|\[span_\d+\](?:\((?:start|end)_span\))?"
     r"|\bgrok_render_citation_card_json\b(?:=\{[^}\n]*\})?"
+)
+_PLAIN_CHATGPT_CITATION = (
+    r"\bcite(?:turn\d+(?:search|news|view|image|file|fetch|forecast|sports|finance|academia|product|map)\d+)+\b"
+)
+_PLAIN_CHATGPT_CITATION_RUN_RE = re.compile(
+    rf"(?<![ \t])(?P<before>[ \t]*)(?P<tokens>{_PLAIN_CHATGPT_CITATION}(?:[ \t]+{_PLAIN_CHATGPT_CITATION})*)"
+    r"(?P<after>[ \t]*)"
 )
 
 _CONFUSABLE_TO_LATIN: dict[str, str] = {
@@ -1551,23 +1557,30 @@ def _decode_invisible_html_entities_in_prose(text: str) -> tuple[str, int]:
     return _HTML_ENTITY_RE.sub(_replace_entity, text), decoded_count
 
 
-def _strip_assistant_citations_in_prose(text: str) -> tuple[str, int]:
-    """Strip ChatGPT PUA citation blocks, Gemini span/cite markers, and Grok citation cards."""
-    count = 0
+def _strip_assistant_citations_in_prose(text: str, *, at_document_end: bool) -> tuple[str, int]:
+    """Strip ChatGPT citation tokens and PUA blocks, Gemini markers, and Grok citation cards."""
+    cleaned, count = _ASSISTANT_CITATION_RE.subn("", text)
+    if "citeturn" not in cleaned:
+        return cleaned, count
 
-    def _on_match(_m: re.Match[str]) -> str:
+    def _remove_plain_run(match: re.Match[str]) -> str:
         nonlocal count
-        count += 1
-        return ""
+        count += len(match["tokens"].split())
+        following = cleaned[match.end() : match.end() + 1]
+        if (not following and at_document_end) or (following and following in ",.;:!?…)]}\r\n"):
+            return match["after"]
+        # A protected span may follow this prose fragment. Preserve its separator.
+        return match["before"] or match["after"]
 
-    cleaned = _ASSISTANT_CITATION_RE.sub(_on_match, text)
-    return cleaned, count
+    return _PLAIN_CHATGPT_CITATION_RUN_RE.sub(_remove_plain_run, cleaned), count
 
 
 def _is_legitimate_typographic_nbsp(text: str, idx: int) -> bool:
     """Return whether ``text[idx]`` is a legitimate typographic non-breaking space."""
     cp = ord(text[idx])
-    if cp not in (0x00A0, 0x202F, 0x2007, 0x2009):
+    if cp == 0x00A0:
+        return True
+    if cp not in (0x202F, 0x2007, 0x2009):
         return False
     left = text[idx - 1] if idx > 0 else ""
     right = text[idx + 1] if idx + 1 < len(text) else ""
@@ -1770,10 +1783,9 @@ def _strip_unicode_tags(text: str) -> tuple[str, str | None]:
 def _extract_and_strip_stego_codepoints(
     text: str,
     *,
-    vsrmark_indices: frozenset[int] = frozenset(),
     preserve_contextual_controls: bool = True,
 ) -> tuple[str, str | None, int, int, int]:
-    """Strip Unicode Tags, VSRMark selectors, PUA markers, and steganographic zero-width/VS codepoints.
+    """Strip Unicode Tags, PUA markers, and steganographic zero-width/VS codepoints.
 
     Preserves registered emoji presentation, standardized Unicode VS1 through VS16 and
     ideographic variation pairs, valid
@@ -1786,9 +1798,6 @@ def _extract_and_strip_stego_codepoints(
     digits, unless a recognized zero-width payload takes precedence. Combining
     grapheme joiners that block canonical mark reordering are also preserved.
     """
-    # Classify neighbors after removing recognized payloads that can split a glyph or joiner context.
-    if vsrmark_indices:
-        text = "".join(ch for idx, ch in enumerate(text) if idx not in vsrmark_indices)
     original_length = len(text)
     text, tags_payload = _strip_unicode_tags(text)
     tag_codepoint_count = original_length - len(text)
@@ -1798,7 +1807,7 @@ def _extract_and_strip_stego_codepoints(
         for match in _MATH_WORD_JOINER_RE.finditer(text):
             contextual_indices.update((match.start(), match.end() - 1))
     anomalous_zw_count = 0
-    removed_count = tag_codepoint_count + len(vsrmark_indices)
+    removed_count = tag_codepoint_count
     out: list[str] = []
     n = len(text)
 
@@ -1929,12 +1938,12 @@ def _preprocess_unlocked_prose_segments(
     homoglyph_count = 0
     space_count = 0
 
-    for span in spans:
+    for index, span in enumerate(spans):
         if span.kind in code_locked_kinds:
             out_parts.append(span.text)
             continue
         seg, e_cnt = _decode_invisible_html_entities_in_prose(span.text)
-        seg, c_cnt = _strip_assistant_citations_in_prose(seg)
+        seg, c_cnt = _strip_assistant_citations_in_prose(seg, at_document_end=index == len(spans) - 1)
         seg, h_cnt = _normalize_mixed_script_homoglyphs_in_prose(seg)
         seg, s_cnt = _normalize_exotic_spaces_in_prose(seg, force_innamark_clean=force_innamark_clean)
         entity_count += e_cnt
@@ -2037,8 +2046,12 @@ def _inspect_and_strip_text(
     for vs_key, vs_val in vs_payloads.items():
         markers[f"{vs_key}_payload"] = vs_val
 
+    # Restore neighboring characters before classifying spaces and other contextual controls.
+    after_vsrmark = after_html
+    if vsrmark_indices:
+        after_vsrmark = "".join(ch for idx, ch in enumerate(after_html) if idx not in vsrmark_indices)
     preprocessed, entity_cnt, citation_cnt, homoglyph_cnt, space_cnt = _preprocess_unlocked_prose_segments(
-        after_html,
+        after_vsrmark,
         force_innamark_clean=innamark_payload is not None,
     )
     if entity_cnt > 0:
@@ -2053,15 +2066,8 @@ def _inspect_and_strip_text(
         signals.append("whitespace_steganography")
         markers["whitespace_steganography"] = f"{space_cnt} exotic space codepoint(s)"
 
-    pre_vsrmark = (
-        vsrmark_match
-        if preprocessed == after_html
-        else (_detect_vsrmark(preprocessed) if vsrmark_match is not None else None)
-    )
-    pre_vsrmark_indices: frozenset[int] = pre_vsrmark.indices if pre_vsrmark is not None else frozenset()
     cleaned_text, tags_payload, stego_removed, tag_cp_count, anomalous_zw_count = _extract_and_strip_stego_codepoints(
         preprocessed,
-        vsrmark_indices=pre_vsrmark_indices,
         preserve_contextual_controls=not (stegcloak_info or zw_payloads),
     )
     if tag_cp_count > 0:
@@ -2074,6 +2080,7 @@ def _inspect_and_strip_text(
     total_stego_cp = (
         windows_count * len(_WINDOWS_AI_TEXT_WATERMARK)
         + (c2patxt_match.removed_codepoints if c2patxt_match is not None else 0)
+        + len(vsrmark_indices)
         + stego_removed
         + citation_cnt
         + homoglyph_cnt

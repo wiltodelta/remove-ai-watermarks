@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import math
+import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import Any, Literal
 log = logging.getLogger(__name__)
 Side = Literal["marked", "clean"]
 SIDES: tuple[Side, ...] = ("marked", "clean")
+SYMMETRIC_PROTOCOL = "symmetric-v1"
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,7 @@ class Trial:
     source: str
     outputs: dict[str, str | None]
     retained_prose: dict[str, list[str]]
+    symmetric: bool = False
 
 
 def text_digest(text: str) -> str:
@@ -72,10 +75,40 @@ def _nonempty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _shared_retained_prose(source: str, outputs: dict[str, str | None]) -> dict[str, list[str]]:
+    from remove_ai_watermarks.text import split_protected_text_spans
+    from remove_ai_watermarks.text_api import _exact_sentence_slots
+
+    def sentences(value: str) -> list[str]:
+        return [
+            stripped
+            for span in split_protected_text_spans(value)
+            if not span.locked
+            for sentence in _exact_sentence_slots(span.text)[0]
+            if (stripped := sentence.strip())
+        ]
+
+    original = set(sentences(source))
+    retained = {}
+    for arm, candidate in outputs.items():
+        if candidate is None or candidate == source:
+            continue
+        if shared := sorted(original.intersection(sentences(candidate))):
+            retained[arm] = shared
+    return retained
+
+
 def _manifest(path: Path, *, minimum_arms: int = 2) -> tuple[list[str], dict[str, int], list[Trial], str]:
     data, digest = _read(path)
     if not isinstance(data, dict):
         raise ValueError("Expected a manifest object.")
+    symmetric = data.get("comparison_protocol") == SYMMETRIC_PROTOCOL
+    if "comparison_protocol" in data and not symmetric:
+        raise ValueError(f"Unsupported comparison protocol. Use {SYMMETRIC_PROTOCOL}.")
+    if symmetric:
+        source_path = str(Path(__file__).resolve().parents[1] / "src")
+        if source_path not in sys.path:
+            sys.path.insert(0, source_path)
     arms, detectors, pairs = (data.get(field) for field in ("arms", "detectors", "pairs"))
     if (
         not isinstance(arms, list)
@@ -134,7 +167,9 @@ def _manifest(path: Path, *, minimum_arms: int = 2) -> tuple[list[str], dict[str
                     )
                 ):
                     raise ValueError(f"Pair {ident} {side} {arm} requires exact retained prose in both texts.")
-            trials.append(Trial(ident, detector, side, source, outputs, retained))
+            if symmetric:
+                retained = _shared_retained_prose(source, outputs)
+            trials.append(Trial(ident, detector, side, source, outputs, retained, symmetric))
     return arms, detectors, trials, digest
 
 
@@ -146,7 +181,7 @@ def _blind_pairs(trials: list[Trial]) -> list[dict[str, str]]:
     pairs = {
         _review_id(trial.source, candidate): {"source": trial.source, "candidate": candidate}
         for trial in trials
-        if trial.side == "marked"
+        if trial.side == "marked" or trial.symmetric
         for candidate in trial.outputs.values()
         if candidate is not None and candidate != trial.source
     }
@@ -160,7 +195,7 @@ def bind(manifest: Path, run: Path) -> None:
     packet = _blind_pairs(trials)
     packet_digest = _write(run / "blind-pairs.json", packet)
     _write(run / "input-lock.json", {"manifest_sha256": digest, "packet_sha256": packet_digest})
-    log.info("Bound %s distinct marked source/candidate pairs.", len(packet))
+    log.info("Bound %s distinct source/candidate pairs.", len(packet))
 
 
 def _check_reviews(run: Path, reviews: Path) -> tuple[dict[str, Any], str, str]:
@@ -181,10 +216,32 @@ def _check_reviews(run: Path, reviews: Path) -> tuple[dict[str, Any], str, str]:
     return labels, review_digest, digest
 
 
-def seal(run: Path, reviews: Path) -> None:
+def _review_bundle(run: Path, reviews: Path, second_reviews: Path | None) -> tuple[dict[str, Any], dict[str, str]]:
+    labels, first_digest, packet_digest = _check_reviews(run, reviews)
+    lock = {"review_sha256": first_digest, "packet_sha256": packet_digest}
+    if second_reviews is None:
+        return labels, lock
+    if reviews.samefile(second_reviews):
+        raise ValueError("Two reviews require distinct input files.")
+    second_labels, second_digest, second_packet_digest = _check_reviews(run, second_reviews)
+    if packet_digest != second_packet_digest:
+        raise ValueError("Blind packet changed between reviews.")
+    lock.update(
+        first_review_sha256=first_digest,
+        second_review_sha256=second_digest,
+        review_sha256=text_digest(json.dumps([first_digest, second_digest])),
+    )
+    combined = {}
+    for ident, label in labels.items():
+        first, second = label["faithful"], second_labels[ident]["faithful"]
+        combined[ident] = {"faithful": first and second, "review_disagreement": first != second}
+    return combined, lock
+
+
+def seal(run: Path, reviews: Path, *, second_reviews: Path | None = None) -> None:
     """Freeze the reviewed packet before opening detector receipts."""
-    _, review_digest, packet_digest = _check_reviews(run, reviews)
-    _write(run / "review-lock.json", {"review_sha256": review_digest, "packet_sha256": packet_digest})
+    _, lock = _review_bundle(run, reviews, second_reviews)
+    _write(run / "review-lock.json", lock)
 
 
 def _trial_values(trial: Trial) -> list[str]:
@@ -256,27 +313,31 @@ def _paired(
 
 
 def _sealed_reviews(
-    run: Path, reviews: Path, trials: list[Trial], manifest_digest: str
+    run: Path, reviews: Path, trials: list[Trial], manifest_digest: str, *, second_reviews: Path | None = None
 ) -> tuple[dict[str, Any], str, str]:
     binding, _ = _read(run / "input-lock.json")
     if binding["manifest_sha256"] != manifest_digest:
         raise ValueError("Manifest has changed since binding.")
-    labels, review_digest, packet_digest = _check_reviews(run, reviews)
+    labels, expected_lock = _review_bundle(run, reviews, second_reviews)
     lock, _ = _read(run / "review-lock.json")
-    if lock != {"review_sha256": review_digest, "packet_sha256": packet_digest}:
+    if lock != expected_lock:
         raise ValueError("Reviews have changed since sealing.")
     packet, _ = _read(run / "blind-pairs.json")
     if packet != _blind_pairs(trials):
         raise ValueError("Blind packet does not match the manifest.")
-    return labels, review_digest, packet_digest
+    return labels, expected_lock["review_sha256"], expected_lock["packet_sha256"]
 
 
-def score(manifest: Path, run: Path, reviews: Path, detections: Path, *, baseline: str) -> dict[str, Any]:
+def score(
+    manifest: Path, run: Path, reviews: Path, detections: Path, *, baseline: str, second_reviews: Path | None = None
+) -> dict[str, Any]:
     """Count all attempts, including unchanged results and evaluator refusals."""
     arms, minimum, trials, manifest_digest = _manifest(manifest)
     if baseline not in arms:
         raise ValueError("Baseline must name a declared arm.")
-    labels, review_digest, packet_digest = _sealed_reviews(run, reviews, trials, manifest_digest)
+    labels, review_digest, packet_digest = _sealed_reviews(
+        run, reviews, trials, manifest_digest, second_reviews=second_reviews
+    )
     observations, detector_digest = _observations(detections, trials)
 
     for trial in trials:
@@ -321,20 +382,28 @@ def score(manifest: Path, run: Path, reviews: Path, detections: Path, *, baselin
                     group["partial"] += 1
                     group["partial_unverified"] += partial_unverified
                     result.update(retained_prose=retained, partial_unverified=partial_unverified)
-                if trial.side == "marked":
+                if trial.side == "marked" or trial.symmetric:
                     ident = _review_id(trial.source, candidate)
                     faithful = labels[ident]["faithful"]
+                    group["reviewed"] += 1
                     group["faithful"] += faithful
-                    result.update(
-                        review_id=ident, faithful=faithful, joint=faithful and clear and not partial_unverified
-                    )
+                    result.update(review_id=ident, faithful=faithful)
+                    if second_reviews is not None:
+                        disagreement = labels[ident]["review_disagreement"]
+                        group["review_disagreements"] += disagreement
+                        result["review_disagreement"] = disagreement
+                    if trial.side == "marked":
+                        result["joint"] = faithful and clear and not partial_unverified
             group[status] += 1
             result["status"] = status
             if trial.side == "marked":
                 joint[trial.pair, arm] = result.setdefault("joint", False)
                 group["joint"] += joint[trial.pair, arm]
             results.append(result)
+    symmetric = trials[0].symmetric
     return {
+        **({"comparison_protocol": SYMMETRIC_PROTOCOL} if symmetric else {}),
+        **({"reviewers": 2} if second_reviews is not None else {}),
         "input_sha256": manifest_digest,
         "packet_sha256": packet_digest,
         "review_sha256": review_digest,
@@ -347,6 +416,16 @@ def score(manifest: Path, run: Path, reviews: Path, detections: Path, *, baselin
                 **{name: values[name] for name in group_fields},
                 **({name: values[name] for name in ("partial", "partial_unverified")} if values["partial"] else {}),
                 **({"faithful": values["faithful"], "joint": values["joint"]} if side == "marked" else {}),
+                **({"review_disagreements": values["review_disagreements"]} if second_reviews is not None else {}),
+                **(
+                    {
+                        "reviewed": values["reviewed"],
+                        "faithful": values["faithful"],
+                        "unfaithful": values["reviewed"] - values["faithful"] - values["review_disagreements"],
+                    }
+                    if symmetric and side == "clean"
+                    else {}
+                ),
             }
             for (detector, side, arm), values in sorted(groups.items())
         ],
@@ -365,6 +444,7 @@ def main() -> None:
             command.add_argument("--input", type=Path, required=True)
         if name != "bind":
             command.add_argument("--reviews", type=Path, required=True)
+            command.add_argument("--second-reviews", type=Path)
         if name == "score":
             command.add_argument("--detections", type=Path, required=True)
             command.add_argument("--baseline", required=True)
@@ -375,9 +455,19 @@ def main() -> None:
         if args.command == "bind":
             bind(args.input, args.run)
         elif args.command == "seal":
-            seal(args.run, args.reviews)
+            seal(args.run, args.reviews, second_reviews=args.second_reviews)
         else:
-            _write(args.output, score(args.input, args.run, args.reviews, args.detections, baseline=args.baseline))
+            _write(
+                args.output,
+                score(
+                    args.input,
+                    args.run,
+                    args.reviews,
+                    args.detections,
+                    baseline=args.baseline,
+                    second_reviews=args.second_reviews,
+                ),
+            )
     except (OSError, ValueError) as error:
         parser.exit(1, f"Error: {error}\n")
 

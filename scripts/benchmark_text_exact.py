@@ -29,6 +29,7 @@ UNICODE_CONTROLS = {
     "hebrew-isolate": "Label: \u2067של\u05d5ם\u2069.",
     "arabic-isolate": "Label: \u2067مرحب\u0627\u2069.",
     "metric-spacing": "The measured length was 12\u202fmm.",
+    "nonbreaking-space": "Keep these two\u00a0words together.",
     "math-joiner": "Write 8\u2060\u00d7\u20605 on the first line.",
     "soft-hyphen": "We will re\u00adcheck the measurement.",
     "technical-and-crlf": 'URL: https://example.invalid/a?count=1.\r\n\r\n```txt\r\nname="cafe\u0301"\r\n```\r\n',

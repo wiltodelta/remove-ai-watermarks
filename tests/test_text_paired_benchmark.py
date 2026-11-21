@@ -67,6 +67,66 @@ def test_paired_comparison_counts_every_attempt(inputs):
     assert (paired["wins"], paired["losses"], paired["n"], paired["p_value"]) == (1, 0, 1, 1.0)
 
 
+def test_symmetric_comparison_reviews_changed_clean_and_derives_retention_for_every_arm(inputs):
+    manifest, _, reviews, detections = inputs
+    data = json.loads(manifest.read_bytes())
+    data["comparison_protocol"] = "symmetric-v1"
+    marked = data["pairs"][0]["marked"]
+    clean = data["pairs"][0]["clean"]
+    shared = "The locked cabinet stays closed."
+    marked["source"] = f"Original opening. {shared}\n\n```\nSame code.\n```"
+    outputs = {
+        "strict": f"First paraphrase. {shared}\n\n```\nSame code.\n```",
+        "repair": f"Second paraphrase. {shared}\n\n```\nSame code.\n```",
+        "copy": marked["source"],
+    }
+    marked["outputs"] = outputs
+    marked["retained_prose"] = {"strict": [shared, "Same code."]}
+    write(manifest, data)
+    run = manifest.parent / "symmetric"
+    bench.bind(manifest, run)
+    packet = json.loads((run / "blind-pairs.json").read_bytes())
+    assert len(packet) == 4
+    assert all(row.keys() == {"id", "source", "candidate"} for row in packet)
+    write(
+        reviews,
+        {
+            row["id"]: {"faithful": row["candidate"] != "False positive.", "reason": "Fidelity review."}
+            for row in packet
+            if row["source"] != clean["source"]
+        },
+    )
+    with pytest.raises(ValueError, match="label each blind pair"):
+        bench.seal(run, reviews)
+    write(
+        reviews,
+        {
+            row["id"]: {"faithful": row["candidate"] != "False positive.", "reason": "Fidelity review."}
+            for row in packet
+        },
+    )
+    bench.seal(run, reviews)
+    observations = json.loads(detections.read_bytes())
+    observations[0]["sha256"] = bench.text_digest(marked["source"])
+    observations += [{**observations[2], "sha256": bench.text_digest(outputs[arm])} for arm in ("strict", "repair")]
+    write(detections, observations)
+    with pytest.raises(ValueError, match="Missing 1 detector receipt"):
+        bench.score(manifest, run, reviews, detections, baseline="strict")
+    observations += [{**observations[2], "sha256": bench.text_digest(shared), "positions": 5}]
+    write(detections, observations)
+    result = bench.score(manifest, run, reviews, detections, baseline="strict")
+    assert result["comparison_protocol"] == "symmetric-v1"
+    groups = {(row["side"], row["arm"]): row for row in result["groups"]}
+    for arm in ("strict", "repair"):
+        marked_group = groups["marked", arm]
+        assert marked_group["partial_unverified"] == marked_group["faithful"] == 1
+        assert marked_group["joint"] == 0
+    assert groups["clean", "strict"]["unfaithful"] == groups["clean", "strict"]["reviewed"] == 1
+    assert groups["clean", "repair"]["faithful"] == groups["clean", "repair"]["reviewed"] == 1
+    assert groups["clean", "copy"]["reviewed"] == 0
+    assert all("joint" not in row for row in result["results"] if row["side"] == "clean")
+
+
 def test_baseline_can_be_added_to_one_arm_without_relaxing_comparison(inputs):
     manifest, *_ = inputs
     data = json.loads(manifest.read_bytes())
@@ -80,6 +140,40 @@ def test_baseline_can_be_added_to_one_arm_without_relaxing_comparison(inputs):
     assert len(trials) == 2
     with pytest.raises(ValueError, match="requires at least 2"):
         bench.bind(manifest, manifest.parent / "single-arm")
+
+
+def test_two_sealed_reviews_require_agreement_and_report_disputes(inputs):
+    manifest, _, reviews, detections = inputs
+    data = json.loads(manifest.read_bytes())
+    data["comparison_protocol"] = "symmetric-v1"
+    write(manifest, data)
+    run = manifest.parent / "dual-review"
+    bench.bind(manifest, run)
+    packet = json.loads((run / "blind-pairs.json").read_bytes())
+    assert len(packet) == 3
+    first = {
+        row["id"]: {"faithful": row["candidate"] != "False positive.", "reason": "First explanation."} for row in packet
+    }
+    second = {row["id"]: {"faithful": False, "reason": "Second explanation."} for row in packet}
+    write(reviews, first)
+    second_path = write(run / "second.json", second)
+    with pytest.raises(ValueError, match="distinct"):
+        bench.seal(run, reviews, second_reviews=reviews)
+    assert not (run / "review-lock.json").exists()
+    bench.seal(run, reviews, second_reviews=second_path)
+    with pytest.raises(ValueError, match="changed since sealing"):
+        bench.score(manifest, run, reviews, detections, baseline="strict")
+    report = bench.score(manifest, run, reviews, detections, baseline="strict", second_reviews=second_path)
+    groups = {(row["side"], row["arm"]): row for row in report["groups"]}
+    assert report["reviewers"] == 2
+    assert groups["marked", "repair"]["joint"] == 0
+    assert groups["marked", "repair"]["review_disagreements"] == 1
+    assert groups["clean", "repair"]["review_disagreements"] == 1
+    assert groups["clean", "repair"]["unfaithful"] == 0
+    assert groups["clean", "strict"]["unfaithful"] == 1
+    second_path.write_bytes(second_path.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="changed since sealing"):
+        bench.score(manifest, run, reviews, detections, baseline="strict", second_reviews=second_path)
 
 
 def test_apple_merge_keeps_exact_text_and_refusals(inputs):
@@ -242,6 +336,43 @@ def test_threefry_receipts_reject_a_different_tournament_profile():
                 "scheme": {"key": 42, "ngram_len": 5, "depth": 30, "context_history_size": 1024, "num_leaves": 3},
             }
         )
+
+
+def test_threefry_receipts_reject_changed_tokenizer_before_scoring(inputs, tmp_path, monkeypatch):
+    manifest, run, reviews, _ = inputs
+    reference = tmp_path / "reference"
+    (reference / "synthid_text").mkdir(parents=True)
+    for name in threefry_receipts.REFERENCE_FILES:
+        (reference / name).write_bytes(b"approved reference")
+    tokenizer = tmp_path / "tokenizer"
+    tokenizer.mkdir()
+    for name in threefry_receipts.TOKENIZER_FILES:
+        (tokenizer / name).write_bytes(b"approved tokenizer")
+    (tokenizer / "tokenizer.json").write_bytes(b"changed tokenizer")
+    config = write(
+        tmp_path / "threefry.json",
+        {
+            "detector": "kgw-config-1",
+            "alpha": 0.01,
+            "eos_token_ids": [1],
+            "scheme": {"key": 42, "ngram_len": 5, "depth": 30, "context_history_size": 1024, "num_leaves": 2},
+            "reference_sha256": {
+                name: bench.text_digest("approved reference") for name in threefry_receipts.REFERENCE_FILES
+            },
+            "tokenizer_sha256": {
+                name: bench.text_digest("approved tokenizer") for name in threefry_receipts.TOKENIZER_FILES
+            },
+        },
+    )
+    output = tmp_path / "threefry-receipts"
+    monkeypatch.setattr(
+        threefry_receipts,
+        "_reference_types",
+        lambda *_: pytest.fail("A changed tokenizer must be rejected before scoring."),
+    )
+    with pytest.raises(ValueError, match=r"Pinned file digest differs for tokenizer\.json"):
+        threefry_receipts.generate(manifest, run, reviews, config, reference, tokenizer, output)
+    assert not output.exists()
 
 
 def test_kgw_source_generation_requires_a_distinct_wrong_key():
