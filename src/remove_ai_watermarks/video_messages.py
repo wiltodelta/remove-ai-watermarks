@@ -377,7 +377,11 @@ def _restore_audio_metadata(output: Path, audio_streams: tuple[dict[str, Any], .
                 command.extend([f"-metadata:s:a:{ordinal}", f"language={language}"])
             disposition = "+".join(name for name, value in stream.get("disposition", {}).items() if value)
             command.extend([f"-disposition:a:{ordinal}", disposition or "0"])
-        command.extend(["-movflags", "+faststart", str(staged)])
+        from remove_ai_watermarks._internal.constants import ISOBMFF_VIDEO_EXTENSIONS
+
+        if output.suffix.lower() in ISOBMFF_VIDEO_EXTENSIONS:
+            command.extend(["-movflags", "+faststart"])
+        command.append(str(staged))
         result = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603
         log.info(
             "Video audio metadata restore: command=%s status=%s stdout=%s stderr=%s",
@@ -458,8 +462,8 @@ def remove_video_message(
     target = Path(output).expanduser()
     if target.resolve() == original or (target.exists() and original.exists() and target.samefile(original)):
         raise ValueError("Video output must differ from the source")
-    if target.suffix.lower() not in {".mp4", ".mov", ".m4v"}:
-        raise ValueError("Video message outputs must be MP4, MOV, or M4V")
+    if target.suffix.lower() not in {".mp4", ".mov", ".m4v", ".mkv", ".webm"}:
+        raise ValueError("Video message outputs must be MP4, MOV, M4V, MKV, or WebM")
     before = identify_video_message(original, reference_hex=reference_hex, scheme=scheme, check_message=verify)
     if before.status != "matched" and not force:
         return VideoMessageRemovalResult(original, None, before, None, None, True)

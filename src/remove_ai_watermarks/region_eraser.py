@@ -43,7 +43,7 @@ import numpy as np
 from .image_io import to_bgr
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from numpy.typing import NDArray
 
@@ -247,6 +247,73 @@ def _get_lama_session() -> object:
     return _get_session("lama", _LAMA_REPO, _LAMA_FILE, "LaMa-ONNX")
 
 
+def _session_prefers_batching(session: object) -> bool:
+    """Return True when the active ONNX Runtime session benefits from batching (CUDA)."""
+    get_providers = getattr(session, "get_providers", None)
+    if not callable(get_providers):
+        return False
+    try:
+        providers = get_providers()
+    except Exception:
+        return False
+    return "CUDAExecutionProvider" in providers
+
+
+def backend_prefers_batching(backend: Backend) -> bool:
+    """Return True when ``backend`` uses a hardware provider where batched ONNX is faster."""
+    if backend == "lama":
+        return lama_available() and _session_prefers_batching(_get_lama_session())
+    if backend == "migan":
+        return migan_available() and _session_prefers_batching(_get_migan_session())
+    return False
+
+
+def _prepare_lama_crop(
+    image_bgr: NDArray[Any],
+    mask: NDArray[Any],
+    size: int,
+) -> tuple[tuple[int, int, int, int], float, NDArray[Any], NDArray[Any]] | None:
+    """Build resized RGB CHW float32 image and binary mask tensors for one LaMa crop."""
+    h, w = image_bgr.shape[:2]
+    box = _padded_crop_box(mask, h, w, pad_frac=0.4, pad_min=16)
+    if box is None:
+        return None
+    cx0, cy0, cx1, cy1 = box
+    crop = image_bgr[cy0:cy1, cx0:cx1]
+    crop_mask = mask[cy0:cy1, cx0:cx1]
+    scale = _full_scale(image_bgr)
+    crop_rs = cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA)
+    mask_rs = cv2.resize(crop_mask, (size, size), interpolation=cv2.INTER_NEAREST)
+    img_in = cv2.cvtColor(crop_rs, cv2.COLOR_BGR2RGB).astype(np.float32) / scale
+    return box, scale, np.transpose(img_in, (2, 0, 1)), (mask_rs > 127).astype(np.float32)[None]
+
+
+def _apply_lama_crop(
+    image_bgr: NDArray[Any],
+    mask: NDArray[Any],
+    box: tuple[int, int, int, int],
+    scale: float,
+    out_chw: NDArray[Any],
+) -> NDArray[Any]:
+    """Rescale one LaMa CHW output tensor and paste only masked pixels back into ``image_bgr``."""
+    cx0, cy0, cx1, cy1 = box
+    crop_mask = mask[cy0:cy1, cx0:cx1]
+    ch, cw = crop_mask.shape[:2]
+    out = np.transpose(out_chw, (1, 2, 0))
+    if float(out.max()) <= 1.5:  # model emits [0,1]
+        out = out * scale
+    elif scale != 255.0:  # model emitted 8-bit levels; lift them to the source's scale
+        out = out * (scale / 255.0)
+    out = np.clip(out, 0, scale).astype(image_bgr.dtype)
+    out_bgr = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
+    out_crop = cv2.resize(out_bgr, (cw, ch), interpolation=cv2.INTER_LINEAR)
+    result = image_bgr.copy()
+    region = result[cy0:cy1, cx0:cx1]
+    paste = crop_mask > 127
+    region[paste] = out_crop[paste]
+    return result
+
+
 def erase_lama(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     """Inpaint ``mask`` with big-LaMa via onnxruntime (CPU).
 
@@ -275,47 +342,16 @@ def erase_lama(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
         return np.dstack([bgr, image_bgr[:, :, 3]])
     session = _get_lama_session()
     inp = session.get_inputs()  # type: ignore[attr-defined]
-    img_name = inp[0].name
-    mask_name = inp[1].name
+    img_name, mask_name = inp[0].name, inp[1].name
     # Model declares a fixed square spatial size (e.g. 512); fall back to 512.
-    dims = inp[0].shape
-    size = next((d for d in reversed(dims) if isinstance(d, int) and d > 1), 512)
+    size = next((d for d in reversed(inp[0].shape) if isinstance(d, int) and d > 1), 512)
 
-    h, w = image_bgr.shape[:2]
-    box = _padded_crop_box(mask, h, w, pad_frac=0.4, pad_min=16)
-    if box is None:
+    prepared = _prepare_lama_crop(image_bgr, mask, size)
+    if prepared is None:
         return image_bgr.copy()
-    cx0, cy0, cx1, cy1 = box
-    crop = image_bgr[cy0:cy1, cx0:cx1]
-    crop_mask = mask[cy0:cy1, cx0:cx1]
-    ch, cw = crop.shape[:2]
-
-    # Resize crop + mask to the model size, normalize to [0,1] RGB CHW.
-    scale = _full_scale(image_bgr)
-    crop_rs = cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA)
-    mask_rs = cv2.resize(crop_mask, (size, size), interpolation=cv2.INTER_NEAREST)
-    img_in = cv2.cvtColor(crop_rs, cv2.COLOR_BGR2RGB).astype(np.float32) / scale
-    img_in = np.transpose(img_in, (2, 0, 1))[None]  # (1,3,size,size)
-    mask_in = (mask_rs > 127).astype(np.float32)[None, None]  # (1,1,size,size), 1=hole
-
-    out = session.run(None, {img_name: img_in, mask_name: mask_in})[0]  # type: ignore[attr-defined]
-    out = np.asarray(out)[0]  # (3,size,size)
-    out = np.transpose(out, (1, 2, 0))
-    if float(out.max()) <= 1.5:  # model emits [0,1]
-        out = out * scale
-    elif scale != 255.0:  # model emitted 8-bit levels; lift them to the source's scale
-        out = out * (scale / 255.0)
-    out = np.clip(out, 0, scale).astype(image_bgr.dtype)
-    out_bgr = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
-
-    # Resize back to crop size and paste only the masked pixels.
-    out_crop = cv2.resize(out_bgr, (cw, ch), interpolation=cv2.INTER_LINEAR)
-    result = image_bgr.copy()
-    region = result[cy0:cy1, cx0:cx1]
-    paste = crop_mask > 127
-    region[paste] = out_crop[paste]
-    result[cy0:cy1, cx0:cx1] = region
-    return result
+    box, scale, img_t, mask_t = prepared
+    out = session.run(None, {img_name: img_t[None], mask_name: mask_t[None]})[0]  # type: ignore[attr-defined]
+    return _apply_lama_crop(image_bgr, mask, box, scale, np.asarray(out)[0])
 
 
 def migan_available() -> bool:
@@ -336,24 +372,56 @@ def _get_migan_session() -> object:
     return _get_session("migan", _MIGAN_REPO, _MIGAN_FILE, "MI-GAN ONNX")
 
 
-def _run_migan_crop(crop_bgr: NDArray[Any], crop_mask: NDArray[Any]) -> NDArray[Any]:
-    """Run MI-GAN on one already-bounded uint8 BGR crop."""
-    ch, cw = crop_bgr.shape[:2]
-    session = _get_migan_session()
-    inp = session.get_inputs()  # type: ignore[attr-defined]
-    img_name, mask_name = inp[0].name, inp[1].name
+def _prepare_migan_crop(
+    image_bgr: NDArray[Any],
+    mask: NDArray[Any],
+) -> tuple[tuple[int, int, int, int], float, NDArray[Any], NDArray[Any]] | None:
+    """Build native-resolution RGB CHW uint8 image and inverted polarity mask for one MI-GAN crop."""
+    h, w = image_bgr.shape[:2]
+    box = _padded_crop_box(mask, h, w, pad_frac=2.0, pad_min=256)
+    if box is None:
+        return None
+    cx0, cy0, cx1, cy1 = box
+    crop_mask = mask[cy0:cy1, cx0:cx1]
+    crop_bgr = to_bgr(image_bgr[cy0:cy1, cx0:cx1])
+    scale = _full_scale(image_bgr)
+    work_bgr = crop_bgr if image_bgr.dtype == np.uint8 else cv2.convertScaleAbs(crop_bgr, alpha=255.0 / scale)
+    rgb = cv2.cvtColor(work_bgr, cv2.COLOR_BGR2RGB)
+    # Invert to MI-GAN polarity: 255 where KNOWN (keep), 0 where hole (erase)
+    known = ((crop_mask <= 127).astype(np.uint8) * 255)[None]
+    return box, scale, np.transpose(rgb, (2, 0, 1)), known
 
-    rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
-    img_in = np.transpose(rgb, (2, 0, 1))[None].astype(np.uint8)  # (1,3,ch,cw)
-    # invert to MI-GAN polarity: 255 where KNOWN (keep), 0 where hole (erase)
-    known = (crop_mask <= 127).astype(np.uint8) * 255
-    mask_in = known[None, None]  # (1,1,ch,cw)
 
-    out = session.run(None, {img_name: img_in, mask_name: mask_in})[0]  # type: ignore[attr-defined]
-    res = np.transpose(np.asarray(out)[0], (1, 2, 0)).astype(np.uint8)  # (ch',cw',3) RGB
-    if res.shape[:2] != (ch, cw):
-        res = cv2.resize(res, (cw, ch), interpolation=cv2.INTER_LINEAR)
-    return cv2.cvtColor(res, cv2.COLOR_RGB2BGR)
+def _apply_migan_crop(
+    image_bgr: NDArray[Any],
+    mask: NDArray[Any],
+    box: tuple[int, int, int, int],
+    scale: float,
+    out_chw: NDArray[Any],
+) -> NDArray[Any]:
+    """Paste one MI-GAN CHW output tensor back into ``image_bgr`` at its native channels and dtype."""
+    cx0, cy0, cx1, cy1 = box
+    crop_mask = mask[cy0:cy1, cx0:cx1]
+    ch, cw = crop_mask.shape[:2]
+    res_rgb = np.transpose(out_chw, (1, 2, 0)).astype(np.uint8)
+    if res_rgb.shape[:2] != (ch, cw):
+        res_rgb = cv2.resize(res_rgb, (cw, ch), interpolation=cv2.INTER_LINEAR)
+    filled_bgr = cv2.cvtColor(res_rgb, cv2.COLOR_RGB2BGR)
+
+    result = image_bgr.copy()
+    region = result[cy0:cy1, cx0:cx1]
+    if image_bgr.ndim == 2 or image_bgr.shape[2] == 1:
+        filled = cv2.cvtColor(filled_bgr, cv2.COLOR_BGR2GRAY)
+        destination = region if image_bgr.ndim == 2 else region[..., 0]
+    else:
+        destination = region[..., :3]
+        filled = filled_bgr
+    if image_bgr.dtype == np.uint8:
+        hole = crop_mask > 127
+        destination[hole] = filled[hole]
+    else:
+        _paste_scaled_uint8_fill(destination, filled, crop_mask, scale, image_bgr.dtype)
+    return result
 
 
 def erase_migan(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
@@ -381,36 +449,29 @@ def erase_migan(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     of a deeper source is narrowed to uint8 for the ONNX input, then its masked fill
     is scaled directly into the source-depth result.
     """
-    h, w = image_bgr.shape[:2]
-    # 2x the mark size (min 256 px) gives ample local context while a small corner
-    # mask keeps the crop small regardless of the full image resolution; the crop is
-    # clamped to the image, so a mark already spanning the frame degrades to the
-    # whole image (the old behavior) rather than erroring.
-    box = _padded_crop_box(mask, h, w, pad_frac=2.0, pad_min=256)
-    if box is None:
+    prepared = _prepare_migan_crop(image_bgr, mask)
+    if prepared is None:
         return image_bgr.copy()
-    cx0, cy0, cx1, cy1 = box
-    crop_mask = mask[cy0:cy1, cx0:cx1]
-    source_crop = image_bgr[cy0:cy1, cx0:cx1]
-    crop_bgr = np.ascontiguousarray(to_bgr(source_crop))
-    scale = _full_scale(image_bgr)
-    work_bgr = crop_bgr if image_bgr.dtype == np.uint8 else cv2.convertScaleAbs(crop_bgr, alpha=255.0 / scale)
-    filled_bgr = _run_migan_crop(work_bgr, crop_mask)
+    box, scale, img_t, mask_t = prepared
+    session = _get_migan_session()
+    inp = session.get_inputs()  # type: ignore[attr-defined]
+    img_name, mask_name = inp[0].name, inp[1].name
+    out = session.run(None, {img_name: img_t[None], mask_name: mask_t[None]})[0]  # type: ignore[attr-defined]
+    return _apply_migan_crop(image_bgr, mask, box, scale, np.asarray(out)[0])
 
-    result = image_bgr.copy()
-    region = result[cy0:cy1, cx0:cx1]
-    if image_bgr.ndim == 2 or image_bgr.shape[2] == 1:
-        filled = cv2.cvtColor(filled_bgr, cv2.COLOR_BGR2GRAY)
-        destination = region if image_bgr.ndim == 2 else region[..., 0]
-    else:
-        destination = region[..., :3]
-        filled = filled_bgr
-    if image_bgr.dtype == np.uint8:
-        hole = crop_mask > 127
-        destination[hole] = filled[hole]
-    else:
-        _paste_scaled_uint8_fill(destination, filled, crop_mask, scale, image_bgr.dtype)
-    return result
+
+def _require_learned_backend(backend: Backend) -> _LearnedBackend | None:
+    """Resolve and verify availability for a learned backend, or return None for cv2."""
+    learned = _LEARNED_BACKENDS.get(backend)
+    if learned is None:
+        return None
+    # Probe by MODULE NAME so monkeypatched availability probes in fallback tests apply.
+    if not globals()[learned.available]():
+        raise RuntimeError(
+            f"{learned.label} backend requires onnxruntime. "
+            f"Install the extra: pip install 'remove-ai-watermarks[{backend}]'"
+        )
+    return learned
 
 
 def erase(
@@ -437,17 +498,126 @@ def erase(
     if not mask.any():
         return image_bgr.copy()
 
-    learned = _LEARNED_BACKENDS.get(backend)
+    learned = _require_learned_backend(backend)
     if learned is not None:
-        # Probe and erase by MODULE NAME, not by the captured function object: the
-        # availability probes and the erase functions are monkeypatched by name in the
-        # fallback tests, and a table of bound references would not see those patches.
-        if not globals()[learned.available]():
-            raise RuntimeError(
-                f"{learned.label} backend requires onnxruntime. "
-                f"Install the extra: pip install 'remove-ai-watermarks[{backend}]'"
-            )
         return globals()[learned.erase](image_bgr, mask)
     # cv2 and anything unrecognized (including "auto", which a library caller may pass
     # straight through) degrade to the classical fill rather than raising.
     return erase_cv2(image_bgr, mask, method=cv2_method, radius=cv2_radius)
+
+
+def erase_lama_batch(items: Sequence[tuple[NDArray[Any], NDArray[Any]]]) -> list[NDArray[Any]]:
+    """Inpaint a batch of ``(image_bgr, mask)`` pairs with big-LaMa in one ONNX call.
+
+    Falls back to per-item inference for grayscale/BGRA inputs or when the active
+    session rejects ``batch > 1``.
+    """
+    if len(items) <= 1:
+        return [erase_lama(img, mask) for img, mask in items]
+
+    session = _get_lama_session()
+    inp = session.get_inputs()  # type: ignore[attr-defined]
+    img_name, mask_name = inp[0].name, inp[1].name
+    size = next((d for d in reversed(inp[0].shape) if isinstance(d, int) and d > 1), 512)
+
+    results: list[NDArray[Any]] = [img.copy() for img, _ in items]
+    pending: list[tuple[int, tuple[int, int, int, int], float, NDArray[Any], NDArray[Any]]] = []
+
+    for idx, (image_bgr, mask) in enumerate(items):
+        if image_bgr.ndim != 3 or image_bgr.shape[2] != 3:
+            results[idx] = erase_lama(image_bgr, mask)
+            continue
+        prepared = _prepare_lama_crop(image_bgr, mask, size)
+        if prepared is not None:
+            box, scale, img_t, mask_t = prepared
+            pending.append((idx, box, scale, img_t, mask_t))
+
+    if len(pending) == 1:
+        item_idx, box, scale, img_t, mask_t = pending[0]
+        out = np.asarray(session.run(None, {img_name: img_t[None], mask_name: mask_t[None]})[0])[0]  # type: ignore[attr-defined]
+        results[item_idx] = _apply_lama_crop(items[item_idx][0], items[item_idx][1], box, scale, out)
+    elif len(pending) > 1:
+        try:
+            outs = np.asarray(
+                session.run(
+                    None,
+                    {
+                        img_name: np.stack([p[3] for p in pending], axis=0),
+                        mask_name: np.stack([p[4] for p in pending], axis=0),
+                    },
+                )[0]  # type: ignore[attr-defined]
+            )
+            if outs.shape[0] != len(pending):
+                raise RuntimeError(f"LaMa batch output count mismatch: {outs.shape[0]} != {len(pending)}")
+            for out_idx, (item_idx, box, scale, _img_t, _mask_t) in enumerate(pending):
+                results[item_idx] = _apply_lama_crop(items[item_idx][0], items[item_idx][1], box, scale, outs[out_idx])
+        except Exception as exc:
+            logger.debug("Batched LaMa inference failed, falling back to per-frame: %s", exc)
+            for item_idx, box, scale, img_t, mask_t in pending:
+                out = np.asarray(session.run(None, {img_name: img_t[None], mask_name: mask_t[None]})[0])[0]  # type: ignore[attr-defined]
+                results[item_idx] = _apply_lama_crop(items[item_idx][0], items[item_idx][1], box, scale, out)
+
+    return results
+
+
+def erase_migan_batch(items: Sequence[tuple[NDArray[Any], NDArray[Any]]]) -> list[NDArray[Any]]:
+    """Inpaint a batch of ``(image_bgr, mask)`` pairs with MI-GAN, grouping equal crop shapes."""
+    if len(items) <= 1:
+        return [erase_migan(img, mask) for img, mask in items]
+
+    session = _get_migan_session()
+    inp = session.get_inputs()  # type: ignore[attr-defined]
+    img_name, mask_name = inp[0].name, inp[1].name
+
+    results: list[NDArray[Any]] = [img.copy() for img, _ in items]
+    groups: dict[tuple[int, int], list[tuple[int, tuple[int, int, int, int], float, NDArray[Any], NDArray[Any]]]] = {}
+
+    for idx, (image_bgr, mask) in enumerate(items):
+        prepared = _prepare_migan_crop(image_bgr, mask)
+        if prepared is None:
+            continue
+        box, scale, img_t, mask_t = prepared
+        cx0, cy0, cx1, cy1 = box
+        groups.setdefault((cy1 - cy0, cx1 - cx0), []).append((idx, box, scale, img_t, mask_t))
+
+    for group in groups.values():
+        if len(group) == 1:
+            item_idx, box, scale, img_t, mask_t = group[0]
+            out = np.asarray(session.run(None, {img_name: img_t[None], mask_name: mask_t[None]})[0])[0]  # type: ignore[attr-defined]
+            results[item_idx] = _apply_migan_crop(items[item_idx][0], items[item_idx][1], box, scale, out)
+            continue
+        try:
+            outs = np.asarray(
+                session.run(
+                    None,
+                    {
+                        img_name: np.stack([g[3] for g in group], axis=0),
+                        mask_name: np.stack([g[4] for g in group], axis=0),
+                    },
+                )[0]  # type: ignore[attr-defined]
+            )
+            if outs.shape[0] != len(group):
+                raise RuntimeError(f"MI-GAN batch output count mismatch: {outs.shape[0]} != {len(group)}")
+            for out_idx, (item_idx, box, scale, _img_t, _mask_t) in enumerate(group):
+                results[item_idx] = _apply_migan_crop(items[item_idx][0], items[item_idx][1], box, scale, outs[out_idx])
+        except Exception as exc:
+            logger.debug("Batched MI-GAN inference failed, falling back to per-frame: %s", exc)
+            for item_idx, box, scale, img_t, mask_t in group:
+                out = np.asarray(session.run(None, {img_name: img_t[None], mask_name: mask_t[None]})[0])[0]  # type: ignore[attr-defined]
+                results[item_idx] = _apply_migan_crop(items[item_idx][0], items[item_idx][1], box, scale, out)
+
+    return results
+
+
+def erase_batch(
+    items: Sequence[tuple[NDArray[Any], NDArray[Any]]],
+    *,
+    backend: Backend = "cv2",
+) -> list[NDArray[Any]]:
+    """Erase a batch of ``(image_bgr, mask)`` pairs via ``backend``."""
+    if not items:
+        return []
+    learned = _require_learned_backend(backend)
+    if learned is not None:
+        return globals()[f"{learned.erase}_batch"](items)
+    return [erase(img, mask=mask, backend=backend) for img, mask in items]

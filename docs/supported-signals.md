@@ -61,13 +61,22 @@ pill detector; the generic pill shape does not attribute LiblibAI on its own.
 | `vidu` | Vidu two-loop logo and `Vidu AI` wordmark | Fixed bottom-right corner | Provisional: one real Vidu Q3 export (0.72 per frame at 480-1080p, 0.60 at 360p; the 956 other local videos at most 0.41). Requires an anchored recurring run at >=0.52 with a strong frame at >=0.58. A ShengShu TC260 label confirms the vendor without lowering the bar. |
 | `wan` | Alibaba Wan logo and `Wan` wordmark | Fixed bottom-right corner | Reuses `wan_alpha.png` (`<= 0.365` across 61 non-Wan videos); requires an anchored recurring run hugging the bottom-right corner at `>= 0.48` with a strong frame at `>= 0.56`. Alibaba Tongyi TC260 (`91330106MA2CFLDG4R`) confirms the vendor. |
 | `kling` | Kling AI swirl, `KLING AI` or `KlingAI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font and capitalization variants, an edge gate, a white-label gate, and anchored temporal recurrence. It also scores the Vidu wordmark, so `vidu` is checked first, and a TC260 label naming a non-Kling producer vetoes the match. |
+| `jimeng` | `★ 即梦AI` wordmark | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Jimeng TC260 provenance. |
+| `jimeng_pill` | Compact `AI生成` pill | Fixed top-left corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, pairs with `jimeng` for simultaneous dual-mark removal. |
+| `qwen` | `千问AI生成` or Qwen Create symbol | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Alibaba TC260 provenance. |
+| `yuanbao` | `元宝` over `AI生成` | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Tencent TC260 provenance. |
+| `baidu` | `百度 AI生成` | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Baidu TC260 provenance. |
+| `runninghub` | `RunningHub AI生成` | Fixed top-left corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by RunningHub TC260 provenance. |
+| `microsoft` | Microsoft white AI badge or beige `Made with AI` pill | Fixed top-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Microsoft C2PA provenance. |
+| `generic_ai_label` | Bare `AI生成` TC260 label | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; fallback for brand-less TC260 video exports. |
 
 `video identify`, `video visible`, and `video all` share this registry and the
 same temporal arbiter. It is separate from the image registry because selection
 is made over a sequence rather than one raster. The default `auto` mode scans
-all ten entries in one decode pass and selects the first temporally stable
-match in table order, subject to the Veo/Sora overlap exception above; an
-explicit mark restricts the scan to that row.
+all eighteen entries in one decode pass, co-selecting spatially disjoint marks
+(for example a top-left pill and a bottom-right wordmark) for single-pass removal
+subject to the Veo/Sora overlap exception above; an explicit mark restricts the
+scan to that row.
 Accepted fills are motion-aligned across adjacent frames by default. The prior
 fill contributes only where its warped mask covers the current removal mask and
 nearby source context agrees. Scene cuts or disjoint marks retain the
@@ -182,6 +191,7 @@ addition to the selected pixel feature. Metadata scanning does not.
 Metadata inspection and removal additionally have container paths for:
 
 - JPEG XL metadata;
+- Classic 32-bit TIFF and DNG lossless IFD metadata stripping;
 - MP4, MOV, M4V, and M4A;
 - WebM, MKV, MKA, AVI, FLV, MP3, WAV, FLAC, OGG, OGA, Opus, and AAC when
   ffmpeg is available.

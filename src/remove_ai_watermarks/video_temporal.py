@@ -815,10 +815,19 @@ def estimate_clip_alpha_matte(
     gx_c = np.arange(cw, dtype=np.float32)[None, :]
     gy_c = np.arange(ch, dtype=np.float32)[:, None]
 
-    crops_ycrcb = [
-        cv2.cvtColor(frame[cy0:cy1, cx0:cx1], cv2.COLOR_BGR2YCrCb).astype(np.float32) for frame in frames_bgr
-    ]
-    grays = [crop[:, :, 0].astype(np.uint8) for crop in crops_ycrcb]
+    is_u16 = frames_bgr[0].dtype == np.uint16
+    if is_u16:
+        scale_to_u8 = 255.0 / 65535.0
+        crops_ycrcb = [
+            cv2.cvtColor(frame[cy0:cy1, cx0:cx1], cv2.COLOR_BGR2YCrCb).astype(np.float32) * scale_to_u8
+            for frame in frames_bgr
+        ]
+        grays = [np.clip(np.rint(crop[:, :, 0]), 0, 255).astype(np.uint8) for crop in crops_ycrcb]
+    else:
+        crops_ycrcb = [
+            cv2.cvtColor(frame[cy0:cy1, cx0:cx1], cv2.COLOR_BGR2YCrCb).astype(np.float32) for frame in frames_bgr
+        ]
+        grays = [crop[:, :, 0].astype(np.uint8) for crop in crops_ycrcb]
 
     step_mats: list[NDArray[Any] | None] = []
     for k in range(n_frames - 1):
@@ -1036,16 +1045,22 @@ def unblend_ycbcr_roi(
     if not np.any(roi_mask):
         return out_bgr, out_mask
 
+    is_u16 = frame_bgr.dtype == np.uint16
+    full_scale = 65535.0 if is_u16 else 255.0
+    c_scale = (65535.0 / 255.0) if is_u16 else 1.0
     ycrcb = cv2.cvtColor(out_bgr[y0:y1, x0:x1], cv2.COLOR_BGR2YCrCb).astype(np.float32)
     translucent_y = matte.calibrated & (matte.alpha_y >= 0.02) & (matte.alpha_y <= opaque_threshold)
     translucent_c = matte.calibrated & (matte.alpha_c >= 0.02) & (matte.alpha_c <= opaque_threshold)
     denom_y = np.maximum(1.0 - matte.alpha_y, max(0.15, 1.0 - opaque_threshold))
     denom_c = np.maximum(1.0 - matte.alpha_c, max(0.15, 1.0 - opaque_threshold))
 
-    ycrcb[:, :, 0] = np.where(translucent_y, (ycrcb[:, :, 0] - matte.c_y) / denom_y, ycrcb[:, :, 0])
-    ycrcb[:, :, 1] = np.where(translucent_c, (ycrcb[:, :, 1] - matte.c_cr) / denom_c, ycrcb[:, :, 1])
-    ycrcb[:, :, 2] = np.where(translucent_c, (ycrcb[:, :, 2] - matte.c_cb) / denom_c, ycrcb[:, :, 2])
-    out_bgr[y0:y1, x0:x1] = cv2.cvtColor(np.clip(np.rint(ycrcb), 0, 255).astype(np.uint8), cv2.COLOR_YCrCb2BGR)
+    ycrcb[:, :, 0] = np.where(translucent_y, (ycrcb[:, :, 0] - matte.c_y * c_scale) / denom_y, ycrcb[:, :, 0])
+    ycrcb[:, :, 1] = np.where(translucent_c, (ycrcb[:, :, 1] - matte.c_cr * c_scale) / denom_c, ycrcb[:, :, 1])
+    ycrcb[:, :, 2] = np.where(translucent_c, (ycrcb[:, :, 2] - matte.c_cb * c_scale) / denom_c, ycrcb[:, :, 2])
+    out_bgr[y0:y1, x0:x1] = cv2.cvtColor(
+        np.clip(np.rint(ycrcb), 0, full_scale).astype(frame_bgr.dtype),
+        cv2.COLOR_YCrCb2BGR,
+    )
 
     # Clear calibrated clean background (alpha < 0.02) AND calibrated translucent pixels (alpha <= opaque_threshold)!
     solved = matte.calibrated & (matte.alpha_y <= opaque_threshold)

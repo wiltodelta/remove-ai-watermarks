@@ -53,6 +53,17 @@ class _VisibleInput:
     alpha: NDArray[Any] | None = None
     path: Path | None = None
     provenance: frozenset[str] = frozenset()
+    vetoed_marks: frozenset[str] = frozenset()
+
+
+def _visible_context(path: Path) -> tuple[frozenset[str], frozenset[str]]:
+    """Confirmed vendor keys and provenance-vetoed marks for ``path``; empty on failure."""
+    with suppress(Exception):
+        from remove_ai_watermarks import identify
+
+        rep = identify.identify(path, check_visible=False, check_invisible=False)
+        return _provenance_from_report(rep, path), _vetoed_marks_from_report(rep)
+    return frozenset(), frozenset()
 
 
 def visible_provenance(source: str | Path) -> frozenset[str]:
@@ -74,15 +85,7 @@ def visible_provenance(source: str | Path) -> frozenset[str]:
     Best-effort: any read error yields an empty set (no relaxation). Metadata-only, so
     it never loads cv2/torch.
     """
-    import contextlib
-
-    path = Path(source)
-    with contextlib.suppress(Exception):
-        from remove_ai_watermarks import identify
-
-        rep = identify.identify(path, check_visible=False, check_invisible=False)
-        return _provenance_from_report(rep, path)
-    return frozenset()
+    return _visible_context(Path(source))[0]
 
 
 def _tc260_vendors(path: Path) -> frozenset[str]:
@@ -105,6 +108,13 @@ def _tc260_vendors(path: Path) -> frozenset[str]:
     return frozenset()
 
 
+def _vetoed_marks_from_report(report: Any) -> frozenset[str]:
+    """Marks vetoed by trusted provenance naming a different AI vendor."""
+    if getattr(report, "trusted_non_google_vendor", None):
+        return frozenset({"gemini"})
+    return frozenset()
+
+
 def _load_visible_input(source: str | Path | NDArray[Any]) -> _VisibleInput:
     """Normalize a path/array source without making the public operation stateful."""
     if not isinstance(source, (str, Path)):
@@ -116,7 +126,8 @@ def _load_visible_input(source: str | Path | NDArray[Any]) -> _VisibleInput:
     bgr, alpha = image_io.read_bgr_and_alpha(path)
     if bgr is None:
         raise ValueError(f"Could not read image: {source}")
-    return _VisibleInput(bgr=bgr, alpha=alpha, path=path, provenance=visible_provenance(path))
+    provenance, vetoed = _visible_context(path)
+    return _VisibleInput(bgr=bgr, alpha=alpha, path=path, provenance=provenance, vetoed_marks=vetoed)
 
 
 def _write_visible_result(
@@ -238,6 +249,7 @@ def remove_visible_detailed(
         loaded.bgr,
         sensitivity=sensitivity,
         provenance=loaded.provenance,
+        vetoed_marks=loaded.vetoed_marks,
         backend=backend,
     )
     if output is not None:
@@ -364,11 +376,11 @@ class _SourceEvidence:
                 self._evidence = extract_provenance_evidence(self._path)
         return self._evidence
 
-    def visible_provenance(self) -> frozenset[str]:
-        """Vendor keys the metadata confirms; empty on any failure (no relaxation)."""
+    def visible_context(self) -> tuple[frozenset[str], frozenset[str]]:
+        """Confirmed vendor keys and provenance-vetoed marks; empty on failure."""
         evidence = self._extract()
         if evidence is None:
-            return frozenset()
+            return frozenset(), frozenset()
         # The suppress spans the VERDICT and the mapping, not just the extraction --
         # `visible_provenance` fails safe as a whole, and a raise here would escape as a
         # traceback where the old code returned an empty set.
@@ -376,8 +388,12 @@ class _SourceEvidence:
             from remove_ai_watermarks.identify import identify_from_evidence
 
             report = identify_from_evidence(evidence)
-            return _provenance_from_report(report, self._path)
-        return frozenset()
+            return _provenance_from_report(report, self._path), _vetoed_marks_from_report(report)
+        return frozenset(), frozenset()
+
+    def visible_provenance(self) -> frozenset[str]:
+        """Vendor keys the metadata confirms; empty on any failure (no relaxation)."""
+        return self.visible_context()[0]
 
     def has_invisible_target(self) -> bool:
         """Whether a diffusion target exists. True on any failure -- see the fail-safe
@@ -487,10 +503,12 @@ def remove_all(
     staged = Path(tmp_name)
     try:
         # ── 1. Visible marks ──
+        vis_provenance, vis_vetoed = evidence.visible_context()
         visible = watermark_registry.remove_auto_marks_detailed(
             image,
             sensitivity=sensitivity,
-            provenance=evidence.visible_provenance(),
+            provenance=vis_provenance,
+            vetoed_marks=vis_vetoed,
             backend=backend,
         )
         result, removed = visible.image, visible.labels
@@ -787,6 +805,7 @@ def _run_batch_one(
             loaded.bgr,
             sensitivity=sensitivity,
             provenance=loaded.provenance,
+            vetoed_marks=loaded.vetoed_marks,
             backend=backend,
         )
         if not image_io.write_bgr_with_alpha(

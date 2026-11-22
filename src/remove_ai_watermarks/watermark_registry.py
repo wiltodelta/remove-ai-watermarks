@@ -48,7 +48,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from numpy.typing import NDArray
 
@@ -164,6 +164,7 @@ class Context:
 
     sensitivity: Sensitivity = "auto"
     provenance: frozenset[str] = frozenset()
+    vetoed_marks: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         validate_sensitivity(self.sensitivity)
@@ -530,6 +531,24 @@ def fill(image: NDArray[Any], mask: NDArray[Any], *, backend: Backend = "auto") 
     from remove_ai_watermarks import region_eraser
 
     return region_eraser.erase(image, mask=mask, backend=resolve_backend(backend))
+
+
+def backend_prefers_batching(backend: Backend) -> bool:
+    """Return True when ``backend`` resolves to a CUDA ONNX session that benefits from batching."""
+    from remove_ai_watermarks import region_eraser
+
+    return region_eraser.backend_prefers_batching(resolve_backend(backend))
+
+
+def fill_batch(
+    items: Sequence[tuple[NDArray[Any], NDArray[Any]]],
+    *,
+    backend: Backend = "auto",
+) -> list[NDArray[Any]]:
+    """Batch counterpart to :func:`fill` for multi-frame video inpainting."""
+    from remove_ai_watermarks import region_eraser
+
+    return region_eraser.erase_batch(items, backend=resolve_backend(backend))
 
 
 # ── Detection adapters (verdict + bbox; no mask work on this path) ──
@@ -1057,9 +1076,11 @@ def decide(candidates: list[Candidate], context: Context) -> list[Decision]:
     which needs the strict-detected siblings for ``auto`` cross-mark corroboration) and
     the Jimeng pill/label gate (:func:`_keep_pill`). No image, no I/O -- so it is unit-testable in isolation and
     the same decision drives every caller."""
-    strict_keys = {c.key for c in candidates if c.detected_strict}
+    strict_keys = {c.key for c in candidates if c.detected_strict and c.key not in context.vetoed_marks}
     fired: list[Decision] = []
     for c in candidates:
+        if c.key in context.vetoed_marks:
+            continue
         trust = resolve_trust(
             c.key, sensitivity=context.sensitivity, provenance=context.provenance, strict_keys=strict_keys
         )
@@ -1104,6 +1125,7 @@ def remove_auto_marks_detailed(
     *,
     sensitivity: Sensitivity = "auto",
     provenance: frozenset[str] = frozenset(),
+    vetoed_marks: frozenset[str] = frozenset(),
     backend: Backend = "auto",
 ) -> VisibleRemovalResult:
     """Fill every decided mark once, then validate each result without editing it.
@@ -1131,7 +1153,7 @@ def remove_auto_marks_detailed(
     input is still unchanged. Later marks retain the historical re-detection on the
     progressively modified image, so overlapping/co-firing marks cannot act on stale
     evidence."""
-    context = Context(sensitivity=sensitivity, provenance=provenance)
+    context = Context(sensitivity=sensitivity, provenance=provenance, vetoed_marks=vetoed_marks)
     result = image
     removals: list[MarkRemovalResult] = []
     resolved_backend: Literal["cv2", "migan", "lama"] | None = None
@@ -1205,6 +1227,7 @@ def remove_auto_marks(
     *,
     sensitivity: Sensitivity = "auto",
     provenance: frozenset[str] = frozenset(),
+    vetoed_marks: frozenset[str] = frozenset(),
     backend: Backend = "auto",
 ) -> tuple[NDArray[Any], list[str]]:
     """Compatibility wrapper returning the filled image and removed labels.
@@ -1217,6 +1240,7 @@ def remove_auto_marks(
         image,
         sensitivity=sensitivity,
         provenance=provenance,
+        vetoed_marks=vetoed_marks,
         backend=backend,
     )
     return report.image, report.labels

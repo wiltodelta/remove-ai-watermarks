@@ -11,7 +11,7 @@ the remaining layers need their own check.
 
 | Path | Removes | May remain | How to check what remains |
 | --- | --- | --- | --- |
-| `metadata --remove`, `video metadata --remove` | Supported AI metadata: C2PA manifests, TC260 labels, IPTC AI fields, app-export JSON, generation parameters | Every pixel and audio watermark (SynthID, Meta Content Seal, InvisMark, TrustMark, DWT-DCT). A C2PA soft binding can still lead a resolver to a manifest stored remotely. Strings inside encoded video streams, such as H.264 SEI messages, stay too, except Kling's SEI tag, which `video metadata --remove` blanks | `identify` re-reads the metadata. Only the provider's verifier can confirm a pixel watermark. The pixels are not regenerated, so an AI-image classifier scores the output the same as the input |
+| `metadata --remove`, `video metadata --remove` | Supported AI metadata: C2PA manifests, TC260 labels, IPTC AI fields, app-export JSON, generation parameters, plus in-place H.264/HEVC AI SEI (`kling-ai`, C2PA, TC260 `AIGC`) and AV1 `OBU_METADATA` (`ai_obu`) scrubbing | Every pixel and audio watermark (SynthID, Meta Content Seal, InvisMark, TrustMark, DWT-DCT). A C2PA soft binding can still lead a resolver to a manifest stored remotely. Unrecognized proprietary bitstream payloads stay untouched | `identify` re-reads the metadata. Only the provider's verifier can confirm a pixel watermark. The pixels are not regenerated, so an AI-image classifier scores the output the same as the input |
 | `visible`, `erase`, `video visible`, `video erase` | The selected label region, refilled. AI metadata too, unless `--keep-metadata` is given | Any invisible watermark across the rest of the frame. The fill can leave a visible patch on structured backgrounds | Look at the output. Use `identify` for metadata and the provider's verifier for invisible marks |
 | `invisible`, `all`, `video invisible` | Regenerates pixels to disrupt invisible watermarks. `all` also removes visible marks and metadata | No local decoder confirms that SynthID is gone from a given file, and the outcome depends on content and seed. `video invisible` copies the audio track unchanged, so an audio watermark survives | The provider's verifier, such as Google's SynthID Detector or OpenAI's provenance check. A pass there says nothing about AI-image classifiers |
 | `text metadata --remove`, `text all` | C2PA 2.3/2.4 text/HTML wrappers (`C2PATXT\0`, ASCII armor, HTML `<head>` C2PA), `VSRMark` (`VSR1`), Unicode Tags, and zero-width steganography | Token-level statistical LLM watermarks (Google `SynthID-Text`, Anthropic Claude Fable 5.1/5.2 and Mythos 5.1/5.2, OpenAI GPT-6 Astra `textGrain`, KGW, Unigram) live in token choices, not hidden characters | `text identify` re-reads character wrappers; `text invisible` or `text all --invisible` regenerates unlocked prose spans while locking code, math, and URLs |
@@ -104,11 +104,11 @@ Known examples:
   [research-sweep-2026-09.md](research-sweep-2026-09.md#decisions).
 - The Gemini sparkle detector scores up to 0.67 on non-Gemini images (whiteboard
   photos, UI screenshots, digital art, wood grain), while real Gemini sparkles
-  start near 0.55. `identify` drops a sparkle when trusted provenance names
+  start near 0.55. Both `identify` and the file-backed visible removal paths
+  (`visible`, `all`, `batch`) drop a sparkle when trusted provenance names
   another AI vendor, for example a valid non-Google C2PA claim or a registered
-  TC260 producer, and says so in a caveat. The visible removal path does not
-  read that provenance, so it can still fill a sparkle-shaped patch on such an
-  image; without provenance the false positive stays in both paths.
+  TC260 producer (and `identify` records a caveat). Without trusted provenance
+  or on bare array inputs, the false positive stays in both paths.
 
 Use `erase --region` when you can see and select an unsupported or missed mark.
 
@@ -594,9 +594,14 @@ and Wan 2.2 downloads carry no signal at all (2026-09-24).
 GIF metadata removal walks the file's blocks and drops comment and application
 extensions (XMP, C2PA) while copying every frame, palette and LZW stream
 verbatim; the looping extension and, with standard metadata kept, the ICC
-profile survive. TIFF and DNG are refused with an error: the generic re-save
-used to write PNG bytes under the original name and drop pages, depth and raw
-data, and no lossless TIFF tag editor is implemented yet.
+profile survive. Classic 32-bit TIFF and DNG containers (both little-endian
+`II*\x00` and big-endian `MM\x00*`) use an in-place lossless IFD editor that
+prunes AI provenance tags (XMP, IPTC, Photoshop blocks, AI Software/Description,
+Exif UserComment) across all pages, `SubIFDs`, and `ExifIFD` without shifting
+any pixel strip, tile, or RAW offset; multi-page chains, bit depth, RAW CFA
+data, and non-AI camera EXIF/ICC profiles survive verbatim. BigTIFF
+(`II+\x00`/`MM\x00+`) and corrupt/unwalkable TIFF files are refused with an
+error.
 
 ### JPEG XL is metadata only
 
@@ -707,10 +712,10 @@ MP4/MOV track timescale instead of accepting ffmpeg's implicit `yuv444p`
 raw-BGR output. 10-bit `yuv420p10le`, `yuv422p10le`, and `yuv444p10le`
 sources, HDR transfers included, are decoded as 16-bit BGR through ffmpeg and
 re-encoded at the same depth with libx265 (VP9 profile 2 for WebM) and their
-BT.2020/PQ/HLG color tags; that path skips the stationary-matte temporal
-precalibration. Other high-bit-depth inputs (12-bit, for example) are rejected
-before encoding rather than silently falling back to `yuv420p`. Invisible
-regeneration still accepts SDR 8-bit input only. The synthetic
+BT.2020/PQ/HLG color tags across `video visible` (including stationary-matte
+alpha precalibration), `video invisible`, `Wan 2.1`, and single-pass
+`remove_video_all`. Other high-bit-depth inputs (12-bit, for example) are
+rejected before encoding rather than silently falling back to `yuv420p`. The synthetic
 Sora/OpenCV full-clip CI gate covers complete removal, untouched-region PSNR,
 frame count, frame rate, duration, copied-audio identity, source stream
 properties, paired temporal deltas against an independently encoded
@@ -840,6 +845,6 @@ detect arbitrary unknown watermarks or identify AI origin. A complete negative
 means that this target fell below the project receiver threshold under pinned
 public weights; it does not establish complete erasure or provider compatibility.
 The processing route accepts one zero-based CFR video stream with optional audio
-and MP4/MOV/M4V output. It downsamples and can alter texture and motion visibly.
+and MP4/MOV/M4V/MKV/WebM output. It downsamples and can alter texture and motion visibly.
 Read delivered-file quality and before/after evidence. Audio marks remain outside
 its checks. See the [command contract](cli.md#public-model-video-messages-experimental).

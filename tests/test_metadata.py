@@ -2542,12 +2542,22 @@ class TestContainerRouting:
                 after.seek(index)
                 assert after.convert("RGB").tobytes() == before.convert("RGB").tobytes()
 
-    def test_tiff_strip_is_refused_instead_of_rewritten_as_png(self, tmp_path: Path):
+    def test_tiff_strip_preserves_tiff_container_instead_of_rewriting_as_png(self, tmp_path: Path):
         src = tmp_path / "scan.tif"
-        Image.new("RGB", (8, 8)).save(src)
-        with pytest.raises(ValueError, match="TIFF/DNG"):
-            remove_ai_metadata(src, tmp_path / "clean.tif")
-        assert not (tmp_path / "clean.tif").exists()
+        out = tmp_path / "clean.tif"
+        Image.new("RGB", (8, 8), (12, 34, 56)).save(src)
+        remove_ai_metadata(src, out)
+        assert out.exists()
+        assert out.read_bytes()[:4] in (b"II*\x00", b"MM\x00*")
+        with Image.open(src) as before, Image.open(out) as after:
+            assert after.format == "TIFF"
+            assert after.tobytes() == before.tobytes()
+
+        bigtiff = tmp_path / "big.tif"
+        bigtiff.write_bytes(b"II+\x00" + b"\x00" * 16)
+        with pytest.raises(ValueError, match="BigTIFF"):
+            remove_ai_metadata(bigtiff, tmp_path / "big_out.tif")
+        assert not (tmp_path / "big_out.tif").exists()
 
     def test_c2pa_chunk_after_large_wav_data_reaches_the_head_scan(self, tmp_path: Path):
         # C2PA puts a RIFF manifest in the last top-level chunk; audio longer than the

@@ -542,6 +542,9 @@ class ProvenanceReport:
     # signed bytes changed. Fallback parsing reports each dimension as unknown;
     # None means no C2PA result exists.
     c2pa_validation: dict[str, Any] | None = None
+    # Internal single-source-of-truth veto carrier for visible-removal callers
+    # (excluded from to_dict(), repr, and equality).
+    trusted_non_google_vendor: str | None = field(default=None, repr=False, compare=False)
 
     def to_dict(
         self,
@@ -1685,16 +1688,17 @@ def _identify_from_evidence(
         or xai_sig
     )
 
+    # A trusted provenance claim by another vendor vetoes the sparkle: sparkle
+    # scores on real Gemini images reach down to 0.55 while wood grain, UI and
+    # whiteboard photos reach 0.67, so no threshold separates them. Two
+    # Higgsfield downloads (a valid OpenAI C2PA, a Kuaishou TC260 label) scored
+    # 0.53 on wood texture (2026-09-24). Computed unconditionally so visible-removal
+    # callers (which run with check_visible=False) apply the exact same veto.
+    trusted_claims = {
+        k: v for k, v in ai_vendor_claims.items() if k not in ("c2pa", "invismark") or c2pa_level == "verified"
+    }
+    non_google = None if "Google" in trusted_claims.values() else next(iter(trusted_claims.values()), None)
     if check_visible and pixel_path is not None:
-        # A trusted provenance claim by another vendor vetoes the sparkle: sparkle
-        # scores on real Gemini images reach down to 0.55 while wood grain, UI and
-        # whiteboard photos reach 0.67, so no threshold separates them. Two
-        # Higgsfield downloads (a valid OpenAI C2PA, a Kuaishou TC260 label) scored
-        # 0.53 on wood texture (2026-09-24).
-        trusted_claims = {
-            k: v for k, v in ai_vendor_claims.items() if k not in ("c2pa", "invismark") or c2pa_level == "verified"
-        }
-        non_google = next((v for v in trusted_claims.values() if v != "Google"), None)
         platform = _collect_visible_signals(
             pixel_path, signals, watermarks, platform, decode, caveats, non_google_vendor=non_google
         )
@@ -1744,6 +1748,7 @@ def _identify_from_evidence(
         caveats=caveats,
         integrity_clashes=clashes,
         c2pa_validation=c2pa_validation,
+        trusted_non_google_vendor=non_google,
     )
 
 

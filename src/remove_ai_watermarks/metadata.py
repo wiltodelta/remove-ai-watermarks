@@ -1616,6 +1616,29 @@ def _strip_with_ffmpeg(source_path: Path, output_path: Path) -> Path:
     return output_path
 
 
+def payload_carries_ai_metadata(raw: bytes) -> bool:
+    """Return True when a raw metadata byte payload carries canonical AI provenance markers."""
+    from remove_ai_watermarks._internal.constants import AI_GENERATOR_TOKENS
+
+    if (
+        c2pa_marker_in(raw)
+        or any(marker in raw for marker in AIGC_MARKERS)
+        or any(marker in raw for marker in IPTC_AI_MARKERS)
+        or any(marker in raw for marker in IPTC_AI_FIELD_MARKERS)
+        or xai_signature_in_metadata(raw)
+        or samsung_genai_in(raw) is not None
+        or generator_from_metadata((), raw) is not None
+        or _is_aigc_exif_value(raw)
+        or any(_app_metadata_evidence(raw))
+    ):
+        return True
+    text = raw.decode("utf-8", errors="ignore").strip("\x00 ")
+    if not text:
+        return False
+    lower = text.lower()
+    return _is_ai_value(text) or any(tok in lower for tok in AI_GENERATOR_TOKENS)
+
+
 def _jpeg_app_carries_ai(marker: int, payload: bytes) -> bool:
     """Whether a JPEG APPn segment carries AI provenance to drop wholesale (C2PA in
     APP11, an AI XMP packet in APP1, an IPTC "Made with AI" record in APP13). EXIF
@@ -2240,9 +2263,13 @@ def remove_ai_metadata(
         return output_path
 
     if head[:4] in (b"II*\x00", b"MM\x00*"):
-        # TIFF and DNG: re-saving through Pillow would write PNG bytes under the TIFF
-        # name and flatten pages, bit depth and raw data. Refuse rather than damage it.
-        raise ValueError(f"metadata removal does not support TIFF/DNG containers: {source_path.name}")
+        from remove_ai_watermarks._internal.tiff_strip import strip_tiff_metadata_lossless
+
+        if strip_tiff_metadata_lossless(source_path, output_path, keep_standard=keep_standard):
+            return output_path
+        raise ValueError(f"could not walk TIFF/DNG structure losslessly: {source_path.name}")
+    if head[:4] in (b"II+\x00", b"MM\x00+"):
+        raise ValueError(f"metadata removal does not support BigTIFF containers: {source_path.name}")
 
     # JPEG: strip AI metadata at the byte level so the DCT scan (the pixels) is NOT
     # re-encoded. The PIL open+save path below is lossy for JPEG (a q95 re-encode that

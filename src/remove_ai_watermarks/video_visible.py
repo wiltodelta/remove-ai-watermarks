@@ -2156,6 +2156,7 @@ def _precalibrate_stationary_mattes(
     padding_fraction: float,
     slot_padding_fractions: Sequence[float] | None = None,
     dilate_px: int | None = None,
+    high_depth: bool = False,
 ) -> tuple[ClipAlphaMatte, ...]:
     """Estimate self-calibrated YCrCb alpha mattes for fixed watermark/erase boxes."""
     max_regs = max((len(regs) for regs in normalized_regions), default=0)
@@ -2213,7 +2214,9 @@ def _precalibrate_stationary_mattes(
     max_needed = max(union_indices)
 
     decoded_by_idx: dict[int, NDArray[Any]] = {}
-    cap = open_video_capture(source)
+    cap: Any = (
+        open_video_capture_16bit(source, width=width, height=height) if high_depth else open_video_capture(source)
+    )
     if not cap.isOpened():
         return ()
     has_grab = hasattr(cap, "grab") and hasattr(cap, "retrieve")
@@ -2273,7 +2276,12 @@ def iter_clean_video_frames(
     high_depth: bool = False,
 ) -> Iterator[tuple[NDArray[Any], bool]]:
     """Stream cleaned video frames and per-frame removal flags without forcing an intermediate encode."""
-    from remove_ai_watermarks.watermark_registry import fill, resolve_backend
+    from remove_ai_watermarks.watermark_registry import (
+        backend_prefers_batching,
+        fill,
+        fill_batch,
+        resolve_backend,
+    )
 
     normalized_regions = [_normalize_frame_regions(item) for item in regions]
     clip_mattes = (
@@ -2285,8 +2293,9 @@ def iter_clean_video_frames(
             padding_fraction=padding_fraction,
             slot_padding_fractions=slot_padding_fractions,
             dilate_px=dilate_px,
+            high_depth=high_depth,
         )
-        if temporal_consistency and not high_depth
+        if temporal_consistency
         else ()
     )
     capture: Any = (
@@ -2304,11 +2313,14 @@ def iter_clean_video_frames(
     pending: tuple[NDArray[Any], NDArray[Any], list[NDArray[Any]], NDArray[Any] | None, bool] | None = None
     try:
         resolved_backend: Literal["cv2", "migan", "lama"] = resolve_backend(backend)
+        use_batch_inpaint = resolved_backend in ("lama", "migan") and backend_prefers_batching(resolved_backend)
+        inpaint_batch_size = 8 if use_batch_inpaint else 1
         eff_temporal = temporal_consistency and not high_depth
         donor_radius = 12 if eff_temporal else 0
         total_frames = len(normalized_regions)
         window: deque[tuple[int, NDArray[Any], NDArray[Any] | None]] = deque()
         next_decode = 0
+        prepared_batch: list[tuple[NDArray[Any], list[NDArray[Any]], NDArray[Any] | None, bool]] = []
 
         def _crop_neighbor_mask(
             nb_mask: NDArray[Any] | None, sub_mask: NDArray[Any], single_sub: bool
@@ -2387,6 +2399,39 @@ def iter_clean_video_frames(
             window.append((next_decode, raw, m))
             next_decode += 1
 
+        def _drain_prepared_batch() -> Iterator[tuple[NDArray[Any], bool]]:
+            nonlocal pending
+            if not prepared_batch:
+                return
+            filled_frames: list[NDArray[Any]] = [entry[0] for entry in prepared_batch]
+            single_indices: list[int] = []
+            single_items: list[tuple[NDArray[Any], NDArray[Any]]] = []
+            for b_idx, (b_src, b_subs, _b_stage_mask, _b_removed) in enumerate(prepared_batch):
+                if not b_subs:
+                    continue
+                if len(b_subs) == 1 and use_batch_inpaint:
+                    single_indices.append(b_idx)
+                    single_items.append((b_src, b_subs[0]))
+                else:
+                    cur_frame = b_src
+                    for sub_mask in b_subs:
+                        cur_frame = fill(cur_frame, sub_mask, backend=resolved_backend)
+                    filled_frames[b_idx] = cur_frame
+            if single_items:
+                batched_outs = fill_batch(single_items, backend=resolved_backend)
+                for b_idx, out_img in zip(single_indices, batched_outs, strict=True):
+                    filled_frames[b_idx] = out_img
+            for b_idx, (b_src, b_subs, b_stage_mask, b_removed) in enumerate(prepared_batch):
+                out_frame = filled_frames[b_idx]
+                if eff_temporal:
+                    flushed = _flush_pending((b_src, out_frame, b_stage_mask))
+                    if flushed is not None:
+                        yield flushed
+                    pending = (b_src, out_frame, b_subs, b_stage_mask, b_removed)
+                else:
+                    yield out_frame, b_removed
+            prepared_batch.clear()
+
         for frame_index in range(total_frames):
             while next_decode < total_frames and next_decode <= frame_index + donor_radius:
                 _pull_frame()
@@ -2394,7 +2439,6 @@ def iter_clean_video_frames(
                 window.popleft()
 
             _cur_idx, source_frame, mask = next(item for item in window if item[0] == frame_index)
-            frame = source_frame
             stage_source = source_frame
             stage_mask: NDArray[Any] | None = None
             remaining_sub_masks: list[NDArray[Any]] = []
@@ -2452,7 +2496,6 @@ def iter_clean_video_frames(
                     if np.any(sub_mask > 0):
                         remaining_sub_masks.append(sub_mask)
                 combined_stage_mask: NDArray[Any] | None = None
-                cur_frame = stage_source
                 single_sub = len(remaining_sub_masks) == 1
                 for sub_mask in remaining_sub_masks:
                     combined_stage_mask = (
@@ -2464,23 +2507,15 @@ def iter_clean_video_frames(
                             else np.maximum(combined_stage_mask, sub_mask)
                         )
                     )
-                    cur_frame = fill(cur_frame, sub_mask, backend=resolved_backend)
-                frame = cur_frame
                 stage_mask = combined_stage_mask
                 was_removed = True
 
             previous_clean_plate = (stage_source, stage_mask) if eff_temporal else None
-            if eff_temporal:
-                flushed = _flush_pending((stage_source, frame, stage_mask))
-                if flushed is not None:
-                    yield flushed
-                pending = (stage_source, frame, remaining_sub_masks, stage_mask, was_removed)
-            else:
-                previous_source = stage_source
-                previous_cleaned = frame
-                previous_mask = stage_mask
-                yield frame, was_removed
+            prepared_batch.append((stage_source, remaining_sub_masks, stage_mask, was_removed))
+            if len(prepared_batch) >= inpaint_batch_size:
+                yield from _drain_prepared_batch()
 
+        yield from _drain_prepared_batch()
         flushed = _flush_pending(None)
         if flushed is not None:
             yield flushed
