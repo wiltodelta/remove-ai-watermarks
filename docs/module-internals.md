@@ -1887,9 +1887,12 @@ records require the exact integer schema version and a `complete` status. Source
 or head-read failures produce `error`; later region, trailer, decoder, or C2PA
 read failures retain collected evidence with `partial` and stage-specific
 `issues`. Neither incomplete status can be judged as a complete scan. WebP walks the full
-declared RIFF container by seeking over `VP8`, `VP8L`, `ALPH`, and `ANMF`, so late
-XMP/C2PA remains visible without shipping coded frames or parsing appended trailer
-bytes as chunks.
+declared RIFF container by seeking over `VP8`, `VP8L`, `ALPH`, and `ANMF`, and
+GIF walks its block chain while skipping `0x2C` LZW frame sub-blocks, so late
+XMP/C2PA extensions remain visible without shipping coded frames or parsing
+appended trailer bytes as chunks. PNGs converted from C2PA-signed JPEGs by
+ImageMagick (`Raw profile type app11` `tEXt`/`zTXt` hex profiles) decode to the
+same C2PA fallback fields on both the file and portable-record paths.
 
 Pixel forensics are deliberately absent: the provenance path does not read them.
 Verdict equivalence is checked over tracked fixtures and a separate local evaluation
@@ -2661,6 +2664,18 @@ not lower its threshold, without a real captured corpus under
 tests (`tests/test_openart_engine.py`) mirror `test_doubao_engine.py`'s
 structure entirely on synthetic composites of the bundled asset -- there is no
 `TestRealSample` analogue.
+
+#### Genspark badge and wordmark
+
+`genspark_engine.py` shares the same `"cc"` frame-center locate geometry for
+Genspark's semi-transparent white badge (rounded square with three four-point
+sparkle cutouts above a horizontal rounded bar) plus geometric sans-serif
+`Genspark` wordmark. Proportions were measured on a confirmed 960x1280 portrait
+export (badge 106x106 px, 36 px gap, `Genspark` 324 px wide, 55 px cap height)
+and rendered synthetically via `draw_genspark` in
+`scripts/render_vendor_silhouettes.py` (`assets/genspark_alpha.png`). It scores
+0.836 NCC on the confirmed carrier and at most 0.550 across 98 non-Genspark
+evaluation and gallery images, with `DETECT_NCC_THRESHOLD = 0.65`.
 
 #### Bare-upload pill arm: measured impossible with the current detector (2026-08-28)
 

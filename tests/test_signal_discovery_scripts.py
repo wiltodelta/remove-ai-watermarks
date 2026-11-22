@@ -289,3 +289,64 @@ def test_corpus_gap_scan_routes_video_through_identify_video_and_ignores_empty_d
     assert gap._marker_hits(empty_slot) == []
     dreamina_gen = b'{"product":"dreamina","exportType":"generation"}'
     assert "App AIGC disclosure" in gap._marker_hits(dreamina_gen)
+
+
+def test_corpus_gap_scan_routes_audio_and_text_modalities_and_detects_new_markers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import wave
+
+    for token in (
+        b"Pruna AI",
+        b"Autoenhance.ai",
+        b"ks-c2pa-service",
+        b"PhotoDirector",
+        b"Pixelcut",
+        b"vivo Albums",
+        b"Raw profile type app11",
+        b"BEGIN C2PA MANIFEST",
+    ):
+        assert gap._marker_hits(token), f"expected gap._marker_hits to detect {token!r}"
+
+    # Text and SVG files route through identify_text without AttributeError.
+    tagged_md = tmp_path / "note.md"
+    tagged_md.write_text("Hello" + "".join(chr(0xE0000 + ord(ch)) for ch in "AI") + " world\n", encoding="utf-8")
+    text_row = gap._scan_one((str(tagged_md), "note.md", "test"))
+    assert text_row["is_ai"] == "True"
+    assert text_row["error"] == ""
+    assert text_row["candidate_classes"] == ""
+
+    plain_svg = tmp_path / "icon.svg"
+    plain_svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"/>\n', encoding="utf-8")
+    svg_row = gap._scan_one((str(plain_svg), "icon.svg", "test"))
+    assert svg_row["is_ai"] == "None"
+    assert svg_row["error"] == ""
+
+    # Audio file routes through identify_audio(..., check_invisible=False) without loading decoders.
+    wav_path = tmp_path / "clip.wav"
+    with wave.open(str(wav_path), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(16000)
+        stream.writeframes(b"\x00\x00" * 800)
+
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        "remove_ai_watermarks.audio.identify_audio",
+        lambda _p, *, check_invisible=True, scheme="auto": (
+            calls.append(check_invisible)
+            or SimpleNamespace(
+                metadata_markers={
+                    "aigc_label": "China AIGC label (TC260); producer MiniMax",
+                    "aigc_producer": "MiniMax",
+                },
+                watermark_status="unverified",
+            )
+        ),
+    )
+    audio_row = gap._scan_one((str(wav_path), "clip.wav", "test"))
+    assert calls == [False]
+    assert audio_row["is_ai"] == "True"
+    assert audio_row["platform"] == "MiniMax Hailuo AI"
+    assert audio_row["candidate_classes"] == ""

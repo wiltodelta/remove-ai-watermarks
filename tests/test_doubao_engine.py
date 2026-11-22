@@ -209,6 +209,46 @@ class TestFootprintMaskAndRemoval:
         assert DoubaoEngine().detect(out).confidence < before.confidence
         assert np.array_equal(out[: h // 2, : w // 2], wm[: h // 2, : w // 2])
 
+    def test_footprint_expands_over_dark_outline_stroke_without_growing_plain_glyphs(self):
+        """A dark border stroke around single-line Doubao glyphs is masked and filled,
+        while un-outlined white glyphs retain the compact 1-px dilation."""
+        w = h = _ALPHA_NATIVE_WIDTH
+        bg = np.full((h, w, 3), 214.0, np.float32)
+        at = _alpha_template()
+        assert at is not None
+        gw, gh = int(_ALPHA_WIDTH_FRAC * w), int(_ALPHA_HEIGHT_FRAC * w)
+        margin = int(0.015 * w)
+        ax, ay = w - margin - gw, h - margin - gh
+        resized = cv2.resize(at, (gw, gh))
+        core = (resized > 0.15).astype(np.uint8)
+        dilated = cv2.dilate(core, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        stroke_ring = (dilated > 0) & (core == 0)
+
+        roi = bg[ay : ay + gh, ax : ax + gw].copy()
+        roi[stroke_ring] = 168.0
+        a3 = resized[:, :, None]
+        roi = a3 * 242.0 + (1.0 - a3) * roi
+        outlined = bg.copy()
+        outlined[ay : ay + gh, ax : ax + gw] = roi
+        outlined_u8 = outlined.clip(0, 255).astype(np.uint8)
+
+        plain_u8, _ = _compose(w, h, bg=214.0)
+        eng = DoubaoEngine()
+        plain_mask = eng.footprint_mask(plain_u8)
+        outlined_mask = eng.footprint_mask(outlined_u8)
+        assert plain_mask is not None
+        assert outlined_mask is not None
+        assert np.count_nonzero(outlined_mask) > int(np.count_nonzero(plain_mask) * 1.35)
+        stroke_full = np.zeros((h, w), dtype=bool)
+        stroke_full[ay : ay + gh, ax : ax + gw] = stroke_ring
+        assert float(np.mean(outlined_mask[stroke_full] > 0)) >= 0.85
+
+        cleaned, region = registry.get_mark("doubao").remove(outlined_u8, backend="cv2")
+        assert region is not None
+        assert not eng.detect(cleaned).detected
+        # Dark stroke residual must be lifted back near the 214 background level.
+        assert float(np.median(cleaned[stroke_full])) >= 205.0
+
 
 class TestDegenerateAndChannelInputs:
     """footprint_mask must not crash on degenerate sizes or non-3-channel inputs."""

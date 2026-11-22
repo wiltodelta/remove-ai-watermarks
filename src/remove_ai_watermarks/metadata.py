@@ -371,6 +371,104 @@ def _riff_late_metadata(
     return bytes(out)
 
 
+def _gif_sub_block_payload(data: bytes | bytearray, start: int) -> bytes | None:
+    """Concatenate GIF data sub-blocks starting at ``start``."""
+    out = bytearray()
+    cursor = start
+    size = len(data)
+    while cursor < size:
+        block_len = data[cursor]
+        cursor += 1
+        if block_len == 0:
+            return bytes(out)
+        if cursor + block_len > size:
+            return None
+        out += data[cursor : cursor + block_len]
+        cursor += block_len
+    return None
+
+
+def _gif_extension_metadata(ext: bytes) -> bytes:
+    """Unpack one GIF comment (`0xFE`) or non-playback application (`0xFF`) extension."""
+    if len(ext) < 3 or ext[0] != 0x21:
+        return b""
+    label = ext[1]
+    if label == 0xFF and len(ext) >= 14 and ext[2] == 11:
+        app_id = ext[3:14]
+        if app_id in _GIF_PLAYBACK_APP_IDS or app_id == _GIF_ICC_APP_ID:
+            return b""
+        unpacked = _gif_sub_block_payload(ext, 14)
+        return app_id + (unpacked if unpacked is not None else ext[14:])
+    if label == 0xFE:
+        unpacked = _gif_sub_block_payload(ext, 2)
+        return unpacked if unpacked is not None else ext[2:]
+    return b""
+
+
+def _gif_late_metadata(
+    image_path: Path, window: int, *, max_total: int = 4 * 1024 * 1024, strict: bool = False
+) -> bytes:
+    """Payloads of GIF comment and non-playback application extensions at or past ``window``."""
+    out = bytearray()
+    try:
+        with open(image_path, "rb") as f:
+            header = f.read(13)
+            if len(header) < 13 or header[:6] not in (b"GIF87a", b"GIF89a"):
+                return b""
+            f.seek(0, 2)
+            file_size = f.tell()
+            packed = header[10]
+            pos = 13 + (3 * (2 ** ((packed & 0x07) + 1)) if packed & 0x80 else 0)
+
+            def skip_sub_blocks(start: int) -> int | None:
+                cursor = start
+                while cursor < file_size:
+                    f.seek(cursor)
+                    b_len = f.read(1)
+                    if not b_len:
+                        return None
+                    step = b_len[0]
+                    cursor += 1 + step
+                    if step == 0:
+                        return cursor if cursor <= file_size else None
+                return None
+
+            while pos < file_size and len(out) < max_total:
+                f.seek(pos)
+                intro = f.read(2)
+                if not intro or intro[0] == 0x3B:
+                    break
+                if intro[0] == 0x2C:
+                    f.seek(pos)
+                    desc = f.read(10)
+                    if len(desc) < 10:
+                        break
+                    local_packed = desc[9]
+                    table = 3 * (2 ** ((local_packed & 0x07) + 1)) if local_packed & 0x80 else 0
+                    end = skip_sub_blocks(pos + 10 + table + 1)
+                    if end is None:
+                        break
+                    pos = end
+                    continue
+                if intro[0] != 0x21 or len(intro) < 2:
+                    break
+                label = intro[1]
+                end = skip_sub_blocks(pos + 2)
+                if end is None:
+                    break
+                if pos >= window and label in (0xFE, 0xFF):
+                    seg_len = min(end - pos, max_total - len(out))
+                    f.seek(pos)
+                    out += _gif_extension_metadata(f.read(seg_len))
+                pos = end
+    except OSError as exc:
+        if strict:
+            raise
+        logger.debug("GIF late-metadata scan failed on %s: %s", image_path, exc)
+        return b""
+    return bytes(out)
+
+
 def _stat_key(image_path: Path) -> tuple[str, int, int] | None:
     """Cache key identifying this file's exact CONTENT, or None when it cannot stat.
 
@@ -433,12 +531,16 @@ def _scan_head_impl(image_path: Path, size: int) -> bytes:
         region = isobmff.scan_c2pa_region(image_path)
         if region:
             head += region
-    elif head[:8] == b"\x89PNG\r\n\x1a\n" and len(head) == size:
+    elif head[:8] == PNG_SIGNATURE and len(head) == size:
         # len(head) == size means the file is at least `size` bytes, so metadata
         # chunks may lie beyond the window; otherwise the whole PNG is in `head`.
         head += _png_late_metadata(image_path, size)
     elif head[:4] == b"RIFF" and head[8:12] in _RIFF_LATE_SCAN_FORMS and len(head) == size:
         head += _riff_late_metadata(image_path, size)
+    elif head[:6] in (b"GIF87a", b"GIF89a"):
+        # Unpack all GIF metadata extensions (window=0) so tokens split across
+        # 255-byte sub-block boundaries inside the head are contiguous too.
+        head += _gif_late_metadata(image_path, 0)
     elif head[:4] == b"\x1aE\xdf\xa3":
         from remove_ai_watermarks._internal.ebml import c2pa_attachment_payloads
 
@@ -479,13 +581,19 @@ def _decoder_visible_text(image_path: Path, head: bytes) -> bytes:
         from PIL import Image
 
         with Image.open(image_path) as img:
-            values = [value for key, value in img.info.items() if key not in _DECODER_BINARY_KEYS]
+            items = [(str(key), value) for key, value in img.info.items() if key not in _DECODER_BINARY_KEYS]
     except Exception as exc:  # a container PIL cannot open: the raw scan stands alone
         logger.debug("decoder-visible text unavailable for %s: %s", image_path, exc)
         return b""
 
     out = bytearray()
-    for value in values:
+    for key, value in items:
+        if key.strip().casefold() == "raw profile type app11" and isinstance(value, str):
+            from remove_ai_watermarks._internal.c2pa import raw_app11_jumbf_bytes
+
+            if jumbf := raw_app11_jumbf_bytes(value):
+                out += b"\x00" + jumbf
+                continue
         if isinstance(value, str):
             encoded = value.encode("utf-8", "replace")
         elif isinstance(value, bytes):
@@ -851,12 +959,15 @@ def _samsung_genai_impl(image_path: Path) -> int | None:
     return samsung_genai_in(data)
 
 
+_CLI_FLAG_GARBAGE_RE = re.compile(r"^-[A-Za-z0-9_:-]+=")
+
+
 def iptc_ai_system_in(data: bytes) -> str | None:
     """Return an IPTC 2025.1 AI-disclosure note from collected metadata bytes."""
     if not any(marker in data for marker in IPTC_AI_FIELD_MARKERS):
         return None
     match = re.search(rb"AISystemUsed[=:\s]*[\"'>]\s*([^<\"']{1,120})", data)
-    if match and (value := match.group(1).decode("utf-8", "replace").strip()):
+    if match and (value := match.group(1).decode("utf-8", "replace").strip()) and not _CLI_FLAG_GARBAGE_RE.match(value):
         return value
     return "fields present"
 
@@ -2483,4 +2594,6 @@ SAMSUNG_EDITOR_MARKER = _SAMSUNG_EDITOR_MARKER
 read_file_tail = _read_file_tail
 png_late_metadata = _png_late_metadata
 riff_late_metadata = _riff_late_metadata
+gif_late_metadata = _gif_late_metadata
+gif_extension_metadata = _gif_extension_metadata
 exif_text = _exif_text

@@ -1346,3 +1346,15 @@ def test_invisible_rejects_unreadable_input_instead_of_reporting_no_signal(runne
     assert result.exit_code == 1, result.output
     assert "Failed to read image" in result.output
     mock_engine.remove_watermark.assert_not_called()
+
+
+def test_identify_gif_does_not_emit_unsupported_format_warning(runner, tmp_path):
+    from PIL import Image
+
+    gif_path = tmp_path / "clip.gif"
+    frames = [Image.new("P", (32, 32), color=10), Image.new("P", (32, 32), color=90)]
+    frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=50, loop=0)
+
+    result = runner.invoke(main, ["identify", str(gif_path), "--no-visible"])
+    assert result.exit_code == 0, result.output
+    assert "may not be supported" not in result.output

@@ -28,6 +28,7 @@ The `visible` command registers these mark keys:
 | `jimeng_pill` | `AI生成` pill | Top left | A verified label layout can bypass the flat-background guard only with Jimeng provenance; the weak outline detector retains the product and background gates. |
 | `generic_ai_label` | Bare `AI生成` text, no vendor wordmark | Bottom right | Brand-less TC260 compliance-stamp fallback (vivo and Xiaomi Gallery AI-edit output confirmed; see [module-internals.md](module-internals.md#generic-bare-ai生成-label)). Font-rendered synthetic asset; **calibrated on a synthetic corpus only**, not a real captured generator screenshot -- treat as weaker evidence than the vendor-tuned detectors above. |
 | `openart` | `OpenArt` wordmark (bowtie/infinity icon + brand name) | Frame center, not a corner | Confirmed from one customer-reported production case; no known metadata signal, so the visible mark is the only attribution route. **UNCALIBRATED**: procedurally reconstructed asset, no captured corpus -- see [module-internals.md](module-internals.md#openart-wordmark). |
+| `genspark` | Genspark sparkle badge and `Genspark` wordmark | Frame center, not a corner | Provisional: synthetic silhouette measured against a confirmed portrait export (0.836 NCC vs <= 0.550 across 98 non-Genspark controls; threshold 0.65). No known metadata signal. |
 
 `--mark auto` evaluates all registered marks and removes every selected match.
 Known marks are localized to a mask, then the selected fill backend reconstructs
@@ -190,6 +191,7 @@ addition to the selected pixel feature. Metadata scanning does not.
 
 Metadata inspection and removal additionally have container paths for:
 
+- Static and animated GIF (`GIF87a`/`GIF89a`) comment and C2PA/XMP application extensions, preserving frames, timing, and palettes bit-for-bit;
 - JPEG XL metadata;
 - Classic 32-bit TIFF and DNG lossless IFD metadata stripping;
 - MP4, MOV, M4V, and M4A;

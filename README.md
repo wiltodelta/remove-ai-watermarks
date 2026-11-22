@@ -459,8 +459,8 @@ Visible mark support includes:
   AI-edit stamps that carry no vendor wordmark of their own (vivo and Xiaomi
   Gallery confirmed); synthetic-only calibration, weaker evidence than the
   vendor-tuned detectors above;
-- the OpenArt wordmark, placed at the frame center rather than a corner;
-  uncalibrated (one confirmed real case, no captured corpus).
+- the OpenArt and Genspark center-frame marks, placed at the frame center rather
+  than a corner (provisional calibration; see the supported-signals matrix).
 
 Metadata and provenance inspection covers C2PA, EXIF, XMP, IPTC, common
 generator parameters in image and video containers, China TC260 AIGC labels,

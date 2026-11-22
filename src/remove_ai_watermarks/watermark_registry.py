@@ -39,6 +39,8 @@ Entries:
   - ``openart`` -- OpenArt "OpenArt" wordmark (bowtie/infinity icon + brand name),
     frame-center; UNCALIBRATED (one confirmed real case, no captured corpus), see
     ``openart_engine.py``.
+  - ``genspark`` -- Genspark sparkle badge and "Genspark" wordmark, frame-center;
+    provisional calibration (see ``genspark_engine.py``).
 """
 
 from __future__ import annotations
@@ -464,6 +466,7 @@ _ENGINE_CLASS: dict[str, tuple[str, str]] = {
     "microsoft": ("microsoft_engine", "MicrosoftEngine"),
     "generic_ai_label": ("generic_ai_label_engine", "GenericAiLabelEngine"),
     "openart": ("openart_engine", "OpenArtEngine"),
+    "genspark": ("genspark_engine", "GensparkEngine"),
     "wan": ("wan_engine", "WanEngine"),
 }
 
@@ -763,6 +766,7 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "bottom-right",
         platform="Kuaishou Kling AI (visible 可灵AI / KlingAI mark detected)",
         manufacturer="kuaishou",
+        provenance_platform_tokens=("kling",),
     ),
     _text_mark(
         "yuanbao",
@@ -880,6 +884,15 @@ _REGISTRY: tuple[KnownMark, ...] = (
         "frame-center",
         platform="OpenArt (visible OpenArt mark detected)",
         manufacturer="openart",
+        label_regime=None,
+        provenance_signals=(),
+    ),
+    _text_mark(
+        "genspark",
+        "Genspark badge and wordmark",
+        "frame-center",
+        platform="Genspark (visible Genspark mark detected)",
+        manufacturer="genspark",
         label_regime=None,
         provenance_signals=(),
     ),

@@ -242,10 +242,50 @@ class DoubaoEngine(TextMarkVariantsMixin):
             return super().footprint_mask(image, force=False, dilate=dilate, detection=det)
 
         radius = _FOOTPRINT_DILATE if dilate is None else max(0, dilate)
-        return engine._aligned_alpha_mask(
+        base_mask = engine._aligned_alpha_mask(
             image,
             det,
             alpha,
             alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
             dilate=radius,
         )
+        if dilate is not None or base_mask is None:
+            return base_mask
+
+        # Some single-line Doubao exports render a dark border stroke around the
+        # standard ``豆包AI生成`` glyphs over light backgrounds. A 1-px dilation masks
+        # only the white interior and leaves the dark stroke ring intact. Check a
+        # bounded corner slice around the aligned match box: when the immediate 4-px
+        # stroke ring dips substantially darker than the surrounding outer ring,
+        # grow the aligned alpha mask across the dark stroke while leaving
+        # un-outlined white marks at their 1-px footprint.
+        loc = engine.locate(image)
+        mx0, my0, mx1, my1 = det.match_box
+        h, w = image.shape[:2]
+        pad = 16
+        ry0 = max(0, loc.y + my0 - pad)
+        ry1 = min(h, loc.y + my1 + 1 + pad)
+        rx0 = max(0, loc.x + mx0 - pad)
+        rx1 = min(w, loc.x + mx1 + 1 + pad)
+        m_roi = base_mask[ry0:ry1, rx0:rx1]
+        if not m_roi.any():
+            return base_mask
+        d_stroke = cv2.dilate(m_roi, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        d_outer = cv2.dilate(m_roi, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25)))
+        ring_stroke = (d_stroke > 0) & (m_roi == 0)
+        ring_outer = (d_outer > 0) & (d_stroke == 0)
+        if np.count_nonzero(ring_stroke) >= 32 and np.count_nonzero(ring_outer) >= 32:
+            gray = cv2.cvtColor(image_io.to_bgr(image[ry0:ry1, rx0:rx1]), cv2.COLOR_BGR2GRAY).astype(np.float32)
+            q10_out, q25_out = np.percentile(gray[ring_outer], (10, 25))
+            q10_str, q25_str = np.percentile(gray[ring_stroke], (10, 25))
+            if float(q10_out - q10_str) >= 14.0 and float(q25_out - q25_str) >= 5.0:
+                mh = my1 - my0 + 1
+                stroke_radius = max(_FOOTPRINT_DILATE + 1, round(0.075 * mh))
+                return engine._aligned_alpha_mask(
+                    image,
+                    det,
+                    alpha,
+                    alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
+                    dilate=stroke_radius,
+                )
+        return base_mask

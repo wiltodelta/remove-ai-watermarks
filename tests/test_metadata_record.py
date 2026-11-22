@@ -418,3 +418,31 @@ def test_the_record_never_reopens_the_source(tmp_path: Path, monkeypatch):
     report = identify_from_evidence(evidence_from_metadata_record(record, path=path))
 
     assert isinstance(report, ProvenanceReport)
+
+
+def test_a_gif_record_collects_late_extensions_and_skips_frame_lzw_bytes(tmp_path: Path):
+    rng = np.random.default_rng(9)
+    frames = [Image.fromarray(rng.integers(0, 256, (160, 160, 3), dtype=np.uint8)).convert("P") for _ in range(12)]
+    base_gif = tmp_path / "frames.gif"
+    frames[0].save(base_gif, save_all=True, append_images=frames[1:], duration=60, loop=0)
+    raw = base_gif.read_bytes()
+
+    xmp_packet = (
+        b'<x:xmpmeta xmlns:TC260="http://www.tc260.org.cn/ns/AIGC/1.0/">'
+        b'<rdf:RDF><rdf:Description TC260:AIGC="{'
+        b'&quot;Label&quot;:&quot;1&quot;,&quot;ContentProducer&quot;:&quot;doubao&quot;}"/>'
+        b"</rdf:RDF></x:xmpmeta>"
+    )
+    sub_blocks = bytearray()
+    for idx in range(0, len(xmp_packet), 255):
+        chunk = xmp_packet[idx : idx + 255]
+        sub_blocks.append(len(chunk))
+        sub_blocks.extend(chunk)
+    sub_blocks.append(0)
+    path = tmp_path / "late_marked.gif"
+    path.write_bytes(raw[:-1] + b"\x21\xff\x0bXMP DataXMP" + bytes(sub_blocks) + b"\x3b")
+
+    record = collect_metadata_record(path)
+    assert record["container"] == "gif"
+    assert len(json.dumps(record)) < path.stat().st_size // 4
+    _assert_same_verdict(path)

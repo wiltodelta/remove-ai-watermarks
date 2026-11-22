@@ -44,8 +44,17 @@ TC260_PRODUCERS = (
     Tc260Producer(
         "wan", ("91330106MA2CFLDG4R",), "Alibaba", "wan", "wan", video_platform="Alibaba Tongyi (Wan, HappyHorse)"
     ),
-    # Kling 3.0 Turbo served by Higgsfield (2026-09-24) writes the bare "kling".
-    Tc260Producer("kling", ("91110108335469089C", "kling"), "Kuaishou", "kling", "kling", "Kuaishou Kling AI"),
+    # Kling 3.0 Turbo served by Higgsfield (2026-09-24) writes the bare "kling";
+    # Kling AI 3.0 Omni C2PA-signed exports also carry USCC 91110108MAKBA45N9M.
+    Tc260Producer(
+        "kling",
+        ("91110108335469089C", "91110108MAKBA45N9M", "kling"),
+        "Kuaishou",
+        "kling",
+        "kling",
+        "Kuaishou Kling AI",
+        image_platform="Kuaishou Kling AI",
+    ),
     Tc260Producer(
         "yuanbao",
         ("91440300708461136T", "9144030071526726XG", "91440101327598294H"),
@@ -60,6 +69,7 @@ TC260_PRODUCERS = (
         ("911101085636549482",),
         "Tencent",
         "workbuddy",
+        video_platform="Tencent WorkBuddy",
         image_platform="Tencent WorkBuddy",
     ),
     Tc260Producer("runninghub", ("91340100MAEB4N8H76", "RunningHub"), "RunningHub", "runninghub", "runninghub"),
@@ -68,6 +78,28 @@ TC260_PRODUCERS = (
     Tc260Producer("meitu", ("913502007378955153",), "Meitu", image_platform="Meitu"),
     Tc260Producer("vivo", ("91441900557262083U",), "vivo", image_platform="vivo"),
     Tc260Producer("xiaomi", ("91110108596084056A",), "Xiaomi", image_platform="Xiaomi"),
+    # Apple Technology Development (Shanghai) Co., Ltd. (USCC 91310115MAEA70M85H),
+    # measured on China-region Apple Photos Clean Up exports alongside Apple's XMP Credit.
+    Tc260Producer(
+        "apple",
+        ("91310115MAEA70M85H",),
+        "Apple",
+        video_platform="Apple Intelligence",
+        image_platform="Apple Intelligence",
+    ),
+    # Samsung (China) Investment Co., Ltd. (USCC 91110000625911349W).
+    Tc260Producer("samsung_cn", ("91110000625911349W",), "Samsung", video_platform="Samsung", image_platform="Samsung"),
+    # Huawei Software Technologies Co., Ltd. (USCC 913201147770231720).
+    Tc260Producer("huawei", ("913201147770231720",), "Huawei", video_platform="Huawei", image_platform="Huawei"),
+    # OnePlus Technology (Shenzhen) Co., Ltd. (USCC 91440300080768342L; exports write
+    # "ONEPLUS" in ContentProducer alongside the USCC in ProduceID).
+    Tc260Producer(
+        "oneplus",
+        ("91440300080768342L", "ONEPLUS"),
+        "OnePlus",
+        video_platform="OnePlus",
+        image_platform="OnePlus",
+    ),
     Tc260Producer("agnes", ("91320191MAKHJ19D9J",), "Agnes AI", video_platform="Agnes AI", image_platform="Agnes AI"),
     # ShengShu's USCC, verified against the Beijing municipal list of 2025-03-03.
     Tc260Producer("vidu", ("91110108MACC4D63XF",), "ShengShu", video_mark="vidu", video_platform="ShengShu Vidu"),

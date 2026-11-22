@@ -952,16 +952,124 @@ def parse_c2pa_chunk(payload: bytes, info: dict[str, Any]) -> None:
 
 _parse_c2pa_chunk = parse_c2pa_chunk
 
+_RAW_APP11_HEADER_RE = re.compile(r"^\s*app11\s+\d+\s+", re.ASCII)
+_MAX_RAW_APP11_PROFILE_BYTES = 8 * 1024 * 1024
 
-def _extract_c2pa_info_png(image_path: Path) -> dict[str, Any]:
-    if image_path.suffix.casefold() != ".png":
-        return {}
-    chunk = _find_c2pa_chunk(image_path)
-    if chunk is None:
+
+def raw_app11_jumbf_bytes(profile_text: str) -> bytes | None:
+    """Extract raw C2PA JUMBF bytes from an ImageMagick ``Raw profile type app11`` string."""
+    if not profile_text or len(profile_text) > _MAX_RAW_APP11_PROFILE_BYTES:
+        return None
+    match = _RAW_APP11_HEADER_RE.match(profile_text)
+    if match is None:
+        return None
+    try:
+        raw = bytes.fromhex(profile_text[match.end() :])
+    except ValueError:
+        return None
+    if len(raw) < 8:
+        return None
+    jumb_index = raw.find(b"jumb")
+    jumbf = raw[jumb_index - 4 :] if jumb_index >= 4 else raw
+    return jumbf if _looks_like_c2pa(jumbf) else None
+
+
+def c2pa_info_from_raw_app11_profile(profile_text: str) -> dict[str, Any]:
+    """Decode C2PA metadata from an ImageMagick ``Raw profile type app11`` text payload."""
+    jumbf = raw_app11_jumbf_bytes(profile_text)
+    if jumbf is None:
         return {}
     info: dict[str, Any] = {}
-    _parse_c2pa_chunk(chunk.payload, info)
+    parse_c2pa_chunk(jumbf, info)
     return info
+
+
+def _decode_png_text_body(kind: bytes, payload: bytes) -> str | None:
+    """Inflate and decode a PNG ``tEXt``/``zTXt``/``iTXt`` payload after its keyword."""
+    import zlib
+
+    keyword, sep, rest = payload.partition(b"\x00")
+    if not sep or keyword.strip().lower() != b"raw profile type app11":
+        return None
+    if kind == b"tEXt":
+        return rest.decode("latin-1")
+    if kind == b"zTXt":
+        if not rest or rest[0] != 0:
+            return None
+        try:
+            decomp = zlib.decompressobj()
+            raw = decomp.decompress(rest[1:], _MAX_RAW_APP11_PROFILE_BYTES + 1)
+        except zlib.error:
+            return None
+        return None if len(raw) > _MAX_RAW_APP11_PROFILE_BYTES else raw.decode("latin-1")
+    # iTXt: comp_flag(1) + comp_method(1) + lang\0 + translated\0 + text
+    if len(rest) < 4:
+        return None
+    comp_flag, comp_method = rest[0], rest[1]
+    parts = rest[2:].split(b"\x00", 2)
+    if len(parts) < 3:
+        return None
+    body = parts[2]
+    if comp_flag == 1:
+        if comp_method != 0:
+            return None
+        try:
+            decomp = zlib.decompressobj()
+            body = decomp.decompress(body, _MAX_RAW_APP11_PROFILE_BYTES + 1)
+        except zlib.error:
+            return None
+        if len(body) > _MAX_RAW_APP11_PROFILE_BYTES:
+            return None
+    return body.decode("utf-8", "replace")
+
+
+def _extract_c2pa_info_png(image_path: Path) -> dict[str, Any]:
+    """Single-pass PNG C2PA reader covering native ``caBX`` and ImageMagick ``app11`` chunks."""
+    try:
+        stream = image_path.open("rb")
+    except OSError:
+        return {}
+    app11_fallback: dict[str, Any] = {}
+    with stream:
+        if stream.read(len(PNG_SIGNATURE)) != PNG_SIGNATURE:
+            return {}
+        file_size = stream.seek(0, 2)
+        stream.seek(len(PNG_SIGNATURE))
+        while True:
+            header = stream.read(_PNG_HEADER.size)
+            if len(header) != _PNG_HEADER.size:
+                return app11_fallback
+            length, kind = _PNG_HEADER.unpack(header)
+            if length + 4 > file_size - stream.tell():
+                return app11_fallback
+            if kind == C2PA_CHUNK_TYPE:
+                payload = stream.read(length)
+                stream.seek(4, 1)
+                if _looks_like_c2pa(payload):
+                    info: dict[str, Any] = {}
+                    _parse_c2pa_chunk(payload, info)
+                    return info
+            elif (
+                not app11_fallback
+                and kind in (b"tEXt", b"zTXt", b"iTXt")
+                and 24 <= length <= _MAX_RAW_APP11_PROFILE_BYTES
+            ):
+                peek_len = min(length, 32)
+                peek = stream.read(peek_len)
+                kw, sep, _ = peek.partition(b"\x00")
+                if sep and kw.strip().lower() == b"raw profile type app11":
+                    payload = peek + stream.read(length - peek_len)
+                    stream.seek(4, 1)
+                    if (text := _decode_png_text_body(kind, payload)) and (
+                        parsed := c2pa_info_from_raw_app11_profile(text)
+                    ):
+                        app11_fallback = parsed
+                else:
+                    stream.seek(length - peek_len + 4, 1)
+            else:
+                stream.seek(length + 4, 1)
+            if kind == b"IEND":
+                return app11_fallback
 
 
 def _extract_c2pa_info_impl(image_path: Path) -> dict[str, Any]:

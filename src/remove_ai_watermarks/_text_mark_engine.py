@@ -418,7 +418,14 @@ class TextMarkEngine:
         """
         return self._residual_response(image, loc, absolute=False)
 
-    def _residual_response(self, image: NDArray[Any], loc: TextMarkLocation, *, absolute: bool) -> NDArray[Any] | None:
+    def _residual_response(
+        self,
+        image: NDArray[Any],
+        loc: TextMarkLocation,
+        *,
+        absolute: bool,
+        _fields: tuple[NDArray[Any], NDArray[Any], NDArray[Any]] | None = None,
+    ) -> NDArray[Any] | None:
         """Max-normalized uint8 local-luma residual in the located box, saturation-weighted.
 
         ``absolute=False`` keeps only the POSITIVE side -- the white top-hat, for a mark
@@ -430,7 +437,7 @@ class TextMarkEngine:
         _x, _y, bw, bh = loc.bbox
         if bh < 16 or bw < 16:
             return None
-        luma, sat, local_bg = self._roi_fields(image, loc)
+        luma, sat, local_bg = self._roi_fields(image, loc) if _fields is None else _fields
         residual = luma - local_bg
         resp = (np.abs(residual) if absolute else np.clip(residual, 0, None)) * (sat < c.max_saturation)
         peak = float(resp.max())
@@ -438,7 +445,13 @@ class TextMarkEngine:
             return None
         return (resp / peak * 255).astype(np.uint8)
 
-    def _detect_response(self, image: NDArray[Any], loc: TextMarkLocation) -> NDArray[Any] | None:
+    def _detect_response(
+        self,
+        image: NDArray[Any],
+        loc: TextMarkLocation,
+        *,
+        _fields: tuple[NDArray[Any], NDArray[Any], NDArray[Any]] | None = None,
+    ) -> NDArray[Any] | None:
         """The uint8 image the ladder sweep correlates the silhouette against, chosen by
         ``TextMarkConfig.detect_frontend``. ``binary`` runs no sweep and never reaches here."""
         frontend = self.config.detect_frontend
@@ -448,9 +461,9 @@ class TextMarkEngine:
                 return None
             return cv2.cvtColor(image_io.to_bgr(image[y : y + bh, x : x + bw]), cv2.COLOR_BGR2GRAY)
         if frontend == "contrast":
-            return self._residual_response(image, loc, absolute=True)
+            return self._residual_response(image, loc, absolute=True, _fields=_fields)
         if frontend == "tophat":
-            return self._residual_response(image, loc, absolute=False)
+            return self._residual_response(image, loc, absolute=False, _fields=_fields)
         raise ValueError(f"{frontend!r} has no ladder response (binary runs no sweep)")
 
     def _ladder_best(
@@ -570,7 +583,13 @@ class TextMarkEngine:
 
     # ── Mask ────────────────────────────────────────────────────────────
 
-    def extract_mask(self, image: NDArray[Any], loc: TextMarkLocation) -> NDArray[Any]:
+    def extract_mask(
+        self,
+        image: NDArray[Any],
+        loc: TextMarkLocation,
+        *,
+        _fields: tuple[NDArray[Any], NDArray[Any], NDArray[Any]] | None = None,
+    ) -> NDArray[Any]:
         """Build a box-sized uint8 mask (255 = watermark glyph) for ``loc``.
 
         Returns just the glyph mask of the located box (shape ``(loc.h, loc.w)``),
@@ -586,24 +605,14 @@ class TextMarkEngine:
         untouched (nothing brighter than its surroundings is masked there).
         """
         c = self.config
-        x, y, bw, bh = loc.bbox
+        _x, _y, bw, bh = loc.bbox
         # A degenerate ROI (a sliver from an extremely wide/short image) cannot hold
         # the mark and would feed cv2's GaussianBlur/morphology a ~1-px-tall array,
         # which can fault native code on some platforms. Skip the cv2 pipeline.
         if bh < 16 or bw < 16:
             return np.zeros((bh, bw), np.uint8)
-        # Normalize the ROI to 3-channel BGR (grayscale / BGRA would break axis=2).
-        roi = image_io.to_bgr(image[y : y + bh, x : x + bw]).astype(np.float32)
-
-        luma = roi.mean(axis=2)
-        sat = roi.max(axis=2) - roi.min(axis=2)
+        luma, sat, local_bg = self._roi_fields(image, loc) if _fields is None else _fields
         grayish = sat < c.max_saturation
-
-        # Local background model: a strong Gaussian blur (sigma ~ box height); the
-        # white top-hat (luma - local_bg) lights up bright thin strokes regardless
-        # of the absolute background level.
-        sigma = max(4.0, bh * 0.4)
-        local_bg = cv2.GaussianBlur(luma, (0, 0), sigmaX=sigma, sigmaY=sigma)
         tophat = luma - local_bg
 
         cand = grayish & (tophat > c.tophat_delta) & (luma > c.logo_min_luma)
@@ -664,8 +673,13 @@ class TextMarkEngine:
             )
             return TextMarkScan(None, None, 0)
         loc = self.locate(image)
-        box = self.extract_mask(image, loc)  # box-sized mask (== old full-frame cropped to bbox)
         _x, _y, bw, bh = loc.bbox
+        shared_fields = (
+            self._roi_fields(image, loc)
+            if bh >= 16 and bw >= 16 and c.detect_frontend in ("tophat", "contrast")
+            else None
+        )
+        box = self.extract_mask(image, loc, _fields=shared_fields)
         coverage = float((box > 0).sum()) / float(max(1, bw * bh))
         base = self.scale_base(image)
         match_box: tuple[int, int, int, int] | None = None
@@ -683,7 +697,7 @@ class TextMarkEngine:
             else:
                 score = None
         else:
-            resp = self._detect_response(image, loc)
+            resp = self._detect_response(image, loc, _fields=shared_fields)
             score, match_box = self._ladder_best(image, loc, response=resp)
             if resp is not None and match_box is not None:
                 x0, y0, x1, y1 = match_box

@@ -2889,3 +2889,291 @@ class TestSignalDiscovery20261027Gaps:
         monkeypatch.setattr("remove_ai_watermarks.identify.extract_c2pa_info", lambda _p: dict(non_ai_info))
         non_ai_report = identify(path, check_visible=False, check_invisible=False)
         assert non_ai_report.is_ai_generated is None
+
+
+class TestNov2026CorpusProvenanceAdditions:
+    """Regressions for C2PA signers, ImageMagick raw APP11 PNG profiles, and TC260 codes."""
+
+    @staticmethod
+    def _ev(
+        path: Path,
+        c2pa_info: dict[str, object],
+        *,
+        scan: bytes = b"c2pa",
+        aigc_label: dict[str, str] | None = None,
+    ):
+        from remove_ai_watermarks.identify import ProvenanceEvidence
+
+        return ProvenanceEvidence(
+            path=path,
+            c2pa_info=c2pa_info,
+            ai_metadata={k: str(v) for k, v in c2pa_info.items()},
+            scan=scan,
+            iptc_ai_system=None,
+            aigc_label=aigc_label,
+            exif_generator=None,
+            xai_signature=False,
+            huggingface_job=None,
+            samsung_genai=None,
+        )
+
+    def test_pruna_ai_and_kling_c2pa_assert_ai_and_attribute_platforms(self, tmp_path: Path):
+        from PIL import Image
+
+        from remove_ai_watermarks._internal.c2pa import c2pa_info_from_manifest_store
+        from remove_ai_watermarks.api import _provenance_from_report
+        from remove_ai_watermarks.identify import identify_from_evidence
+
+        path = tmp_path / "gen.png"
+        Image.new("RGB", (32, 32)).save(path)
+
+        pruna_store = {
+            "active_manifest": "urn:c2pa:1",
+            "manifests": {
+                "urn:c2pa:1": {
+                    "claim_generator_info": [{"name": "Pruna AI"}],
+                    "signature_info": {"issuer": "Pruna AI", "common_name": "Pruna AI C2PA"},
+                    "assertions": [{"label": "c2pa.actions.v2", "data": {"actions": [{"action": "c2pa.created"}]}}],
+                }
+            },
+            "validation_state": "Valid",
+            "validation_results": {
+                "activeManifest": {
+                    "success": [{"code": "claimSignature.validated"}, {"code": "assertion.dataHash.match"}],
+                    "informational": [],
+                    "failure": [],
+                }
+            },
+        }
+        pruna_info = c2pa_info_from_manifest_store(pruna_store)
+        pruna_rep = identify_from_evidence(self._ev(path, pruna_info))
+        assert pruna_rep.is_ai_generated is True
+        assert pruna_rep.platform == "Pruna AI"
+
+        kling_store = {
+            "active_manifest": "urn:c2pa:kling",
+            "manifests": {
+                "urn:c2pa:kling": {
+                    "claim_generator_info": [{"name": "ks-c2pa-service", "version": "0.1.0"}],
+                    "signature_info": {"issuer": "Kling AI", "common_name": "Kling AI C2PA Claim Signing"},
+                    "assertions": [
+                        {
+                            "label": "c2pa.actions.v2",
+                            "data": {
+                                "actions": [
+                                    {
+                                        "action": "c2pa.created",
+                                        "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                }
+            },
+            "validation_state": "Valid",
+            "validation_results": {
+                "activeManifest": {
+                    "success": [{"code": "claimSignature.validated"}, {"code": "assertion.dataHash.match"}],
+                    "informational": [],
+                    "failure": [],
+                }
+            },
+        }
+        kling_info = c2pa_info_from_manifest_store(kling_store)
+        kling_aigc = {"Label": "1", "ContentProducer": "001191110108MAKBA45N9M10001"}
+        kling_rep = identify_from_evidence(self._ev(path, kling_info, aigc_label=kling_aigc))
+        assert kling_rep.is_ai_generated is True
+        assert kling_rep.platform == "Kuaishou Kling AI"
+        assert kling_rep.integrity_clashes == []
+        assert "kling" in _provenance_from_report(kling_rep, path)
+
+    @pytest.mark.parametrize(
+        ("issuer", "common_name", "generator_name", "expected_platform"),
+        [
+            ("CyberLink", "CyberLink Content Signing", "PhotoDirector", "CyberLink PhotoDirector"),
+            ("AUTOENHANCE.AI LTD", "Autoenhance.ai", "Autoenhance.ai", "Autoenhance.ai"),
+            ("vivo Mobile Communication Co., Ltd.", "vivo Albums", "vivo Albums", "vivo"),
+            ("Pixelcut, Inc.", "Pixelcut Content Credentials", "Pixelcut", "Pixelcut"),
+        ],
+    )
+    def test_real_store_neutral_signers_attribute_on_ai_and_stay_unknown_without_ai(
+        self,
+        tmp_path: Path,
+        issuer: str,
+        common_name: str,
+        generator_name: str,
+        expected_platform: str,
+    ):
+        from PIL import Image
+
+        from remove_ai_watermarks._internal.c2pa import c2pa_info_from_manifest_store
+        from remove_ai_watermarks.identify import identify_from_evidence
+
+        path = tmp_path / "neutral.jpg"
+        Image.new("RGB", (32, 32)).save(path, format="JPEG")
+
+        def build_store(source_type: str | None) -> dict[str, object]:
+            action: dict[str, object] = {"action": "c2pa.edited"}
+            if source_type is not None:
+                action["digitalSourceType"] = f"http://cv.iptc.org/newscodes/digitalsourcetype/{source_type}"
+            return {
+                "active_manifest": "urn:c2pa:edit",
+                "manifests": {
+                    "urn:c2pa:edit": {
+                        "claim_generator_info": [{"name": generator_name, "version": "1.0"}],
+                        "signature_info": {"issuer": issuer, "common_name": common_name},
+                        "assertions": [{"label": "c2pa.actions.v2", "data": {"actions": [action]}}],
+                    }
+                },
+                "validation_state": "Valid",
+                "validation_results": {
+                    "activeManifest": {
+                        "success": [{"code": "claimSignature.validated"}, {"code": "assertion.dataHash.match"}],
+                        "informational": [],
+                        "failure": [],
+                    }
+                },
+            }
+
+        ai_info = c2pa_info_from_manifest_store(build_store("compositeWithTrainedAlgorithmicMedia"))
+        ai_rep = identify_from_evidence(self._ev(path, ai_info))
+        assert ai_rep.is_ai_generated is True
+        assert ai_rep.platform == expected_platform
+        assert ai_rep.ai_source_kind == "enhanced"
+
+        non_ai_info = c2pa_info_from_manifest_store(build_store("algorithmicallyEnhanced"))
+        non_ai_rep = identify_from_evidence(self._ev(path, non_ai_info))
+        assert non_ai_rep.is_ai_generated is None
+
+    def test_vivo_camera_capture_remains_camera_provenance_after_vivo_vendor_addition(self, tmp_path: Path):
+        from PIL import Image
+
+        from remove_ai_watermarks._internal.c2pa import c2pa_info_from_manifest_store
+        from remove_ai_watermarks.identify import identify_from_evidence
+
+        path = tmp_path / "vivo_cam.jpg"
+        Image.new("RGB", (32, 32)).save(path, format="JPEG")
+        store = {
+            "active_manifest": "urn:c2pa:cam",
+            "manifests": {
+                "urn:c2pa:cam": {
+                    "claim_generator_info": [{"name": "vivo Camera"}],
+                    "signature_info": {"issuer": "vivo Mobile Communication Co., Ltd.", "common_name": "vivo X300 Pro"},
+                    "assertions": [
+                        {
+                            "label": "c2pa.actions.v2",
+                            "data": {
+                                "actions": [
+                                    {
+                                        "action": "c2pa.created",
+                                        "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/computationalCapture",
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                }
+            },
+            "validation_state": "Valid",
+            "validation_results": {
+                "activeManifest": {
+                    "success": [{"code": "claimSignature.validated"}, {"code": "assertion.dataHash.match"}],
+                    "informational": [],
+                    "failure": [],
+                }
+            },
+        }
+        info = c2pa_info_from_manifest_store(store)
+        rep = identify_from_evidence(self._ev(path, info, scan=b"jumb c2pa vivo Camera"))
+        assert rep.is_ai_generated is None
+        assert rep.platform == "vivo (camera, C2PA capture)"
+
+    def test_imagemagick_raw_profile_type_app11_png_recovers_c2pa_and_record_parity(self, tmp_path: Path):
+        from PIL import Image
+        from PIL.PngImagePlugin import PngInfo
+
+        from remove_ai_watermarks.identify import has_invisible_target, identify_metadata_record
+        from remove_ai_watermarks.metadata import has_ai_metadata, strip_and_verify
+        from remove_ai_watermarks.metadata_record import collect_metadata_record
+
+        jumbf = (
+            b"\x00\x00\x00\x54jumb\x00\x00\x00\x1cjumdc2pa\x00\x11\x00\x10\x80\x00\x00\xaa\x00\x38\x9b\x71"
+            b"Google LLC trainedAlgorithmicMedia c2pa.watermarked"
+        )
+        app11_payload = b"JP\x00\x01\x00\x00\x00\x01" + len(jumbf).to_bytes(8, "big") + jumbf
+        hex_lines = "\n".join(app11_payload.hex()[i : i + 72] for i in range(0, len(app11_payload.hex()), 72))
+        profile_text = f"\napp11\n{len(app11_payload):8d}\n{hex_lines}\n"
+
+        pnginfo = PngInfo()
+        pnginfo.add_text("Raw profile type app11", profile_text, zip=True)
+        path = tmp_path / "imagemagick_c2pa.png"
+        Image.new("RGB", (48, 48), (80, 120, 160)).save(path, pnginfo=pnginfo)
+
+        rep = identify(path, check_visible=False, check_invisible=False)
+        rec_rep = identify_metadata_record(collect_metadata_record(path), path=path)
+        assert rep.is_ai_generated is True
+        assert rep.platform == "Google (Gemini / Imagen)"
+        assert any("SynthID" in w for w in rep.watermarks)
+        assert has_invisible_target(path) is True
+        assert has_ai_metadata(path) is True
+        assert rec_rep.to_dict() == rep.to_dict()
+
+        cleaned, remaining = strip_and_verify(path, tmp_path / "cleaned.png")
+        assert remaining == {}
+        assert has_ai_metadata(cleaned) is False
+        assert identify(cleaned, check_visible=False, check_invisible=False).is_ai_generated is None
+
+    @pytest.mark.parametrize(
+        ("producer_code", "expected_platform"),
+        [
+            ("001191310115MAEA70M85H00000", "Apple Intelligence"),
+            ("001191110000625911349W00001", "Samsung"),
+            ("001191320114777023172000000", "Huawei"),
+            ("001191440300080768342L10035", "OnePlus"),
+            ("ONEPLUS", "OnePlus"),
+            ("001191110108MAKBA45N9M10001", "Kuaishou Kling AI"),
+        ],
+    )
+    def test_verified_tc260_producer_codes_attribute_platforms(
+        self,
+        tmp_path: Path,
+        producer_code: str,
+        expected_platform: str,
+    ):
+        from PIL import Image
+        from PIL.PngImagePlugin import PngInfo
+
+        pnginfo = PngInfo()
+        pnginfo.add_text("AIGC", f'{{"Label":"1","ContentProducer":"{producer_code}"}}')
+        path = tmp_path / "tc260.png"
+        Image.new("RGB", (32, 32)).save(path, pnginfo=pnginfo)
+
+        rep = identify(path, check_visible=False, check_invisible=False)
+        assert rep.is_ai_generated is True
+        assert rep.platform == expected_platform
+
+    def test_apple_tc260_allows_specific_apple_credit_refinement_without_clash(self, tmp_path: Path):
+        from PIL import Image
+
+        base = tmp_path / "base.jpg"
+        Image.new("RGB", (32, 32)).save(base, format="JPEG")
+        raw = base.read_bytes()
+        xmp = (
+            b"http://ns.adobe.com/xap/1.0/\x00"
+            b'<x:xmpmeta xmlns:TC260="http://www.tc260.org.cn/ns/AIGC/1.0/" '
+            b'photoshop:Credit="Apple Photos Generative Edit: Clean Up" '
+            b'TC260:AIGC="{&quot;Label&quot;:&quot;1&quot;,&quot;ContentProducer&quot;:&quot;001191310115MAEA70M85H00000&quot;}"/>'
+        )
+        path = tmp_path / "apple_cn.jpg"
+        path.write_bytes(raw[:2] + _jpeg_segment(0xE1, xmp) + raw[2:])
+
+        rep = identify(path, check_visible=False, check_invisible=False)
+        assert rep.is_ai_generated is True
+        assert rep.platform == "Apple Photos (Clean Up AI edit)"
+        assert rep.integrity_clashes == []
+
+    def test_workbuddy_tc260_attributes_video_platform(self):
+        from remove_ai_watermarks.video import _tc260_video_platform
+
+        assert _tc260_video_platform("911101085636549482") == "Tencent WorkBuddy"

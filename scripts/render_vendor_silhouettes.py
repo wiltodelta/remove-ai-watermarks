@@ -87,6 +87,9 @@ MARKS = {
     # Alibaba Wan (通义万相) bottom-right logo plus "Wan" wordmark. Sentinel:
     # drawn by draw_wan(), not font-rendered alone.
     "wan_alpha.png": "Wan logo + Wan",
+    # Genspark frame-center sparkle badge plus "Genspark" wordmark. Sentinel:
+    # drawn by draw_genspark(), not font-rendered alone.
+    "genspark_alpha.png": "Genspark badge + Genspark",
     # Jianying / 剪映, the China product in the CapCut family, stamps 剪映AI
     # bottom-right (the international CapCut pill sits top-left).
     "jianying_alpha.png": "剪映AI",
@@ -362,11 +365,48 @@ def draw_wan(width: int = 335) -> np.ndarray:
     return arr[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
 
 
+def draw_genspark(width: int = 360) -> np.ndarray:
+    """Genspark rounded-square sparkle badge plus "Genspark" wordmark, frame-center.
+
+    Geometry measured on a confirmed 960 x 1280 portrait export (2026-11-16):
+    106 x 106 px rounded-square badge (three four-point sparkle cutouts above a
+    rounded horizontal bar), a 36 px gap, and "Genspark" 324 px wide with a 55 px
+    cap height; 466 x 106 px overall. Drawn synthetically with PIL shapes and
+    Avenir Next Demi Bold so the asset contains zero source-image pixels.
+    """
+    k = width / 466.0
+    logo = round(106 * k)
+    h = logo + round(10 * k)
+    im = Image.new("L", (width, h), 0)
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([0, 0, logo - 1, logo - 1], radius=round(logo * 0.22), fill=255)
+    d.polygon(_star_pts(logo * 0.361, logo * 0.415, logo * 0.235, 0.20), fill=0)
+    d.polygon(_star_pts(logo * 0.693, logo * 0.273, logo * 0.148, 0.20), fill=0)
+    d.polygon(_star_pts(logo * 0.692, logo * 0.600, logo * 0.092, 0.22), fill=0)
+    d.rounded_rectangle(
+        [round(logo * 0.142), round(logo * 0.764), round(logo * 0.868), round(logo * 0.868)],
+        radius=max(2, round(logo * 0.052)),
+        fill=0,
+    )
+    font = _fit_font(
+        "/System/Library/Fonts/Avenir Next.ttc",
+        lambda f: (b := d.textbbox((0, 0), "G", font=f))[3] - b[1] >= round(55 * k),
+        index=2,
+    )
+    gb = d.textbbox((0, 0), "G", font=font)
+    tb = d.textbbox((0, 0), "Genspark", font=font)
+    d.text((round((106 + 36) * k) - tb[0], round(31 * k) - gb[1]), "Genspark", font=font, fill=255)
+    arr = np.array(im)
+    ys, xs = np.where(arr > 0)
+    return arr[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+
+
 _CUSTOM_RENDERERS = {
     "catlogo_alpha.png": draw_catlogo,
     "microsoft_alpha.png": draw_msbadge,
     "samsung_en_alpha.png": draw_samsung_en,
     "wan_alpha.png": draw_wan,
+    "genspark_alpha.png": draw_genspark,
 }
 
 

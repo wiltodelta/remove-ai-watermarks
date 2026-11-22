@@ -58,6 +58,18 @@ class TestPillDetect:
     def test_small_image_no_fire(self) -> None:
         assert not PillEngine().detect(np.full((40, 40, 3), 150, np.uint8)).detected
 
+    def test_corroborated_provenance_relaxes_borderline_pill_only_when_confirmed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        eng = PillEngine(include_label=False)
+        monkeypatch.setattr(eng, "_match", lambda _img: (0.20, (20, 20, 160, 80)))
+        frame = np.full((800, 600, 3), 140, np.uint8)
+        strict, relaxed = eng.detect_both(frame)
+        assert not strict.detected
+        assert relaxed.detected
+        assert not eng.detect(frame, provenance=False).detected
+        assert eng.detect(frame, provenance=True).detected
+
 
 def _textured_frame(w: int = 300, h: int = 400, bg: int = 150) -> np.ndarray:
     """Flat frame with a high-frequency checkerboard over the top-left footprint,

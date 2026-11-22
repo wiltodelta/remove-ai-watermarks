@@ -32,6 +32,7 @@ class TestCatalog:
             "microsoft",
             "generic_ai_label",
             "openart",
+            "genspark",
             "jimeng_pill",
         ]
 
@@ -55,6 +56,7 @@ class TestCatalog:
         assert by_key["liblib_pill"].location == "top-left"
         assert by_key["jimeng_pill"].location == "top-left"
         assert by_key["openart"].location == "frame-center"
+        assert by_key["genspark"].location == "frame-center"
 
     def test_get_mark_unknown_raises(self):
         with pytest.raises(KeyError):
@@ -129,6 +131,7 @@ class TestScan:
             "microsoft",
             "generic_ai_label",
             "openart",
+            "genspark",
             "jimeng_pill",
         }
 
@@ -661,7 +664,8 @@ class TestSinglePassPerception:
         for m in reg.known_marks():
             m.detect(image, provenance=False)
             m.detect(image, provenance=True)
-        assert single * 2 <= calls[0] + 2, f"perception did {single} sweeps vs {calls[0]} for two passes"
+        # provenance=False skips provenance-only sub-scans such as PillEngine._label (3 ladder rungs).
+        assert single * 2 <= calls[0] + 5, f"perception did {single} sweeps vs {calls[0]} for two passes"
 
 
 class TestMarkKnowledgeIsOnTheRow:
@@ -710,11 +714,11 @@ class TestMarkKnowledgeIsOnTheRow:
         assert reg.tc260_producer_mark("unknown") is None
 
     def test_platform_token_marks_are_the_c2pa_attributed_ones(self):
-        # Gemini (Google C2PA) and Microsoft (issuer "Microsoft") are the marks whose
-        # vendor a C2PA platform string can confirm; every other mark reaches its
-        # provenance through TC260 codes or product signals instead.
+        # Gemini (Google C2PA), Kling (Kuaishou C2PA), and Microsoft (issuer "Microsoft")
+        # are the marks whose vendor a C2PA platform string can confirm; every other mark
+        # reaches its provenance through TC260 codes or product signals instead.
         by_token = {m.key for m in reg.known_marks() if m.provenance_platform_tokens}
-        assert by_token == {"gemini", "microsoft"}
+        assert by_token == {"gemini", "kling", "microsoft"}
 
 
 class TestPillSuppressors:

@@ -2756,6 +2756,59 @@ class TestXmpGeneratorAndAppleCreditParity:
         )
         human_src = TestXaiSignature._jpeg_app_pair(tmp_path, b"\xff\xe1", human_xmp, "human_credit.jpg")
         assert exif_generator(human_src) is None
-        assert has_ai_metadata(human_src) is False
+        assert not has_ai_metadata(human_src)
         human_out = remove_ai_metadata(human_src, tmp_path / "human_clean.jpg")
         assert b'photoshop:Credit="Jane Doe"' in human_out.read_bytes()
+
+
+class TestIptcFlagGarbageAndLateGifMetadata:
+    """Regressions for CLI-flag AISystemUsed values and late GIF XMP/C2PA extensions."""
+
+    def test_iptc_ai_system_rejects_exiftool_cli_flags(self):
+        from remove_ai_watermarks.metadata import iptc_ai_system_in
+
+        payload = (
+            b"<x:xmpmeta><Iptc4xmpExt:AISystemUsed> -xmple:all= -exif:all= -iptc:all="
+            b"</Iptc4xmpExt:AISystemUsed></x:xmpmeta>"
+        )
+        assert iptc_ai_system_in(payload) == "fields present"
+
+    def test_gif_late_metadata_reaches_xmp_after_frames_and_strips_losslessly(self, tmp_path: Path):
+        from remove_ai_watermarks.metadata import _gif_late_metadata, aigc_label, scan_head, strip_and_verify
+
+        gif_base = tmp_path / "anim.gif"
+        frames = [Image.new("RGB", (64, 64), color=(i * 60, 20, 100)) for i in range(4)]
+        frames[0].save(gif_base, save_all=True, append_images=frames[1:], duration=80, loop=0)
+        raw = gif_base.read_bytes()
+        assert raw[-1:] == b"\x3b"
+
+        xmp_packet = (
+            b'<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+            b'<x:xmpmeta xmlns:TC260="http://www.tc260.org.cn/ns/AIGC/1.0/">'
+            b'<rdf:RDF><rdf:Description TC260:AIGC="{'
+            b'&quot;Label&quot;:&quot;1&quot;,&quot;ContentProducer&quot;:&quot;doubao&quot;}"/>'
+            b"</rdf:RDF></x:xmpmeta>"
+        )
+        # GIF XMP Application Extension uses the magic trailer (0x01, 0xFF..0x00, 0x00)
+        # or sub-blocks: build standard sub-blocks after the 11-byte "XMP DataXMP" header.
+        sub_blocks = bytearray()
+        for idx in range(0, len(xmp_packet), 255):
+            chunk = xmp_packet[idx : idx + 255]
+            sub_blocks.append(len(chunk))
+            sub_blocks.extend(chunk)
+        sub_blocks.append(0)
+        xmp_ext = b"\x21\xff\x0bXMP DataXMP" + bytes(sub_blocks)
+
+        marked_gif = tmp_path / "late_xmp.gif"
+        marked_gif.write_bytes(raw[:-1] + xmp_ext + b"\x3b")
+
+        late = _gif_late_metadata(marked_gif, 32)
+        assert b"TC260:AIGC" in late
+        assert b"TC260:AIGC" in scan_head(marked_gif, size=32)
+        assert aigc_label(marked_gif) is not None
+
+        cleaned, remaining = strip_and_verify(marked_gif, tmp_path / "clean.gif")
+        assert remaining == {}
+        assert aigc_label(cleaned) is None
+        with Image.open(cleaned) as im:
+            assert getattr(im, "n_frames", 1) == 4

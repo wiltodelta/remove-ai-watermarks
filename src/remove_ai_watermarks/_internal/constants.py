@@ -284,11 +284,18 @@ C2PA_AI_VENDORS: tuple[C2paAiVendor, ...] = (
     # conformance list spells the organization "Runway AI, Inc".
     _vendor(b"RUNWAY AI, INC.", "Runway", "Runway", "Runway"),
     _vendor(b"Runway AI, Inc", "Runway", "Runway", "Runway"),
-    # Topaz Labs and CyberLink PhotoDirector sign both AI-enhanced exports (which
-    # record compositeWithTrainedAlgorithmicMedia) and non-AI edits, so identity
+    _vendor(b"Pruna AI", "Pruna AI", "Pruna AI", "Pruna AI", asserts_ai=True),
+    _vendor(b"Kling AI", "Kuaishou (Kling AI)", "Kuaishou Kling AI", "Kling AI", asserts_ai=True),
+    # Topaz Labs, CyberLink PhotoDirector, Autoenhance.ai, vivo Albums, and Pixelcut
+    # sign both AI-enhanced exports (recording compositeWithTrainedAlgorithmicMedia /
+    # trainedAlgorithmicMedia) and non-AI edits or camera captures, so signer identity
     # alone never asserts AI origin (asserts_ai=False, matching Adobe and Canva).
     _vendor(b"Topaz Labs", "Topaz Labs", "Topaz Labs", "Topaz"),
-    _vendor(b"PhotoDirector", "CyberLink PhotoDirector", "CyberLink PhotoDirector", "CyberLink"),
+    _vendor(b"CyberLink", "CyberLink PhotoDirector", "CyberLink PhotoDirector", "CyberLink"),
+    _vendor(b"PhotoDirector", "CyberLink PhotoDirector", "CyberLink PhotoDirector", "PhotoDirector"),
+    _vendor(b"AUTOENHANCE.AI", "Autoenhance.ai", "Autoenhance.ai", "Autoenhance.ai"),
+    _vendor(b"vivo Mobile Communication", "vivo", "vivo", "vivo"),
+    _vendor(b"Pixelcut", "Pixelcut", "Pixelcut", "Pixelcut"),
     _vendor(b"Truepic", "Truepic", None, None),
 )
 
@@ -334,6 +341,8 @@ C2PA_CLAIM_GENERATOR_PLATFORMS: tuple[tuple[str, str], ...] = (
     ("topaz labs image api", "Topaz Labs"),
     ("tiktok ad creative toolbox", "TikTok Ad Creative Toolbox"),
     ("fastvid", "FastVid"),
+    ("ks-c2pa-service", "Kuaishou Kling AI"),
+    ("pruna ai", "Pruna AI"),
     ("capcut", "CapCut (C2PA signer)"),
 )
 

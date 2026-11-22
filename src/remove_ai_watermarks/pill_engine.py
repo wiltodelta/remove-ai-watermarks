@@ -46,6 +46,7 @@ _WIDTH_FRAC = 0.161
 _ROI_W_FRAC = 0.34  # search window width (of W)
 _ROI_H_FRAC = 0.14  # search window height (of H)
 _DETECT_THRESHOLD = 0.22  # calibrated edge-NCC gate
+_PROVENANCE_DETECT_THRESHOLD = 0.195  # corroborated gate (gated by _keep_pill wordmark / flat-TC260 arms)
 # Inpaint mask GEOMETRY (fractions of W unless noted): a generous fixed top-left box
 # covering the pill (measured ~0.167*W wide, ~0.09*W tall, margin ~0.02-0.05) plus
 # margin. The mask uses stable geometry, NOT the NCC match position -- the synthetic
@@ -157,29 +158,34 @@ class PillEngine:
         self,
         match: tuple[float, tuple[int, int, int, int]] | None,
         label: TextMarkDetection,
+        *,
+        provenance: bool = False,
     ) -> PillDetection:
         label_box = self._label_box(label)
         if match is None:
             return PillDetection(label.detected, label.confidence, label_box or label.region, label.detected)
         score, box = match
+        threshold = _PROVENANCE_DETECT_THRESHOLD if provenance else _DETECT_THRESHOLD
         return PillDetection(
-            score >= _DETECT_THRESHOLD or label.detected,
+            score >= threshold or label.detected,
             max(score, label.confidence),
-            label_box if label.detected and label_box is not None else box,
+            label_box or box,
             label.detected,
         )
 
     def detect(self, image: NDArray[Any], *, provenance: bool = False) -> PillDetection:
         """Detect the outline, plus the solid label when Jimeng is corroborated."""
-        label_scan = self._label.detect(image) if self._label is not None else TextMarkDetection()
-        label = label_scan if provenance else TextMarkDetection()
-        return self._detection(self._match(image), label)
+        label = self._label.detect(image) if provenance and self._label is not None else TextMarkDetection()
+        return self._detection(self._match(image), label, provenance=provenance)
 
     def detect_both(self, image: NDArray[Any]) -> tuple[PillDetection, PillDetection]:
         """Return strict outline and Jimeng-corroborated label verdicts from one scan."""
         match = self._match(image)
         label = self._label.detect(image) if self._label is not None else TextMarkDetection()
-        return self._detection(match, TextMarkDetection()), self._detection(match, label)
+        return (
+            self._detection(match, TextMarkDetection(), provenance=False),
+            self._detection(match, label, provenance=True),
+        )
 
     def _footprint_box(self, image: NDArray[Any]) -> tuple[int, int, int, int] | None:
         h, w = image.shape[:2]

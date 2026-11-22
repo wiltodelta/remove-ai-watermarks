@@ -25,6 +25,7 @@ from typing import Any
 _GPU_MARKERS = ("GPU ", "gpu:")
 # Below this, the CLI predates flags and behavior this skill documents. Raise it in
 # the same change as any reference that names a flag the previous release lacked:
+# 0.68.0 adds the `genspark` visible image mark and full `.gif` metadata parity;
 # 0.64.0 adds `video erase`, `video message detect`, the chunkyseal scheme, and
 # audio --vendor/--audio-vendor cohorts;
 # 0.63.0 added audio commands, text --allow-partial/--rewriter-backend/--rewriter-model
@@ -35,7 +36,7 @@ _GPU_MARKERS = ("GPU ", "gpu:")
 # `--vendor` 0.32.0), and a stale floor told an agent its CLI was current right
 # before it typed a value that build rejects. tests/test_agent_skill.py pins it
 # against the package version and against every "(since CLI X.Y.Z)" annotation.
-MIN_CLI_VERSION = (0, 64, 0)
+MIN_CLI_VERSION = (0, 68, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # legacy Homebrew installs can still contain such a build.

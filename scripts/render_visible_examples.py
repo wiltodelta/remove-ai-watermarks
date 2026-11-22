@@ -48,6 +48,7 @@ _SIZE: dict[str, tuple[int, int]] = {
     "liblib_pill": (1152, 1536),
     "samsung": (2048, 1536),
     "jimeng_pill": (1152, 1536),
+    "genspark": (1152, 1536),
 }
 
 
@@ -128,11 +129,16 @@ def _stamp_text_mark(
     # corner side (never centered).
     if cfg.corner in ("br", "tr"):
         x = loc.x + loc.w - gw
-    elif cfg.corner == "bc":
+    elif cfg.corner == "bc" or key == "genspark":
         x = loc.x + (loc.w - gw) // 2
     else:  # bl, tl: flush left
         x = loc.x
-    y = loc.y if cfg.corner in ("tl", "tr") else loc.y + loc.h - gh
+    if cfg.corner in ("tl", "tr"):
+        y = loc.y
+    elif key == "genspark":
+        y = loc.y + (loc.h - gh) // 2
+    else:
+        y = loc.y + loc.h - gh
     x, y = max(0, x), max(0, y)
     if x + gw > w or y + gh > h:
         return None

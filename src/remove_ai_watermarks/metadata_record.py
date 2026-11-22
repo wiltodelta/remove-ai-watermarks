@@ -183,6 +183,57 @@ def _isobmff_regions(image_path: Path, head: bytes) -> bytes:
     return bytes(out)
 
 
+def _gif_regions(data: bytes) -> bytes:
+    """GIF header plus comment and non-playback application extensions inside ``data``.
+
+    Skips ``0x2C`` image descriptors, local palettes, and LZW frame sub-blocks so an
+    animated GIF record carries only metadata extensions rather than frame pixels.
+    """
+    from remove_ai_watermarks.metadata import gif_extension_metadata
+
+    if len(data) < 13:
+        return data
+    packed = data[10]
+    pos = 13 + (3 * (2 ** ((packed & 0x07) + 1)) if packed & 0x80 else 0)
+    if pos > len(data):
+        return data[:13]
+    out = bytearray(data[:13])
+    size = len(data)
+
+    def sub_blocks_end(start: int) -> int | None:
+        cursor = start
+        while cursor < size:
+            step = data[cursor]
+            cursor += 1 + step
+            if step == 0:
+                return cursor if cursor <= size else None
+        return None
+
+    while pos < size:
+        intro = data[pos]
+        if intro == 0x3B:
+            out += data[pos:]
+            break
+        if intro == 0x2C:
+            if pos + 10 >= size:
+                break
+            local_packed = data[pos + 9]
+            table = 3 * (2 ** ((local_packed & 0x07) + 1)) if local_packed & 0x80 else 0
+            end = sub_blocks_end(pos + 10 + table + 1)
+            if end is None:
+                break
+            pos = end
+            continue
+        if intro != 0x21 or pos + 2 > size:
+            break
+        end = sub_blocks_end(pos + 2)
+        if end is None:
+            break
+        out += gif_extension_metadata(data[pos:end])
+        pos = end
+    return bytes(out)
+
+
 def _container_regions(image_path: Path, head: bytes) -> tuple[str, bytes]:
     """(container label, metadata bytes) for the container ``head`` starts with.
 
@@ -192,7 +243,7 @@ def _container_regions(image_path: Path, head: bytes) -> tuple[str, bytes]:
     appended bytes as chunks, inflating the record and creating false signals.
     """
     from remove_ai_watermarks._internal.isobmff import is_isobmff
-    from remove_ai_watermarks.metadata import png_late_metadata, riff_late_metadata
+    from remove_ai_watermarks.metadata import gif_late_metadata, png_late_metadata, riff_late_metadata
 
     if head.startswith(b"\xff\xd8"):
         return "jpeg", _jpeg_regions(head)
@@ -202,6 +253,8 @@ def _container_regions(image_path: Path, head: bytes) -> tuple[str, bytes]:
         return "png", _png_regions(head) + png_late_metadata(image_path, HEAD_WINDOW, strict=True)
     if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
         return "webp", _riff_regions(head) + riff_late_metadata(image_path, HEAD_WINDOW, strict=True)
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif", _gif_regions(head) + gif_late_metadata(image_path, HEAD_WINDOW, strict=True)
     if is_isobmff(head):
         return "isobmff", _isobmff_regions(image_path, head)
     return "unknown", head
@@ -241,6 +294,10 @@ def _trailer(image_path: Path, container: str) -> bytes:
         # ISOBMFF has no out-of-container trailer convention. Its bounded box
         # walkers already collect late provenance while skipping ``mdat``; keeping
         # a blind tail here would carry coded media bytes.
+        return b""
+    if container == "gif":
+        # GIF's block walker already collects late extensions up to the 0x3B trailer
+        # while skipping LZW frame sub-blocks (where 0x3B bytes occur routinely).
         return b""
 
     tail = read_file_tail(image_path, TAIL_WINDOW, strict=True)

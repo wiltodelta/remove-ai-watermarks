@@ -29,12 +29,14 @@ from typing import TYPE_CHECKING, Any, cast
 from remove_ai_watermarks._internal.c2pa import (
     c2pa_credential_level,
     c2pa_info_from_manifest_store,
+    c2pa_info_from_raw_app11_profile,
     c2pa_info_has_invismark,
     c2pa_info_has_removal_hint,
     c2pa_vendor_platform,
     cbor_text_after,
     claim_generator_platform,
     extract_c2pa_info,
+    raw_app11_jumbf_bytes,
     soft_binding_labels,
     soft_binding_registry_entries_in,
     synthid_evidence_vendors_in,
@@ -276,6 +278,13 @@ def _external_metadata(value: Any) -> tuple[list[tuple[str, Any]], bytes]:
                         continue
                     except (ValueError, TypeError):
                         pass
+                if (
+                    isinstance(nested, str)
+                    and key_text.lower().removeprefix("info:").strip() == "raw profile type app11"
+                    and (jumbf := raw_app11_jumbf_bytes(nested))
+                ):
+                    parts.append(jumbf)
+                    continue
                 visit(nested)
         elif isinstance(item, (list, tuple)):
             sequence = cast("list[Any] | tuple[Any, ...]", item)
@@ -409,6 +418,21 @@ def evidence_from_metadata_record(
     ai_metadata: dict[str, str] = {}
     pil_info = record.get("pil")
     pil_pairs = cast("dict[str, Any]", pil_info).items() if isinstance(pil_info, dict) else ()
+    if not c2pa_info:
+        for key, value in (*pil_pairs, *pairs):
+            if key == "text" and isinstance(value, str) and "\x00" in value:
+                key, value = value.split("\x00", 1)
+            if (
+                key.lower().removeprefix("info:").strip() == "raw profile type app11"
+                and isinstance(value, (bytes, str))
+                and (
+                    parsed_raw := c2pa_info_from_raw_app11_profile(
+                        value.decode("utf-8", "replace") if isinstance(value, bytes) else value
+                    )
+                )
+            ):
+                c2pa_info = parsed_raw
+                break
     for key, value in pil_pairs:
         normalized_key = key.lower().removeprefix("info:")
         if normalized_key not in AI_METADATA_KEYS or isinstance(value, (dict, list, tuple)):
@@ -904,6 +928,12 @@ _AI_VENDOR_TOKENS: tuple[tuple[str, str], ...] = (
     ("topaz", "Topaz Labs"),
     ("photodirector", "CyberLink"),
     ("cyberlink", "CyberLink"),
+    ("pruna", "Pruna AI"),
+    ("autoenhance", "Autoenhance.ai"),
+    ("pixelcut", "Pixelcut"),
+    ("huawei", "Huawei"),
+    ("oneplus", "OnePlus"),
+    ("honor", "Honor"),
 )
 
 
@@ -1594,8 +1624,11 @@ def _identify_from_evidence(
     if generator_tag := evidence.exif_generator:
         signals.append(Signal("exif_generator", f"Embedded generator tag: {generator_tag}", "high"))
         watermarks.append(f"Embedded generator tag: {generator_tag}")
+        apple_specific = _apple_credit_platform(generator_tag)
         if platform is None:
-            platform = _apple_credit_platform(generator_tag) or f"{generator_tag} (embedded generator tag)"
+            platform = apple_specific or f"{generator_tag} (embedded generator tag)"
+        elif platform == "Apple Intelligence" and apple_specific is not None:
+            platform = apple_specific
         if v := _vendor_of(generator_tag):
             ai_vendor_claims["exif_generator"] = v
 

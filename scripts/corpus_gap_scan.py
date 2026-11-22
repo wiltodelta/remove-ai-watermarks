@@ -56,6 +56,7 @@ import click
 from _corpus_scan import corpus_day, corpus_files, repair_jsonl_tail
 from _plain_console import Console, Table
 
+from remove_ai_watermarks._internal.c2pa import C2PA_STRUCTURAL_MARKERS
 from remove_ai_watermarks.identify import _metadata_region as identify_metadata_region
 from remove_ai_watermarks.identify import extract_provenance_evidence, identify_from_evidence
 from remove_ai_watermarks.metadata import (
@@ -122,6 +123,18 @@ MARKERS: tuple[bytes, ...] = (
     b"Producer.ai",
     b"Synchronicity Labs",
     b"Runway AI",
+    b"Pruna AI",
+    b"Autoenhance.ai",
+    b"ks-c2pa-service",
+    b"Kling AI C2PA",
+    b"PhotoDirector",
+    b"Topaz Labs",
+    b"pixelbin.io",
+    b"Pixelcut",
+    b"vivo Albums",
+    b"Raw profile type app11",
+    b"C2PATXT",
+    b"BEGIN C2PA MANIFEST",
 )
 REPORT_FIELDS: tuple[str, ...] = (
     "report_schema_version",
@@ -169,18 +182,7 @@ def _row(rep, *, path: str, suffix: str, lib_version: str) -> dict[str, str]:  #
 _LOWERED_MARKERS: tuple[tuple[str, bytes], ...] = tuple(
     (marker.decode("latin-1", "replace"), marker.lower()) for marker in MARKERS
 )
-_STRUCTURAL_VIDEO_METADATA_KEYS: frozenset[str] = frozenset(
-    {
-        "actions",
-        "c2pa_manifest",
-        "c2pa_signer_validity",
-        "c2pa_validation_source",
-        "c2pa_validation_state",
-        "claim_generator",
-        "issuer",
-        "source_type",
-    }
-)
+_STRUCTURAL_MEDIA_METADATA_KEYS: frozenset[str] = C2PA_STRUCTURAL_MARKERS | {"source_type"}
 
 
 def _c2pa_fields(mapping: Mapping[str, object]) -> dict[str, str]:
@@ -246,10 +248,61 @@ def _files(corpus: Path, since: date | None) -> list[Path]:
     return corpus_files(corpus, since)
 
 
+def _audio_platform(markers: dict[str, str]) -> str:
+    from remove_ai_watermarks.video import _platform_from_video_metadata
+
+    if platform := _platform_from_video_metadata(markers):
+        return platform
+    for key in ("audio_generator", "exif_generator"):
+        if value := markers.get(key, "").strip():
+            return value
+    return ""
+
+
+def _media_marker_row(
+    *,
+    path: Path,
+    relative_path: str,
+    suffix: str,
+    lib_version: str,
+    is_ai: bool | None,
+    platform: str | None,
+    confidence: str,
+    metadata_markers: Mapping[str, object],
+) -> dict[str, str]:
+    from types import SimpleNamespace
+
+    markers_str = "|".join(metadata_markers.keys())
+    row = {
+        **_base_row(relative_path, suffix, lib_version),
+        "is_ai": str(is_ai),
+        "platform": platform or "",
+        "confidence": confidence,
+        "watermarks": markers_str,
+        "signals": markers_str,
+        **_c2pa_fields(metadata_markers),
+    }
+    hits = _marker_hits_for_path(path)
+    ai_signals = sorted(set(metadata_markers.keys()) - _STRUCTURAL_MEDIA_METADATA_KEYS)
+    summary = SimpleNamespace(
+        is_ai_generated=is_ai,
+        platform=platform or None,
+        signals=ai_signals,
+        integrity_clashes=(),
+    )
+    row["markers"] = "|".join(hits)
+    row["candidate_classes"] = "|".join(_candidate_classes(summary, hits))
+    return row
+
+
 def _scan_one(args: tuple[str, str, str]) -> dict[str, str]:
     """Scan one path in a worker process and always return a report row."""
     from types import SimpleNamespace
 
+    from remove_ai_watermarks._internal.c2pa import markers_claim_ai
+    from remove_ai_watermarks._internal.constants import AUDIO_EXTENSIONS
+    from remove_ai_watermarks.audio import identify_audio
+    from remove_ai_watermarks.text import TEXT_EXTENSIONS, identify_text
     from remove_ai_watermarks.video import VIDEO_EXTENSIONS, identify_video
 
     path_str, relative_path, lib_version = args
@@ -258,26 +311,59 @@ def _scan_one(args: tuple[str, str, str]) -> dict[str, str]:
     try:
         if suffix in VIDEO_EXTENSIONS:
             vrep = identify_video(path, check_visible=False)
-            markers_str = "|".join(vrep.metadata_markers.keys())
+            return _media_marker_row(
+                path=path,
+                relative_path=relative_path,
+                suffix=suffix,
+                lib_version=lib_version,
+                is_ai=vrep.is_ai_generated,
+                platform=vrep.platform,
+                confidence=vrep.confidence,
+                metadata_markers=vrep.metadata_markers,
+            )
+
+        if suffix in AUDIO_EXTENSIONS:
+            arep = identify_audio(path, check_invisible=False, scheme="auto")
+            is_ai = True if markers_claim_ai(arep.metadata_markers) else None
+            platform = _audio_platform(arep.metadata_markers)
+            return _media_marker_row(
+                path=path,
+                relative_path=relative_path,
+                suffix=suffix,
+                lib_version=lib_version,
+                is_ai=is_ai,
+                platform=platform,
+                confidence="high" if is_ai else "none",
+                metadata_markers=arep.metadata_markers,
+            )
+
+        if suffix in TEXT_EXTENSIONS:
+            trep = identify_text(path)
+            signals_str = "|".join(trep.signals)
+            markers_str = "|".join(trep.metadata_markers.keys())
+            conf = "none" if trep.confidence == "unknown" else trep.confidence
             row = {
                 **_base_row(relative_path, suffix, lib_version),
-                "is_ai": str(vrep.is_ai_generated),
-                "platform": vrep.platform or "",
-                "confidence": vrep.confidence,
-                "watermarks": markers_str,
-                "signals": markers_str,
-                **_c2pa_fields(vrep.metadata_markers),
+                "is_ai": str(trep.is_ai_generated),
+                "platform": trep.platform or "",
+                "confidence": conf,
+                "watermarks": markers_str or signals_str,
+                "signals": signals_str,
+                **_c2pa_fields(trep.c2pa_info),
             }
-            hits = _marker_hits_for_path(path)
-            ai_signals = sorted(set(vrep.metadata_markers.keys()) - _STRUCTURAL_VIDEO_METADATA_KEYS)
-            video_summary = SimpleNamespace(
-                is_ai_generated=vrep.is_ai_generated,
-                platform=vrep.platform,
-                signals=ai_signals,
+            try:
+                with path.open("rb") as handle:
+                    hits = _marker_hits(handle.read(1024 * 1024))
+            except OSError:
+                hits = []
+            text_summary = SimpleNamespace(
+                is_ai_generated=trep.is_ai_generated,
+                platform=trep.platform or ("text-provenance" if trep.signals else None),
+                signals=trep.signals,
                 integrity_clashes=(),
             )
             row["markers"] = "|".join(hits)
-            row["candidate_classes"] = "|".join(_candidate_classes(video_summary, hits))
+            row["candidate_classes"] = "|".join(_candidate_classes(text_summary, hits))
             return row
 
         evidence = extract_provenance_evidence(path)

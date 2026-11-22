@@ -1177,8 +1177,8 @@ def cmd_metadata(
     """Check or remove AI-generation metadata (images, video, and audio).
 
     Strips EXIF AI tags, PNG text chunks, C2PA provenance manifests, and the
-    China TC260 AIGC label. Beyond images (PNG/JPEG/WebP/AVIF/HEIF/JXL) it also
-    strips provenance metadata from MP4/MOV/M4V/M4A containers and, via ffmpeg,
+    China TC260 AIGC label. Beyond images (PNG/JPEG/WebP/GIF/AVIF/HEIF/JXL/TIFF/DNG)
+    it also strips provenance metadata from MP4/MOV/M4V/M4A containers and, via ffmpeg,
     from WebM/MKV/MKA/AVI/FLV/MP3/WAV/FLAC/OGG/OGA/Opus/AAC. The coded image,
     audio, and video data are left untouched.
     """
@@ -3108,7 +3108,9 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
         ctx.invoke(cmd_text_identify, source=source, as_json=as_json)
         return
 
-    source = _validate_image(source)
+    # No _validate_image() here (matching cmd_metadata): Click enforces exists=True,
+    # _unreadable_input_exit validates container readability, and identify legitimately
+    # inspects GIF/TIFF/DNG/JXL/BMP containers without polluting --json stdout.
     report = identify(source, check_visible=not no_visible, check_invisible=not no_visible)
 
     if as_json:
