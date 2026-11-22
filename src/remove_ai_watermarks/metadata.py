@@ -2191,11 +2191,8 @@ def remove_ai_metadata(
     # needed for XMP/EXIF inside mdat/idat. Route the remaining formats by suffix
     # OR by an ``ftyp`` content sniff.
     from remove_ai_watermarks._internal.isobmff import (
-        blank_ai_exif_tokens,
-        blank_ai_xmp_packets,
-        blank_tc260_aigc_tags,
         is_isobmff,
-        strip_c2pa_boxes,
+        strip_isobmff_image_file,
         strip_isobmff_media_file,
     )
 
@@ -2215,20 +2212,9 @@ def remove_ai_metadata(
         )
         return output_path
     if source_path.suffix.lower() in _ISOBMFF_EXTS or is_isobmff(head):
-        data = source_path.read_bytes()
-        # Top-level uuid/jumb boxes (C2PA + AI-label XMP), then the meta-box items
-        # the top-level stripper can't reach (HEIF/AVIF store them in mdat/idat):
-        # Native TC260 tags, AI-label XMP packets, and AI-generator tokens in an
-        # Exif item are blanked in place (same length) so box sizes and iloc /
-        # media offsets stay valid and the coded content is untouched.
-        cleaned, stripped = strip_c2pa_boxes(data)
-        cleaned, tc260_blanked = blank_tc260_aigc_tags(cleaned)
-        cleaned, blanked = blank_ai_xmp_packets(cleaned)
-        cleaned, exif_blanked = blank_ai_exif_tokens(cleaned)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(cleaned)
+        stripped, tc260_blanked, blanked, exif_blanked = strip_isobmff_image_file(source_path, output_path)
         logger.info(
-            "Stripped %d AI-provenance box(es), blanked %d native TC260 tag(s) + "
+            "Stream-stripped %d AI-provenance box(es), blanked %d native TC260 tag(s) + "
             "%d meta-box XMP packet(s) + %d EXIF token(s) → %s",
             stripped,
             tc260_blanked,

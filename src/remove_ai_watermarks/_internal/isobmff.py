@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Iterable, Iterator, Sequence
     from pathlib import Path
 
     _RawMetadataItem = tuple[bytes, tuple[int, int], bytes | None, tuple[int, int] | None, int, int, bytes]
@@ -1310,16 +1310,7 @@ def strip_isobmff_media_file(
             else:
                 kling_sei_offsets = _copy_finding_kling_sei(source_stream, temporary, mdat_ranges)
             if targets is not None:
-                for box_start, payload_start, box_end in targets:
-                    temporary.seek(box_start + 4)
-                    temporary.write(b"free")
-                    _overwrite_range(temporary, payload_start, box_end, byte=b"\x00")
-                for key_span, value_start, value_end in blank_regions:
-                    if key_span is not None:
-                        span_len = key_span[1] - key_span[0]
-                        temporary.seek(key_span[0])
-                        temporary.write((b"free" + b" " * max(0, span_len - 4))[:span_len])
-                    _overwrite_range(temporary, value_start, value_end, byte=b" ")
+                _apply_box_and_region_patches(temporary, targets, blank_regions)
                 for value_start, value_end in audio_regions:
                     _overwrite_range(temporary, value_start, value_end, byte=b" ")
                 # Spaces keep the SEI message well-formed: its length fields stand,
@@ -1460,50 +1451,163 @@ _TIFF_HEADERS: tuple[bytes, ...] = (b"II\x2a\x00", b"MM\x00\x2a")
 _EXIF_WINDOW = 256 * 1024
 
 
+def _apply_box_and_region_patches(
+    dst: BinaryIO,
+    targets: Sequence[tuple[int, int, int]],
+    blank_regions: Sequence[tuple[tuple[int, int] | None, int, int]],
+) -> None:
+    """Apply same-length ``free``-box zeroing and key/value space blanking to ``dst``."""
+    for box_start, payload_start, box_end in targets:
+        dst.seek(box_start + 4)
+        dst.write(b"free")
+        _overwrite_range(dst, payload_start, box_end, byte=b"\x00")
+    for key_span, value_start, value_end in blank_regions:
+        if key_span is not None:
+            span_len = key_span[1] - key_span[0]
+            dst.seek(key_span[0])
+            dst.write((b"free" + b" " * max(0, span_len - 4))[:span_len])
+        _overwrite_range(dst, value_start, value_end, byte=b" ")
+
+
+def _find_ai_exif_spans(
+    window: bytes | bytearray,
+    *,
+    win_base: int = 0,
+    at_eof: bool = True,
+    seen_offsets: set[int] | None = None,
+    skip_inside: Sequence[tuple[int, int]] = (),
+) -> list[tuple[int, int]]:
+    """Locate absolute ``(start, end)`` byte spans of AI EXIF values inside ``window``."""
+    import piexif
+
+    from remove_ai_watermarks.metadata import _ai_exif_targets  # pyright: ignore[reportPrivateUsage]
+
+    def _is_skipped(start: int, end: int) -> bool:
+        return any(b0 <= start and end <= b1 for b0, b1 in skip_inside)
+
+    spans: list[tuple[int, int]] = []
+    for header in _TIFF_HEADERS:
+        rel_pos = window.find(header)
+        while rel_pos != -1:
+            abs_pos = win_base + rel_pos
+            if (
+                (seen_offsets is None or abs_pos not in seen_offsets)
+                and not _is_skipped(abs_pos, abs_pos + len(header))
+                and (at_eof or rel_pos + _EXIF_WINDOW <= len(window))
+            ):
+                if seen_offsets is not None:
+                    seen_offsets.add(abs_pos)
+                exif_slice = bytes(window[rel_pos : rel_pos + _EXIF_WINDOW])
+                try:
+                    loaded: dict[str, Any] = piexif.load(exif_slice)
+                except Exception:
+                    loaded = {}
+                for _ifd_key, _tag, value, _name in _ai_exif_targets(loaded):
+                    vpos = exif_slice.find(value)
+                    if vpos != -1:
+                        v_start = abs_pos + vpos
+                        v_end = v_start + len(value)
+                        if not _is_skipped(v_start, v_end):
+                            spans.append((v_start, v_end))
+            rel_pos = window.find(header, rel_pos + len(header))
+    return spans
+
+
 def blank_ai_exif_tokens(data: bytes) -> tuple[bytes, int]:
     """Overwrite (with spaces, in place) any AI-generator token in an EXIF block
     stored as an ISOBMFF ``meta``-box ``Exif`` item; return ``(data, blanked_count)``.
-
-    HEIF/AVIF can carry EXIF as a ``meta``-box ``Exif`` item whose TIFF bytes live
-    in ``mdat`` / ``idat`` -- out of reach of the top-level box stripper, and (when
-    no pillow-heif plugin is installed) of the PIL EXIF reader too, so an AI
-    ``Software`` / ``Make`` / ``Artist`` / ``ImageDescription`` tag there survived
-    ``remove_ai_metadata`` (a documented gap). This locates EXIF TIFF blocks by
-    their byte-order header, **validates each with piexif** (so a coincidental
-    II/MM run in pixel data is ignored -- it will not parse as a TIFF IFD), and
-    overwrites any AI value with spaces of the SAME length. Because the replacement
-    is same-length, every box size and ``iloc`` offset stays valid and the coded image
-    is untouched -- only the AI tag content is destroyed; camera/editor EXIF without an
-    AI token is left intact. This mirrors ``metadata._scrub_ai_exif`` in what it removes
-    -- generator tokens (``Software``/``Make``/``Artist``/``ImageDescription``), the
-    China TC260 ``{"AIGC":{...}}`` block (``ImageDescription``/``UserComment``), and the
-    xAI/Grok ``Signature:`` + UUID-``Artist`` pair -- since on the ISOBMFF path this is
-    the ONLY EXIF scrubber (``_scrub_ai_exif`` never runs there), so without parity a
-    HEIC/AVIF AIGC/xAI tag is detected but not removed.
     """
-    import piexif
-
-    # The AI-EXIF rule set is defined ONCE in metadata._ai_exif_targets and shared by both
-    # EXIF scrubbers (the JPEG _scrub_ai_exif pops the tag; here we blank the value bytes),
-    # so their coverage cannot drift. Imported lazily to avoid import-order coupling with
-    # metadata (which imports this module); a deliberate cross-module use, not an API leak.
-    from remove_ai_watermarks.metadata import _ai_exif_targets  # pyright: ignore[reportPrivateUsage]
-
     out = bytearray(data)
-    blanked = 0
-    for header in _TIFF_HEADERS:
-        pos = data.find(header)
-        while pos != -1:
-            window = bytes(out[pos : pos + _EXIF_WINDOW])
-            try:
-                loaded: dict[str, Any] = piexif.load(window)
-            except Exception:
-                loaded = {}
-            for _ifd_key, _tag, value, _name in _ai_exif_targets(loaded):
-                # Blank the value bytes in place, within this EXIF block only.
-                vpos = out.find(value, pos, pos + _EXIF_WINDOW)
-                if vpos != -1:
-                    out[vpos : vpos + len(value)] = b" " * len(value)
-                    blanked += 1
-            pos = data.find(header, pos + len(header))
-    return bytes(out), blanked
+    spans = _find_ai_exif_spans(out)
+    for start, end in spans:
+        out[start:end] = b" " * (end - start)
+    return bytes(out), len(spans)
+
+
+def strip_isobmff_image_file(
+    source: str | Path,
+    output: str | Path,
+    *,
+    max_box_scan: int = STREAM_SCAN_BYTES,
+) -> tuple[int, int, int, int]:
+    """Stream-copy a HEIF/AVIF/JXL ISOBMFF image while blanking AI boxes, TC260, XMP, and EXIF in place.
+
+    Reads the source in bounded chunks (never calling ``read_bytes()``) and applies
+    same-length patches directly to the staged output so every box size, ``iloc``
+    item offset, and coded bitstream byte remains intact.
+
+    Returns ``(provenance_boxes_blanked, tc260_blanked, xmp_blanked, exif_blanked)``.
+    """
+    from pathlib import Path as _Path
+
+    from remove_ai_watermarks._internal.utils import staged_sibling
+
+    source_path = _Path(source)
+    output_path = _Path(output)
+    with source_path.open("rb") as stream:
+        stream.seek(0, 2)
+        file_size = stream.tell()
+        targets = _streaming_provenance_boxes(stream, file_size, max_scan=max_box_scan)
+        tc260_regions = (
+            [
+                (key_span, value_start, value_end)
+                for key_span, value_start, value_end, _value in _tc260_aigc_regions(stream, file_size)
+            ]
+            if targets is not None
+            else []
+        )
+
+    target_ranges = [(box_start, box_end) for box_start, _payload_start, box_end in (targets or ())]
+
+    def _inside_target(start: int, end: int) -> bool:
+        return any(b0 <= start and end <= b1 for b0, b1 in target_ranges)
+
+    xmp_spans: set[tuple[int, int]] = set()
+    exif_spans: set[tuple[int, int]] = set()
+    seen_exif_offsets: set[int] = set()
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with staged_sibling(output_path) as staged:
+        with source_path.open("rb") as src, staged.open("w+b") as dst:
+            tail = b""
+            offset = 0
+            while True:
+                chunk = src.read(_STREAM_COPY_BYTES)
+                if not chunk:
+                    break
+                dst.write(chunk)
+                tail_len = len(tail)
+                window = tail + chunk
+                win_base = offset - tail_len
+                at_eof = offset + len(chunk) >= file_size
+
+                for match in _XMP_PACKET_RE.finditer(window):
+                    if match.end() <= tail_len:
+                        continue
+                    abs_start = win_base + match.start()
+                    abs_end = win_base + match.end()
+                    if not _inside_target(abs_start, abs_end) and _has_ai_label_or_generator(match.group()):
+                        xmp_spans.add((abs_start, abs_end))
+
+                exif_spans.update(
+                    _find_ai_exif_spans(
+                        window,
+                        win_base=win_base,
+                        at_eof=at_eof,
+                        seen_offsets=seen_exif_offsets,
+                        skip_inside=target_ranges,
+                    )
+                )
+
+                offset += len(chunk)
+                tail = window[-_EXIF_WINDOW:] if len(window) > _EXIF_WINDOW else window
+
+            if targets is not None:
+                _apply_box_and_region_patches(dst, targets, tc260_regions)
+            for span_start, span_end in sorted(xmp_spans | exif_spans):
+                _overwrite_range(dst, span_start, span_end, byte=b" ")
+            dst.flush()
+            os.fsync(dst.fileno())
+        shutil.copymode(source_path, staged)
+
+    return len(targets or ()), len(tc260_regions), len(xmp_spans), len(exif_spans)

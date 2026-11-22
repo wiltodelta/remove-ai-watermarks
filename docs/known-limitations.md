@@ -740,13 +740,11 @@ write and strip the FLV form, but writing the nonstandard AVI child for fixture
 generation requires dedicated muxer support, so the AVI reader is verified
 against an exact synthetic RIFF structure.
 
-MP4/MOV/M4V metadata removal now stream-copies the container in bounded chunks,
-keeps every box size and media offset fixed, and publishes atomically. The
-large-`mdat` regression rejects a full-source `read_bytes()` call and verifies
-that the encoded payload is byte-identical. HEIF/AVIF/JPEG-XL image metadata
-still uses the in-memory path because their XMP/EXIF items may live inside
-`mdat`/`idat` and require bounded format-item parsing before that path can
-stream safely.
+MP4/MOV/M4V and HEIF/AVIF/JPEG-XL ISOBMFF metadata removal stream-copies the
+container in bounded chunks, keeps every box size, ``iloc`` item offset, and
+media offset fixed, and publishes atomically. The large-`mdat` regressions
+reject a full-source `read_bytes()` call and verify that the encoded payload is
+byte-identical.
 
 ### Metadata transformation is fail safe
 

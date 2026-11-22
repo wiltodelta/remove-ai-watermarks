@@ -103,6 +103,19 @@ def temporal_residual_ratio(
     return measured / max(baseline, 1e-6)
 
 
+def _to_gray_u8(frame_bgr: NDArray[Any]) -> NDArray[Any]:
+    """Convert an 8-bit or 16-bit BGR frame to uint8 grayscale for optical flow."""
+    gray: NDArray[Any] = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    return (gray >> 8).astype(np.uint8) if frame_bgr.dtype == np.uint16 else gray
+
+
+def _depth_bounds(dtype: Any, threshold_u8: float) -> tuple[float, float]:
+    """Return ``(scaled_threshold, peak_value)`` for an 8-bit or 16-bit frame dtype."""
+    if np.dtype(dtype) == np.uint16:
+        return threshold_u8 * 257.0, 65535.0
+    return threshold_u8, 255.0
+
+
 def _background_aligned_maps(
     current_source_crop: NDArray[Any],
     current_mask_crop: NDArray[Any],
@@ -118,8 +131,8 @@ def _background_aligned_maps(
     curr_guard_mask = curr_guard > 0
     nb_guard = cv2.dilate((neighbor_mask_crop > 0).astype(np.uint8) * 255, guard_kernel)
 
-    curr_gray_raw = cv2.cvtColor(current_source_crop, cv2.COLOR_BGR2GRAY)
-    nb_gray_raw = cv2.cvtColor(neighbor_source_crop, cv2.COLOR_BGR2GRAY)
+    curr_gray_raw = _to_gray_u8(current_source_crop)
+    nb_gray_raw = _to_gray_u8(neighbor_source_crop)
     curr_gray = (
         cv2.inpaint(curr_gray_raw, curr_guard, 3.0, cv2.INPAINT_TELEA) if np.any(curr_guard_mask) else curr_gray_raw
     )
@@ -216,6 +229,8 @@ def stabilize_filled_frame_bidirectional(
     if not np.any(current_hole):
         return current_cleaned
 
+    eff_max_residual, peak = _depth_bounds(current_cleaned.dtype, max_context_residual)
+
     dilation = max(7, round(max(mask_width, mask_height) * 0.25))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation | 1, dilation | 1))
 
@@ -239,9 +254,9 @@ def stabilize_filled_frame_bidirectional(
             continue
         residual = np.abs(current_source_crop.astype(np.float32) - warped_nb_src.astype(np.float32))
         context_residual = float(np.mean(residual[context]))
-        if context_residual > max_context_residual:
+        if context_residual > eff_max_residual:
             continue
-        conf = max(0.0, 1.0 - context_residual / max_context_residual)
+        conf = max(0.0, 1.0 - context_residual / eff_max_residual)
         accepted.append((conf, covered, warped_nb_clean.astype(np.float32)))
 
     if not accepted:
@@ -278,7 +293,7 @@ def stabilize_filled_frame_bidirectional(
     blended = (1.0 - w_accum[active, None]) * curr_f32[active] + nb_accum[active]
     result = current_cleaned.copy() if copy else current_cleaned
     result_crop = result[y0:y1, x0:x1]
-    result_crop[active] = np.clip(blended, 0, 255).astype(np.uint8)
+    result_crop[active] = np.clip(np.rint(blended), 0, peak).astype(current_cleaned.dtype)
     return result
 
 
@@ -379,6 +394,8 @@ def recover_unobscured_background(
     y1 = min(height, int(ys.max()) + padding + 1)
     crop_h, crop_w = y1 - y0, x1 - x0
 
+    eff_max_residual, peak = _depth_bounds(current_source.dtype, max_context_residual)
+
     curr_src_crop = current_source[y0:y1, x0:x1]
     curr_src_f32 = curr_src_crop.astype(np.float32)
     curr_mask_crop = current_mask[y0:y1, x0:x1]
@@ -387,7 +404,7 @@ def recover_unobscured_background(
     guard_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     curr_guard = cv2.dilate(curr_hole.astype(np.uint8) * 255, guard_kernel)
     curr_guard_mask = curr_guard > 0
-    curr_gray_raw = cv2.cvtColor(curr_src_crop, cv2.COLOR_BGR2GRAY)
+    curr_gray_raw = _to_gray_u8(curr_src_crop)
     # Pre-inpaint the watermark out of the flow-estimation grayscale image so
     # Farneback tracks background motion rather than the moving overlay itself.
     curr_gray_clean = cv2.inpaint(curr_gray_raw, curr_guard, 3.0, cv2.INPAINT_TELEA)
@@ -427,7 +444,7 @@ def recover_unobscured_background(
             raise ValueError("Donor mask must match current mask geometry")
 
         donor_src_crop = donor_source[y0:y1, x0:x1]
-        donor_gray_raw = cv2.cvtColor(donor_src_crop, cv2.COLOR_BGR2GRAY)
+        donor_gray_raw = _to_gray_u8(donor_src_crop)
         donor_gray_clean = donor_gray_raw
         donor_guard: NDArray[Any] | None = None
         if donor_mask is not None:
@@ -473,10 +490,10 @@ def recover_unobscured_background(
         warped_donor_src = _backward_warp(donor_src_crop.astype(np.float32), maps)
         residual = np.mean(np.abs(curr_src_f32 - warped_donor_src), axis=2)
         context_residual = float(np.mean(residual[context]))
-        if context_residual > max_context_residual:
+        if context_residual > eff_max_residual:
             continue
 
-        weight = max(0.05, (1.0 - context_residual / max_context_residual) / (1.0 + 0.25 * rank))
+        weight = max(0.05, (1.0 - context_residual / eff_max_residual) / (1.0 + 0.25 * rank))
         accum_rgb[eligible] += weight * warped_donor_src[eligible]
         accum_w[eligible] += weight
         if bool(np.all(accum_w[curr_hole] >= 1.1)):
@@ -491,8 +508,8 @@ def recover_unobscured_background(
     result_crop[recovered_px] = np.clip(
         np.rint(accum_rgb[recovered_px] / accum_w[recovered_px, None]),
         0,
-        255,
-    ).astype(np.uint8)
+        peak,
+    ).astype(current_source.dtype)
 
     rem_crop = remaining[y0:y1, x0:x1]
     rem_crop[recovered_px] = 0
@@ -590,10 +607,9 @@ def _prepare_frame_pair(
         or regenerated_frame.dtype != source_frame.dtype
     ):
         raise ValueError("Stabilization expects matching uint8 or uint16 video frames")
-    gray_src = (source_frame >> 8).astype(np.uint8) if source_frame.dtype == np.uint16 else source_frame
     return (
         shape,
-        cv2.cvtColor(gray_src, cv2.COLOR_BGR2GRAY),
+        _to_gray_u8(source_frame),
         source_frame.astype(np.float32),
         regenerated_frame.astype(np.float32),
     )
@@ -614,8 +630,7 @@ def _blend_triplet(
     out_dtype: np.dtype[Any] | None = None,
 ) -> NDArray[Any]:
     eff_dtype = np.dtype(np.uint8) if out_dtype is None else out_dtype
-    is_u16 = eff_dtype == np.uint16
-    eff_photo_tol = photometric_tolerance * 257.0 if is_u16 else photometric_tolerance
+    eff_photo_tol, peak = _depth_bounds(eff_dtype, photometric_tolerance)
     accum = curr_reg_f32.copy()
     if prev_entry is not None and prev_flows is not None:
         fwd_prev_to_curr, bwd_curr_to_prev = prev_flows
@@ -647,7 +662,6 @@ def _blend_triplet(
         )
         if w_next is not None and warp_next is not None:
             accum += w_next[:, :, None] * (warp_next - curr_reg_f32)
-    peak = 65535.0 if is_u16 else 255.0
     return np.clip(np.round(accum), 0, peak).astype(eff_dtype)
 
 

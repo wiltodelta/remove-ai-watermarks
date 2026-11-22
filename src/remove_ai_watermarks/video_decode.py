@@ -95,6 +95,9 @@ class _FFmpeg16BitCapture:
         self._width = int(width)
         self._height = int(height)
         self._frame_bytes = self._width * self._height * 6
+        self._raw_buf = bytearray(self._frame_bytes)
+        self._raw_view = memoryview(self._raw_buf)
+        self._has_grabbed = False
         self._stderr = tempfile.TemporaryFile(mode="w+b")  # noqa: SIM115 - capture owns the lifetime
         cmd = [
             require_video_tool("ffmpeg"),
@@ -122,18 +125,46 @@ class _FFmpeg16BitCapture:
     def isOpened(self) -> bool:
         return not self._closed and self._proc.stdout is not None
 
-    def read(self) -> tuple[bool, NDArray[Any] | None]:
+    def grab(self) -> bool:
+        """Advance one frame into the reusable raw buffer without copying to a NumPy array."""
+        self._has_grabbed = False
+        if self._closed or self._proc.stdout is None:
+            return False
+        stdout = self._proc.stdout
+        readinto: Any = getattr(stdout, "readinto", None)
+        got = 0
+        while got < self._frame_bytes:
+            if callable(readinto):
+                n = readinto(self._raw_view[got:])
+                if not isinstance(n, int) or n <= 0:
+                    break
+                got += n
+            else:
+                chunk = stdout.read(self._frame_bytes - got)
+                if not chunk:
+                    break
+                self._raw_view[got : got + len(chunk)] = chunk
+                got += len(chunk)
+        if got == 0:
+            return False
+        if got != self._frame_bytes:
+            raise RuntimeError("Incomplete 16-bit BGR48LE frame read from ffmpeg")
+        self._has_grabbed = True
+        return True
+
+    def retrieve(self) -> tuple[bool, NDArray[Any] | None]:
         import numpy as np
 
-        if self._closed or self._proc.stdout is None:
+        if not self._has_grabbed:
             return False, None
-        raw = self._proc.stdout.read(self._frame_bytes)
-        if not raw:
-            return False, None
-        if len(raw) != self._frame_bytes:
-            raise RuntimeError("Incomplete 16-bit BGR48LE frame read from ffmpeg")
-        frame = np.frombuffer(raw, dtype="<u2").reshape(self._height, self._width, 3).copy()
+        self._has_grabbed = False
+        frame = np.frombuffer(self._raw_buf, dtype="<u2").reshape(self._height, self._width, 3).copy()
         return True, frame
+
+    def read(self) -> tuple[bool, NDArray[Any] | None]:
+        if not self.grab():
+            return False, None
+        return self.retrieve()
 
     def release(self) -> None:
         if self._closed:

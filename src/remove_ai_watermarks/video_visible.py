@@ -2315,8 +2315,7 @@ def iter_clean_video_frames(
         resolved_backend: Literal["cv2", "migan", "lama"] = resolve_backend(backend)
         use_batch_inpaint = resolved_backend in ("lama", "migan") and backend_prefers_batching(resolved_backend)
         inpaint_batch_size = 8 if use_batch_inpaint else 1
-        eff_temporal = temporal_consistency and not high_depth
-        donor_radius = 12 if eff_temporal else 0
+        donor_radius = 12 if temporal_consistency else 0
         total_frames = len(normalized_regions)
         window: deque[tuple[int, NDArray[Any], NDArray[Any] | None]] = deque()
         next_decode = 0
@@ -2347,7 +2346,7 @@ def iter_clean_video_frames(
                 return None
             p_src, p_frame, p_sub_masks, p_stage_mask, p_removed = pending
             out_frame = p_frame
-            if eff_temporal and p_sub_masks:
+            if temporal_consistency and p_sub_masks:
                 single_sub = len(p_sub_masks) == 1
                 for sub_mask in p_sub_masks:
                     prev_sub = (
@@ -2404,26 +2403,30 @@ def iter_clean_video_frames(
             if not prepared_batch:
                 return
             filled_frames: list[NDArray[Any]] = [entry[0] for entry in prepared_batch]
-            single_indices: list[int] = []
-            single_items: list[tuple[NDArray[Any], NDArray[Any]]] = []
-            for b_idx, (b_src, b_subs, _b_stage_mask, _b_removed) in enumerate(prepared_batch):
-                if not b_subs:
-                    continue
-                if len(b_subs) == 1 and use_batch_inpaint:
-                    single_indices.append(b_idx)
-                    single_items.append((b_src, b_subs[0]))
-                else:
+            if use_batch_inpaint:
+                max_slots = max((len(entry[1]) for entry in prepared_batch), default=0)
+                for slot_idx in range(max_slots):
+                    slot_indices: list[int] = []
+                    slot_items: list[tuple[NDArray[Any], NDArray[Any]]] = []
+                    for b_idx, entry in enumerate(prepared_batch):
+                        if slot_idx < len(entry[1]):
+                            slot_indices.append(b_idx)
+                            slot_items.append((filled_frames[b_idx], entry[1][slot_idx]))
+                    if slot_items:
+                        batched_outs = fill_batch(slot_items, backend=resolved_backend)
+                        for b_idx, out_img in zip(slot_indices, batched_outs, strict=True):
+                            filled_frames[b_idx] = out_img
+            else:
+                for b_idx, (b_src, b_subs, _b_stage_mask, _b_removed) in enumerate(prepared_batch):
+                    if not b_subs:
+                        continue
                     cur_frame = b_src
                     for sub_mask in b_subs:
                         cur_frame = fill(cur_frame, sub_mask, backend=resolved_backend)
                     filled_frames[b_idx] = cur_frame
-            if single_items:
-                batched_outs = fill_batch(single_items, backend=resolved_backend)
-                for b_idx, out_img in zip(single_indices, batched_outs, strict=True):
-                    filled_frames[b_idx] = out_img
             for b_idx, (b_src, b_subs, b_stage_mask, b_removed) in enumerate(prepared_batch):
                 out_frame = filled_frames[b_idx]
-                if eff_temporal:
+                if temporal_consistency:
                     flushed = _flush_pending((b_src, out_frame, b_stage_mask))
                     if flushed is not None:
                         yield flushed
@@ -2450,7 +2453,7 @@ def iter_clean_video_frames(
                 cur_regs = [r for r in normalized_regions[frame_index] if r is not None]
                 sub_masks = _split_disjoint_masks(working_mask, multi_region=len(cur_regs) > 1)
                 donors: list[tuple[NDArray[Any], NDArray[Any] | None]] = []
-                if eff_temporal and np.any(working_mask > 0):
+                if temporal_consistency and np.any(working_mask > 0):
                     if len(window) > 1:
                         disjoint_donors: list[tuple[int, NDArray[Any], NDArray[Any] | None]] = []
                         overlap_donors: list[tuple[int, NDArray[Any], NDArray[Any] | None]] = []
@@ -2510,7 +2513,7 @@ def iter_clean_video_frames(
                 stage_mask = combined_stage_mask
                 was_removed = True
 
-            previous_clean_plate = (stage_source, stage_mask) if eff_temporal else None
+            previous_clean_plate = (stage_source, stage_mask) if temporal_consistency else None
             prepared_batch.append((stage_source, remaining_sub_masks, stage_mask, was_removed))
             if len(prepared_batch) >= inpaint_batch_size:
                 yield from _drain_prepared_batch()
