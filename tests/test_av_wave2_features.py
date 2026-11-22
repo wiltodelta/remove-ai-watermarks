@@ -438,7 +438,7 @@ class TestSinglePassStreamingWebmAndEncoders:
         monkeypatch.setattr(video_invisible, "regenerate_video_candidate", fake_regenerate)
 
         out = tmp_path / "stream_clean.mp4"
-        res = remove_video_all(src, out, include_invisible=True, backend="cv2")
+        res = remove_video_all(src, out, include_invisible=True, invisible_profile="synthid", backend="cv2")
         assert seen_streams == [True]
         assert res.visible_removed_frames == 14
         assert res.invisible_removed is True

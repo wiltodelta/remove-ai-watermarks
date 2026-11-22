@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from remove_ai_watermarks._internal.image_quality import structural_similarity_gray as _ssim
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Sequence
     from pathlib import Path
 
     from numpy.typing import NDArray
@@ -60,6 +60,7 @@ def measure_video_fidelity(
     source_geometry: tuple[int, int, float],
     duration: float | None,
     preserve_timestamps: bool = False,
+    source_timestamps: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     import cv2
     import numpy as np
@@ -98,6 +99,7 @@ def measure_video_fidelity(
             duration=duration,
             effective_fps=fps,
             size=(source_width, source_height),
+            timestamps=source_timestamps,
         )
 
     squared_error = 0.0

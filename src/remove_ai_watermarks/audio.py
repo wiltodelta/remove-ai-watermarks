@@ -902,6 +902,7 @@ def remove_audio_invisible(
     allow_positive: bool = False,
     allow_quality_override: bool = False,
     vendor: AudioVendor | None = None,
+    preserve_hf_hz: float | None = None,
 ) -> AudioRemovalResult:
     """Process audio and publish only a fully checked negative by default.
 
@@ -976,6 +977,7 @@ def remove_audio_invisible(
                 allow_unverified=eff_allow_unverified and is_last,
                 allow_positive=allow_positive and is_last,
                 allow_quality_override=allow_quality_override and is_last,
+                preserve_hf_hz=preserve_hf_hz,
             )
         except AudioVerificationIncomplete as exc:
             last = exc
@@ -1006,6 +1008,7 @@ def _remove_audio_profile(
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
+    preserve_hf_hz: float | None = None,
 ) -> AudioRemovalResult:
     """Apply the selected audio profile and verify the saved candidate.
 
@@ -1116,9 +1119,13 @@ def _remove_audio_profile(
         if method == "focalcodec":
             transformed = _focalcodec_full_track(transformed, before.stream.sample_rate)
         if method == "dac":
-            transformed = _dac_full_track(transformed, before.stream.sample_rate, vocoder_device)
+            transformed = _dac_full_track(
+                transformed, before.stream.sample_rate, vocoder_device, preserve_hf_hz=preserve_hf_hz
+            )
         if method == "snac":
-            transformed = _snac_full_track(transformed, before.stream.sample_rate, vocoder_device)
+            transformed = _snac_full_track(
+                transformed, before.stream.sample_rate, vocoder_device, preserve_hf_hz=preserve_hf_hz
+            )
         frames_written = audio_io.write_audio(
             before.stream,
             staged,
@@ -1282,11 +1289,16 @@ def _surround_codec_full_track(
     label: str,
     resynthesize_fn: Callable[..., Any],
     device: str = "cpu",
+    *,
+    preserve_hf_hz: float | None = None,
 ) -> Iterator[NDArray[Any]]:
     def _stem(part: NDArray[Any]) -> NDArray[Any]:
-        if device == "cpu":
-            return resynthesize_fn(part, sample_rate, local_files_only=False)
-        return resynthesize_fn(part, sample_rate, local_files_only=False, device=device)
+        kwargs: dict[str, Any] = {"local_files_only": False}
+        if device != "cpu":
+            kwargs["device"] = device
+        if preserve_hf_hz is not None:
+            kwargs["preserve_hf_hz"] = preserve_hf_hz
+        return resynthesize_fn(part, sample_rate, **kwargs)
 
     yield from _stream_neural_track(
         chunks,
@@ -1301,18 +1313,26 @@ def _dac_full_track(
     chunks: Iterator[NDArray[Any]],
     sample_rate: int,
     device: str = "cpu",
+    *,
+    preserve_hf_hz: float | None = None,
 ) -> Iterator[NDArray[Any]]:
     """Apply the 44.1 kHz DAC profile across mono, stereo, 5.1, or 7.1 tracks on the selected device."""
-    yield from _surround_codec_full_track(chunks, sample_rate, "DAC", audio_dac.resynthesize, device)
+    yield from _surround_codec_full_track(
+        chunks, sample_rate, "DAC", audio_dac.resynthesize, device, preserve_hf_hz=preserve_hf_hz
+    )
 
 
 def _snac_full_track(
     chunks: Iterator[NDArray[Any]],
     sample_rate: int,
     device: str = "cpu",
+    *,
+    preserve_hf_hz: float | None = None,
 ) -> Iterator[NDArray[Any]]:
     """Apply the 44.1 kHz multi-scale SNAC profile across mono, stereo, 5.1, or 7.1 tracks."""
-    yield from _surround_codec_full_track(chunks, sample_rate, "SNAC", audio_snac.resynthesize, device)
+    yield from _surround_codec_full_track(
+        chunks, sample_rate, "SNAC", audio_snac.resynthesize, device, preserve_hf_hz=preserve_hf_hz
+    )
 
 
 def _stream_neural_track(
@@ -1531,6 +1551,7 @@ def remove_audio_all(
     allow_positive: bool = False,
     allow_quality_override: bool = False,
     vendor: AudioVendor | None = None,
+    preserve_hf_hz: float | None = None,
 ) -> AudioAllResult:
     """Remove AI metadata and optionally process compatible invisible audio watermarks.
 
@@ -1593,6 +1614,7 @@ def remove_audio_all(
         allow_positive=allow_positive,
         allow_quality_override=allow_quality_override,
         vendor=vendor,
+        preserve_hf_hz=preserve_hf_hz,
     )
     detected_metadata = dict(inv_res.before.metadata_markers)
     if not inv_res.skipped and inv_res.output is not None:

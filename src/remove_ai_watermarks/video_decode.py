@@ -34,6 +34,7 @@ class _PyAVCapture:
             cv2.CAP_PROP_FRAME_COUNT: float(stream.frames),
         }
         self._timestamp = 0.0
+        self._grabbed_frame: Any | None = None
         self._closed = False
 
     def isOpened(self) -> bool:
@@ -44,18 +45,36 @@ class _PyAVCapture:
             return self._timestamp * 1000
         return self._properties.get(property_id, 0.0)
 
-    def read(self) -> tuple[bool, NDArray[np.uint8] | None]:
+    def grab(self) -> bool:
+        """Advance one decoded frame without converting to BGR24 until retrieve() is called."""
+        self._grabbed_frame = None
         if self._closed:
-            return False, None
+            return False
         try:
             frame = next(self._frames)
             self._timestamp = float(frame.time or 0.0)
-            pixels: NDArray[np.uint8] = frame.to_ndarray(format="bgr24")
-            return True, pixels
+            self._grabbed_frame = frame
+            return True
         except StopIteration:
-            return False, None
+            return False
         except Exception as error:
             raise RuntimeError(f"PyAV could not decode a video frame: {error}") from error
+
+    def retrieve(self) -> tuple[bool, NDArray[np.uint8] | None]:
+        if self._grabbed_frame is None:
+            return False, None
+        frame = self._grabbed_frame
+        self._grabbed_frame = None
+        try:
+            pixels: NDArray[np.uint8] = frame.to_ndarray(format="bgr24")
+            return True, pixels
+        except Exception as error:
+            raise RuntimeError(f"PyAV could not decode a video frame: {error}") from error
+
+    def read(self) -> tuple[bool, NDArray[np.uint8] | None]:
+        if not self.grab():
+            return False, None
+        return self.retrieve()
 
     def release(self) -> None:
         if not self._closed:

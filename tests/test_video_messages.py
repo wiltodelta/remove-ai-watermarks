@@ -101,7 +101,7 @@ def install_processing_stubs(monkeypatch, source, statuses):
         return report
 
     monkeypatch.setattr(video, "identify_video_message", identify)
-    monkeypatch.setattr(video, "_processing_source", lambda _: ((8, 8, 12.0), (), 12))
+    monkeypatch.setattr(video, "_processing_source", lambda _: ((8, 8, 12.0), (), tuple(i / 12.0 for i in range(12))))
     monkeypatch.setattr(video, "_check_copied_audio", lambda *_: ())
     monkeypatch.setattr(invisible, "iter_sampled_frames", lambda *a, **kw: iter([np.zeros((8, 8, 3))] * 2))
     monkeypatch.setattr(
@@ -365,7 +365,7 @@ def test_premature_sampler_eof_is_rejected_by_ffprobe_timestamp_inventory(tmp_pa
     target.write_bytes(b"old")
     install_processing_stubs(monkeypatch, source, iter(["matched", "not_matched"]))
     # Source has 24 frames at 24 fps -> 12 fps sampling expects 12 frames, but OpenCV stopped at 5.
-    monkeypatch.setattr(video, "_processing_source", lambda _: ((64, 64, 24.0), (), 24))
+    monkeypatch.setattr(video, "_processing_source", lambda _: ((64, 64, 24.0), (), tuple(i / 24.0 for i in range(24))))
     monkeypatch.setattr(
         quality,
         "measure_video_fidelity",

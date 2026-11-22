@@ -4501,8 +4501,7 @@ candidate (infinite PSNR) is judged on SSIM alone. A failing candidate moves to
 the next profile, and only `force` on the last profile keeps it.
 `_internal/video_message_regeneration.py` checks revision-pinned config and
 safetensors hashes, complete state loading, and latent scale before using the
-float32 graph. The legacy SynthID profile is separate. Processing accepts one
-zero-based CFR video stream plus audio, and checks copied packet payloads,
+float32 graph. The legacy SynthID profile is separate. Processing accepts one video stream (CFR, VFR, or non-zero start PTS) plus audio, and checks copied packet payloads,
 timing, exact decoded samples, languages, and dispositions. Source and saved
 candidate hashes are checked again before atomic publication. Force never
 converts unverified evidence into verified removal.

@@ -1164,11 +1164,14 @@ def _has_2d_vae_overrides(
     )
 
 
+_BYTEDANCE_VISIBLE_MARKS = frozenset({"dreamina", "jimeng", "jimeng_pill", "seedance", "doubao", "dola"})
+
+
 def _is_bytedance_video_provenance(
     metadata_markers: dict[str, str],
     visible_mark: str | None = None,
 ) -> bool:
-    if visible_mark in {"dreamina", "jimeng", "jimeng_pill", "seedance", "doubao", "dola"}:
+    if visible_mark in _BYTEDANCE_VISIBLE_MARKS:
         return True
     if not metadata_markers:
         return False
@@ -1229,9 +1232,7 @@ def _resolve_video_invisible_profile(
             markers = (
                 detected_metadata
                 if detected_metadata is not None
-                else (
-                    {} if visible_mark in {"dreamina", "seedance", "doubao", "dola"} else get_ai_metadata(source_path)
-                )
+                else ({} if visible_mark in _BYTEDANCE_VISIBLE_MARKS else get_ai_metadata(source_path))
             )
             if _is_bytedance_video_provenance(markers, visible_mark):
                 resolved = "wan21-seedance-experimental" if can_wan else "seedance-experimental"
@@ -1263,7 +1264,7 @@ def _validate_video_profile(
         )
     if quality not in {"delivery", "master"}:
         raise ValueError("quality must be delivery or master")
-    if profile != "synthid" and not enabled:
+    if profile not in {"auto", "synthid"} and not enabled:
         raise ValueError("Selecting an invisible profile requires include_invisible=True (--invisible)")
     fixed_quality_profiles = {
         "auto",
@@ -1298,7 +1299,7 @@ def remove_video_all(
     backend: str = "cv2",
     temporal_consistency: bool = True,
     include_invisible: bool = False,
-    invisible_profile: VideoInvisibleProfile = "synthid",
+    invisible_profile: VideoInvisibleProfile = "auto",
     invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
@@ -1744,7 +1745,7 @@ def remove_video_batch(
     backend: str = "cv2",
     temporal_consistency: bool = True,
     include_invisible: bool = False,
-    invisible_profile: VideoInvisibleProfile = "synthid",
+    invisible_profile: VideoInvisibleProfile = "auto",
     invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
@@ -2002,7 +2003,7 @@ def remove_video_invisible(
     source: str | Path,
     output: str | Path | None = None,
     *,
-    profile: VideoInvisibleProfile = "synthid",
+    profile: VideoInvisibleProfile = "auto",
     quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,

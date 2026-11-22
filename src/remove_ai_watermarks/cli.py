@@ -1781,9 +1781,9 @@ def _video_invisible_options(f: Any) -> Any:
     f = click.option(
         "--profile",
         type=click.Choice(list(VIDEO_INVISIBLE_PROFILES)),
-        default="synthid",
+        default="auto",
         show_default=True,
-        help="Video-pixel profile. Seedance and CUDA Wan 2.1 profiles are experimental.",
+        help="Video-pixel profile. 'auto' routes ByteDance/Seedance and SynthID clips automatically.",
     )(f)
     f = click.option(
         "--quality",

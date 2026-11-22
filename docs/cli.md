@@ -759,7 +759,9 @@ audio. `--quality delivery` (default) produces H.264 High CRF18;
 `--device` supports the same devices as SynthID. The SynthID tuning options
 (`--noise-std`, `--long-side`, `--fps`, `--batch-size`, `--seed`) must retain
 their defaults when Seedance is selected. `--quality master` is rejected for
-SynthID. The default profile remains `synthid`.
+SynthID. The default profile is `auto`, which routes ByteDance/Seedance clips
+to the Seedance pipeline automatically and SynthID/other clips to the SynthID
+pipeline (or Wan 2.1 on eligible BF16 CUDA hosts).
 
 This experimental transform reproduced the matched-control CapCut outcome
 recorded in [the study](seedance-video-study.md). No detector or external upload

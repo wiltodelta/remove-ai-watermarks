@@ -141,12 +141,17 @@ def resynthesize(
     stereo_mode: str = "ms",
     local_files_only: bool = True,
     device: str = "cpu",
+    preserve_hf_hz: float | None = None,
 ) -> Any:
     """Resynthesize a finite mono or stereo signal on its exact native sample grid."""
     if not is_available():
         raise ImportError("SNAC requires numpy, scipy, torch, and huggingface_hub")
     if stereo_mode not in {"ms", "lr"}:
         raise ValueError("SNAC stereo mode must be ms or lr")
+    if preserve_hf_hz is not None:
+        from remove_ai_watermarks._internal.audio_dac import validate_preserve_hf_hz
+
+        validate_preserve_hf_hz(preserve_hf_hz, sample_rate)
     np = import_module("numpy")
     torch = import_module("torch")
     value = np.asarray(samples)
@@ -213,6 +218,10 @@ def resynthesize(
     delivered = np.column_stack(output_channels)
     if mid_side:
         delivered = np.column_stack((delivered[:, 0] + delivered[:, 1], delivered[:, 0] - delivered[:, 1]))
+    if preserve_hf_hz is not None:
+        from remove_ai_watermarks._internal.audio_dac import blend_hf_crossover
+
+        delivered = blend_hf_crossover(delivered, value, sample_rate, preserve_hf_hz)
     peak = float(np.max(np.abs(delivered)))
     if peak > _PEAK_CEILING:
         delivered = delivered * (_PEAK_CEILING / peak)

@@ -327,7 +327,7 @@ def test_all_runs_visible_before_seedance_and_reports_selected_profile(tmp_path,
     [
         {"invisible_profile": "unknown", "include_invisible": True},
         {"invisible_profile": "seedance-experimental"},
-        {"include_invisible": True, "invisible_quality": "master"},
+        {"include_invisible": True, "invisible_profile": "synthid", "invisible_quality": "master"},
         {"include_invisible": True, "invisible_profile": "seedance-experimental", "noise_std": 0.5},
     ],
 )

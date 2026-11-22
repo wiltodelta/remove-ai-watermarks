@@ -192,7 +192,8 @@ experimental 3D video diffusion profiles preserve native resolution and frame
 rate on SDR 8-bit MP4, MOV, and M4V clips within the conservative decoded-frame budget
 (`<= 1920x1080` frame area and `<= 552,960,000` decoded pixel-frames, streaming
 clips over 193 frames via overlapping 3D causal windows, since CLI 0.63.0), and
-`--profile auto` automatically routes eligible ByteDance/Seedance MP4, MOV, and M4V clips
+`--profile auto` (the default on `video all`, `video batch`, `video invisible`,
+and `clean`) automatically routes eligible ByteDance/Seedance MP4, MOV, and M4V clips
 (`<= 1920x1080` frame area and `>= 8 GiB` total GPU VRAM, stepping down from 193-frame to 81-frame chunks on 1080p or `< 16 GiB` CUDA) to
 `wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` fallback on
 CPU/MPS MP4, or `synthid` on MOV/M4V/MKV/WebM or over budget) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental`
@@ -413,8 +414,9 @@ with `-o OUTPUT`, `--method auto|codec|vae`, `--long-side 512`, and
 
 Install `video-detect`, plus `diffusion` for VAE. Auto tries codec, zero-noise VAE,
 then noise 0.15 and 0.25. Output is at most 12 fps and defaults to
-`SOURCE_message_processed.mp4`. Processing requires one zero-based CFR video
-stream and optional audio, with MP4/MOV/M4V output. Audio is copied and checked,
+`SOURCE_message_processed.mp4`. Processing requires one video
+stream (CFR, VFR, or non-zero start PTS) and optional audio, with
+MP4/MOV/M4V/MKV/WebM output. Audio is copied and checked,
 not cleaned. Metadata is dropped. Quality can change visibly; JSON output reports
 delivered metrics and `quality_passed`.
 

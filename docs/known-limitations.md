@@ -842,7 +842,8 @@ See [scope, safety, and legal notes](legal-and-safety.md).
 detect arbitrary unknown watermarks or identify AI origin. A complete negative
 means that this target fell below the project receiver threshold under pinned
 public weights; it does not establish complete erasure or provider compatibility.
-The processing route accepts one zero-based CFR video stream with optional audio
-and MP4/MOV/M4V/MKV/WebM output. It downsamples and can alter texture and motion visibly.
+The processing route accepts one video stream (CFR, VFR, or non-zero start PTS)
+with optional audio and MP4/MOV/M4V/MKV/WebM output. It downsamples and can
+alter texture and motion visibly.
 Read delivered-file quality and before/after evidence. Audio marks remain outside
 its checks. See the [command contract](cli.md#public-model-video-messages-experimental).

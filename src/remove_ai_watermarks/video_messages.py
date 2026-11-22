@@ -41,7 +41,7 @@ from remove_ai_watermarks.optional_deps import module_available
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Sequence
 
     from numpy.typing import NDArray
 
@@ -292,16 +292,10 @@ class VideoMessageVerificationIncomplete(RuntimeError):
         self.after = after
 
 
-def _expected_sampled_frames(source_frames: int, source_fps: float, effective_fps: float) -> int:
-    sample_period = 1.0 / effective_fps
-    next_sample_time = 0.0
-    selected = 0
-    for frame_index in range(source_frames):
-        timestamp = frame_index / source_fps
-        if timestamp + 1e-9 >= next_sample_time:
-            selected += 1
-            next_sample_time += sample_period
-    return selected
+def _expected_sampled_frames(timestamps: Sequence[float], effective_fps: float) -> int:
+    from remove_ai_watermarks.video_invisible import select_sampled_indices
+
+    return len(select_sampled_indices(timestamps, effective_fps))
 
 
 def _quality_passes(profile: str, quality: dict[str, Any]) -> bool:
@@ -320,8 +314,11 @@ def _quality_passes(profile: str, quality: dict[str, Any]) -> bool:
     return psnr >= _VAE_MIN_PSNR_DB and ssim >= _VAE_MIN_SSIM
 
 
-def _processing_source(source: Path) -> tuple[tuple[int, int, float], tuple[dict[str, Any], ...], int]:
-    """Bound this CFR pixel route to timelines the existing sampler can preserve."""
+def _processing_source(
+    source: Path,
+) -> tuple[tuple[int, int, float], tuple[dict[str, Any], ...], tuple[float, ...]]:
+    """Validate single-video source streams and monotonic timestamps (CFR, VFR, or non-zero start PTS)."""
+    import itertools
     from fractions import Fraction
 
     from remove_ai_watermarks.video_audio import stream_inventory
@@ -335,13 +332,9 @@ def _processing_source(source: Path) -> tuple[tuple[int, int, float], tuple[dict
     geometry = probe_video_geometry(source)
     timestamps = probe_video_timestamps(source)
     tolerance = float(Fraction(videos[0]["time_base"])) + 0.000001
-    if (
-        len(timestamps) < 2
-        or abs(timestamps[0]) > tolerance
-        or any(abs(timestamp - index / geometry[2]) > tolerance for index, timestamp in enumerate(timestamps))
-    ):
-        raise ValueError("Video message processing requires uniform, zero-based video timestamps")
-    return geometry, tuple(stream for stream in streams if stream["codec_type"] == "audio"), len(timestamps)
+    if len(timestamps) < 2 or any(b < a - tolerance for a, b in itertools.pairwise(timestamps)):
+        raise ValueError("Video message processing requires at least two monotonic video timestamps")
+    return geometry, tuple(stream for stream in streams if stream["codec_type"] == "audio"), timestamps
 
 
 def _restore_audio_metadata(output: Path, audio_streams: tuple[dict[str, Any], ...]) -> None:
@@ -467,9 +460,9 @@ def remove_video_message(
     before = identify_video_message(original, reference_hex=reference_hex, scheme=scheme, check_message=verify)
     if before.status != "matched" and not force:
         return VideoMessageRemovalResult(original, None, before, None, None, True)
-    geometry, audio_streams, source_frames = _processing_source(original)
+    geometry, audio_streams, source_timestamps = _processing_source(original)
     effective_fps = min(12.0, geometry[2])
-    expected_frames = _expected_sampled_frames(source_frames, geometry[2], effective_fps)
+    expected_frames = _expected_sampled_frames(source_timestamps, effective_fps)
     profiles: tuple[tuple[str, float | None], ...]
     if method == "auto":
         profiles = (("codec", None), ("vae", 0.0), ("vae", 0.15), ("vae", 0.25))
@@ -488,6 +481,7 @@ def remove_video_message(
                         duration=None,
                         effective_fps=effective_fps,
                         size=fit_video_size(*geometry[:2], long_side),
+                        timestamps=source_timestamps,
                     )
                     encode_video_frames(frames, original, staged, fps=effective_fps)
                 else:
@@ -505,13 +499,20 @@ def remove_video_message(
                         device=device,
                         runtime=runtime,
                         temporal_stabilize=temporal_stabilize,
+                        timestamps=source_timestamps,
                     )
                 _restore_audio_metadata(staged, audio_streams)
                 after = identify_video_message(staged, reference_hex=reference_hex, scheme=scheme, check_message=verify)
                 if verify and after.status != "not_matched" and (not force or index < len(profiles) - 1):
                     raise VideoMessageVerificationIncomplete(before, after)
                 copied = _check_copied_audio(original, staged, audio_streams)
-                quality = measure_video_fidelity(original, staged, source_geometry=geometry, duration=None)
+                quality = measure_video_fidelity(
+                    original,
+                    staged,
+                    source_geometry=geometry,
+                    duration=None,
+                    source_timestamps=source_timestamps,
+                )
                 if quality.get("frames") != expected_frames or (
                     after.reading is not None and after.reading.frames != expected_frames
                 ):

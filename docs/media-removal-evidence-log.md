@@ -225,3 +225,28 @@ In the Wave 2 audio/video market-leadership pass (2026-11-20):
     bandreject + `10 kHz` lowpass + `gblur=1.8` + `H.264 CRF 26`): **`1/10 passed (10%)`**,
     `9/10 failed` (retained `AudioSeal`, `WavMark`, and `Perth`, left visible `Kling` +
     `AudioSeal` on `video-all-4layer-marked`, and degraded both clean controls).
+
+In Wave 6 (2026-11-21):
+- **Apple Silicon `CoreMLExecutionProvider` vs `CPUExecutionProvider` ONNX Benchmark**:
+  measured on `lama_fp32.onnx` (`512x512`) and `migan.onnx` (`512x512`): `MLProgram`
+  failed plan construction on both models; `NeuralNetwork` partitioned `lama_fp32.onnx`
+  into 585 subgraphs (`78.34 s` vs `81.10 s` CPU, `1.04x`, `MAE = 0.0378`, plus multi-minute
+  compile overhead) and ran `migan.onnx` `2.8x` slower than CPU (`18.95 s` vs `6.78 s`,
+  `0.36x`). `region_eraser.py` therefore remains pinned to `("CUDAExecutionProvider",
+  "CPUExecutionProvider")` with batched CUDA ONNX inference (`fill_batch`).
+- **Studio Mastering High-Frequency Crossover (`preserve_hf_hz`) on 48 kHz Stereo Music**:
+  paired 8th-order zero-phase Butterworth crossover (`sosfiltfilt`) on `44.1 kHz` `DAC`
+  with `AudioSeal` embedded on 48 kHz stereo music with bright `15.5-18.4 kHz` transients:
+  - `DAC full` (default): `MR-STFT = 1.2001`, `HF_RMSE (>14 kHz) = 0.05788`, `AudioSeal = (0.2953, 0.3053)`.
+  - `DAC + preserve_hf_hz=14000`: `MR-STFT = 0.7770` (`-35%`), `HF_RMSE = 0.00156` (`37x` lower),
+    `AudioSeal = (0.2955, 0.3054)` (unchanged removal).
+  - Kept as an explicit opt-in (`preserve_hf_hz`) so oracle-certified full-band `DAC`
+    defaults for Google SynthID, ElevenLabs, and `SilentCipher-44k` remain untouched.
+- **Official `synthid.com` Live Audio Oracle Checks (2026-11-22, signed-in Chrome direct route)**:
+  - `SNAC 44.1 kHz` (`q=3`, `hubertsiuzdak/snac_44khz`): **`2/2` `not_detected`** (`SynthID was not detected`)
+    on both source-positive Google audio tracks:
+    - `higgsfield-veo-3-1-lite_snac_q3.wav` (`sha256:08457e6fa490a9cc394a9890588020afddbbdd5f5898b3841d213e2ce4e424a0`)
+    - `google-gemini-omni-flash-api_snac_q3.wav` (`sha256:940a3774b09e8af5da847f9d287d45be263ed91621d79d671234721f3561ae02`)
+  - `DAC 44.1 kHz` (`q=3`) + **`preserve_hf_hz=14000.0`**: **`1/1` `not_detected`** (`SynthID was not detected`)
+    on `google-gemini-omni-flash-api_dac_hf14k.wav` (`sha256:70adefe96315c03f0e6ccc8cb19c25fb2c72a5c5b38fc4f0bc4a6dde0ac8c07d`),
+    confirming no Google SynthID leakage above 14 kHz on the tested track.

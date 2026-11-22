@@ -105,6 +105,41 @@ def load_pinned_model(*, local_files_only: bool = True, device: str = "cpu") -> 
     return model.to(device).train(False)
 
 
+def validate_preserve_hf_hz(preserve_hf_hz: float, sample_rate: int) -> None:
+    """Validate an explicit high-frequency crossover cutoff for ``sample_rate``."""
+    import math
+
+    if not math.isfinite(preserve_hf_hz) or preserve_hf_hz < 8000.0 or preserve_hf_hz > sample_rate * 0.45:
+        raise ValueError(f"preserve_hf_hz must be between 8000 and {sample_rate * 0.45:.0f} Hz for {sample_rate} Hz")
+
+
+@lru_cache(maxsize=16)
+def _hf_crossover_sos(preserve_hf_hz: float, sample_rate: int) -> tuple[Any, Any]:
+    sig = import_module("scipy.signal")
+    return (
+        sig.butter(8, preserve_hf_hz, btype="low", fs=sample_rate, output="sos"),
+        sig.butter(8, preserve_hf_hz, btype="high", fs=sample_rate, output="sos"),
+    )
+
+
+def blend_hf_crossover(
+    processed: Any,
+    original: Any,
+    sample_rate: int,
+    preserve_hf_hz: float,
+) -> Any:
+    """Preserve original high-frequency transients above ``preserve_hf_hz`` via zero-phase Butterworth crossover."""
+    validate_preserve_hf_hz(preserve_hf_hz, sample_rate)
+    if processed.shape[0] < 64:
+        return processed
+    np = import_module("numpy")
+    sig = import_module("scipy.signal")
+    sos_lp, sos_hp = _hf_crossover_sos(float(preserve_hf_hz), int(sample_rate))
+    out = sig.sosfiltfilt(sos_lp, processed, axis=0)
+    out += sig.sosfiltfilt(sos_hp, original, axis=0)
+    return np.asarray(out, dtype=np.float32)
+
+
 def resynthesize(
     samples: Any,
     sample_rate: int,
@@ -112,12 +147,15 @@ def resynthesize(
     stereo_mode: str = "ms",
     local_files_only: bool = True,
     device: str = "cpu",
+    preserve_hf_hz: float | None = None,
 ) -> Any:
     """Resynthesize a finite mono or stereo signal on its exact native sample grid."""
     if not is_available():
         raise ImportError("DAC requires the optional numerical and Transformers codec dependencies")
     if stereo_mode not in {"ms", "lr"}:
         raise ValueError("DAC stereo mode must be ms or lr")
+    if preserve_hf_hz is not None:
+        validate_preserve_hf_hz(preserve_hf_hz, sample_rate)
     np = import_module("numpy")
     torch = import_module("torch")
     value = np.asarray(samples)
@@ -173,6 +211,8 @@ def resynthesize(
     delivered = np.column_stack(output_channels)
     if mid_side:
         delivered = np.column_stack((delivered[:, 0] + delivered[:, 1], delivered[:, 0] - delivered[:, 1]))
+    if preserve_hf_hz is not None:
+        delivered = blend_hf_crossover(delivered, value, sample_rate, preserve_hf_hz)
     peak = float(np.max(np.abs(delivered)))
     if peak > _PEAK_CEILING:
         delivered = delivered * (_PEAK_CEILING / peak)

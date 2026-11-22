@@ -236,6 +236,29 @@ def read_sampled_frames(
     return frames, effective_fps
 
 
+def select_sampled_indices(
+    timestamps: Sequence[float],
+    effective_fps: float,
+    *,
+    duration: float | None = None,
+) -> list[int]:
+    """Return frame indices selected by the uniform relative-timestamp sampling schedule."""
+    if not timestamps:
+        return []
+    sample_period = 1.0 / effective_fps
+    base_ts = float(timestamps[0])
+    next_sample_time = 0.0
+    selected: list[int] = []
+    for index, ts in enumerate(timestamps):
+        rel_ts = float(ts) - base_ts
+        if duration is not None and rel_ts + 1e-9 >= duration:
+            break
+        if rel_ts + 1e-9 >= next_sample_time:
+            selected.append(index)
+            next_sample_time += sample_period
+    return selected
+
+
 def _iter_sampled_frames(
     source: Path,
     *,
@@ -245,39 +268,77 @@ def _iter_sampled_frames(
     size: tuple[int, int],
     high_depth: bool = False,
     source_size: tuple[int, int] | None = None,
+    timestamps: Sequence[float] | None = None,
     _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> Generator[NDArray[Any], None, None]:
-    """Yield uniformly sampled frames without retaining the full video."""
+    """Yield uniformly sampled frames without retaining the full video or converting dropped frames."""
     sample_period = 1.0 / effective_fps
     next_sample_time = 0.0
+    base_ts = float(timestamps[0]) if timestamps else 0.0
+    selected_set = (
+        set(select_sampled_indices(timestamps, effective_fps, duration=duration)) if timestamps is not None else None
+    )
+    max_selected = max(selected_set, default=-1) if selected_set is not None else None
 
-    def _raw_frames() -> Generator[NDArray[Any], None, None]:
-        if _frame_stream is not None:
-            yield from _frame_stream
-            return
-        if high_depth:
-            src_w, src_h = source_size if source_size is not None else _probe_video(source)[:2]
-            capture: Any = open_video_capture_16bit(source, width=src_w, height=src_h)
-        else:
-            capture = open_video_capture(source)
-        if not capture.isOpened():
-            raise ValueError(f"Could not open video: {source}")
-        try:
-            while True:
-                ok, frm = capture.read()
-                if not ok:
+    if _frame_stream is not None:
+        for frame_index, frame in enumerate(_frame_stream):
+            if selected_set is not None:
+                if max_selected is not None and frame_index > max_selected:
                     break
-                yield frm
-        finally:
-            capture.release()
+                if frame_index in selected_set:
+                    yield cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
+                continue
+            timestamp = frame_index / source_fps
+            if duration is not None and timestamp + 1e-9 >= duration:
+                break
+            if timestamp + 1e-9 >= next_sample_time:
+                yield cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
+                next_sample_time += sample_period
+        return
 
-    for frame_index, frame in enumerate(_raw_frames()):
-        timestamp = frame_index / source_fps
-        if duration is not None and timestamp + 1e-9 >= duration:
-            break
-        if timestamp + 1e-9 >= next_sample_time:
-            yield cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
-            next_sample_time += sample_period
+    if high_depth:
+        src_w, src_h = source_size if source_size is not None else _probe_video(source)[:2]
+        capture: Any = open_video_capture_16bit(source, width=src_w, height=src_h)
+    else:
+        capture = open_video_capture(source)
+    if not capture.isOpened():
+        raise ValueError(f"Could not open video: {source}")
+    has_grab = callable(getattr(capture, "grab", None)) and callable(getattr(capture, "retrieve", None))
+    try:
+        frame_index = 0
+        while True:
+            if selected_set is not None:
+                if max_selected is not None and frame_index > max_selected:
+                    break
+                want = frame_index in selected_set
+            else:
+                timestamp = (
+                    float(timestamps[frame_index]) - base_ts
+                    if timestamps is not None and frame_index < len(timestamps)
+                    else frame_index / source_fps
+                )
+                if duration is not None and timestamp + 1e-9 >= duration:
+                    break
+                want = timestamp + 1e-9 >= next_sample_time
+                if want:
+                    next_sample_time += sample_period
+            if has_grab:
+                if not capture.grab():
+                    break
+                if want:
+                    ok, frm = capture.retrieve()
+                    if not ok or frm is None:
+                        break
+                    yield cv2.resize(frm, size, interpolation=cv2.INTER_LANCZOS4)
+            else:
+                ok, frm = capture.read()
+                if not ok or frm is None:
+                    break
+                if want:
+                    yield cv2.resize(frm, size, interpolation=cv2.INTER_LANCZOS4)
+            frame_index += 1
+    finally:
+        capture.release()
 
 
 # Shared sampling policy for delivered-file measurements and bounded writers.
@@ -415,6 +476,7 @@ def regenerate_video_candidate(
     duration: float | None = None,
     runtime: VideoVaeRuntime | None = None,
     temporal_stabilize: bool = False,
+    timestamps: Sequence[float] | None = None,
     _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> RegenerationMetrics:
     """Regenerate video pixels and return fidelity metrics.
@@ -489,6 +551,8 @@ def regenerate_video_candidate(
             if high_depth:
                 sample_kwargs["high_depth"] = True
                 sample_kwargs["source_size"] = (width, height)
+            if timestamps is not None:
+                sample_kwargs["timestamps"] = timestamps
             if _frame_stream is not None:
                 sample_kwargs["_frame_stream"] = _frame_stream
             sampled_frames = _iter_sampled_frames(source, **sample_kwargs)

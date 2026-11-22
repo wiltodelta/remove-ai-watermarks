@@ -1750,7 +1750,7 @@ class TestVideoBatchApi:
         monkeypatch.setattr(video_invisible, "load_video_vae_runtime", fake_load)
         monkeypatch.setattr(video, "remove_video_all", fake_all)
 
-        result = remove_video_batch(directory, include_invisible=True)
+        result = remove_video_batch(directory, include_invisible=True, invisible_profile="synthid")
 
         assert result.processed == 2
         assert load_calls == [("stabilityai/sd-vae-ft-mse", "auto")]
@@ -1777,7 +1777,7 @@ class TestVideoBatchApi:
 
         monkeypatch.setattr(video_invisible, "load_video_vae_runtime", fail_load)
 
-        result = remove_video_batch(directory, include_invisible=True)
+        result = remove_video_batch(directory, include_invisible=True, invisible_profile="synthid")
 
         assert result.failed == 2
         assert load_calls == 1
