@@ -156,11 +156,14 @@ def test_stage_github_repo_strips_frontmatter_and_excludes_binary_weights(
 ) -> None:
     import subprocess
 
+    import yaml
+
     gh_stage = tmp_path / "gh_stage"
-    publish.stage_github_repo(gh_stage, github_release_tag="v8")
-    staged_names = sorted(path.name for path in gh_stage.iterdir())
-    assert staged_names == sorted(publish.GITHUB_TRACKED_FILES)
-    assert publish.MODEL_FILE not in staged_names
+    rc_stage_only = publish.main(["--stage-github-only", str(gh_stage), "--github-release-tag", "v8"])
+    assert rc_stage_only == 0
+    staged_rels = sorted(p.relative_to(gh_stage).as_posix() for p in gh_stage.rglob("*") if p.is_file())
+    assert staged_rels == sorted(publish.GITHUB_TRACKED_FILES)
+    assert publish.MODEL_FILE not in staged_rels
 
     readme = (gh_stage / "README.md").read_text(encoding="utf-8")
     assert not readme.startswith("---")
@@ -173,6 +176,16 @@ def test_stage_github_repo_strips_frontmatter_and_excludes_binary_weights(
     assert config["github_release_tag"] == "v8"
     assert "Apache License" in (gh_stage / "LICENSE").read_text(encoding="utf-8")
     assert "*.npz" in (gh_stage / ".gitignore").read_text(encoding="utf-8")
+
+    sync_wf = yaml.safe_load((gh_stage / publish.GITHUB_WORKFLOW_REL).read_text(encoding="utf-8"))
+    assert sync_wf["permissions"]["contents"] == "write"
+    assert {"push", "schedule", "workflow_dispatch"} <= set(sync_wf[True])
+
+    parent_wf = yaml.safe_load(
+        (publish.REPO_ROOT / ".github/workflows/publish-source-classify-hf.yml").read_text(encoding="utf-8")
+    )
+    assert {"push", "workflow_dispatch"} <= set(parent_wf[True])
+    assert "docs/source-classify-hf/**" in parent_wf[True]["push"]["paths"]
 
     # Dry-run with --target both must not spawn any external git/gh commands.
     def forbid_run(*_args: object, **_kwargs: object) -> object:
@@ -202,6 +215,50 @@ def test_stage_github_repo_strips_frontmatter_and_excludes_binary_weights(
     # Non-dry-run publish_github must reject SHA-256 mismatch before calling any external CLI.
     with pytest.raises(SystemExit, match="SHA-256 hash mismatch"):
         publish.publish_github(gh_stage, weights_path, release_tag="v8", message="msg", dry_run=False)
+
+    # SSH deploy-key mode must push over git@github.com without requiring local weights or calling `gh`.
+    called_cmds: list[list[str]] = []
+
+    def fake_ssh_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        called_cmds.append(list(cmd))
+        assert cmd[0] == "git", f"SSH deploy-key mode must not invoke {cmd[0]}"
+        env_arg = kwargs.get("env")
+        assert isinstance(env_arg, dict)
+        assert "GIT_SSH_COMMAND" in env_arg
+        assert "synthetic-ed25519-key" not in " ".join(cmd)
+        if cmd[:2] == ["git", "clone"]:
+            assert cmd[-2] == f"git@github.com:{publish.GITHUB_REPO}.git"
+            target_repo = Path(cmd[-1])
+            (target_repo / ".git").mkdir(parents=True)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        if cmd[:2] == ["git", "status"]:
+            return subprocess.CompletedProcess(cmd, 0, "M  README.md\n", "")
+        if cmd[:2] == ["git", "rev-parse"]:
+            return subprocess.CompletedProcess(cmd, 0, "deadbeef1234567\n", "")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_ssh_run)
+    returned_sha = publish.publish_github(
+        gh_stage,
+        None,
+        release_tag="v8",
+        message="sync",
+        deploy_key="synthetic-ed25519-key",
+        dry_run=False,
+    )
+    assert returned_sha == "deadbeef1234567"
+    assert any(c[:2] == ["git", "push"] for c in called_cmds)
+
+    # `--sync-github-checkout` must preserve `.git` while removing stale files/dirs.
+    existing_checkout = tmp_path / "checkout_sync"
+    (existing_checkout / ".git").mkdir(parents=True)
+    (existing_checkout / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (existing_checkout / "stale_dir").mkdir()
+    (existing_checkout / "stale_dir" / "old.txt").write_text("stale", encoding="utf-8")
+    assert publish.main(["--sync-github-checkout", str(existing_checkout)]) == 0
+    assert (existing_checkout / ".git" / "HEAD").is_file()
+    assert not (existing_checkout / "stale_dir").exists()
+    assert (existing_checkout / publish.GITHUB_WORKFLOW_REL).is_file()
 
 
 def test_website_content_matches_personal_website_visitor_copy_contract(tmp_path: Path) -> None:

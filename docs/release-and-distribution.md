@@ -86,28 +86,30 @@ scenario check for the demo surface.
 The **source-pipeline classifier** (`wiltodelta/raiw-source-classify` on both
 Hugging Face Hub and GitHub) and its companion 20-model open benchmark Space
 `wiltodelta/ai-image-detector-leaderboard` are not part of the package release
-fan-out. They are published together with
-`.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
-derivative `multi-provider-source-v8.npz` artifact from the declared model
-release tag (on `wiltodelta/raiw-source-classify` or a freeze tag in this
-repository), verifies its SHA-256, uploads that file plus the tracked
-`README.md`, `metrics.json`, `website-content.json`, `infer.py`, `benchmark.py`,
-and `demo.ipynb` under `docs/source-classify-hf/` and a synthesized
-`config.json` to Hugging Face (while deleting retired Hub model repositories),
-synchronizes the standalone public GitHub repository
-`wiltodelta/raiw-source-classify` (lightweight git tree without `.npz` plus the
-non-prerelease GitHub Release asset when `RAIW_SOURCE_CLASSIFY_TOKEN` is set),
-then runs `scripts/sync_ai_detector_leaderboard.py` to verify parity against
+fan-out. They are published automatically together with
+`.github/workflows/publish-source-classify-hf.yml` whenever a push to `main`
+changes `docs/source-classify-hf/**` or the publisher workflow/scripts (and on
+manual `workflow_dispatch`). The workflow downloads the derivative
+`multi-provider-source-v8.npz` artifact (from `wiltodelta/raiw-source-classify`
+GitHub Releases, a freeze tag in this repository, or Hugging Face Hub), verifies
+its SHA-256, uploads that file plus the tracked `README.md`, `metrics.json`,
+`website-content.json`, `infer.py`, `benchmark.py`, and `demo.ipynb` under
+`docs/source-classify-hf/` and a synthesized `config.json` to Hugging Face
+(while deleting retired Hub model repositories), pushes the lightweight GitHub
+repository tree to `wiltodelta/raiw-source-classify` over SSH using the
+repository-scoped deploy key `RAIW_SOURCE_CLASSIFY_DEPLOY_KEY` (which in turn
+runs `wiltodelta/raiw-source-classify`'s `.github/workflows/sync-release.yml`
+under its own `GITHUB_TOKEN` to ensure the non-prerelease GitHub Release carries
+the SHA-256-verified `.npz` asset, with a daily recovery schedule), verifies the
+live GitHub commit and release digest, and then runs
+`scripts/sync_ai_detector_leaderboard.py` to verify parity against
 `metrics.json` (optionally re-evaluating the 578-image open benchmark on CPU via
 `recompute_leaderboard=true`), synchronize
 `docs/ai-image-detector-leaderboard/` onto the Hugging Face Space
 `wiltodelta/ai-image-detector-leaderboard`, and write an external arena and
 baseline-drift status table (covering the Space, the Hugging Face blog report,
 `aidetectarena.com`, `DFBench/Leaderboard-Image-2025`, and the pinned Hub
-baseline revisions) to the workflow summary. The `RAIW_SOURCE_CLASSIFY_TOKEN`
-repository secret is a fine-grained token limited to
-`wiltodelta/raiw-source-classify`, with Contents read and write access; without
-it the GitHub repository sync step skips with a notice. Victor's personal website
+baseline revisions) to the workflow summary. Victor's personal website
 (`wiltodelta/wiltodelta-app`, `/projects/raiw-source-classify/`) polls
 `wiltodelta/raiw-source-classify` via `release-refresh.yml`, imports `README.md`
 ("Model architecture" and "Evaluation") and `website-content.json`, and
@@ -121,8 +123,7 @@ does not upload new weights - bump `WEIGHTS_REVISION` and `GITHUB_WEIGHTS_TAG` i
 installed clients. The private corpus, catalog, paths, hashes, embeddings, and
 feature caches are outside this flow.
 
-The workflow is manual and requires the model release tag plus an explicit
-`publish` confirmation. Prefer publishing frozen `.npz` releases directly on
+Prefer publishing frozen `.npz` releases directly on
 `wiltodelta/raiw-source-classify` (`v8`, `v9`, ...); if a model-freeze release
 is still created in `remove-ai-watermarks`, mark it as a pre-release so a model
 artifact cannot replace the latest package release in GitHub's release UI.

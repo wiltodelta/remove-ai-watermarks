@@ -1,17 +1,22 @@
 name: Publish source classifier to Hugging Face and GitHub
 
-# Manual only. The derivative model weights live in a GitHub model release
-# (`wiltodelta/raiw-source-classify` or a model-freeze tag in this repository);
-# the private training corpus and caches never enter either repository.
-# Also synchronizes `wiltodelta/ai-image-detector-leaderboard` and audits
-# external benchmark/arena surfaces so public leaderboards never lag a freeze.
+# Automatic on pushes to `main` touching the public model card/publisher bundle,
+# plus manual `workflow_dispatch`. Synchronizes Hugging Face
+# `wiltodelta/raiw-source-classify`, GitHub `wiltodelta/raiw-source-classify`
+# (via repo-scoped SSH deploy key `RAIW_SOURCE_CLASSIFY_DEPLOY_KEY`), and
+# `wiltodelta/ai-image-detector-leaderboard`. The private training corpus and
+# caches never enter either repository.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/source-classify-hf/**"
+      - "scripts/publish_source_classify_hf.py"
+      - "scripts/templates/raiw-source-classify-sync-release.yml"
+      - ".github/workflows/publish-source-classify-hf.yml"
   workflow_dispatch:
     inputs:
-      confirm:
-        description: "Type publish"
-        required: true
       weights_tag:
         description: "Release tag holding the frozen source-classify weights (defaults to metrics.json github_release_tag)"
         required: false
@@ -26,15 +31,29 @@ on:
         required: false
         default: false
 
+concurrency:
+  group: publish-source-classify
+  cancel-in-progress: false
+
 jobs:
   publish:
-    if: ${{ github.event.inputs.confirm == 'publish' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /LICENSE
+            /README.md
+            /pyproject.toml
+            /uv.lock
+            /docs/source-classify-hf
+            /docs/ai-image-detector-leaderboard
+            /scripts
+            /src
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -43,7 +62,7 @@ jobs:
       - name: Download derivative model weights
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_WEIGHTS_TAG: ${{ github.event.inputs.weights_tag }}
+          INPUT_WEIGHTS_TAG: ${{ inputs.weights_tag }}
         run: |
           set -euo pipefail
           artifact="$(jq -r .artifact_file docs/source-classify-hf/metrics.json)"
@@ -52,15 +71,9 @@ jobs:
           test -n "$artifact" && test "$artifact" != "null"
           test -n "$tag" && test "$tag" != "null"
           mkdir -p weights
-          if ! gh release download "$tag" \
-            --repo "wiltodelta/raiw-source-classify" \
-            --pattern "$artifact" \
-            --dir weights 2>/dev/null; then
-            gh release download "$tag" \
-              --repo "${{ github.repository }}" \
-              --pattern "$artifact" \
-              --dir weights
-          fi
+          gh release download "$tag" --repo "wiltodelta/raiw-source-classify" --pattern "$artifact" --dir weights 2>/dev/null \
+            || gh release download "$tag" --repo "${{ github.repository }}" --pattern "$artifact" --dir weights 2>/dev/null \
+            || curl -fL --retry 3 --retry-delay 2 "https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/$artifact" -o "weights/$artifact"
           test -s "weights/$artifact"
 
       - name: Verify the frozen artifact
@@ -75,7 +88,7 @@ jobs:
       - name: Publish model card and weights to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          INPUT_GH_TAG: ${{ github.event.inputs.github_release_tag }}
+          INPUT_GH_TAG: ${{ inputs.github_release_tag }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -90,17 +103,18 @@ jobs:
             --target hf \
             --github-release-tag "$gh_tag" \
             --revision-out weights/published_revision.txt \
-            --message "Source-classify freeze (GitHub ${SHA:0:7})"
+            --message "Source-classify sync (GitHub ${SHA:0:7})"
 
-      - name: Sync standalone GitHub repository and release
+      - name: Sync standalone GitHub repository
         env:
+          RAIW_SOURCE_CLASSIFY_DEPLOY_KEY: ${{ secrets.RAIW_SOURCE_CLASSIFY_DEPLOY_KEY }}
           RAIW_SOURCE_CLASSIFY_TOKEN: ${{ secrets.RAIW_SOURCE_CLASSIFY_TOKEN }}
-          INPUT_GH_TAG: ${{ github.event.inputs.github_release_tag }}
+          INPUT_GH_TAG: ${{ inputs.github_release_tag }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ -z "${RAIW_SOURCE_CLASSIFY_TOKEN:-}" ]; then
-            echo "::notice::RAIW_SOURCE_CLASSIFY_TOKEN secret is not set; skipping wiltodelta/raiw-source-classify GitHub sync."
+          if [ -z "${RAIW_SOURCE_CLASSIFY_DEPLOY_KEY:-}" ] && [ -z "${RAIW_SOURCE_CLASSIFY_TOKEN:-}" ]; then
+            echo "::notice::Neither RAIW_SOURCE_CLASSIFY_DEPLOY_KEY nor RAIW_SOURCE_CLASSIFY_TOKEN is set; skipping GitHub sync."
             exit 0
           fi
           gh_tag="${INPUT_GH_TAG:-$(jq -r .github_release_tag docs/source-classify-hf/metrics.json)}"
@@ -109,13 +123,14 @@ jobs:
             --src weights \
             --target github \
             --github-release-tag "$gh_tag" \
+            --github-revision-out weights/gh_commit.txt \
             --message "Source-classify $gh_tag (remove-ai-watermarks ${SHA:0:7})"
 
       - name: Sync Open AI Image Detector Leaderboard and audit external arenas
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           SHA: ${{ github.sha }}
-          RECOMPUTE: ${{ github.event.inputs.recompute_leaderboard }}
+          RECOMPUTE: ${{ inputs.recompute_leaderboard }}
         run: |
           set -euo pipefail
           artifact="$(jq -r .artifact_file docs/source-classify-hf/metrics.json)"
@@ -137,3 +152,36 @@ jobs:
             --check-external-arenas \
             --summary-md weights/arena_summary.md
           cat weights/arena_summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify live GitHub repository and release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_GH_TAG: ${{ inputs.github_release_tag }}
+        run: |
+          set -euo pipefail
+          if [ ! -s weights/gh_commit.txt ]; then
+            exit 0
+          fi
+          expected_commit="$(tr -d '[:space:]' < weights/gh_commit.txt)"
+          artifact="$(jq -r .artifact_file docs/source-classify-hf/metrics.json)"
+          expected_sha="$(jq -r .artifact_sha256 docs/source-classify-hf/metrics.json | tr '[:upper:]' '[:lower:]')"
+          gh_tag="${INPUT_GH_TAG:-$(jq -r .github_release_tag docs/source-classify-hf/metrics.json)}"
+
+          live_commit="$(gh api repos/wiltodelta/raiw-source-classify/commits/main --jq .sha)"
+          test "$live_commit" = "$expected_commit"
+
+          for attempt in $(seq 1 36); do
+            if gh release view "$gh_tag" --repo wiltodelta/raiw-source-classify --json assets,isPrerelease 2>/dev/null \
+              | jq -e --arg name "$artifact" --arg dig "sha256:$expected_sha" '
+                  (.isPrerelease == false) and any(.assets[]; .name == $name and ((.digest // "" | ascii_downcase) == $dig))
+                ' >/dev/null; then
+              echo "Verified wiltodelta/raiw-source-classify@$gh_tag ($artifact, sha256=$expected_sha)."
+              exit 0
+            fi
+            if [ "$attempt" -lt 36 ]; then
+              echo "Waiting for wiltodelta/raiw-source-classify release $gh_tag verification (attempt $attempt)..."
+              sleep 5
+            fi
+          done
+          echo "::error::wiltodelta/raiw-source-classify release $gh_tag did not present verified $artifact"
+          exit 1

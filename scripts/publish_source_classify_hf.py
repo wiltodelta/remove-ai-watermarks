@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -39,6 +40,7 @@ _verify_sha256 = _sc._verify_sha256
 
 log = logging.getLogger(__name__)
 
+UPSTREAM_REPO = "wiltodelta/remove-ai-watermarks"
 GITHUB_DESCRIPTION = (
     "Open-set 10-provider AI image source-pipeline and synthetic-image classifier "
     "(CPU ONNX + 512-d pixel forensics, pickle-free weights). Not a SynthID detector. "
@@ -68,6 +70,8 @@ RETIRED_FILES = (
     "multi-provider-source-v5.npz",
 )
 CARD_DIR = REPO_ROOT / "docs" / "source-classify-hf"
+GITHUB_WORKFLOW_TEMPLATE = REPO_ROOT / "scripts" / "templates" / "raiw-source-classify-sync-release.yml"
+GITHUB_WORKFLOW_REL = ".github/workflows/sync-release.yml"
 TRACKED_CARD_FILES = (
     "README.md",
     "metrics.json",
@@ -77,7 +81,7 @@ TRACKED_CARD_FILES = (
     "demo.ipynb",
 )
 PUBLIC_FILES = (*TRACKED_CARD_FILES, CONFIG_FILE, MODEL_FILE)
-GITHUB_TRACKED_FILES = (*TRACKED_CARD_FILES, CONFIG_FILE, "LICENSE", ".gitignore")
+GITHUB_TRACKED_FILES = (*TRACKED_CARD_FILES, CONFIG_FILE, "LICENSE", ".gitignore", GITHUB_WORKFLOW_REL)
 WEBSITE_SECTIONS = ("## Model architecture", "## Evaluation")
 FORBIDDEN_VISITOR_COPY = (
     "<",
@@ -178,12 +182,14 @@ def _stage_card_bundle(
         raise SystemExit(f"missing publication files: {', '.join(missing)}")
     validate_website_contract(CARD_DIR)
     dest.mkdir(parents=True, exist_ok=True)
-    for name, path in sources.items():
-        if name == "README.md" and strip_frontmatter:
+    for rel_name, path in sources.items():
+        out_path = dest / rel_name
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if rel_name == "README.md" and strip_frontmatter:
             cleaned = _strip_yaml_frontmatter(path.read_text(encoding="utf-8"))
-            (dest / name).write_text(cleaned, encoding="utf-8")
+            out_path.write_text(cleaned, encoding="utf-8")
         else:
-            shutil.copy2(path, dest / name)
+            shutil.copy2(path, out_path)
     metrics = json.loads((CARD_DIR / "metrics.json").read_text(encoding="utf-8"))
     (dest / CONFIG_FILE).write_text(
         json.dumps(_build_hub_config(metrics, github_release_tag=github_release_tag), indent=2) + "\n",
@@ -214,11 +220,27 @@ def stage_github_repo(
     """Stage the lightweight public GitHub repository tree (weights stay in GitHub Releases)."""
     _stage_card_bundle(
         dest,
-        {"LICENSE": REPO_ROOT / "LICENSE"},
+        {
+            "LICENSE": REPO_ROOT / "LICENSE",
+            GITHUB_WORKFLOW_REL: GITHUB_WORKFLOW_TEMPLATE,
+        },
         github_release_tag=github_release_tag,
         strip_frontmatter=True,
     )
     (dest / ".gitignore").write_text(GITHUB_GITIGNORE, encoding="utf-8")
+
+
+def sync_github_checkout(
+    checkout: Path,
+    *,
+    github_release_tag: str | None = None,
+) -> None:
+    """Stage the GitHub repository bundle and synchronize ``checkout`` in place (preserving ``.git``)."""
+    checkout.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="raiw-source-gh-stage-") as tmp:
+        stage = Path(tmp)
+        stage_github_repo(stage, github_release_tag=github_release_tag)
+        _sync_staged_tree_to_checkout(stage, checkout)
 
 
 def publish(stage: Path, *, token: str, message: str, dry_run: bool = False) -> str:
@@ -313,86 +335,309 @@ def _write_git_askpass(helper_dir: Path) -> Path:
     return askpass
 
 
-def publish_github(
-    stage: Path,
-    weights_file: Path,
-    *,
-    release_tag: str | None = None,
-    message: str,
-    token: str | None = None,
-    dry_run: bool = False,
-) -> str:
-    """Sync the standalone GitHub repository and attach the verified `.npz` release asset."""
-    if not weights_file.is_file():
-        raise SystemExit(f"missing model artifact for GitHub release: {weights_file}")
-    metrics = json.loads((CARD_DIR / "metrics.json").read_text(encoding="utf-8"))
+def _sync_staged_tree_to_checkout(stage: Path, checkout: Path) -> None:
+    expected_rels = [Path(rel) for rel in GITHUB_TRACKED_FILES]
+    for existing in list(checkout.iterdir()):
+        if existing.name == ".git":
+            continue
+        if existing.is_dir():
+            shutil.rmtree(existing)
+        else:
+            existing.unlink()
+    for rel in expected_rels:
+        dest_file = checkout / rel
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(stage / rel, dest_file)
+        if rel.name in ("infer.py", "benchmark.py"):
+            dest_file.chmod(0o755)
+
+
+def _format_release_metadata(metrics: dict[str, Any], resolved_tag: str) -> tuple[str, str, str, str]:
+    artifact_name = str(metrics["artifact_file"])
     expected_sha = str(metrics["artifact_sha256"]).lower()
     schema = str(metrics["schema"])
-    resolved_tag = release_tag or str(metrics.get("github_release_tag") or GITHUB_DEFAULT_RELEASE_TAG)
+    size_mb = metrics.get("artifact_size_mb", "")
+    size_note = f"{size_mb} MB, " if size_mb else ""
+    release_title = f"RAIW Source Classify {resolved_tag} ({schema})"
+    release_notes = (
+        f"Pickle-free CPU-only multimodal weights `{artifact_name}` "
+        f"({size_note}`allow_pickle=False`, `sha256={expected_sha}`).\n\n"
+        f"- Hugging Face model card: https://huggingface.co/{HUB_REPO}\n"
+        f'- Python package: `pip install "remove-ai-watermarks[source-classify]"`\n'
+        f"- Standalone runner: `uv run https://raw.githubusercontent.com/{GITHUB_REPO}/main/infer.py <IMAGE> --json`"
+    )
+    return artifact_name, expected_sha, release_title, release_notes
 
-    if dry_run:
-        staged_files = sorted(path.name for path in stage.iterdir() if path.is_file())
-        log.info(
-            "dry-run: staged %s for GitHub %s release=%s weights=%s",
-            staged_files,
-            GITHUB_REPO,
-            resolved_tag,
-            weights_file.name,
-        )
-        return "(dry-run)"
 
+def _download_verified_weights_for_release(
+    dest_dir: Path,
+    *,
+    artifact_name: str,
+    expected_sha: str,
+    resolved_tag: str,
+    env: Mapping[str, str],
+) -> Path:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out = dest_dir / artifact_name
+    hf_url = f"https://huggingface.co/{HUB_REPO}/resolve/main/{artifact_name}"
+    log.info("Downloading weights from Hugging Face: GET %s", hf_url)
+    req = urllib.request.Request(hf_url, headers={"User-Agent": "raiw-source-classify-release-sync"})
     try:
-        _verify_sha256(weights_file, expected_sha)
+        with (
+            urllib.request.urlopen(req, timeout=120) as resp,
+            out.open("wb") as handle,
+        ):
+            log.info("Hugging Face response: url=%s status=%s", hf_url, getattr(resp, "status", None))
+            shutil.copyfileobj(resp, handle)
+    except Exception as exc:
+        log.warning("Hugging Face weight fetch failed (%s); trying %s release %s", exc, UPSTREAM_REPO, resolved_tag)
+        _run_checked(
+            [
+                "gh",
+                "release",
+                "download",
+                resolved_tag,
+                "--repo",
+                UPSTREAM_REPO,
+                "--pattern",
+                artifact_name,
+                "--dir",
+                str(dest_dir),
+                "--clobber",
+            ],
+            env=env,
+        )
+    try:
+        _verify_sha256(out, expected_sha)
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
+    return out
+
+
+def ensure_github_release(
+    *,
+    weights_file: Path | None = None,
+    release_tag: str | None = None,
+    target_sha: str | None = None,
+    metrics_path: Path | None = None,
+    token: str | None = None,
+) -> None:
+    """Ensure ``GITHUB_REPO`` has a non-prerelease Latest release carrying the SHA-256-verified `.npz`."""
+    metrics = json.loads((metrics_path or (CARD_DIR / "metrics.json")).read_text(encoding="utf-8"))
+    resolved_tag = release_tag or str(metrics.get("github_release_tag") or GITHUB_DEFAULT_RELEASE_TAG)
+    artifact_name, expected_sha, release_title, release_notes = _format_release_metadata(metrics, resolved_tag)
 
     env = dict(os.environ)
     clean_token = (token or "").strip()
     if clean_token:
         env["GH_TOKEN"] = clean_token
 
-    repo_check = _run_checked(["gh", "api", f"repos/{GITHUB_REPO}"], env=env, allow_failure=True)
-    existing_topics: set[str] = set()
-    need_repo_meta = repo_check.returncode != 0
-    if repo_check.returncode == 0:
-        repo_meta = json.loads(repo_check.stdout or "{}")
-        existing_topics = {str(t) for t in (repo_meta.get("topics") or [])}
-        need_repo_meta = (
-            repo_meta.get("description") != GITHUB_DESCRIPTION or repo_meta.get("homepage") != GITHUB_HOMEPAGE
+    rel_view = _run_checked(
+        [
+            "gh",
+            "release",
+            "view",
+            resolved_tag,
+            "--repo",
+            GITHUB_REPO,
+            "--json",
+            "assets,body,isPrerelease,name",
+        ],
+        env=env,
+        allow_failure=True,
+    )
+    rel_data = json.loads(rel_view.stdout or "{}") if rel_view.returncode == 0 else None
+    matching_digest = f"sha256:{expected_sha}"
+    has_verified_asset = bool(
+        rel_data
+        and any(
+            asset.get("name") == artifact_name and str(asset.get("digest", "")).lower() == matching_digest
+            for asset in rel_data.get("assets", [])
         )
-    if need_repo_meta:
-        repo_subcmd = ["create", GITHUB_REPO, "--public"] if repo_check.returncode != 0 else ["edit", GITHUB_REPO]
-        _run_checked(
-            [
-                "gh",
-                "repo",
-                *repo_subcmd,
-                "--description",
-                GITHUB_DESCRIPTION,
-                "--homepage",
-                GITHUB_HOMEPAGE,
-            ],
-            env=env,
-        )
+    )
+    meta_matches = bool(
+        rel_data
+        and rel_data.get("name") == release_title
+        and rel_data.get("body") == release_notes
+        and not bool(rel_data.get("isPrerelease"))
+    )
 
-    if existing_topics != set(GITHUB_TOPICS):
-        topics_payload = json.dumps({"names": list(GITHUB_TOPICS)})
-        _run_checked(
-            ["gh", "api", "-X", "PUT", f"repos/{GITHUB_REPO}/topics", "--input", "-"],
-            env=env,
-            input_text=topics_payload,
+    if rel_data is not None and has_verified_asset and meta_matches:
+        log.info("GitHub Release %s@%s (%s) already verified", GITHUB_REPO, resolved_tag, matching_digest)
+        return
+
+    with tempfile.TemporaryDirectory(prefix="raiw-source-gh-rel-") as tmp:
+        resolved_weights: Path | None = None
+        if not has_verified_asset:
+            if weights_file is not None:
+                if not weights_file.is_file():
+                    raise SystemExit(f"missing model artifact for GitHub release: {weights_file}")
+                try:
+                    _verify_sha256(weights_file, expected_sha)
+                except RuntimeError as exc:
+                    raise SystemExit(str(exc)) from exc
+                resolved_weights = weights_file
+            else:
+                resolved_weights = _download_verified_weights_for_release(
+                    Path(tmp),
+                    artifact_name=artifact_name,
+                    expected_sha=expected_sha,
+                    resolved_tag=resolved_tag,
+                    env=env,
+                )
+
+        if rel_data is None:
+            if resolved_weights is None:
+                raise SystemExit("missing resolved weights for release creation")
+            create_cmd = [
+                "gh",
+                "release",
+                "create",
+                resolved_tag,
+                str(resolved_weights),
+                "--repo",
+                GITHUB_REPO,
+                "--title",
+                release_title,
+                "--notes",
+                release_notes,
+                "--latest",
+            ]
+            if target_sha:
+                create_cmd.extend(["--target", target_sha])
+            _run_checked(create_cmd, env=env)
+        else:
+            if not meta_matches:
+                _run_checked(
+                    [
+                        "gh",
+                        "release",
+                        "edit",
+                        resolved_tag,
+                        "--repo",
+                        GITHUB_REPO,
+                        "--title",
+                        release_title,
+                        "--notes",
+                        release_notes,
+                        "--prerelease=false",
+                        "--latest",
+                    ],
+                    env=env,
+                )
+            if not has_verified_asset:
+                if resolved_weights is None:
+                    raise SystemExit("missing resolved weights for release upload")
+                _run_checked(
+                    [
+                        "gh",
+                        "release",
+                        "upload",
+                        resolved_tag,
+                        str(resolved_weights),
+                        "--repo",
+                        GITHUB_REPO,
+                        "--clobber",
+                    ],
+                    env=env,
+                )
+
+
+def publish_github(
+    stage: Path,
+    weights_file: Path | None = None,
+    *,
+    release_tag: str | None = None,
+    message: str,
+    token: str | None = None,
+    deploy_key: str | None = None,
+    dry_run: bool = False,
+) -> str:
+    """Sync the standalone GitHub repository and attach/verify the `.npz` release asset."""
+    metrics = json.loads((CARD_DIR / "metrics.json").read_text(encoding="utf-8"))
+    expected_sha = str(metrics["artifact_sha256"]).lower()
+    resolved_tag = release_tag or str(metrics.get("github_release_tag") or GITHUB_DEFAULT_RELEASE_TAG)
+
+    clean_deploy_key = (deploy_key or "").strip()
+    clean_token = (token or "").strip()
+    ssh_only = bool(clean_deploy_key) and not clean_token
+
+    if not ssh_only and weights_file is None:
+        raise SystemExit("missing model artifact for GitHub release: None")
+    if not ssh_only and weights_file is not None and not weights_file.is_file():
+        raise SystemExit(f"missing model artifact for GitHub release: {weights_file}")
+
+    if dry_run:
+        staged_files = sorted(str(p.relative_to(stage).as_posix()) for p in stage.rglob("*") if p.is_file())
+        log.info(
+            "dry-run: staged %s for GitHub %s release=%s weights=%s",
+            staged_files,
+            GITHUB_REPO,
+            resolved_tag,
+            weights_file.name if weights_file is not None else "(ssh-only)",
         )
+        return "(dry-run)"
+
+    if not ssh_only and weights_file is not None:
+        try:
+            _verify_sha256(weights_file, expected_sha)
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
+
+    env = dict(os.environ)
+    if clean_token:
+        env["GH_TOKEN"] = clean_token
+
+    if not ssh_only:
+        repo_check = _run_checked(["gh", "api", f"repos/{GITHUB_REPO}"], env=env, allow_failure=True)
+        existing_topics: set[str] = set()
+        need_repo_meta = repo_check.returncode != 0
+        if repo_check.returncode == 0:
+            repo_meta = json.loads(repo_check.stdout or "{}")
+            existing_topics = {str(t) for t in (repo_meta.get("topics") or [])}
+            need_repo_meta = (
+                repo_meta.get("description") != GITHUB_DESCRIPTION or repo_meta.get("homepage") != GITHUB_HOMEPAGE
+            )
+        if need_repo_meta:
+            repo_subcmd = ["create", GITHUB_REPO, "--public"] if repo_check.returncode != 0 else ["edit", GITHUB_REPO]
+            _run_checked(
+                [
+                    "gh",
+                    "repo",
+                    *repo_subcmd,
+                    "--description",
+                    GITHUB_DESCRIPTION,
+                    "--homepage",
+                    GITHUB_HOMEPAGE,
+                ],
+                env=env,
+            )
+
+        if existing_topics != set(GITHUB_TOPICS):
+            topics_payload = json.dumps({"names": list(GITHUB_TOPICS)})
+            _run_checked(
+                ["gh", "api", "-X", "PUT", f"repos/{GITHUB_REPO}/topics", "--input", "-"],
+                env=env,
+                input_text=topics_payload,
+            )
 
     with tempfile.TemporaryDirectory(prefix="raiw-source-gh-git-") as tmp:
         tmp_root = Path(tmp)
         git_env = dict(env)
         git_env["GIT_TERMINAL_PROMPT"] = "0"
-        if clean_token:
-            askpass = _write_git_askpass(tmp_root)
-            git_env["GIT_ASKPASS"] = str(askpass)
+        if ssh_only:
+            key_path = tmp_root / "deploy_key"
+            key_path.write_text(clean_deploy_key + "\n", encoding="utf-8")
+            key_path.chmod(0o600)
+            git_env["GIT_SSH_COMMAND"] = f"ssh -i {key_path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+            remote_url = f"git@github.com:{GITHUB_REPO}.git"
+        else:
+            if clean_token:
+                askpass = _write_git_askpass(tmp_root)
+                git_env["GIT_ASKPASS"] = str(askpass)
+            remote_url = f"https://github.com/{GITHUB_REPO}.git"
 
         checkout = tmp_root / "repo"
-        remote_url = f"https://github.com/{GITHUB_REPO}.git"
         clone_res = _run_checked(
             ["git", "clone", "--depth", "1", remote_url, str(checkout)],
             env=git_env,
@@ -406,18 +651,7 @@ def publish_github(
         else:
             _run_checked(["git", "checkout", "-B", "main"], cwd=checkout, env=git_env)
 
-        for existing in list(checkout.iterdir()):
-            if existing.name == ".git":
-                continue
-            if existing.is_dir():
-                shutil.rmtree(existing)
-            else:
-                existing.unlink()
-
-        for name in GITHUB_TRACKED_FILES:
-            shutil.copy2(stage / name, checkout / name)
-            if name in ("infer.py", "benchmark.py"):
-                (checkout / name).chmod(0o755)
+        _sync_staged_tree_to_checkout(stage, checkout)
 
         _run_checked(["git", "add", "-A"], cwd=checkout, env=git_env)
         status = _run_checked(["git", "status", "--porcelain"], cwd=checkout, env=git_env)
@@ -440,101 +674,42 @@ def publish_github(
 
         head_sha = _run_checked(["git", "rev-parse", "HEAD"], cwd=checkout, env=git_env).stdout.strip()
 
-    release_title = f"RAIW Source Classify {resolved_tag} ({schema})"
-    size_mb = metrics.get("artifact_size_mb", "")
-    size_note = f"{size_mb} MB, " if size_mb else ""
-    release_notes = (
-        f"Pickle-free CPU-only multimodal weights `{weights_file.name}` "
-        f"({size_note}`allow_pickle=False`, `sha256={expected_sha}`).\n\n"
-        f"- Hugging Face model card: https://huggingface.co/{HUB_REPO}\n"
-        f'- Python package: `pip install "remove-ai-watermarks[source-classify]"`\n'
-        f"- Standalone runner: `uv run https://raw.githubusercontent.com/{GITHUB_REPO}/main/infer.py <IMAGE> --json`"
-    )
+    if ssh_only:
+        # In SSH deploy-key mode, pushing to `main` triggers `.github/workflows/sync-release.yml`
+        # inside `wiltodelta/raiw-source-classify` to run `ensure_github_release` via GITHUB_TOKEN.
+        return head_sha
 
-    rel_view = _run_checked(
-        [
-            "gh",
-            "release",
-            "view",
-            resolved_tag,
-            "--repo",
-            GITHUB_REPO,
-            "--json",
-            "assets,body,isPrerelease,name",
-        ],
-        env=env,
-        allow_failure=True,
+    ensure_github_release(
+        weights_file=weights_file,
+        release_tag=resolved_tag,
+        target_sha=head_sha,
+        token=clean_token or None,
     )
-    if rel_view.returncode != 0:
-        _run_checked(
-            [
-                "gh",
-                "release",
-                "create",
-                resolved_tag,
-                str(weights_file),
-                "--repo",
-                GITHUB_REPO,
-                "--target",
-                head_sha,
-                "--title",
-                release_title,
-                "--notes",
-                release_notes,
-                "--latest",
-            ],
-            env=env,
-        )
-    else:
-        rel_data = json.loads(rel_view.stdout or "{}")
-        if (
-            rel_data.get("name") != release_title
-            or rel_data.get("body") != release_notes
-            or bool(rel_data.get("isPrerelease"))
-        ):
-            _run_checked(
-                [
-                    "gh",
-                    "release",
-                    "edit",
-                    resolved_tag,
-                    "--repo",
-                    GITHUB_REPO,
-                    "--title",
-                    release_title,
-                    "--notes",
-                    release_notes,
-                    "--prerelease=false",
-                    "--latest",
-                ],
-                env=env,
-            )
-        matching_digest = f"sha256:{expected_sha}"
-        has_verified_asset = any(
-            asset.get("name") == weights_file.name and str(asset.get("digest", "")).lower() == matching_digest
-            for asset in rel_data.get("assets", [])
-        )
-        if not has_verified_asset:
-            _run_checked(
-                [
-                    "gh",
-                    "release",
-                    "upload",
-                    resolved_tag,
-                    str(weights_file),
-                    "--repo",
-                    GITHUB_REPO,
-                    "--clobber",
-                ],
-                env=env,
-            )
-
     return head_sha
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--src", type=Path, required=True)
+    parser.add_argument("--src", type=Path, default=None, help="Directory holding the frozen .npz artifact.")
+    parser.add_argument(
+        "--stage-github-only",
+        type=Path,
+        default=None,
+        help="Stage the lightweight GitHub repository tree to this path and exit.",
+    )
+    parser.add_argument(
+        "--sync-github-checkout",
+        type=Path,
+        default=None,
+        help="Synchronize an existing GitHub checkout directory in place (preserving .git) and exit.",
+    )
+    parser.add_argument(
+        "--ensure-github-release",
+        action="store_true",
+        help="Ensure the GitHub Release and SHA-256-verified .npz asset exist on wiltodelta/raiw-source-classify.",
+    )
+    parser.add_argument("--metrics-file", type=Path, default=None, help="Optional metrics.json override.")
+    parser.add_argument("--target-sha", default=None, help="Optional target commit SHA for release creation.")
     parser.add_argument("--message", default="Publish source-pipeline classifier")
     parser.add_argument(
         "--target",
@@ -562,20 +737,51 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+    if args.stage_github_only is not None:
+        stage_github_repo(args.stage_github_only.expanduser().resolve(), github_release_tag=args.github_release_tag)
+        log.info("staged GitHub tree into %s", args.stage_github_only)
+        return 0
+
+    if args.sync_github_checkout is not None:
+        sync_github_checkout(
+            args.sync_github_checkout.expanduser().resolve(),
+            github_release_tag=args.github_release_tag,
+        )
+        log.info("synchronized GitHub checkout %s", args.sync_github_checkout)
+        return 0
+
+    if args.ensure_github_release:
+        weights = (args.src.expanduser().resolve() / MODEL_FILE) if args.src is not None else None
+        ensure_github_release(
+            weights_file=weights,
+            release_tag=args.github_release_tag,
+            target_sha=args.target_sha,
+            metrics_path=args.metrics_file.expanduser().resolve() if args.metrics_file is not None else None,
+        )
+        return 0
+
     do_hf = args.target in ("hf", "both")
     do_github = args.target in ("github", "both")
+
+    deploy_key = os.environ.get("RAIW_SOURCE_CLASSIFY_DEPLOY_KEY", "").strip() or None
+    gh_token = os.environ.get("RAIW_SOURCE_CLASSIFY_TOKEN", "").strip() or (
+        None if deploy_key else (os.environ.get("GH_TOKEN", "").strip() or None)
+    )
+    ssh_only = bool(deploy_key) and not gh_token
+
+    if args.src is None and (do_hf or not ssh_only):
+        raise SystemExit("--src is required unless --target github is used in SSH deploy-key mode")
 
     hf_token = os.environ.get("HF_TOKEN", "").strip()
     if do_hf and not args.dry_run and not hf_token:
         raise SystemExit("HF_TOKEN is not set (write role required)")
 
-    gh_token = (
-        os.environ.get("RAIW_SOURCE_CLASSIFY_TOKEN", "").strip() or os.environ.get("GH_TOKEN", "").strip() or None
-    )
-    weights_file = args.src.expanduser().resolve() / MODEL_FILE
+    weights_file = (args.src.expanduser().resolve() / MODEL_FILE) if args.src is not None else None
 
     hf_revision = ""
     if do_hf:
+        if args.src is None:
+            raise SystemExit("--src is required for Hugging Face target")
         with tempfile.TemporaryDirectory(prefix="raiw-source-hf-") as tmp:
             stage = Path(tmp)
             stage_release(stage, args.src, github_release_tag=args.github_release_tag)
@@ -595,6 +801,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 release_tag=args.github_release_tag,
                 message=args.message,
                 token=gh_token,
+                deploy_key=deploy_key,
                 dry_run=args.dry_run,
             )
         if args.github_revision_out is not None and not args.dry_run:

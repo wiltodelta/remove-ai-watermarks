@@ -1,0 +1,71 @@
+name: Sync release and upstream card
+
+# Keeps wiltodelta/raiw-source-classify synchronized with wiltodelta/remove-ai-watermarks
+# and ensures the declared GitHub Release carries the SHA-256-verified .npz weights
+# using this repository's built-in GITHUB_TOKEN (zero external secrets required).
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Fetch upstream publisher helper (sparse)
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/remove-ai-watermarks"
+          rm -rf "$upstream"
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/wiltodelta/remove-ai-watermarks.git "$upstream"
+          git -C "$upstream" sparse-checkout set --no-cone \
+            /LICENSE \
+            /docs/source-classify-hf \
+            /scripts/publish_source_classify_hf.py \
+            /scripts/templates/raiw-source-classify-sync-release.yml \
+            /src/remove_ai_watermarks
+
+      - name: Pull upstream card changes on schedule or manual run
+        if: github.event_name != 'push'
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/remove-ai-watermarks"
+          upstream_sha="$(git -C "$upstream" rev-parse --short=7 HEAD)"
+          python3 "$upstream/scripts/publish_source_classify_hf.py" \
+            --sync-github-checkout "$PWD"
+          git add -A
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Card and scripts already match upstream ($upstream_sha)."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync card from remove-ai-watermarks ($upstream_sha)"
+          git pull --rebase
+          git push
+
+      - name: Ensure verified GitHub Release and weights asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/remove-ai-watermarks/scripts/publish_source_classify_hf.py" \
+            --ensure-github-release \
+            --metrics-file "$PWD/metrics.json" \
+            --target-sha "$(git rev-parse HEAD)"
