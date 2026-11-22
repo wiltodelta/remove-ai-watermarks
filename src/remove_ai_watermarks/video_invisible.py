@@ -43,6 +43,7 @@ from remove_ai_watermarks.video_synthid import (
 from remove_ai_watermarks.video_temporal import (
     _backward_map,
     _motion_residual,
+    anchor_low_freq_color,
     build_temporal_reference,
     iter_stabilized_regenerated_frames,
     temporal_residual_ratio,
@@ -475,7 +476,7 @@ def regenerate_video_candidate(
     device: str = "auto",
     duration: float | None = None,
     runtime: VideoVaeRuntime | None = None,
-    temporal_stabilize: bool = False,
+    temporal_stabilize: bool = True,
     timestamps: Sequence[float] | None = None,
     _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> RegenerationMetrics:
@@ -598,6 +599,7 @@ def regenerate_video_candidate(
                 iter_stabilized_regenerated_frames(_regenerated_pairs()) if temporal_stabilize else _regenerated_pairs()
             )
             for reference, candidate in pair_stream:
+                candidate = anchor_low_freq_color(reference, candidate)
                 frame_pipe.write(candidate.tobytes())
                 reference_f32 = reference.astype(np.float32)
                 candidate_f32 = candidate.astype(np.float32)

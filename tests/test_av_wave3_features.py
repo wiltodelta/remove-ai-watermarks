@@ -192,7 +192,15 @@ class TestEndToEnd10BitHdrInvisible:
 
         def _fake_pipe(**kwargs):
             frames = kwargs["video"]
-            arr = np.stack([np.asarray(img, dtype=np.float32) / 255.0 for img in frames], axis=0)
+            arr = np.stack(
+                [
+                    np.asarray(img, dtype=np.float32)
+                    if isinstance(img, np.ndarray) and np.issubdtype(img.dtype, np.floating)
+                    else np.asarray(img, dtype=np.float32) / 255.0
+                    for img in frames
+                ],
+                axis=0,
+            )
             return SimpleNamespace(frames=[arr])
 
         runtime = VideoWanRuntime(

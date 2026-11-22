@@ -835,10 +835,10 @@ the static neutral prompt embedding on disk via `_wan_prompt_cache_path` so
 without buffering the full decoded video in host RAM. `WAN_SUPPORTED_EXTENSIONS`
 covers `.mp4`, `.mov`, and `.m4v`. `video.py` also exposes
 `profile="auto"`, routing eligible ByteDance/Seedance MP4, MOV, and M4V clips (`WAN21_AUTO_MAX_FRAME_PIXELS = 1920 * 1080`
-and `WAN21_MIN_CUDA_VRAM_BYTES = 8 GiB`, stepping down to `WAN21_COMPACT_CHUNK_FRAMES = 81` on `1080p`, `mps`, or `< 16 GiB` CUDA) to `wan21-seedance-experimental` on BF16 CUDA
-(`seedance-experimental` fallback on CPU/MPS MP4, or `synthid` on MOV/M4V/MKV/WebM or when the auto Wan budget is
+and `WAN21_MIN_CUDA_VRAM_BYTES = 8 GiB`, stepping down to `WAN21_MPS_CHUNK_FRAMES = 33` / `WAN21_MPS_OVERLAP_FRAMES = 9` on `mps` or `WAN21_COMPACT_CHUNK_FRAMES = 81` on `1080p` or `< 16 GiB` CUDA, and passing float32 tensors directly for 10-bit/16-bit sources) to `wan21-seedance-experimental` on BF16 CUDA
+(`seedance-experimental` fallback on CPU/MPS MP4, which streams SD-VAE guides in memory without an intermediate lossy `guide.mp4`, applies guide-resolution `iter_stabilized_regenerated_frames` plus ultra-low-frequency `anchor_low_freq_color` in CIE Lab before sigma-1 texture restoration, or `synthid` on MOV/M4V/MKV/WebM or when the auto Wan budget is
 exceeded) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental` on BF16 CUDA
-(`synthid` fallback otherwise). The invisible stage of `remove_video_all`
+(`synthid` fallback otherwise, with `temporal_stabilize=True` and `anchor_low_freq_color` enabled by default). The invisible stage of `remove_video_all`
 accepts `_REGENERATED_VIDEO_EXTENSIONS` (MP4, MOV, M4V, `.mkv`, and `.webm`); MKV and WebM
 sources never qualify for Wan, so `auto` resolves them to `synthid`. Coverage in
 `tests/test_video_seedance.py` includes source-detail separation, quantization,

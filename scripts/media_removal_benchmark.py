@@ -220,6 +220,7 @@ STRICT_BUILTIN_REQUIRED_CASE_IDS: tuple[str, ...] = (
     "audioseal-stereo-marked",
     "audioseal-stereo-music-48k-clean",
     "audioseal-stereo-music-48k-marked",
+    "audioseal-native48k-music-marked",
     "audioseal-long31s-marked",
     "audioseal-video-mp4-aac192k",
     "video-audio-multistream-marked",
@@ -333,6 +334,21 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
             "audio_invisible",
             "audioseal",
             as_music_p,
+            ".wav",
+            "verified_removed",
+            generation_id="music-48k-104",
+        )
+        # Native-48 kHz AudioSeal (LTX-2 style, stamped directly without 16 kHz downsampling)
+        native_l_48k = np.asarray(audioseal.embed(gen, music_48k[:, 0], msg_bits), dtype=np.float32)
+        native_r_48k = np.asarray(audioseal.embed(gen, music_48k[:, 1], msg_bits), dtype=np.float32)
+        native_marked_48k = np.clip(np.column_stack((native_l_48k, native_r_48k)), -0.98, 0.98).astype(np.float32)
+        as_native48k_p = fixtures_dir / "audioseal-native48k-music-marked.wav"
+        sf.write(as_native48k_p, native_marked_48k, 48000, subtype="FLOAT")
+        add_row(
+            "audioseal-native48k-music-marked",
+            "audio_invisible",
+            "audioseal",
+            as_native48k_p,
             ".wav",
             "verified_removed",
             generation_id="music-48k-104",

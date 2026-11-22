@@ -485,7 +485,8 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
     assert wan.can_run_wan_on_source(source, device="mps", for_auto=False) is True
     assert wan.can_run_wan_on_source(source, device="mps", for_auto=True) is False
     assert wan._effective_chunk_frames(193, 17, width=1920, height=1080, resolved_device="cuda") == 81
-    assert wan._effective_chunk_frames(193, 17, width=1280, height=720, resolved_device="mps") == 81
+    assert wan._effective_chunk_frames(193, 17, width=1280, height=720, resolved_device="mps") == 33
+    assert wan._effective_overlap_frames(17, eff_chunk=33, resolved_device="mps") == 9
     assert wan._effective_chunk_frames(193, 17, width=1280, height=720, resolved_device="cuda") == 193
 
     # Unknown component_depth=None must be rejected by validate_experimental_mp4_source

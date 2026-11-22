@@ -58,7 +58,9 @@ WAN21_SEEDANCE_STRENGTH = 0.12
 WAN21_SPATIAL_MULTIPLE = 16
 WAN21_DEFAULT_CHUNK_FRAMES = 193
 WAN21_COMPACT_CHUNK_FRAMES = 81
+WAN21_MPS_CHUNK_FRAMES = 33
 WAN21_DEFAULT_OVERLAP_FRAMES = 17
+WAN21_MPS_OVERLAP_FRAMES = 9
 WAN21_AUTO_MAX_FRAME_PIXELS = 1920 * 1080
 WAN21_MAX_FRAME_PIXELS = 1920 * 1080
 WAN21_MAX_TOTAL_PIXEL_FRAMES = 7200 * 1920 * 1080
@@ -157,12 +159,32 @@ def _effective_chunk_frames(
     height: int,
     resolved_device: str,
 ) -> int:
-    """Step down the default 193-frame window to 81 frames on 1080p, MPS, or <16 GiB CUDA."""
-    if chunk_frames != WAN21_DEFAULT_CHUNK_FRAMES or overlap_frames >= WAN21_COMPACT_CHUNK_FRAMES:
+    """Step down the default 193-frame window to 33 on MPS or 81 on 1080p / <16 GiB CUDA."""
+    if chunk_frames != WAN21_DEFAULT_CHUNK_FRAMES:
         return chunk_frames
-    if width * height > 1280 * 720 or resolved_device == "mps" or _cuda_vram_below(WAN21_HIGH_VRAM_BYTES):
+    if resolved_device == "mps" and overlap_frames < WAN21_MPS_CHUNK_FRAMES:
+        return WAN21_MPS_CHUNK_FRAMES
+    if overlap_frames >= WAN21_COMPACT_CHUNK_FRAMES:
+        return chunk_frames
+    if width * height > 1280 * 720 or _cuda_vram_below(WAN21_HIGH_VRAM_BYTES):
         return WAN21_COMPACT_CHUNK_FRAMES
     return chunk_frames
+
+
+def _effective_overlap_frames(
+    overlap_frames: int,
+    *,
+    eff_chunk: int,
+    resolved_device: str,
+) -> int:
+    """Use a 9-frame overlap with the 33-frame MPS window to keep stride and attention fast."""
+    if (
+        resolved_device == "mps"
+        and eff_chunk == WAN21_MPS_CHUNK_FRAMES
+        and overlap_frames == WAN21_DEFAULT_OVERLAP_FRAMES
+    ):
+        return WAN21_MPS_OVERLAP_FRAMES
+    return overlap_frames
 
 
 def load_video_wan_runtime(*, device: str = "auto", local_files_only: bool = False) -> VideoWanRuntime:
@@ -336,23 +358,28 @@ def _run_wan_window(
     target_h, target_w = orig_h + pad_h, orig_w + pad_w
 
     high_depth = bgr_window[0].dtype == np.uint16
-    pil_frames: list[Image.Image] = []
+    video_frames: list[Any] = []
     for frame_bgr in bgr_window:
-        frame_u8 = (frame_bgr >> 8).astype(np.uint8) if high_depth else frame_bgr
-        rgb = frame_u8[..., ::-1]
-        if pad_h or pad_w:
-            rgb = np.pad(rgb, ((top, bottom), (left, right), (0, 0)), mode="reflect")
-        pil_frames.append(Image.fromarray(np.ascontiguousarray(rgb), mode="RGB"))
+        if high_depth:
+            rgb_f32 = np.ascontiguousarray(frame_bgr[..., ::-1], dtype=np.float32) / 65535.0
+            if pad_h or pad_w:
+                rgb_f32 = np.pad(rgb_f32, ((top, bottom), (left, right), (0, 0)), mode="reflect")
+            video_frames.append(np.ascontiguousarray(rgb_f32))
+        else:
+            rgb = frame_bgr[..., ::-1]
+            if pad_h or pad_w:
+                rgb = np.pad(rgb, ((top, bottom), (left, right), (0, 0)), mode="reflect")
+            video_frames.append(Image.fromarray(np.ascontiguousarray(rgb), mode="RGB"))
 
-    rem = (len(pil_frames) - 1) % 4
+    rem = (len(video_frames) - 1) % 4
     pad_t = (4 - rem) % 4
     if pad_t:
-        pil_frames.extend([pil_frames[-1]] * pad_t)
+        video_frames.extend([video_frames[-1]] * pad_t)
 
     gen_device = "cpu" if runtime.resolved_device == "mps" else runtime.resolved_device
     generator = torch.Generator(device=gen_device).manual_seed(seed)
     call_kwargs: dict[str, Any] = {
-        "video": pil_frames,
+        "video": video_frames,
         "height": target_h,
         "width": target_w,
         "num_inference_steps": inference_steps,
@@ -565,6 +592,11 @@ def regenerate_wan_experimental(
             height=height,
             resolved_device=active_runtime.resolved_device,
         )
+        eff_overlap = _effective_overlap_frames(
+            overlap_frames,
+            eff_chunk=eff_chunk,
+            resolved_device=active_runtime.resolved_device,
+        )
         decoded_count = 0
 
         def counted_source() -> Iterator[np.ndarray]:
@@ -586,7 +618,7 @@ def regenerate_wan_experimental(
             strength=strength,
             seed=seed,
             chunk_frames=eff_chunk,
-            overlap_frames=overlap_frames,
+            overlap_frames=eff_overlap,
             inference_steps=steps,
         )
         if runtime is None:

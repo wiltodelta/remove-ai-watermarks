@@ -1316,3 +1316,56 @@ def detect_ai_bumper_start(
             best_jump = cut_strength
             best_cut = offset + cut
     return best_cut
+
+
+def _ultra_low_freq_blur(image_f32: NDArray[Any], sigma: float) -> NDArray[Any]:
+    """Compute a fast ultra-low-frequency Gaussian blur via 1/4-scale pyramid."""
+    height, width = image_f32.shape[:2]
+    small_w = max(8, width // 4)
+    small_h = max(8, height // 4)
+    small = cv2.resize(image_f32, (small_w, small_h), interpolation=cv2.INTER_AREA)
+    small_sigma = max(1.0, sigma / 4.0)
+    blurred_small = cv2.GaussianBlur(small, (0, 0), small_sigma, borderType=cv2.BORDER_REFLECT_101)
+    return cv2.resize(blurred_small, (width, height), interpolation=cv2.INTER_LINEAR)
+
+
+def anchor_low_freq_color(
+    source: NDArray[Any],
+    candidate: NDArray[Any],
+    *,
+    sigma: float | None = None,
+) -> NDArray[Any]:
+    """Anchor only ultra-low-frequency CIE Lab illumination and chroma to ``source``.
+
+    Transfers spatial frequencies below ``sigma >= 32 px`` (~200 px wavelength) so
+    VAE white-balance and exposure drift are corrected without leaking mid- or
+    high-frequency watermark carriers from ``source``. Supports ``uint8`` and
+    ``uint16`` BGR frames.
+    """
+    height, width = candidate.shape[:2]
+    eff_sigma = max(32.0, max(height, width) / 32.0) if sigma is None else max(8.0, float(sigma))
+    src_aligned = (
+        source
+        if source.shape[:2] == (height, width)
+        else cv2.resize(source, (width, height), interpolation=cv2.INTER_AREA)
+    )
+    src_scale = 65535.0 if src_aligned.dtype == np.uint16 else 255.0
+    cand_scale = 65535.0 if candidate.dtype == np.uint16 else 255.0
+    src_f32 = np.clip(src_aligned.astype(np.float32) / src_scale, 0.0, 1.0)
+    cand_f32 = np.clip(candidate.astype(np.float32) / cand_scale, 0.0, 1.0)
+
+    low_src = _ultra_low_freq_blur(src_f32, eff_sigma)
+    low_cand = _ultra_low_freq_blur(cand_f32, eff_sigma)
+    src_lab_low = cv2.cvtColor(low_src, cv2.COLOR_BGR2Lab)
+    cand_lab_low = cv2.cvtColor(low_cand, cv2.COLOR_BGR2Lab)
+    cand_lab = cv2.cvtColor(cand_f32, cv2.COLOR_BGR2Lab)
+
+    delta_lab = src_lab_low - cand_lab_low
+    cand_lab[..., 0] = np.clip(cand_lab[..., 0] + delta_lab[..., 0], 0.0, 100.0)
+    cand_lab[..., 1] = np.clip(cand_lab[..., 1] + delta_lab[..., 1], -127.0, 127.0)
+    cand_lab[..., 2] = np.clip(cand_lab[..., 2] + delta_lab[..., 2], -127.0, 127.0)
+
+    anchored_bgr = np.clip(cv2.cvtColor(cand_lab, cv2.COLOR_Lab2BGR), 0.0, 1.0)
+    if candidate.dtype == np.uint16:
+        return np.clip(np.rint(anchored_bgr * 65535.0), 0.0, 65535.0).astype(np.uint16)
+    return np.clip(np.rint(anchored_bgr * 255.0), 0.0, 255.0).astype(np.uint8)

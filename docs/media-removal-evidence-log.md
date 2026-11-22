@@ -250,3 +250,27 @@ In Wave 6 (2026-11-21):
   - `DAC 44.1 kHz` (`q=3`) + **`preserve_hf_hz=14000.0`**: **`1/1` `not_detected`** (`SynthID was not detected`)
     on `google-gemini-omni-flash-api_dac_hf14k.wav` (`sha256:70adefe96315c03f0e6ccc8cb19c25fb2c72a5c5b38fc4f0bc4a6dde0ac8c07d`),
     confirming no Google SynthID leakage above 14 kHz on the tested track.
+
+In Wave 9 (2026-11-22, `v0.70.0`):
+- **Seedance single-pass streaming + guide-resolution temporal stabilization + CIE Lab color anchoring**
+  (`dreamina-seedance-2-mini.mp4`, `1280x720 @ 24 fps`, CPU/MPS `sd-vae-ft-mse`):
+  - Eliminating intermediate lossy `guide.mp4` (`CRF 18`, `yuv420p`), applying
+    `iter_stabilized_regenerated_frames` at guide resolution, and anchoring
+    ultra-low-frequency CIE Lab illumination/chroma (`sigma >= 32 px`) improved
+    PSNR from `31.04 dB` to **`33.81 dB`** (`+2.77 dB`), cut `Lab Delta-E` from
+    `5.90` to **`4.06`** (`-31%`), and cut temporal residual ratio from `1.3723`
+    to **`1.1506`** (`-60%` excess flicker) with sharpness ratio preserved (`0.711`).
+- **2D SynthID default `temporal_stabilize=True` + CIE Lab color anchoring**
+  (`higgsfield-veo-3-1-lite.mp4`, `512x288 @ 12 fps`):
+  - Temporal residual ratio improved from `1.7709` to **`1.3929`** (`-49%` excess
+    flicker), `PSNR` `24.53 -> 24.63 dB`, `Lab Delta-E` `10.09 -> 9.89`.
+- **Audio quiet-stem gain-staging (`DAC` / `SNAC`) + native-48 kHz `AudioSeal` check**:
+  - On `google-gemini-omni-flash-api.mp4` (`4s` quiet stereo stem, `source_peak=0.103`):
+    `DAC 44.1 kHz` max Side/Mid drift dropped from `0.487 dB` to **`0.276 dB`**
+    (`-43%`, `0.271 dB` with `preserve_hf_hz=14000`, `RMS err 0.00595 -> 0.00579`);
+    `SNAC 44.1 kHz` max Side/Mid drift dropped from `0.829 dB` to **`0.554 dB`**
+    (`0.533 dB` with `preserve_hf_hz=14000`, `-36%`).
+  - On native-48 kHz `AudioSeal` (`audioseal-native48k-music-marked`, LTX-2 style
+    stamped directly at 48 kHz without 16 kHz downsampling): before `mean_detect_prob=0.999974`
+    (`frac=1.0`); after `DAC q=3` `0.0140` (`frac=0.0024`), and with `preserve_hf_hz=14000`
+    `0.0139` (`frac=0.0008`, lower `RMS err 0.05277 -> 0.04990`).

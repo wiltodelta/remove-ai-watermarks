@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import subprocess
+from collections import deque
 from contextlib import suppress
 from dataclasses import replace
 from itertools import chain
@@ -49,7 +50,12 @@ from remove_ai_watermarks.video_invisible import (
     load_video_vae_runtime,
     probe_video_geometry,
 )
-from remove_ai_watermarks.video_temporal import _backward_map, _motion_residual
+from remove_ai_watermarks.video_temporal import (
+    _backward_map,
+    _motion_residual,
+    anchor_low_freq_color,
+    iter_stabilized_regenerated_frames,
+)
 from remove_ai_watermarks.video_tools import require_video_tool
 from remove_ai_watermarks.video_visible import _HDR_TRANSFERS, _timestamp_time_base, _TimestampedNutWriter
 
@@ -236,12 +242,8 @@ def _reconstruct(
 ) -> Iterator[NDArray[Any]]:
     import torch
 
-    def _to_u8(frame: NDArray[Any]) -> NDArray[Any]:
-        return (frame >> 8).astype(np.uint8) if frame.dtype == np.uint16 else frame
-
     resized = (
-        cv2.resize(_to_u8(frame), size, interpolation=cv2.INTER_LANCZOS4)
-        for frame in _frames(source, high_depth=high_depth)
+        cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4) for frame in _frames(source, high_depth=high_depth)
     )
     for batch in _stream_batches(resized, 4):
         latents = _encode_frame_latents(
@@ -253,6 +255,7 @@ def _reconstruct(
             noise_std=0.0,
             shared_noise=torch.zeros_like(latents[0]),
             scaling_factor=runtime.scaling_factor,
+            high_depth=high_depth,
         )
 
 
@@ -436,27 +439,52 @@ def regenerate_seedance_experimental(
         atomic_video_output(output) as staged,
         TemporaryDirectory(prefix="seedance-experimental-", dir=output.parent) as directory,
     ):
-        guide, master = Path(directory) / "guide.mp4", Path(directory) / "master.mp4"
-        runtime = runtime or load_video_vae_runtime(model="stabilityai/sd-vae-ft-mse", device=device)
+        master = Path(directory) / "master.mp4"
+        owned_runtime = runtime is None
+        active_runtime = runtime or load_video_vae_runtime(model="stabilityai/sd-vae-ft-mse", device=device)
         guide_size = _fit_size(width, height, 512)
         guide_stream = (
-            _reconstruct(source, runtime, guide_size, high_depth=True)
+            _reconstruct(source, active_runtime, guide_size, high_depth=True)
             if high_depth
-            else _reconstruct(source, runtime, guide_size)
+            else _reconstruct(source, active_runtime, guide_size)
         )
-        _encode_frames(guide_stream, source, guide, fps, timestamps, crf=18)
-        del runtime
         src_frames = _frames(source, high_depth=high_depth, width=width, height=height)
-        guide_frames = _frames(guide, high_depth=high_depth)
-        frames = (_restore_texture(a, b) for a, b in zip(src_frames, guide_frames, strict=True))
-        return _finalize_experimental_output(
-            frames,
-            source,
-            master,
-            staged,
-            quality=quality,
-            fps=fps,
-            timestamps=timestamps,
-            label="Seedance",
-            high_depth=high_depth,
-        )
+        src_window: deque[NDArray[Any]] = deque()
+
+        def _guide_pairs() -> Iterator[tuple[NDArray[Any], NDArray[Any]]]:
+            for src, raw_guide in zip(src_frames, guide_stream, strict=True):
+                src_window.append(src)
+                g_h, g_w = raw_guide.shape[:2]
+                src_small = (
+                    src if src.shape[:2] == (g_h, g_w) else cv2.resize(src, (g_w, g_h), interpolation=cv2.INTER_AREA)
+                )
+                if high_depth and raw_guide.dtype != np.uint16:
+                    raw_guide = raw_guide.astype(np.uint16) * 257
+                yield src_small, raw_guide
+
+        def _restored_frames() -> Iterator[NDArray[Any]]:
+            for _src_small, stab_guide in iter_stabilized_regenerated_frames(_guide_pairs()):
+                src = src_window.popleft()
+                up_guide = (
+                    stab_guide
+                    if stab_guide.shape[:2] == (height, width)
+                    else cv2.resize(stab_guide, (width, height), interpolation=cv2.INTER_LANCZOS4)
+                )
+                yield _restore_texture(src, anchor_low_freq_color(src, up_guide))
+
+        frames = _restored_frames()
+        try:
+            return _finalize_experimental_output(
+                frames,
+                source,
+                master,
+                staged,
+                quality=quality,
+                fps=fps,
+                timestamps=timestamps,
+                label="Seedance",
+                high_depth=high_depth,
+            )
+        finally:
+            if owned_runtime:
+                del active_runtime
