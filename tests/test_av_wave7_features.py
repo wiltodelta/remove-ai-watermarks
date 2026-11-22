@@ -102,7 +102,7 @@ def test_video_provenance_auto_trigger_respects_clean_and_ai_clips(
     """include_invisible='auto' triggers on AI metadata/visible marks and skips clean clips."""
     from remove_ai_watermarks import video_invisible
 
-    assert video.video_has_invisible_provenance({"claim_generator": "Google Veo"}, None) is True
+    assert video.video_has_invisible_provenance({"synthid_watermark": "Google SynthID"}, None) is True
     assert video.video_has_invisible_provenance({}, "seedance") is True
     assert video.video_has_invisible_provenance({}, None) is False
 
@@ -186,7 +186,7 @@ def test_audio_provenance_auto_scrub_triggers_only_for_known_ai_vendors(
 
     assert audio.should_auto_scrub_audio(google_rep, method="auto", explicit_vendor=None) is True
     assert audio.should_auto_scrub_audio(eleven_rep, method="auto", explicit_vendor=None) is True
-    assert audio.should_auto_scrub_audio(cartesia_rep, method="auto", explicit_vendor=None) is True
+    assert audio.should_auto_scrub_audio(cartesia_rep, method="auto", explicit_vendor=None) is False
     assert audio.should_auto_scrub_audio(clean_rep, method="auto", explicit_vendor=None) is False
 
     monkeypatch.setattr(audio_dac, "is_available", lambda: False)

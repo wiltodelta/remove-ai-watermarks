@@ -612,7 +612,7 @@ class TestAudioSnacCodec:
             **_kwargs: Any,
         ) -> np.ndarray[Any, Any]:
             assert sample_rate == 48000
-            assert device == "cpu"
+            assert device in {"cpu", "mps", "cuda"}
             stem_shapes.append((int(samples.shape[0]), int(samples.shape[1])))
             return samples.copy()
 

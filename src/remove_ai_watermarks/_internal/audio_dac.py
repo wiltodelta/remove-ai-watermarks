@@ -135,8 +135,13 @@ def blend_hf_crossover(
     np = import_module("numpy")
     sig = import_module("scipy.signal")
     sos_lp, sos_hp = _hf_crossover_sos(float(preserve_hf_hz), int(sample_rate))
-    out = sig.sosfiltfilt(sos_lp, processed, axis=0)
-    out += sig.sosfiltfilt(sos_hp, original, axis=0)
+    lp_proc = sig.sosfiltfilt(sos_lp, processed, axis=0)
+    lp_orig = sig.sosfiltfilt(sos_lp, original, axis=0)
+    in_lp_rms = float(np.sqrt(np.mean(np.square(lp_orig, dtype=np.float64))))
+    out_lp_rms = float(np.sqrt(np.mean(np.square(lp_proc, dtype=np.float64))))
+    if in_lp_rms >= 1e-6 and out_lp_rms >= 1e-6:
+        lp_proc = lp_proc * (in_lp_rms / out_lp_rms)
+    out = lp_proc + sig.sosfiltfilt(sos_hp, original, axis=0)
     return np.asarray(out, dtype=np.float32)
 
 
@@ -190,7 +195,7 @@ def resynthesize(
                 continue
             model_stem = prepared[:, channel]
             peak_in = float(np.max(np.abs(model_stem)))
-            scale = _HEADROOM_CEILING / max(peak_in, 1e-6) if peak_in > _HEADROOM_CEILING else 1.0
+            scale = min(32.0, 0.50 / max(peak_in, 1e-6)) if peak_in > 1e-6 else 1.0
             dac_in = (
                 torch.from_numpy(np.ascontiguousarray(model_stem * scale, dtype=np.float32)).view(1, 1, -1).to(device)
             )

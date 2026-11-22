@@ -376,7 +376,7 @@ def test_mp4_aac_preserves_odd_sample_count_and_other_tracks(tmp_path, monkeypat
     assert "lossy AAC" in result.caveats[-1]
     assert len(mux_commands) == 1
     assert mux_commands[0][mux_commands[0].index("-c:2") + 1] == "aac"
-    assert mux_commands[0][mux_commands[0].index("-b:2") + 1] == "192k"
+    assert mux_commands[0][mux_commands[0].index("-b:2") + 1] == "256k"
     trimming = list(video_audio._audio_packet_trimming(source, 1))
     assert trimming[0][0] == 1024
     assert trimming[-1][1] > 0

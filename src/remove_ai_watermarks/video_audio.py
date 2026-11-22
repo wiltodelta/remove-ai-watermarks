@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import zip_longest
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from remove_ai_watermarks import audio
 from remove_ai_watermarks._internal import audio_io
@@ -253,7 +253,7 @@ def remove_video_audio(
     method: audio.AudioMethod = "auto",
     bandwidth_kbps: float = 24.0,
     scheme: audio.AudioScheme = "audioseal",
-    vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    vocoder_device: audio.AudioDevice = "auto",
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
@@ -407,7 +407,8 @@ def remove_video_audio(
                         ]
                     )
                     if lossy:
-                        command[-1:-1] = [f"-b:{info.index}", "192k"]
+                        aac_bitrate = "160k" if info.channels == 1 else "256k"
+                        command[-1:-1] = [f"-b:{info.index}", aac_bitrate]
                     with tempfile.TemporaryFile(mode="w+b") as stderr:
                         process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr)  # noqa: S603
                         try:
@@ -498,7 +499,7 @@ def preflight_video_audio_workload(
     method: audio.AudioMethod = "auto",
     bandwidth_kbps: float = 24.0,
     scheme: audio.AudioScheme = "auto",
-    vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    vocoder_device: audio.AudioDevice = "auto",
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
@@ -639,7 +640,7 @@ def remove_video_audio_all_streams(
     method: audio.AudioMethod = "auto",
     bandwidth_kbps: float = 24.0,
     scheme: audio.AudioScheme = "auto",
-    vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    vocoder_device: audio.AudioDevice = "auto",
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,

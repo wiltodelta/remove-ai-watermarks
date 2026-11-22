@@ -49,6 +49,7 @@ from remove_ai_watermarks._internal.constants import (
     AUDIO_OUTPUT_EXTENSIONS,
     AUDIO_VENDORS,
     AUDIO_VOCODER_DEVICES,
+    AudioDevice,
     AudioMethod,
     AudioProfile,
     AudioScheme,
@@ -565,18 +566,46 @@ def _audio_metadata_vendor(
     return None
 
 
+_CERTIFIED_AUTO_AUDIO_VENDORS: frozenset[str] = frozenset({"google_synthid", "elevenlabs"})
+
+
 def should_auto_scrub_audio(
     before: AudioProvenanceReport,
     *,
     method: AudioMethod,
     explicit_vendor: str | None,
 ) -> bool:
-    """Return True when pre-strip provenance identifies an unverified proprietary AI-audio vendor."""
+    """Return True when pre-strip provenance identifies an oracle-certified proprietary AI-audio vendor."""
     if method != "auto" or explicit_vendor is not None:
         return False
-    if _audio_metadata_vendor(before.metadata_markers) is None:
+    if _audio_metadata_vendor(before.metadata_markers) not in _CERTIFIED_AUTO_AUDIO_VENDORS:
         return False
     return (_is_mono_or_stereo(before.stream) or _is_tagged_surround(before.stream)) and audio_dac.is_available()
+
+
+def resolve_audio_device(
+    requested: AudioDevice,
+    method: AudioProfile,
+) -> Literal["cpu", "mps", "cuda"]:
+    """Resolve ``auto`` to the fastest verified accelerator for neural audio codecs."""
+    if requested != "auto":
+        return requested
+    if method in {"spectral", "mimi", "focalcodec"}:
+        return "cpu"
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+        if (
+            method in {"dac", "snac", "bigvgan"}
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
+            return "mps"
+    except Exception:
+        return "cpu"
+    return "cpu"
 
 
 def _recommend_audio_recipe(
@@ -858,7 +887,7 @@ def validate_audio_arguments(
     verify: bool,
     force: bool,
     bandwidth_kbps: float,
-    vocoder_device: Literal["cpu", "mps", "cuda"],
+    vocoder_device: AudioDevice,
     allow_unverified: bool = False,
     vendor: str | None = None,
 ) -> tuple[AudioProfile, ...]:
@@ -871,8 +900,8 @@ def validate_audio_arguments(
             "Audio method must be auto, spectral, encodec, combined, bigvgan, mimi, focalcodec, dac, or snac"
         )
     if vocoder_device not in AUDIO_VOCODER_DEVICES:
-        raise ValueError("Vocoder device must be cpu, mps, or cuda")
-    if vocoder_device != "cpu" and method in {"spectral", "mimi", "focalcodec"}:
+        raise ValueError("Vocoder device must be auto, cpu, mps, or cuda")
+    if vocoder_device not in {"auto", "cpu"} and method in {"spectral", "mimi", "focalcodec"}:
         raise ValueError("A non-CPU vocoder device requires method=bigvgan, dac, snac, encodec, combined, or auto")
     if scheme not in _AUTO_PROFILES:
         raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
@@ -888,7 +917,7 @@ def resolve_audio_profiles(
     verify: bool,
     force: bool,
     bandwidth_kbps: float,
-    vocoder_device: Literal["cpu", "mps", "cuda"],
+    vocoder_device: AudioDevice,
     allow_unverified: bool = False,
     vendor: str | None = None,
 ) -> tuple[AudioProfile, ...]:
@@ -917,7 +946,7 @@ def remove_audio_invisible(
     method: AudioMethod = "auto",
     bandwidth_kbps: float = 24.0,
     scheme: AudioScheme = "audioseal",
-    vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    vocoder_device: AudioDevice = "auto",
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
@@ -1026,7 +1055,7 @@ def _remove_audio_profile(
     scheme: AudioScheme = "audioseal",
     _before: AudioProvenanceReport | None = None,
     _skip_post_verify: bool = False,
-    vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    vocoder_device: AudioDevice = "auto",
     allow_unverified: bool = False,
     allow_positive: bool = False,
     allow_quality_override: bool = False,
@@ -1051,6 +1080,7 @@ def _remove_audio_profile(
     neural = method in {"encodec", "combined"}
     if neural and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
         raise ValueError("EnCodec bandwidth must be 6, 12, or 24 kbps")
+    resolved_device = resolve_audio_device(vocoder_device, method)
     require_audio_profile_runtime(method)
     target = Path(output).expanduser()
     original = Path(source).expanduser().resolve()
@@ -1072,7 +1102,7 @@ def _remove_audio_profile(
             {},
             method=method,
             bandwidth_kbps=bandwidth_kbps if neural else None,
-            vocoder_device=vocoder_device if method in _RAW_CODEC_PROFILES else None,
+            vocoder_device=resolved_device if method in _RAW_CODEC_PROFILES else None,
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -1115,11 +1145,11 @@ def _remove_audio_profile(
                     transformed,
                     before.stream.sample_rate,
                     bandwidth_kbps=bandwidth_kbps,
-                    device=vocoder_device,
+                    device=resolved_device,
                 )
             else:
                 stereo_mode: Literal["independent", "ms"] = "ms" if before.stream.channels == 2 else "independent"
-                if vocoder_device == "cpu":
+                if resolved_device == "cpu":
                     transformed = audio_codec.resynthesize_chunks(
                         transformed,
                         before.stream.sample_rate,
@@ -1132,21 +1162,21 @@ def _remove_audio_profile(
                         before.stream.sample_rate,
                         bandwidth_kbps=bandwidth_kbps,
                         stereo_mode=stereo_mode,
-                        device=vocoder_device,
+                        device=resolved_device,
                     )
         if method == "bigvgan":
-            transformed = _vocode_full_track(transformed, before.stream.sample_rate, vocoder_device)
+            transformed = _vocode_full_track(transformed, before.stream.sample_rate, resolved_device)
         if method == "mimi":
             transformed = _mimi_full_track(transformed, before.stream.sample_rate)
         if method == "focalcodec":
             transformed = _focalcodec_full_track(transformed, before.stream.sample_rate)
         if method == "dac":
             transformed = _dac_full_track(
-                transformed, before.stream.sample_rate, vocoder_device, preserve_hf_hz=preserve_hf_hz
+                transformed, before.stream.sample_rate, resolved_device, preserve_hf_hz=preserve_hf_hz
             )
         if method == "snac":
             transformed = _snac_full_track(
-                transformed, before.stream.sample_rate, vocoder_device, preserve_hf_hz=preserve_hf_hz
+                transformed, before.stream.sample_rate, resolved_device, preserve_hf_hz=preserve_hf_hz
             )
         frames_written = audio_io.write_audio(
             before.stream,
@@ -1170,7 +1200,7 @@ def _remove_audio_profile(
                 before.metadata_markers,
                 method=method,
                 bandwidth_kbps=bandwidth_kbps if neural else None,
-                vocoder_device=vocoder_device if method in _RAW_CODEC_PROFILES else None,
+                vocoder_device=resolved_device if method in _RAW_CODEC_PROFILES else None,
             )
         fidelity = measure_fidelity(before.source, before.stream, staged)
         quality_ok = audio_quality_passed(fidelity, lossy=staged.suffix.lower() in AUDIO_LOSSY_OUTPUT_EXTENSIONS)
@@ -1204,7 +1234,7 @@ def _remove_audio_profile(
         fidelity=fidelity,
         method=method,
         bandwidth_kbps=bandwidth_kbps if neural else None,
-        vocoder_device=vocoder_device if method in _RAW_CODEC_PROFILES else None,
+        vocoder_device=resolved_device if method in _RAW_CODEC_PROFILES else None,
         verification_scope=scope,
         quality_passed=quality_ok,
     )
@@ -1567,7 +1597,7 @@ def remove_audio_all(
     method: AudioMethod = "auto",
     bandwidth_kbps: float = 24.0,
     scheme: AudioScheme = "auto",
-    vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    vocoder_device: AudioDevice = "auto",
     keep_standard: bool = True,
     allow_unverified: bool = False,
     allow_positive: bool = False,
@@ -1688,7 +1718,7 @@ def remove_audio_batch(
     method: AudioMethod = "auto",
     bandwidth_kbps: float = 24.0,
     scheme: AudioScheme = "auto",
-    vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    vocoder_device: AudioDevice = "auto",
     keep_standard: bool = True,
     allow_unverified: bool = False,
     allow_positive: bool = False,

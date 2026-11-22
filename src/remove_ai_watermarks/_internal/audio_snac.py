@@ -190,7 +190,7 @@ def resynthesize(
         for pos, channel in enumerate(active_indices):
             model_stem = prepared_active[:, pos]
             peak_in = float(np.max(np.abs(model_stem)))
-            scale = _HEADROOM_CEILING / max(peak_in, 1e-6) if peak_in > _HEADROOM_CEILING else 1.0
+            scale = min(32.0, 0.50 / max(peak_in, 1e-6)) if peak_in > 1e-6 else 1.0
             snac_in = (
                 torch.from_numpy(np.ascontiguousarray(model_stem * scale, dtype=np.float32)).view(1, 1, -1).to(device)
             )

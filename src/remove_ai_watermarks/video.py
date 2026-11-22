@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from remove_ai_watermarks._internal.constants import (
+        AudioDevice,
         AudioMethod,
         AudioScheme,
         AudioVendor,
@@ -1255,12 +1256,76 @@ def _resolve_video_invisible_profile(
     return resolved
 
 
+def _has_capcut_pixel_watermark_provenance(
+    metadata_markers: dict[str, str],
+    visible_mark: str | None = None,
+) -> bool:
+    """Return True only for consumer CapCut Seedance surfaces that carry a pixel watermark."""
+    if visible_mark == "seedance":
+        return True
+    if not metadata_markers:
+        return False
+    app_aigc = metadata_markers.get("app_aigc", "").casefold()
+    if "capcut" in app_aigc:
+        return True
+    identity = " ".join(
+        (
+            metadata_markers.get("claim_generator", ""),
+            metadata_markers.get("issuer", ""),
+            metadata_markers.get("ai_tool", ""),
+        )
+    ).casefold()
+    return "capcut" in identity and _video_markers_claim_ai(metadata_markers)
+
+
+def video_invisible_target_cohort(
+    detected_metadata: dict[str, str],
+    visible_mark: str | None = None,
+    *,
+    explicit_vendor: str | None = None,
+) -> Literal["synthid", "seedance", "meta", "declared_watermark"] | None:
+    """Return the confirmed invisible-watermark cohort for auto pixel regeneration, or None.
+
+    Only cohorts with verified pixel-domain watermarks (Google Veo SynthID,
+    consumer CapCut Seedance, explicit vendor requests, or declared C2PA
+    watermark soft bindings) trigger automatic pixel regeneration. Neutral C2PA
+    signers (YouTube, non-AI CapCut/TikTok/Samsung/Topaz), local ComfyUI tags,
+    and metadata/SEI-only AI models (Kling, Dreamina/BytePlus, Runway, Hailuo,
+    Vidu, Wan, Grok, Sora) return None so ``all`` stays lossless on pixels.
+    """
+    if explicit_vendor in {"google", "openai"}:
+        return "synthid"
+    if explicit_vendor == "bytedance":
+        return "seedance"
+    if explicit_vendor == "meta":
+        return "meta"
+    if visible_mark == "veo":
+        return "synthid"
+    if _has_capcut_pixel_watermark_provenance(detected_metadata, visible_mark):
+        return "seedance"
+    if detected_metadata:
+        if "synthid_watermark" in detected_metadata:
+            return "synthid"
+        if _video_invisible_watermark_hints(detected_metadata):
+            return "declared_watermark"
+    return None
+
+
 def video_has_invisible_provenance(
     detected_metadata: dict[str, str],
     visible_mark: str | None = None,
+    *,
+    explicit_vendor: str | None = None,
 ) -> bool:
-    """Return True when video metadata or a confirmed visible AI mark signals AI provenance."""
-    return bool(detected_metadata) or visible_mark is not None
+    """Return True when video provenance indicates a confirmed pixel-domain watermark cohort."""
+    return (
+        video_invisible_target_cohort(
+            detected_metadata,
+            visible_mark,
+            explicit_vendor=explicit_vendor,
+        )
+        is not None
+    )
 
 
 def _validate_video_profile(
@@ -1334,7 +1399,7 @@ def remove_video_all(
     audio_scheme: AudioScheme = "auto",
     audio_method: AudioMethod = "auto",
     audio_bandwidth_kbps: float = 24.0,
-    audio_vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    audio_vocoder_device: AudioDevice = "auto",
     audio_force: bool = False,
     audio_verify: bool = True,
     audio_allow_unverified: bool = False,
@@ -1706,6 +1771,9 @@ def remove_video_all(
                             reusable_befores = preflight_befores
                     except Exception:
                         reusable_befores = None
+                effective_audio_vendor: AudioVendor | None = audio_vendor
+                if explicit_audio_vendor is None and visible_result.output is not None and visible_result.mark == "veo":
+                    effective_audio_vendor = "google"
                 audio_res = video_audio.remove_video_audio_all_streams(
                     stage_target,
                     staged_final,
@@ -1718,7 +1786,7 @@ def remove_video_all(
                     allow_unverified=audio_allow_unverified,
                     allow_positive=audio_allow_positive,
                     allow_quality_override=audio_allow_quality_override,
-                    vendor=audio_vendor,
+                    vendor=effective_audio_vendor,
                     streams=audio_streams,
                     _befores=reusable_befores,
                     _metadata_markers=detected_metadata,
@@ -1813,7 +1881,7 @@ def remove_video_batch(
     audio_scheme: AudioScheme = "auto",
     audio_method: AudioMethod = "auto",
     audio_bandwidth_kbps: float = 24.0,
-    audio_vocoder_device: Literal["cpu", "mps", "cuda"] = "cpu",
+    audio_vocoder_device: AudioDevice = "auto",
     audio_force: bool = False,
     audio_verify: bool = True,
     audio_allow_unverified: bool = False,

@@ -37,6 +37,7 @@ from remove_ai_watermarks._internal.constants import (
     VIDEO_MESSAGE_METHODS,
     VIDEO_MESSAGE_SCHEMES,
     AllPreset,
+    AudioDevice,
     AudioMethod,
     AudioScheme,
     AudioVendor,
@@ -1483,7 +1484,7 @@ def cmd_audio_invisible(
     as_json: bool,
     method: AudioMethod,
     bandwidth: str,
-    vocoder_device: Literal["cpu", "mps", "cuda"],
+    vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
@@ -1592,7 +1593,7 @@ def cmd_audio_all(
     as_json: bool,
     method: AudioMethod,
     bandwidth: str,
-    vocoder_device: Literal["cpu", "mps", "cuda"],
+    vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
@@ -1687,7 +1688,7 @@ def cmd_audio_batch(
     as_json: bool,
     method: AudioMethod,
     bandwidth: str,
-    vocoder_device: Literal["cpu", "mps", "cuda"],
+    vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
@@ -2074,7 +2075,7 @@ def cmd_video_audio(
     as_json: bool,
     method: AudioMethod,
     bandwidth: str,
-    vocoder_device: Literal["cpu", "mps", "cuda"],
+    vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
 ) -> None:
@@ -3343,7 +3344,7 @@ def cmd_all(
             as_json=False,
             method="auto",
             bandwidth=str(AUDIO_BANDWIDTHS_KBPS[-1]),
-            vocoder_device="cpu",
+            vocoder_device="auto",
             vendor=mapped_vendor,
             scheme="auto",
         )
@@ -3680,19 +3681,14 @@ def cmd_batch(
                 from remove_ai_watermarks.video import remove_video_batch, remove_video_invisible
 
                 if mode == "invisible":
-                    from remove_ai_watermarks.video_invisible import is_available as vae_ok
-                    from remove_ai_watermarks.video_invisible import load_video_vae_runtime
-
-                    shared_vae = load_video_vae_runtime() if vae_ok() and len(videos) > 1 else None
                     for vp in videos:
                         try:
                             remove_video_invisible(
                                 vp,
                                 output_dir / vp.name,
                                 profile="auto",
-                                fps=None,
+                                fps=DEFAULT_VIDEO_SYNTHID_FPS,
                                 seed=seed or 0,
-                                _runtime=shared_vae,
                             )
                             processed += 1
                         except Exception as exc:

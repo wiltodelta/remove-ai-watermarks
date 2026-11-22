@@ -43,7 +43,8 @@ AUDIO_PROFILES: tuple[AudioProfile, ...] = (
     "snac",
 )
 AUDIO_METHODS: tuple[AudioMethod, ...] = ("auto", *AUDIO_PROFILES)
-AUDIO_VOCODER_DEVICES: tuple[Literal["cpu", "mps", "cuda"], ...] = ("cpu", "mps", "cuda")
+AudioDevice = Literal["auto", "cpu", "mps", "cuda"]
+AUDIO_VOCODER_DEVICES: tuple[AudioDevice, ...] = ("auto", "cpu", "mps", "cuda")
 AUDIO_BANDWIDTHS_KBPS: tuple[int, ...] = (6, 12, 24)
 AUDIO_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".aac", ".mka")
 AUDIO_OUTPUT_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".opus")

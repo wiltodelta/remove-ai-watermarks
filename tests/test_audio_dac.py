@@ -264,9 +264,10 @@ def test_cli_and_api_wire_dac_method(tmp_path, monkeypatch):
     assert res.exit_code == 0, res.output
     report = json.loads(res.output)
     assert report["method"] == "dac"
-    assert report["vocoder_device"] == "cpu"
+    assert report["vocoder_device"] in {"cpu", "mps", "cuda"}
     assert report["verified_removed"] is None
-    assert seen == [((4410, 2), 44100, False, "cpu")]
+    expected_dev = audio.resolve_audio_device("auto", "dac")
+    assert seen == [((4410, 2), 44100, False, expected_dev)]
     assert out.is_file()
 
 
