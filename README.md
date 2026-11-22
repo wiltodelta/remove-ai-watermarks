@@ -363,6 +363,35 @@ These exact output files were checked with the matching provider verifiers. That
 result applies to these files, not to every seed, image, or future watermark
 version.
 
+### Popular formats and invisible watermarks (images, video, audio, text)
+
+One command (`remove-ai-watermarks all <file> -o <clean>`) handles visible marks,
+provenance-triggered invisible removal, and metadata stripping across images
+(`PNG`, `JPG`, `WebP`, `HEIC`, `TIFF`), video (`MP4`, `MOV`, `WebM`, `MKV`,
+including 10-bit HEVC/HDR), audio (`WAV`, `MP3`, `M4A`, `FLAC`, `OGG`, `Opus`),
+and text (`MD`, `HTML`, `TXT`):
+
+```bash
+# Images with invisible watermarks (InvisMark, TrustMark, SDXL DWT-DCT, SynthID)
+remove-ai-watermarks all data/fixtures/provenance/microsoft-invismark.png -o microsoft_clean.png
+remove-ai-watermarks all data/fixtures/provenance/adobe-trustmark-p.png -o firefly_clean.png
+remove-ai-watermarks all data/fixtures/provenance/sdxl-dwt-dct.png -o sdxl_clean.png
+remove-ai-watermarks all data/fixtures/provenance/recraft-v3.webp -o recraft_clean.webp
+
+# Video (Google Veo visible + SynthID video/audio; ByteDance Seedance 10-bit HEVC/HDR)
+remove-ai-watermarks all data/fixtures/provenance/google-gemini-omni-app.mp4 -o veo_clean.mp4
+remove-ai-watermarks all data/fixtures/provenance/dreamina-seedance-2-mini.mp4 -o seedance_clean.mp4
+remove-ai-watermarks video message marked.mp4 -o clean.mp4 --scheme videoseal
+
+# Audio (AudioSeal, WavMark, Perth, SilentCipher, Google SynthID, ElevenLabs, Cartesia)
+remove-ai-watermarks all track.wav -o track_clean.wav
+remove-ai-watermarks all speech.mp3 -o speech_clean.mp3 --vendor elevenlabs
+```
+
+See [docs/examples.md](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/examples.md)
+for the complete format-by-format guide, or try the interactive presets in the
+[Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks).
+
 ## Common recipes
 
 ### Remove every detected visible mark

@@ -746,17 +746,22 @@ audio scrub without needing `--audio-allow-unverified`. Current `dac`
 provider-oracle evidence covers short single-pass clips (`<= 10 s`);
 `focalcodec` failed on a held-out 10 s native Gemini audio output.
 
-## Apply the experimental Seedance profile
+## Apply the Seedance profile
 
 ```bash
-remove-ai-watermarks video invisible input.mp4 -o clean.mp4 --profile seedance-experimental
+remove-ai-watermarks video invisible input.mp4 -o clean.mp4 --profile seedance
 ```
 
-The fixed recipe accepts owned SDR 8-bit MP4 files with even dimensions. It
-preserves native geometry, frame timestamps, terminal video duration, and source
-audio. `--quality delivery` (default) produces H.264 High CRF18;
-`--quality master` retains the larger lossless-coded YUV420p intermediate.
-`--device` supports the same devices as SynthID. The SynthID tuning options
+The fixed recipe accepts owned SDR 8-bit and **10-bit HEVC/HDR** MP4 files with
+even dimensions, preserving native bit depth (`yuv420p10le`), color tags
+(`color_primaries`, `color_trc`, `colorspace`, `color_range`), geometry, frame
+timestamps, terminal video duration, and source audio. `--quality delivery`
+(default) writes H.264 High CRF18 for 8-bit or HEVC (`libx265`, `hvc1`) CRF18
+for 10-bit; `--quality master` retains lossless output. Legacy
+`--profile seedance-experimental`, `--profile wan21-synthid-experimental`, and
+`--profile wan21-seedance-experimental` remain accepted as aliases for
+`seedance`, `wan21-synthid`, and `wan21-seedance`. `--device` supports the same
+devices as SynthID. The SynthID tuning options
 (`--noise-std`, `--long-side`, `--fps`, `--batch-size`, `--seed`) must retain
 their defaults when Seedance is selected. `--quality master` is rejected for
 SynthID. The default profile is `auto`, which routes ByteDance/Seedance clips

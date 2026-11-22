@@ -336,19 +336,16 @@ Missing requested decoders cannot become negative results. A negative public
 model check does not certify a production provider or complete payload erasure.
 See [audio coverage](audio-video-removal.md) before interpreting a result.
 
-The `seedance-experimental` video profile is a fixed Seedance experiment,
-available through the common invisible/all/batch pipeline and the standalone
-`remove_video_seedance_experimental` API. It accepts SDR 8-bit MP4 with even dimensions and preserves
-the native frame clock and geometry. Its two encoding modes reproduce the label-free `forest` and held-out `bottle`
+The `seedance` (alias `seedance-experimental`) video profile is available through the common invisible/all/batch pipeline and the standalone
+`remove_video_seedance_experimental` API. It accepts SDR 8-bit and 10-bit HEVC/HDR (`yuv420p10le`, `BT.709`/`BT.2020`, `PQ`/`HLG`) MP4 with even dimensions and preserves
+the native bit depth, color tags, frame clock, and geometry. Its two encoding modes reproduce the label-free `forest` and held-out `bottle`
 experiments in [the study](seedance-video-study.md), where CapCut detected
 matched controls and did not detect processed outputs (whereas Dreamina and
 BytePlus enterprise API exports cleared after C2PA metadata stripping alone).
-This result is scene-dependent; fine texture and color change visibly, and
+This result is scene-dependent, and
 there is no runtime CapCut detector or external upload. Visible labels must
 be handled before this pixel stage. Temporary guide/master videos need disk
-space, although pixel processing uses bounded batches. It leaves the default
-video SynthID profile as the default unless `--profile auto` (`profile="auto"`)
-or an explicit Seedance profile is chosen. The separate `wan21-synthid-experimental` and `wan21-seedance-experimental` 3D diffusion
+space, although pixel processing uses bounded batches. Both `all` and `video all`/`video invisible` default to `--profile auto` (`profile="auto"`), routing ByteDance/Seedance clips automatically. The `wan21-synthid` and `wan21-seedance` (legacy aliases `wan21-synthid-experimental`, `wan21-seedance-experimental`) 3D diffusion
 profiles (`remove_video_wan_experimental`) require an Ampere-or-newer BF16 NVIDIA
 CUDA GPU, or an explicit `device="mps"` on Apple Silicon that automatic profile
 selection never chooses, and SDR 8-bit or 10-bit HDR (`yuv420p10le`/`yuv422p10le`/`yuv444p10le`, `BT.2020`, `PQ`/`HLG`) MP4, MOV, or M4V input within

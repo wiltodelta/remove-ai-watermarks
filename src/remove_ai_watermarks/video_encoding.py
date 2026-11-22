@@ -453,6 +453,8 @@ def _video_codec_args(
         if is_isobmff:
             args.extend(["-tag:v", "hvc1"])
         x265_params = ["log-level=error"]
+        if crf == 0:
+            x265_params.append("lossless=1")
         if profile.color_primaries in {"bt2020", "bt709"}:
             x265_params.append(f"colorprim={profile.color_primaries}")
         if profile.color_transfer in {"smpte2084", "arib-std-b67", "bt709", "bt2020-10"}:

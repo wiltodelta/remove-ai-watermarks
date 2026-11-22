@@ -2278,10 +2278,13 @@ def _video_profile_label(profile: str) -> str:
     from remove_ai_watermarks.video_seedance import SEEDANCE_EXPERIMENTAL_PROFILE
 
     labels = {
-        "seedance-experimental": "the experimental Seedance profile",
-        SEEDANCE_EXPERIMENTAL_PROFILE: "the experimental Seedance profile",
-        "wan21-synthid-experimental": "the experimental CUDA 3D Wan 2.1 SynthID profile",
-        "wan21-seedance-experimental": "the experimental CUDA 3D Wan 2.1 Seedance profile",
+        "seedance": "the Seedance profile",
+        "seedance-experimental": "the Seedance profile",
+        SEEDANCE_EXPERIMENTAL_PROFILE: "the Seedance profile",
+        "wan21-synthid": "the CUDA 3D Wan 2.1 SynthID profile",
+        "wan21-synthid-experimental": "the CUDA 3D Wan 2.1 SynthID profile",
+        "wan21-seedance": "the CUDA 3D Wan 2.1 Seedance profile",
+        "wan21-seedance-experimental": "the CUDA 3D Wan 2.1 Seedance profile",
     }
     return labels.get(profile, "the calibrated SynthID-removal profile")
 
@@ -2533,7 +2536,7 @@ def cmd_video_all(
     mark: str,
     backend: str,
     temporal_consistency: bool,
-    invisible: bool,
+    invisible: bool | Literal["auto"],
     profile: VideoInvisibleProfile,
     quality: Literal["delivery", "master"],
     noise_std: int | float,
@@ -2553,7 +2556,7 @@ def cmd_video_all(
     audio_allow_quality_override: bool,
     audio_streams: tuple[int, ...],
     audio_vendor: AudioVendor,
-    trim_bumper: bool,
+    trim_bumper: bool | Literal["auto"],
     as_json: bool,
 ) -> None:
     """Remove stable visible marks, AI metadata, and optional pixel/audio marks from video."""
@@ -2573,7 +2576,7 @@ def cmd_video_all(
     try:
         all_extra: dict[str, Any] = {}
         if trim_bumper:
-            all_extra["trim_bumper"] = True
+            all_extra["trim_bumper"] = trim_bumper
         result = remove_video_all(
             source,
             output,
@@ -2667,7 +2670,7 @@ def cmd_video_batch(
     mark: str,
     backend: str,
     temporal_consistency: bool,
-    invisible: bool,
+    invisible: bool | Literal["auto"],
     profile: VideoInvisibleProfile,
     quality: Literal["delivery", "master"],
     noise_std: float,
@@ -3289,7 +3292,9 @@ def cmd_all(
     suffix = source.suffix.lower()
     if suffix in VIDEO_EXTENSIONS:
         mapped_audio_vendor: AudioVendor = vendor if vendor in AUDIO_VENDORS else "auto"  # type: ignore[assignment]
-        run_vid_inv = False if lossless_only else bool(eff_force or vendor not in (None, "auto"))
+        vid_inv_mode: bool | Literal["auto"] = (
+            False if lossless_only else (True if (eff_force or vendor not in (None, "auto")) else "auto")
+        )
         ctx.invoke(
             cmd_video_all,
             source=source,
@@ -3297,16 +3302,16 @@ def cmd_all(
             mark="auto",
             backend=eff_backend,
             temporal_consistency=True,
-            invisible=run_vid_inv,
-            profile="auto" if run_vid_inv else "synthid",
+            invisible=vid_inv_mode,
+            profile="auto",
             quality="delivery",
             noise_std=DEFAULT_VIDEO_SYNTHID_NOISE_STD,
             long_side=DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
             fps=DEFAULT_VIDEO_SYNTHID_FPS,
-            keep_fps=run_vid_inv,
+            keep_fps=False,
             temporal_stabilize=True,
             batch_size=4,
-            seed=(seed or 0) if run_vid_inv else 0,
+            seed=(seed or 0) if vid_inv_mode else 0,
             device="auto",
             audio_invisible=not lossless_only,
             audio_scheme="auto",
@@ -3317,7 +3322,7 @@ def cmd_all(
             audio_allow_quality_override=False,
             audio_streams=(),
             audio_vendor=mapped_audio_vendor,
-            trim_bumper=False,
+            trim_bumper="auto" if not lossless_only else False,
             as_json=False,
         )
         return
@@ -3697,8 +3702,10 @@ def cmd_batch(
                         if bar is not None:
                             bar.update(1)
                 else:
-                    run_vid_inv = bool(
-                        mode == "all" and not lossless_only and (eff_force or vendor not in (None, "auto"))
+                    vid_inv_mode: bool | Literal["auto"] = (
+                        False
+                        if (mode != "all" or lossless_only)
+                        else (True if (eff_force or vendor not in (None, "auto")) else "auto")
                     )
                     v_res = remove_video_batch(
                         directory,
@@ -3706,13 +3713,14 @@ def cmd_batch(
                         mode=mode,  # type: ignore[arg-type]
                         mark="auto",
                         backend=eff_backend,
-                        include_invisible=run_vid_inv,
-                        invisible_profile="auto" if run_vid_inv else "synthid",
-                        fps=None if run_vid_inv else DEFAULT_VIDEO_SYNTHID_FPS,
-                        seed=(seed or 0) if run_vid_inv else 0,
+                        include_invisible=vid_inv_mode,
+                        invisible_profile="auto",
+                        fps=DEFAULT_VIDEO_SYNTHID_FPS,
+                        seed=(seed or 0) if vid_inv_mode else 0,
                         include_audio_invisible=(mode == "all" and not lossless_only),
                         audio_force=eff_force,
                         audio_vendor=mapped_av_vendor,
+                        trim_bumper="auto" if (mode == "all" and not lossless_only) else False,
                     )
                     processed += v_res.processed
                     errors += v_res.failed

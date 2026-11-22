@@ -25,7 +25,9 @@ import numpy as np
 from remove_ai_watermarks.video_decode import open_video_capture, open_video_capture_16bit
 from remove_ai_watermarks.video_encoding import (
     HIGH_BIT_DEPTH_PIXEL_FORMATS,
+    _profile_args,
     _run_ffprobe,
+    _video_codec_args,
     abort_raw_video_encoder,
     atomic_video_output,
     finish_raw_video_encoder,
@@ -84,12 +86,17 @@ def _frames(path: Path, *, high_depth: bool = False, width: int = 0, height: int
 
 
 def _restore_texture(source: NDArray[Any], guide: NDArray[Any]) -> NDArray[Any]:
-    """Apply the fixed sigma-1 RGB split, with ties-to-even quantization."""
+    """Apply the fixed sigma-1 RGB split, preserving native 8-bit or 16-bit depth."""
     height, width = source.shape[:2]
+    high_depth = source.dtype == np.uint16
     original = source.astype(np.float64)
     reconstructed = cv2.resize(guide, (width, height), interpolation=cv2.INTER_LANCZOS4).astype(np.float64)
+    if high_depth and guide.dtype != np.uint16:
+        reconstructed *= 257.0
     low_original = cv2.GaussianBlur(original, (0, 0), 1.0, borderType=cv2.BORDER_REFLECT_101)
     low_guide = cv2.GaussianBlur(reconstructed, (0, 0), 1.0, borderType=cv2.BORDER_REFLECT_101)
+    if high_depth:
+        return np.clip(np.rint(low_guide + original - low_original), 0, 65535).astype(np.uint16)
     return np.clip(np.rint(low_guide + original - low_original), 0, 255).astype(np.uint8)
 
 
@@ -224,10 +231,18 @@ def _encode_frames(
                 close()
 
 
-def _reconstruct(source: Path, runtime: VideoVaeRuntime, size: tuple[int, int]) -> Iterator[NDArray[Any]]:
+def _reconstruct(
+    source: Path, runtime: VideoVaeRuntime, size: tuple[int, int], *, high_depth: bool = False
+) -> Iterator[NDArray[Any]]:
     import torch
 
-    resized = (cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4) for frame in _frames(source))
+    def _to_u8(frame: NDArray[Any]) -> NDArray[Any]:
+        return (frame >> 8).astype(np.uint8) if frame.dtype == np.uint16 else frame
+
+    resized = (
+        cv2.resize(_to_u8(frame), size, interpolation=cv2.INTER_LANCZOS4)
+        for frame in _frames(source, high_depth=high_depth)
+    )
     for batch in _stream_batches(resized, 4):
         latents = _encode_frame_latents(
             batch, vae=runtime.vae, device=runtime.resolved_device, batch_size=4, scaling_factor=runtime.scaling_factor
@@ -244,7 +259,15 @@ def _reconstruct(source: Path, runtime: VideoVaeRuntime, size: tuple[int, int]) 
 def _encode_delivery(master: Path, source: Path, output: Path) -> None:
     ffmpeg = require_video_tool("ffmpeg")
     profile = probe_video_encode_profile(source)
+    high_depth = profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
     time_base = _timestamp_time_base(profile.time_base)
+    target_pix_fmt = profile.pixel_format if high_depth else "yuv420p"
+    target_profile = replace(profile, time_base=str(time_base), pixel_format=target_pix_fmt)
+    codec_args = _video_codec_args(
+        output.suffix.lower(), crf=18, profile=target_profile, encoder="software", ffmpeg_path=ffmpeg
+    )
+    if not high_depth and output.suffix.lower() != ".webm":
+        codec_args.extend(["-profile:v", "high"])
     command = [
         ffmpeg,
         "-y",
@@ -257,20 +280,10 @@ def _encode_delivery(master: Path, source: Path, output: Path) -> None:
         "0:v:0",
         "-map",
         "0:a?",
-        "-c:v",
-        "libx264",
-        "-profile:v",
-        "high",
-        "-crf",
-        "18",
-        "-preset",
-        "medium",
-        "-pix_fmt",
-        "yuv420p",
+        *codec_args,
+        *_profile_args(target_profile),
         "-c:a",
         "copy",
-        "-enc_time_base:v",
-        str(time_base),
         "-fps_mode",
         "passthrough",
     ]
@@ -362,7 +375,7 @@ def validate_experimental_mp4_source(
 
 
 def _finalize_experimental_output(
-    frames: Iterable[NDArray[np.uint8]],
+    frames: Iterable[NDArray[Any]],
     source: Path,
     master: Path,
     staged: Path,
@@ -371,6 +384,7 @@ def _finalize_experimental_output(
     fps: float,
     timestamps: tuple[float, ...],
     label: str,
+    high_depth: bool = False,
 ) -> RegenerationMetrics:
     """Encode lossless master, write delivery/master output, verify clock, and score."""
     _encode_frames(frames, source, master, fps, timestamps, crf=0)
@@ -384,7 +398,7 @@ def _finalize_experimental_output(
     source_dur = float(_clock(source)["streams"][0]["duration"])
     if abs(staged_dur - source_dur) > 0.000002:
         raise RuntimeError(f"{label} output duration changed")
-    return _measure(source, staged, fps, len(timestamps))
+    return _measure(source, staged, fps, len(timestamps), high_depth=high_depth)
 
 
 def regenerate_seedance_experimental(
@@ -395,20 +409,28 @@ def regenerate_seedance_experimental(
     quality: SeedanceQuality = "delivery",
     runtime: VideoVaeRuntime | None = None,
 ) -> RegenerationMetrics:
-    """Run the fixed experimental recipe and validate its complete saved output."""
+    """Run the Seedance texture-transfer recipe (8-bit SDR and 10-bit HEVC/HDR) and validate output."""
     if quality not in {"delivery", "master"}:
         raise ValueError("quality must be delivery or master")
     if device not in {"auto", "cuda", "mps", "cpu"}:
         raise ValueError("device must be auto, cuda, mps, or cpu")
     if runtime is not None and (runtime.model != "stabilityai/sd-vae-ft-mse" or runtime.requested_device != device):
         raise ValueError("The supplied video VAE runtime does not match the Seedance model and device")
-    width, height, fps, timestamps = validate_experimental_mp4_source(source, label="Experimental Seedance processing")
+    encode_profile = probe_video_encode_profile(source)
+    high_depth = encode_profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
+    width, height, fps, timestamps = validate_experimental_mp4_source(
+        source,
+        label="Seedance processing",
+        encode_profile=encode_profile,
+        allow_high_depth=True,
+    )
     if not is_available():
-        raise RuntimeError("Experimental Seedance processing requires 'remove-ai-watermarks[video,diffusion]'")
-    log.warning(
-        "Applying experimental %s (%s); no per-file CapCut verification is performed",
+        raise RuntimeError("Seedance processing requires 'remove-ai-watermarks[video,diffusion]'")
+    log.info(
+        "Applying %s (%s, %s); no per-file CapCut verification is performed",
         SEEDANCE_EXPERIMENTAL_PROFILE,
         quality,
+        encode_profile.pixel_format,
     )
     with (
         atomic_video_output(output) as staged,
@@ -416,11 +438,17 @@ def regenerate_seedance_experimental(
     ):
         guide, master = Path(directory) / "guide.mp4", Path(directory) / "master.mp4"
         runtime = runtime or load_video_vae_runtime(model="stabilityai/sd-vae-ft-mse", device=device)
-        _encode_frames(
-            _reconstruct(source, runtime, _fit_size(width, height, 512)), source, guide, fps, timestamps, crf=18
+        guide_size = _fit_size(width, height, 512)
+        guide_stream = (
+            _reconstruct(source, runtime, guide_size, high_depth=True)
+            if high_depth
+            else _reconstruct(source, runtime, guide_size)
         )
+        _encode_frames(guide_stream, source, guide, fps, timestamps, crf=18)
         del runtime
-        frames = (_restore_texture(a, b) for a, b in zip(_frames(source), _frames(guide), strict=True))
+        src_frames = _frames(source, high_depth=high_depth, width=width, height=height)
+        guide_frames = _frames(guide, high_depth=high_depth)
+        frames = (_restore_texture(a, b) for a, b in zip(src_frames, guide_frames, strict=True))
         return _finalize_experimental_output(
             frames,
             source,
@@ -429,5 +457,6 @@ def regenerate_seedance_experimental(
             quality=quality,
             fps=fps,
             timestamps=timestamps,
-            label="Experimental Seedance",
+            label="Seedance",
+            high_depth=high_depth,
         )

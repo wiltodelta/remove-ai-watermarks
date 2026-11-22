@@ -426,7 +426,7 @@ def test_cli_forwards_profile_quality_and_names_experiment(tmp_path, monkeypatch
     assert calls[0][prefix + "quality"] == "master"
     assert calls[0]["device"] == "cpu"
     if command != "batch":
-        assert "experimental Seedance profile" in result.output
+        assert "Seedance profile" in result.output
         assert "calibrated SynthID" not in result.output
 
 

@@ -232,9 +232,9 @@ def test_cli_routes_wan21_profiles_and_prints_experimental_label(tmp_path, monke
     assert calls[0]["quality"] == "master"
     assert calls[0]["seed"] == 9
     expected_label = (
-        "experimental CUDA 3D Wan 2.1 SynthID profile"
+        "CUDA 3D Wan 2.1 SynthID profile"
         if profile == "wan21-synthid-experimental"
-        else "experimental CUDA 3D Wan 2.1 Seedance profile"
+        else "CUDA 3D Wan 2.1 Seedance profile"
     )
     assert expected_label in res.output
     assert "calibrated SynthID" not in res.output

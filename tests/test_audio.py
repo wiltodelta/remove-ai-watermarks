@@ -1265,20 +1265,21 @@ def test_adaptive_auto_profiles_routes_elevenlabs_and_google_synthid_metadata(tm
         lambda _p: {"issuer": "OpenAI", "synthid_watermark": "present according to OpenAI provenance"},
     )
     rep_oai = audio.identify_audio(src_wav, scheme="auto")
-    assert audio.adaptive_auto_profiles("auto", rep_oai) == ("spectral", "combined")
+    assert audio.adaptive_auto_profiles("auto", rep_oai) == ("dac", "encodec", "combined")
 
-    # End-to-end remove_audio_invisible on ElevenLabs C2PA:
-    # skips when allow_unverified=False, and selects DAC (not spectral) when allow_unverified=True + method="auto".
+    # End-to-end remove_audio_invisible:
+    # skips clean audio with no AI metadata, and auto-routes ElevenLabs C2PA to DAC (not spectral).
+    monkeypatch.setattr(audio.metadata, "get_ai_metadata", lambda _p: {})
+    skipped = audio.remove_audio_invisible(src_wav, tmp_path / "skipped.wav", scheme="auto", method="auto")
+    assert skipped.skipped is True
+    assert not (tmp_path / "skipped.wav").exists()
+
     el_markers = {"claim_generator": "ElevenLabs", "issuer": "ElevenLabs"}
     monkeypatch.setattr(
         audio.metadata,
         "get_ai_metadata",
         lambda p: el_markers if Path(p).resolve() == src_wav.resolve() else {},
     )
-    skipped = audio.remove_audio_invisible(src_wav, tmp_path / "skipped.wav", scheme="auto", method="auto")
-    assert skipped.skipped is True
-    assert not (tmp_path / "skipped.wav").exists()
-
     dac_calls: list[tuple[int, ...]] = []
     monkeypatch.setattr(
         audio.audio_dac,
@@ -1295,7 +1296,6 @@ def test_adaptive_auto_profiles_routes_elevenlabs_and_google_synthid_metadata(tm
         tmp_path / "el_clean.wav",
         scheme="auto",
         method="auto",
-        allow_unverified=True,
     )
     assert cleaned.skipped is False
     assert cleaned.method == "dac"

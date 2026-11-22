@@ -313,6 +313,8 @@ def remove_video_audio(
         before = replace(before, metadata_markers=dict(_metadata_markers))
     if method == "auto":
         profiles = audio.adaptive_auto_profiles(scheme, before, vendor=explicit_vendor)
+    if audio.should_auto_scrub_audio(before, method=method, explicit_vendor=explicit_vendor):
+        eff_allow_unverified = True
     eff_unverified = force or eff_allow_unverified
     if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
         first = profiles[0]
@@ -592,7 +594,12 @@ def preflight_video_audio_workload(
             raise
         if ordinal not in selected_set:
             continue
-        if not (eff_unverified or allow_positive) and rep.watermark_status != "detected":
+        if not (
+            eff_unverified
+            or allow_positive
+            or rep.watermark_status == "detected"
+            or audio.should_auto_scrub_audio(rep, method=method, explicit_vendor=explicit_vendor)
+        ):
             continue
         selected = audio.adaptive_auto_profiles(scheme, rep, vendor=explicit_vendor)[0] if method == "auto" else method
         audio.require_audio_profile_runtime(selected)
@@ -699,7 +706,13 @@ def remove_video_audio_all_streams(
     to_process = [
         ordinal
         for ordinal, rep in enumerate(befores)
-        if ordinal in selected_set and (eff_unverified or eff_positive or rep.watermark_status == "detected")
+        if ordinal in selected_set
+        and (
+            eff_unverified
+            or eff_positive
+            or rep.watermark_status == "detected"
+            or audio.should_auto_scrub_audio(rep, method=method, explicit_vendor=explicit_vendor)
+        )
     ]
     if not to_process:
         first = profiles[0]

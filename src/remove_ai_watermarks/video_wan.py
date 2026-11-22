@@ -71,6 +71,8 @@ WAN21_DEFAULT_NEGATIVE_PROMPT = (
 _WAN21_PROMPT_OUTPUT_PARAMS = ("wan21_v2v_prompt_embeds_v1",)
 
 _PROFILE_STRENGTHS: dict[WanExperimentalProfile, float] = {
+    "wan21-synthid": WAN21_SYNTHID_STRENGTH,
+    "wan21-seedance": WAN21_SEEDANCE_STRENGTH,
     "wan21-synthid-experimental": WAN21_SYNTHID_STRENGTH,
     "wan21-seedance-experimental": WAN21_SEEDANCE_STRENGTH,
 }

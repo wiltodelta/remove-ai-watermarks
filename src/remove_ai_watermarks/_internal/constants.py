@@ -51,8 +51,15 @@ AUDIO_LOSSY_OUTPUT_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".m4a", ".ogg
 
 ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v"})
 
-WanExperimentalProfile = Literal["wan21-synthid-experimental", "wan21-seedance-experimental"]
+WanExperimentalProfile = Literal[
+    "wan21-synthid",
+    "wan21-seedance",
+    "wan21-synthid-experimental",
+    "wan21-seedance-experimental",
+]
 WAN_EXPERIMENTAL_PROFILES: tuple[WanExperimentalProfile, ...] = (
+    "wan21-synthid",
+    "wan21-seedance",
     "wan21-synthid-experimental",
     "wan21-seedance-experimental",
 )
@@ -60,16 +67,28 @@ WAN_SUPPORTED_EXTENSIONS: frozenset[str] = ISOBMFF_VIDEO_EXTENSIONS
 VideoInvisibleProfile = Literal[
     "auto",
     "synthid",
+    "seedance",
     "seedance-experimental",
+    "wan21-synthid",
+    "wan21-seedance",
     "wan21-synthid-experimental",
     "wan21-seedance-experimental",
 ]
 VIDEO_INVISIBLE_PROFILES: tuple[VideoInvisibleProfile, ...] = (
     "auto",
     "synthid",
+    "seedance",
+    "wan21-synthid",
+    "wan21-seedance",
     "seedance-experimental",
-    *WAN_EXPERIMENTAL_PROFILES,
+    "wan21-synthid-experimental",
+    "wan21-seedance-experimental",
 )
+VIDEO_PROFILE_ALIASES: dict[str, str] = {
+    "seedance": "seedance-experimental",
+    "wan21-synthid": "wan21-synthid-experimental",
+    "wan21-seedance": "wan21-seedance-experimental",
+}
 VideoEncoder = Literal["software", "auto", "videotoolbox", "nvenc"]
 VIDEO_ENCODERS: tuple[VideoEncoder, ...] = get_args(VideoEncoder)
 AllPreset = Literal["lossless-fast", "balanced", "deep-clean"]

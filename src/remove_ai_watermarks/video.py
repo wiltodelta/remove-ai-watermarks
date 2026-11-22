@@ -9,6 +9,7 @@ The visible pixel path reuses the image package's shared fill backends.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from remove_ai_watermarks._internal.constants import (
     ISOBMFF_VIDEO_EXTENSIONS,
     VIDEO_INVISIBLE_PROFILES,
+    VIDEO_PROFILE_ALIASES,
     WAN_EXPERIMENTAL_PROFILES,
     VideoInvisibleProfile,
 )
@@ -27,6 +29,8 @@ from remove_ai_watermarks.video_synthid import (
     DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     DEFAULT_VIDEO_SYNTHID_VAE,
 )
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -896,7 +900,7 @@ def remove_video_visible(
     backend: str = "cv2",
     strip_metadata: bool = True,
     temporal_consistency: bool = True,
-    trim_bumper: bool = False,
+    trim_bumper: bool | Literal["auto"] = False,
     _metadata_markers: dict[str, str] | None = None,
 ) -> VideoVisibleResult:
     """Remove one or more supported visible AI marks (and optional trailing AI bumper) from a video."""
@@ -918,7 +922,8 @@ def remove_video_visible(
     base_scan = scans[candidate_marks[0]]
     total_frames = len(base_scan.detections)
     selected_all = _select_stable_visible_marks(scans, markers, candidate_marks, explicit_multi=explicit_multi)
-    bumper_cut = _detect_source_bumper_cut(source_path, base_scan.fps) if trim_bumper else None
+    should_trim_bumper = trim_bumper is True or (trim_bumper == "auto" and (bool(markers) or bool(selected_all)))
+    bumper_cut = _detect_source_bumper_cut(source_path, base_scan.fps) if should_trim_bumper else None
     trimmed_bumper_frames = (total_frames - bumper_cut) if bumper_cut is not None else 0
 
     if not selected_all and bumper_cut is None:
@@ -1190,6 +1195,10 @@ def _is_bytedance_video_provenance(
     return any(token in haystack for token in _BYTEDANCE_FALLBACK_TOKENS)
 
 
+def _normalize_video_profile(profile: str) -> str:
+    return VIDEO_PROFILE_ALIASES.get(profile, profile)
+
+
 def _resolve_video_invisible_profile(
     profile: VideoInvisibleProfile,
     source_path: Path,
@@ -1208,7 +1217,10 @@ def _resolve_video_invisible_profile(
     runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
 ) -> Literal["synthid", "seedance-experimental", "wan21-synthid-experimental", "wan21-seedance-experimental"]:
     if profile != "auto":
-        return profile
+        return cast(
+            "Literal['synthid', 'seedance-experimental', 'wan21-synthid-experimental', 'wan21-seedance-experimental']",
+            _normalize_video_profile(profile),
+        )
     has_overrides = _has_2d_vae_overrides(
         noise_std=noise_std,
         long_side=long_side,
@@ -1243,11 +1255,19 @@ def _resolve_video_invisible_profile(
     return resolved
 
 
+def video_has_invisible_provenance(
+    detected_metadata: dict[str, str],
+    visible_mark: str | None = None,
+) -> bool:
+    """Return True when video metadata or a confirmed visible AI mark signals AI provenance."""
+    return bool(detected_metadata) or visible_mark is not None
+
+
 def _validate_video_profile(
     profile: str,
     quality: str,
     *,
-    enabled: bool = True,
+    enabled: bool | Literal["auto"] = True,
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
     long_side: int = DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
     fps: float | None = DEFAULT_VIDEO_SYNTHID_FPS,
@@ -1259,9 +1279,10 @@ def _validate_video_profile(
     """Reject incompatible profile options before processing any stage."""
     if profile not in VIDEO_INVISIBLE_PROFILES:
         raise ValueError(
-            "profile must be auto, synthid, seedance-experimental, "
-            "wan21-synthid-experimental, or wan21-seedance-experimental"
+            "profile must be auto, synthid, seedance, wan21-synthid, or wan21-seedance "
+            "(legacy *-experimental aliases are also accepted)"
         )
+    profile = _normalize_video_profile(profile)
     if quality not in {"delivery", "master"}:
         raise ValueError("quality must be delivery or master")
     if profile not in {"auto", "synthid"} and not enabled:
@@ -1298,7 +1319,7 @@ def remove_video_all(
     mark: str = "auto",
     backend: str = "cv2",
     temporal_consistency: bool = True,
-    include_invisible: bool = False,
+    include_invisible: bool | Literal["auto"] = False,
     invisible_profile: VideoInvisibleProfile = "auto",
     invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
@@ -1321,7 +1342,7 @@ def remove_video_all(
     audio_allow_quality_override: bool = False,
     audio_vendor: AudioVendor | None = None,
     audio_streams: Sequence[int] | None = None,
-    trim_bumper: bool = False,
+    trim_bumper: bool | Literal["auto"] = False,
     _invisible_runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _detected_metadata: dict[str, str] | None = None,
     _runtime_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None,
@@ -1357,15 +1378,22 @@ def remove_video_all(
     )
     source_path = _video_source(source)
     output_path = _video_output(source_path, output, operation="complete cleaning")
-    if include_invisible and invisible_profile == "seedance-experimental" and source_path.suffix.lower() != ".mp4":
-        raise ValueError("Experimental Seedance processing requires MP4 input")
+    explicit_invisible = include_invisible is True
+    auto_invisible = include_invisible == "auto"
+    norm_invisible_profile = _normalize_video_profile(invisible_profile)
     if (
-        include_invisible
-        and invisible_profile in WAN_EXPERIMENTAL_PROFILES
+        explicit_invisible
+        and norm_invisible_profile == "seedance-experimental"
+        and source_path.suffix.lower() != ".mp4"
+    ):
+        raise ValueError("Seedance processing requires MP4 input")
+    if (
+        explicit_invisible
+        and norm_invisible_profile in WAN_EXPERIMENTAL_PROFILES
         and source_path.suffix.lower() not in _ISOBMFF_VIDEO_EXTENSIONS
     ):
-        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_WAN_VIDEO_EXTENSIONS}")
-    if include_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
+        raise ValueError(f"Wan 2.1 processing requires one of: {_EXPECTED_WAN_VIDEO_EXTENSIONS}")
+    if explicit_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         raise ValueError(f"Video SynthID regeneration requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
     from remove_ai_watermarks.audio import normalize_audio_vendor
 
@@ -1407,8 +1435,9 @@ def remove_video_all(
             Path(temp_dir) / f"visual-final{source_path.suffix}" if eff_include_audio_invisible else staged_final
         )
         resolved_invisible_profile: VideoInvisibleProfile | None = None
+        invisible_applied = False
         can_fuse = (
-            include_invisible
+            explicit_invisible
             and not trim_bumper
             and remove_video_visible is _ORIG_REMOVE_VIDEO_VISIBLE
             and remove_video_invisible is _ORIG_REMOVE_VIDEO_INVISIBLE
@@ -1571,8 +1600,13 @@ def remove_video_all(
                     marks=selected_marks_tuple,
                     trimmed_bumper_frames=0,
                 )
+            invisible_applied = True
         else:
-            visible_output = Path(temp_dir) / f"visible{source_path.suffix}" if include_invisible else stage_target
+            visible_output = (
+                Path(temp_dir) / f"visible{source_path.suffix}"
+                if (explicit_invisible or auto_invisible)
+                else stage_target
+            )
             vis_kwargs: dict[str, Any] = {
                 "mark": mark,
                 "backend": backend,
@@ -1581,11 +1615,28 @@ def remove_video_all(
                 "_metadata_markers": detected_metadata,
             }
             if trim_bumper:
-                vis_kwargs["trim_bumper"] = True
+                vis_kwargs["trim_bumper"] = trim_bumper
             visible_result = remove_video_visible(source_path, visible_output, **vis_kwargs)
             current_source = visible_result.output or source_path
+            detected_vis_mark = visible_result.mark if visible_result.output is not None else None
+            run_invisible_now = explicit_invisible
+            if (
+                auto_invisible
+                and video_has_invisible_provenance(detected_metadata, detected_vis_mark)
+                and current_source.suffix.lower() in _REGENERATED_VIDEO_EXTENSIONS
+            ):
+                from remove_ai_watermarks import video_invisible as _video_inv_mod
 
-            if include_invisible:
+                if _video_inv_mod.is_available():
+                    run_invisible_now = True
+                else:
+                    log.warning(
+                        "AI video provenance detected on %s; skipping invisible regeneration "
+                        "(install remove-ai-watermarks[video,diffusion])",
+                        source_path.name,
+                    )
+
+            if run_invisible_now:
                 resolved_invisible_profile = _resolve_video_invisible_profile(
                     invisible_profile,
                     current_source,
@@ -1599,7 +1650,7 @@ def remove_video_all(
                     model=model,
                     temporal_stabilize=temporal_stabilize,
                     detected_metadata=detected_metadata,
-                    visible_mark=visible_result.mark if visible_result.output is not None else None,
+                    visible_mark=detected_vis_mark,
                     runtime=_invisible_runtime,
                 )
                 active_runtime = _invisible_runtime
@@ -1623,6 +1674,7 @@ def remove_video_all(
                     _runtime=active_runtime,
                 )
                 remaining_metadata = invisible_result.remaining_metadata
+                invisible_applied = True
             elif visible_result.output is None:
                 metadata_result = remove_video_metadata(
                     source_path,
@@ -1631,6 +1683,8 @@ def remove_video_all(
                 )
                 remaining_metadata = metadata_result.remaining
             else:
+                if visible_result.output != stage_target:
+                    shutil.move(str(visible_result.output), str(stage_target))
                 remaining_metadata = visible_result.remaining_metadata
 
         if eff_include_audio_invisible:
@@ -1725,7 +1779,7 @@ def remove_video_all(
         visible_removed_frames=visible_result.removed_frames,
         detected_metadata=detected_metadata,
         remaining_metadata=remaining_metadata,
-        invisible_removed=include_invisible,
+        invisible_removed=invisible_applied,
         invisible_profile=resolved_invisible_profile,
         audio_status=audio_status,
         audio_processed_streams=audio_processed_streams,
@@ -1744,7 +1798,7 @@ def remove_video_batch(
     mark: str = "auto",
     backend: str = "cv2",
     temporal_consistency: bool = True,
-    include_invisible: bool = False,
+    include_invisible: bool | Literal["auto"] = False,
     invisible_profile: VideoInvisibleProfile = "auto",
     invisible_quality: Literal["delivery", "master"] = "delivery",
     noise_std: float = DEFAULT_VIDEO_SYNTHID_NOISE_STD,
@@ -1767,6 +1821,7 @@ def remove_video_batch(
     audio_allow_quality_override: bool = False,
     audio_vendor: AudioVendor | None = None,
     audio_streams: Sequence[int] | None = None,
+    trim_bumper: bool | Literal["auto"] = False,
 ) -> VideoBatchResult:
     """Process every supported video in one directory.
 
@@ -1872,12 +1927,13 @@ def remove_video_batch(
                 lazy_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None
                 if include_invisible:
                     _video_source(source_path)
-                    if invisible_profile == "auto":
+                    if invisible_profile == "auto" or include_invisible == "auto":
                         if source_path.suffix.lower() in _REGENERATED_VIDEO_EXTENSIONS:
                             lazy_getter = _get_batch_runtime
                     else:
-                        needs_wan = invisible_profile in WAN_EXPERIMENTAL_PROFILES
-                        if invisible_profile == "seedance-experimental":
+                        norm_prof = _normalize_video_profile(invisible_profile)
+                        needs_wan = norm_prof in WAN_EXPERIMENTAL_PROFILES
+                        if norm_prof == "seedance-experimental":
                             allowed_exts = {".mp4"}
                         elif needs_wan:
                             allowed_exts = _ISOBMFF_VIDEO_EXTENSIONS
@@ -1914,6 +1970,7 @@ def remove_video_batch(
                     audio_allow_quality_override=audio_allow_quality_override,
                     audio_vendor=audio_vendor,
                     audio_streams=audio_streams,
+                    trim_bumper=trim_bumper,
                     _invisible_runtime=selected_runtime,
                     _runtime_getter=lazy_getter,
                 )
@@ -2055,6 +2112,8 @@ def remove_video_invisible(
             temporal_stabilize=temporal_stabilize,
             runtime=_runtime,
         )
+    else:
+        profile = cast("VideoInvisibleProfile", _normalize_video_profile(profile))
     if profile == "seedance-experimental":
         return remove_video_seedance_experimental(
             source_path,

@@ -531,7 +531,9 @@ def _scan_audio_at_clock(
     return tuple(detections), tuple(caveats)
 
 
-def _audio_metadata_vendor(markers: dict[str, str]) -> Literal["elevenlabs", "google_synthid"] | None:
+def _audio_metadata_vendor(
+    markers: dict[str, str],
+) -> Literal["elevenlabs", "google_synthid", "cartesia", "openai"] | None:
     """Identify proprietary AI-audio waveform vendors from pre-strip metadata."""
     if not markers:
         return None
@@ -547,6 +549,10 @@ def _audio_metadata_vendor(markers: dict[str, str]) -> Literal["elevenlabs", "go
     ).casefold()
     if "elevenlabs" in identity_text or "eleven labs" in identity_text:
         return "elevenlabs"
+    if "cartesia" in identity_text:
+        return "cartesia"
+    if "openai" in identity_text and markers_claim_ai(markers):
+        return "openai"
     synthid_marker = markers.get("synthid_watermark", "").casefold()
     soft_binding_text = f"{markers.get('soft_binding_algorithm', '')} {markers.get('soft_binding', '')}".casefold()
     if "google" in synthid_marker or ("google" in soft_binding_text and "synthid" in soft_binding_text):
@@ -557,6 +563,20 @@ def _audio_metadata_vendor(markers: dict[str, str]) -> Literal["elevenlabs", "go
     if has_google_identity and ("synthid_watermark" in markers or markers_claim_ai(markers)):
         return "google_synthid"
     return None
+
+
+def should_auto_scrub_audio(
+    before: AudioProvenanceReport,
+    *,
+    method: AudioMethod,
+    explicit_vendor: str | None,
+) -> bool:
+    """Return True when pre-strip provenance identifies an unverified proprietary AI-audio vendor."""
+    if method != "auto" or explicit_vendor is not None:
+        return False
+    if _audio_metadata_vendor(before.metadata_markers) is None:
+        return False
+    return (_is_mono_or_stereo(before.stream) or _is_tagged_surround(before.stream)) and audio_dac.is_available()
 
 
 def _recommend_audio_recipe(
@@ -941,6 +961,8 @@ def remove_audio_invisible(
     before = identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
     if method == "auto":
         profiles = adaptive_auto_profiles(scheme, before, vendor=explicit_vendor)
+    if should_auto_scrub_audio(before, method=method, explicit_vendor=explicit_vendor):
+        eff_allow_unverified = True
     eff_unverified = force or eff_allow_unverified
     if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
         profile = profiles[0]
