@@ -89,7 +89,9 @@ multimodal synthetic head still evaluates `synthetic_detected` and
 
 The first call downloads the exact pinned revision of
 [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify)
-(`multi-provider-source-v8.npz`, verified by SHA-256). Set
+(`multi-provider-source-v8.npz`, verified by SHA-256), falling back
+automatically to the matching [GitHub Release](https://github.com/wiltodelta/raiw-source-classify/releases)
+if Hugging Face Hub is unreachable. Set
 `RAIW_SOURCE_CLASSIFY_WEIGHTS` to the `.npz` file itself or its parent directory
 for an offline deployment.
 

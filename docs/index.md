@@ -27,7 +27,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | [Audio and video watermark removal](audio-video-removal.md) | Implementation map, coverage evidence, and next requirements for audio and video removal. |
 | [Non-SynthID video coverage](non-synthid-video.md) | Evidence map separating video metadata declarations, open-model message decoding, and provider verification. |
 | [Real video and audio roadmap](media-removal-roadmap.md) | Ranked experiments, competitor and paper evidence, provider verifiers, and native product sample acquisition. |
-| [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, `wiltodelta/raiw-source-classify` Hub model, `wiltodelta/ai-image-detector-leaderboard` Space, ComfyUI Registry, and the release workflow. |
+| [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, `wiltodelta/raiw-source-classify` (Hugging Face Hub and GitHub), `wiltodelta/ai-image-detector-leaderboard` Space, ComfyUI Registry, and the release workflow. |
 | [Agent skill](agent-skill.md) | Install and maintain the published Agent Skill, the Claude plugin and the Codex plugin. |
 | [MCP server](mcp-server.md) | Connect an MCP client to `remove-ai-watermarks mcp`, or publish it to the MCP registry. |
 | [Watermarking landscape](watermarking-landscape.md) | Vendor signals and detection approaches. |

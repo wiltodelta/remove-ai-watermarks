@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
 import numpy as np
 from PIL import Image
 
+from remove_ai_watermarks._internal.utils import model_cache_dir
 from remove_ai_watermarks._internal.watermark_profiles import resolve_seed
 
 if TYPE_CHECKING:
@@ -450,16 +451,7 @@ def _expanded_box(
     )
 
 
-def _model_cache_dir() -> Path:
-    """Where this library persists downloaded and derived model assets.
-
-    ``HF_HOME`` comes first because on a scale-to-zero runner it is the one path
-    mounted persistently; anything under a container-local cache is re-derived on
-    every request, which defeats both the YuNet download and the prompt cache.
-    """
-    root = os.environ.get("HF_HOME") or os.environ.get("XDG_CACHE_HOME")
-    base = Path(root) if root else Path.home() / ".cache"
-    return base / "remove-ai-watermarks"
+_model_cache_dir = model_cache_dir
 
 
 def _yunet_model_path() -> Path:

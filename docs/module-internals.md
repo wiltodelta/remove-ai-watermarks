@@ -1913,7 +1913,9 @@ the opt-in 10-provider source-pipeline and synthetic-image classifier
 By default it downloads `config.json` (for Hub download telemetry) and
 `multi-provider-source-v8.npz`
 (`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
-or overridden via `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
+on Hugging Face Hub with automatic SHA-256-verified fallback to the matching
+`wiltodelta/raiw-source-classify` GitHub Release, or overridden via
+`RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
 runtime loading across five `.npz` bundle schemas:
 
 - `multi-provider-source-v8` (`512-d` + embedded residual-adapted

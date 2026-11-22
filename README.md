@@ -151,7 +151,7 @@ result = raiw.classify_source("image.png")
 print(result.label, result.version_subfamily, result.synthetic_detected, result.confidence)
 ```
 
-Guide: [source-pipeline classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify.md). Model card: [`wiltodelta/raiw-source-classify`](https://huggingface.co/wiltodelta/raiw-source-classify).
+Guide: [source-pipeline classification](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify.md). Model card and weights: [`wiltodelta/raiw-source-classify` on Hugging Face](https://huggingface.co/wiltodelta/raiw-source-classify) and [GitHub](https://github.com/wiltodelta/raiw-source-classify).
 
 Signed provenance is the supported route for SynthID and `identify` reads it.
 There is no local SynthID pixel detector in the package. Research on a

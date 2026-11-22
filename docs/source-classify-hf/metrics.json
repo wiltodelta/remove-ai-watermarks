@@ -4,6 +4,7 @@
   "artifact_file": "multi-provider-source-v8.npz",
   "artifact_sha256": "7e7a9ee708bc2d64b45b87829b2c45e487aed3936220fb09843267662c99e0da",
   "artifact_size_mb": 57.8,
+  "github_release_tag": "v8",
   "feature_dimension": 512,
   "vit_output_dimension": 59,
   "synthetic_fusion_dimension": 106,

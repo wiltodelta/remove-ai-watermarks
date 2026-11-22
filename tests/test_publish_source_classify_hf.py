@@ -17,9 +17,17 @@ import publish_source_classify_hf as publish  # noqa: E402
 
 def test_hub_ids_match_the_runtime_loader() -> None:
     # The workflow runs this script with --no-project, so it cannot import the package constants.
-    from remove_ai_watermarks.source_classify import CONFIG_FILE, MODEL_FILE, WEIGHTS_REPO
+    from remove_ai_watermarks.source_classify import (
+        CONFIG_FILE,
+        GITHUB_WEIGHTS_REPO,
+        GITHUB_WEIGHTS_TAG,
+        MODEL_FILE,
+        WEIGHTS_REPO,
+    )
 
     assert publish.HUB_REPO == WEIGHTS_REPO
+    assert publish.GITHUB_REPO == GITHUB_WEIGHTS_REPO
+    assert publish.GITHUB_DEFAULT_RELEASE_TAG == GITHUB_WEIGHTS_TAG
     assert publish.CONFIG_FILE == CONFIG_FILE
     assert publish.MODEL_FILE == MODEL_FILE
     assert "multi-provider-source-v6.npz" not in publish.RETIRED_FILES
@@ -59,13 +67,14 @@ def test_stage_release_requires_the_model(tmp_path: Path) -> None:
 
 
 def test_card_matches_the_metrics_manifest() -> None:
-    from remove_ai_watermarks.source_classify import MODEL_FILE, MODEL_SCHEMA, MODEL_SHA256
+    from remove_ai_watermarks.source_classify import GITHUB_WEIGHTS_TAG, MODEL_FILE, MODEL_SCHEMA, MODEL_SHA256
 
     metrics = json.loads((publish.CARD_DIR / "metrics.json").read_text(encoding="utf-8"))
     card = (publish.CARD_DIR / "README.md").read_text(encoding="utf-8")
     assert metrics["schema"] == MODEL_SCHEMA
     assert metrics["artifact_file"] == MODEL_FILE
     assert metrics["artifact_sha256"] == MODEL_SHA256
+    assert metrics["github_release_tag"] == GITHUB_WEIGHTS_TAG
     assert MODEL_FILE in card
     assert metrics["artifact_sha256"] in card
 
@@ -140,6 +149,59 @@ def test_publish_dry_run_performs_zero_hub_mutations_and_revision_out_records_oi
     rc = publish.main(["--src", str(src_dir), "--revision-out", str(rev_file), "--dry-run"])
     assert rc == 0
     assert not rev_file.exists()
+
+
+def test_stage_github_repo_strips_frontmatter_and_excludes_binary_weights(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import subprocess
+
+    gh_stage = tmp_path / "gh_stage"
+    publish.stage_github_repo(gh_stage, github_release_tag="v8")
+    staged_names = sorted(path.name for path in gh_stage.iterdir())
+    assert staged_names == sorted(publish.GITHUB_TRACKED_FILES)
+    assert publish.MODEL_FILE not in staged_names
+
+    readme = (gh_stage / "README.md").read_text(encoding="utf-8")
+    assert not readme.startswith("---")
+    assert readme.startswith("# RAIW multi-provider source-pipeline classifier")
+    for heading in publish.WEBSITE_SECTIONS:
+        assert heading in readme
+
+    config = json.loads((gh_stage / publish.CONFIG_FILE).read_text(encoding="utf-8"))
+    assert config["github_repo"] == publish.GITHUB_REPO
+    assert config["github_release_tag"] == "v8"
+    assert "Apache License" in (gh_stage / "LICENSE").read_text(encoding="utf-8")
+    assert "*.npz" in (gh_stage / ".gitignore").read_text(encoding="utf-8")
+
+    # Dry-run with --target both must not spawn any external git/gh commands.
+    def forbid_run(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("subprocess.run must not be called during --dry-run")
+
+    monkeypatch.setattr(subprocess, "run", forbid_run)
+    src_dir = tmp_path / "weights"
+    src_dir.mkdir()
+    weights_path = src_dir / publish.MODEL_FILE
+    weights_path.write_bytes(b"unverified-weights")
+    gh_rev_file = tmp_path / "gh_rev.txt"
+
+    rc_both = publish.main(
+        [
+            "--src",
+            str(src_dir),
+            "--target",
+            "both",
+            "--github-revision-out",
+            str(gh_rev_file),
+            "--dry-run",
+        ]
+    )
+    assert rc_both == 0
+    assert not gh_rev_file.exists()
+
+    # Non-dry-run publish_github must reject SHA-256 mismatch before calling any external CLI.
+    with pytest.raises(SystemExit, match="SHA-256 hash mismatch"):
+        publish.publish_github(gh_stage, weights_path, release_tag="v8", message="msg", dry_run=False)
 
 
 def test_website_content_matches_personal_website_visitor_copy_contract(tmp_path: Path) -> None:

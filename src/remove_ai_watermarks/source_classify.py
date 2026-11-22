@@ -17,11 +17,13 @@ import logging
 import math
 import os
 import threading
+import urllib.request
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
+from remove_ai_watermarks._internal.utils import model_cache_dir, staged_sibling
 from remove_ai_watermarks.optional_deps import module_available
 
 if TYPE_CHECKING:
@@ -80,6 +82,8 @@ CLASSES: tuple[SourceLabel, ...] = (*ALL_PROVIDER_CLASSES, "unknown")
 WEIGHTS_ENV = "RAIW_SOURCE_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
 WEIGHTS_REVISION = "ebc2dcf0cface677535fe7c1903dd68793ee1f30"
+GITHUB_WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
+GITHUB_WEIGHTS_TAG = "v8"
 CONFIG_FILE = "config.json"
 MODEL_FILE = "multi-provider-source-v8.npz"
 MODEL_SHA256 = "7e7a9ee708bc2d64b45b87829b2c45e487aed3936220fb09843267662c99e0da"
@@ -632,6 +636,78 @@ def _verify_sha256(path: Path, expected_sha256: str) -> None:
         )
 
 
+def _github_weights_cache_path(github_repo: str, github_tag: str, model_file: str) -> Path:
+    return model_cache_dir() / "source-classify" / github_repo.replace("/", "__") / github_tag / model_file
+
+
+def _probe_github_weights_cache(
+    github_repo: str,
+    github_tag: str,
+    model_file: str,
+    expected_sha256: str,
+) -> Path | None:
+    dest = _github_weights_cache_path(github_repo, github_tag, model_file)
+    if not dest.is_file():
+        return None
+    try:
+        _verify_sha256(dest, expected_sha256)
+        return dest
+    except RuntimeError:
+        log.warning("Cached GitHub weights failed SHA-256 verification at %s; re-downloading", dest)
+        dest.unlink(missing_ok=True)
+        return None
+
+
+def _download_github_release_weights(
+    github_repo: str,
+    github_tag: str,
+    model_file: str,
+    expected_sha256: str,
+) -> Path:
+    cached = _probe_github_weights_cache(github_repo, github_tag, model_file, expected_sha256)
+    if cached is not None:
+        return cached
+
+    dest = _github_weights_cache_path(github_repo, github_tag, model_file)
+    url = f"https://github.com/{github_repo}/releases/download/{github_tag}/{model_file}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    log.info("GitHub Release download request: GET %s", url)
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "remove-ai-watermarks/source-classify"},
+    )
+    try:
+        with staged_sibling(dest) as staged_path:
+            digest = hashlib.sha256()
+            with (
+                urllib.request.urlopen(req, timeout=60) as resp,  # noqa: S310 - fixed HTTPS source
+                staged_path.open("wb") as out_handle,
+            ):
+                status = getattr(resp, "status", None)
+                content_length = resp.headers.get("Content-Length") if hasattr(resp, "headers") else None
+                log.info(
+                    "GitHub Release download response: url=%s status=%s content_length=%s",
+                    url,
+                    status,
+                    content_length,
+                )
+                while chunk := resp.read(1024 * 1024):
+                    digest.update(chunk)
+                    out_handle.write(chunk)
+            actual = digest.hexdigest()
+            if actual.lower() != expected_sha256.lower():
+                raise RuntimeError(
+                    f"SHA-256 hash mismatch for {model_file}: expected {expected_sha256}, got {actual}. "
+                    "Clear the cached artifact or point to a verified freeze directory."
+                )
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        log.error("GitHub Release download failed for %s: %s", url, exc)
+        raise RuntimeError(f"Failed to download verified weights from Hugging Face or {url}: {exc}") from exc
+    return dest
+
+
 @functools.lru_cache(maxsize=4)
 def _resolve_hub_weights(
     repo_id: str,
@@ -639,15 +715,39 @@ def _resolve_hub_weights(
     model_file: str,
     config_file: str,
     expected_sha256: str,
+    github_repo: str,
+    github_tag: str,
 ) -> Path:
-    _require_dependencies(need_hub=True, need_onnx=False)
-    hub: Any = import_module("huggingface_hub")
-    try_cache = getattr(hub, "try_to_load_from_cache", None)
-    cached = try_cache(repo_id=repo_id, filename=model_file, revision=revision) if callable(try_cache) else None
-    if isinstance(cached, str):
-        downloaded = Path(cached)
-    else:
-        with contextlib.suppress(Exception):
+    _require_dependencies(need_hub=False, need_onnx=False)
+    has_hub = module_available("huggingface_hub")
+    hub: Any = import_module("huggingface_hub") if has_hub else None
+    if hub is not None:
+        try_cache = getattr(hub, "try_to_load_from_cache", None)
+        cached = try_cache(repo_id=repo_id, filename=model_file, revision=revision) if callable(try_cache) else None
+        if isinstance(cached, str):
+            downloaded = Path(cached)
+            _verify_sha256(downloaded, expected_sha256)
+            return downloaded
+
+    gh_cached = _probe_github_weights_cache(github_repo, github_tag, model_file, expected_sha256)
+    if gh_cached is not None:
+        return gh_cached
+
+    if hub is None:
+        log.info(
+            "huggingface_hub is not installed; downloading weights from GitHub Release %s@%s",
+            github_repo,
+            github_tag,
+        )
+        return _download_github_release_weights(github_repo, github_tag, model_file, expected_sha256)
+
+    hub_errors = getattr(hub, "errors", None)
+    not_found_exc = getattr(hub_errors, "EntryNotFoundError", None)
+    ignorable_config_exc: tuple[type[BaseException], ...] = (
+        (not_found_exc,) if isinstance(not_found_exc, type) and issubclass(not_found_exc, BaseException) else ()
+    )
+    try:
+        with contextlib.suppress(*ignorable_config_exc):
             hub.hf_hub_download(
                 repo_id=repo_id,
                 filename=config_file,
@@ -662,12 +762,24 @@ def _resolve_hub_weights(
                 )
             )
         )
+    except Exception as exc:
+        log.warning(
+            "Hugging Face Hub download failed for %s@%s/%s (%s); falling back to GitHub Release %s@%s",
+            repo_id,
+            revision,
+            model_file,
+            exc,
+            github_repo,
+            github_tag,
+        )
+        return _download_github_release_weights(github_repo, github_tag, model_file, expected_sha256)
+
     _verify_sha256(downloaded, expected_sha256)
     return downloaded
 
 
 def resolve_weights_path(weights_path: Path | None = None) -> Path:
-    """Resolve the verified local or Hugging Face Hub `.npz` weights artifact path."""
+    """Resolve the verified local, Hugging Face Hub, or GitHub Release `.npz` weights path."""
     if weights_path is not None:
         path = Path(weights_path).expanduser()
         return path / MODEL_FILE if path.is_dir() else path
@@ -678,10 +790,19 @@ def resolve_weights_path(weights_path: Path | None = None) -> Path:
         if not candidate.is_file():
             raise RuntimeError(f"{WEIGHTS_ENV} does not contain {MODEL_FILE}: {path}")
         return candidate
-    resolved = _resolve_hub_weights(WEIGHTS_REPO, WEIGHTS_REVISION, MODEL_FILE, CONFIG_FILE, MODEL_SHA256)
+    hub_args = (
+        WEIGHTS_REPO,
+        WEIGHTS_REVISION,
+        MODEL_FILE,
+        CONFIG_FILE,
+        MODEL_SHA256,
+        GITHUB_WEIGHTS_REPO,
+        GITHUB_WEIGHTS_TAG,
+    )
+    resolved = _resolve_hub_weights(*hub_args)
     if not resolved.is_file():
         _resolve_hub_weights.cache_clear()
-        resolved = _resolve_hub_weights(WEIGHTS_REPO, WEIGHTS_REVISION, MODEL_FILE, CONFIG_FILE, MODEL_SHA256)
+        resolved = _resolve_hub_weights(*hub_args)
     return resolved
 
 

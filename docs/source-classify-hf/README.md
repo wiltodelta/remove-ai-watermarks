@@ -31,7 +31,10 @@ This model is **not a SynthID detector** and does not decode or verify any crypt
 
 ## Quickstart (NumPy + ONNX Runtime CPU, no PyTorch required)
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wiltodelta/remove-ai-watermarks/blob/main/docs/source-classify-hf/demo.ipynb)
+[![Hugging Face Weights](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-wiltodelta%2Fraiw--source--classify-yellow)](https://huggingface.co/wiltodelta/raiw-source-classify)
+[![GitHub Release](https://img.shields.io/github/v/release/wiltodelta/raiw-source-classify?label=GitHub%20weights)](https://github.com/wiltodelta/raiw-source-classify/releases/latest)
+[![Leaderboard](https://img.shields.io/badge/%F0%9F%A4%97%20Leaderboard-20%20detectors-blue)](https://huggingface.co/spaces/wiltodelta/ai-image-detector-leaderboard)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/wiltodelta/raiw-source-classify/blob/main/demo.ipynb)
 
 ```bash
 pip install "remove-ai-watermarks[source-classify]"
@@ -47,17 +50,17 @@ print(res.label, res.version_subfamily, res.synthetic_detected, round(res.synthe
 # e.g. 'unknown' None False 0.0084                 (camera photo, UI screenshot, diagram, or scanned document)
 ```
 
-Command line (installed CLI or zero-setup `uv run` with the bundled `infer.py` and open-detector `benchmark.py`):
+Command line (installed CLI or zero-setup `uv run` with the bundled `infer.py` and open-detector `benchmark.py` from Hugging Face or GitHub):
 
 ```bash
 remove-ai-watermarks classify-source image.jpg --json
-uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py image.jpg --json
-uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/infer.py --inspect-weights
-uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/benchmark.py
+uv run https://raw.githubusercontent.com/wiltodelta/raiw-source-classify/main/infer.py image.jpg --json
+uv run https://raw.githubusercontent.com/wiltodelta/raiw-source-classify/main/infer.py --inspect-weights
+uv run https://raw.githubusercontent.com/wiltodelta/raiw-source-classify/main/benchmark.py
 uv run https://huggingface.co/wiltodelta/raiw-source-classify/resolve/main/benchmark.py --tier frontier
 ```
 
-Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v8.npz` or its parent directory for air-gapped deployments.
+The verified `multi-provider-source-v8.npz` bundle is published identically on [Hugging Face](https://huggingface.co/wiltodelta/raiw-source-classify) and [GitHub Releases](https://github.com/wiltodelta/raiw-source-classify/releases) (automatic SHA-256-verified fallback when Hugging Face is unreachable). Try it in your browser on the [Remove AI Watermarks Hugging Face Space](https://huggingface.co/spaces/wiltodelta/remove-ai-watermarks) or at [raiw.cc](https://raiw.cc). Set `RAIW_SOURCE_CLASSIFY_WEIGHTS` to `multi-provider-source-v8.npz` or its parent directory for air-gapped deployments.
 
 ## Model architecture
 

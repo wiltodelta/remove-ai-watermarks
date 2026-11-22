@@ -1,7 +1,8 @@
-name: Publish source classifier to Hugging Face
+name: Publish source classifier to Hugging Face and GitHub
 
-# Manual only. The derivative model weights live in a GitHub model-freeze
-# release; the private training corpus and caches never enter this repository.
+# Manual only. The derivative model weights live in a GitHub model release
+# (`wiltodelta/raiw-source-classify` or a model-freeze tag in this repository);
+# the private training corpus and caches never enter either repository.
 # Also synchronizes `wiltodelta/ai-image-detector-leaderboard` and audits
 # external benchmark/arena surfaces so public leaderboards never lag a freeze.
 
@@ -12,9 +13,13 @@ on:
         description: "Type publish"
         required: true
       weights_tag:
-        description: "GitHub Release tag holding the frozen source-classify weights"
-        required: true
-        default: source-classify-v8-freeze-2026-11-18
+        description: "Release tag holding the frozen source-classify weights (defaults to metrics.json github_release_tag)"
+        required: false
+        default: ""
+      github_release_tag:
+        description: "Target release tag on wiltodelta/raiw-source-classify (defaults to metrics.json github_release_tag)"
+        required: false
+        default: ""
       recompute_leaderboard:
         description: "Re-evaluate the 578-image open benchmark on CPU before syncing the leaderboard Space"
         type: boolean
@@ -38,16 +43,24 @@ jobs:
       - name: Download derivative model weights
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.weights_tag }}
+          INPUT_WEIGHTS_TAG: ${{ github.event.inputs.weights_tag }}
         run: |
           set -euo pipefail
           artifact="$(jq -r .artifact_file docs/source-classify-hf/metrics.json)"
+          default_tag="$(jq -r .github_release_tag docs/source-classify-hf/metrics.json)"
+          tag="${INPUT_WEIGHTS_TAG:-$default_tag}"
           test -n "$artifact" && test "$artifact" != "null"
+          test -n "$tag" && test "$tag" != "null"
           mkdir -p weights
-          gh release download "$TAG" \
-            --repo "${{ github.repository }}" \
+          if ! gh release download "$tag" \
+            --repo "wiltodelta/raiw-source-classify" \
             --pattern "$artifact" \
-            --dir weights
+            --dir weights 2>/dev/null; then
+            gh release download "$tag" \
+              --repo "${{ github.repository }}" \
+              --pattern "$artifact" \
+              --dir weights
+          fi
           test -s "weights/$artifact"
 
       - name: Verify the frozen artifact
@@ -62,6 +75,7 @@ jobs:
       - name: Publish model card and weights to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          INPUT_GH_TAG: ${{ github.event.inputs.github_release_tag }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -69,11 +83,33 @@ jobs:
             echo "HF_TOKEN secret is not set" >&2
             exit 1
           fi
+          gh_tag="${INPUT_GH_TAG:-$(jq -r .github_release_tag docs/source-classify-hf/metrics.json)}"
           uv run --no-project --with huggingface-hub \
             python scripts/publish_source_classify_hf.py \
             --src weights \
+            --target hf \
+            --github-release-tag "$gh_tag" \
             --revision-out weights/published_revision.txt \
             --message "Source-classify freeze (GitHub ${SHA:0:7})"
+
+      - name: Sync standalone GitHub repository and release
+        env:
+          RAIW_SOURCE_CLASSIFY_TOKEN: ${{ secrets.RAIW_SOURCE_CLASSIFY_TOKEN }}
+          INPUT_GH_TAG: ${{ github.event.inputs.github_release_tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RAIW_SOURCE_CLASSIFY_TOKEN:-}" ]; then
+            echo "::notice::RAIW_SOURCE_CLASSIFY_TOKEN secret is not set; skipping wiltodelta/raiw-source-classify GitHub sync."
+            exit 0
+          fi
+          gh_tag="${INPUT_GH_TAG:-$(jq -r .github_release_tag docs/source-classify-hf/metrics.json)}"
+          uv run --no-project \
+            python scripts/publish_source_classify_hf.py \
+            --src weights \
+            --target github \
+            --github-release-tag "$gh_tag" \
+            --message "Source-classify $gh_tag (remove-ai-watermarks ${SHA:0:7})"
 
       - name: Sync Open AI Image Detector Leaderboard and audit external arenas
         env:

@@ -5,13 +5,13 @@ from __future__ import annotations
 import contextlib
 import os
 import secrets
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from remove_ai_watermarks._internal.constants import JPEG_SUFFIXES, SUPPORTED_FORMATS
 
 if TYPE_CHECKING:
     from collections.abc import Generator
-    from pathlib import Path
 
 
 def is_supported_format(file_path: Path) -> bool:
@@ -42,3 +42,15 @@ def staged_sibling(output: Path) -> Generator[Path]:
         os.replace(staged, output)
     finally:
         staged.unlink(missing_ok=True)
+
+
+def model_cache_dir() -> Path:
+    """Where this library persists downloaded and derived model assets.
+
+    ``HF_HOME`` comes first because on a scale-to-zero runner it is the one path
+    mounted persistently; anything under a container-local cache is re-derived on
+    every request.
+    """
+    root = os.environ.get("HF_HOME") or os.environ.get("XDG_CACHE_HOME")
+    base = Path(root).expanduser() if root else Path.home() / ".cache"
+    return base / "remove-ai-watermarks"

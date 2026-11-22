@@ -423,6 +423,92 @@ def test_resolve_weights_fetches_config_on_cold_miss_and_caches_resolution(
         source_classify._resolve_hub_weights.cache_clear()
 
 
+def test_resolve_weights_falls_back_to_github_release_with_sha256_verification(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import io
+    import types
+    import urllib.request
+
+    source_classify._resolve_hub_weights.cache_clear()
+    monkeypatch.delenv(source_classify.WEIGHTS_ENV, raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+
+    payload_bytes = b"verified-github-release-v8-weights"
+    expected_sha = hashlib.sha256(payload_bytes).hexdigest()
+    monkeypatch.setattr(source_classify, "MODEL_SHA256", expected_sha)
+
+    hub_attempts: list[str] = []
+
+    def failing_download(*, repo_id: str, filename: str, revision: str) -> str:
+        hub_attempts.append(filename)
+        raise OSError(f"Hugging Face unreachable for {repo_id}@{revision}/{filename}")
+
+    fake_hub = types.SimpleNamespace(
+        try_to_load_from_cache=lambda **_kw: None,
+        hf_hub_download=failing_download,
+    )
+    monkeypatch.setattr(
+        source_classify,
+        "import_module",
+        lambda name: fake_hub if name == "huggingface_hub" else __import__(name),
+    )
+
+    requested_urls: list[str] = []
+    served_bytes = payload_bytes
+
+    class FakeHttpResponse(io.BytesIO):
+        status = 200
+
+        def __init__(self, initial_bytes: bytes) -> None:
+            super().__init__(initial_bytes)
+            self.headers = {"Content-Length": str(len(initial_bytes))}
+
+        def __enter__(self) -> FakeHttpResponse:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            self.close()
+
+    def fake_urlopen(req: object, timeout: float = 60) -> FakeHttpResponse:
+        assert timeout == 60
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        requested_urls.append(url)
+        return FakeHttpResponse(served_bytes)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    try:
+        resolved = source_classify.resolve_weights_path()
+        expected_url = (
+            f"https://github.com/{source_classify.GITHUB_WEIGHTS_REPO}"
+            f"/releases/download/{source_classify.GITHUB_WEIGHTS_TAG}/{source_classify.MODEL_FILE}"
+        )
+        assert hub_attempts == [source_classify.CONFIG_FILE]
+        assert requested_urls == [expected_url]
+        assert resolved.is_file()
+        assert resolved.read_bytes() == payload_bytes
+
+        # Cold lru_cache with warm GitHub disk cache must return immediately with zero HF or HTTP calls.
+        source_classify._resolve_hub_weights.cache_clear()
+        hub_attempts.clear()
+        requested_urls.clear()
+        assert source_classify.resolve_weights_path() == resolved
+        assert hub_attempts == []
+        assert requested_urls == []
+
+        # Corrupted GitHub download must fail closed on SHA-256 and leave no file at destination.
+        resolved.unlink()
+        source_classify._resolve_hub_weights.cache_clear()
+        served_bytes = b"tampered-bytes"
+        with pytest.raises(RuntimeError, match="SHA-256 hash mismatch"):
+            source_classify.resolve_weights_path()
+        assert not resolved.exists()
+    finally:
+        source_classify._resolve_hub_weights.cache_clear()
+
+
 def _base_two_tower_npz_payload(
     schema: str,
     *,

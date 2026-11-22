@@ -83,23 +83,31 @@ factory rebuild runs, which reinstalls whatever version is already pinned.
 The Space repo's callback smoke tests still run on every push; they are the
 scenario check for the demo surface.
 
-The Hugging Face **model** `wiltodelta/raiw-source-classify` and its companion
-20-model open benchmark Space `wiltodelta/ai-image-detector-leaderboard` are not
-part of the package release fan-out. They are published together with
+The **source-pipeline classifier** (`wiltodelta/raiw-source-classify` on both
+Hugging Face Hub and GitHub) and its companion 20-model open benchmark Space
+`wiltodelta/ai-image-detector-leaderboard` are not part of the package release
+fan-out. They are published together with
 `.github/workflows/publish-source-classify-hf.yml`. The workflow downloads the
-derivative `multi-provider-source-v8.npz` artifact from the declared GitHub
-model freeze, verifies its SHA-256, uploads that file plus the tracked
+derivative `multi-provider-source-v8.npz` artifact from the declared model
+release tag (on `wiltodelta/raiw-source-classify` or a freeze tag in this
+repository), verifies its SHA-256, uploads that file plus the tracked
 `README.md`, `metrics.json`, `website-content.json`, `infer.py`, `benchmark.py`,
 and `demo.ipynb` under `docs/source-classify-hf/` and a synthesized
-`config.json` (while deleting retired Hub model repositories), then runs
-`scripts/sync_ai_detector_leaderboard.py` to verify parity against
+`config.json` to Hugging Face (while deleting retired Hub model repositories),
+synchronizes the standalone public GitHub repository
+`wiltodelta/raiw-source-classify` (lightweight git tree without `.npz` plus the
+non-prerelease GitHub Release asset when `RAIW_SOURCE_CLASSIFY_TOKEN` is set),
+then runs `scripts/sync_ai_detector_leaderboard.py` to verify parity against
 `metrics.json` (optionally re-evaluating the 578-image open benchmark on CPU via
 `recompute_leaderboard=true`), synchronize
 `docs/ai-image-detector-leaderboard/` onto the Hugging Face Space
 `wiltodelta/ai-image-detector-leaderboard`, and write an external arena and
 baseline-drift status table (covering the Space, the Hugging Face blog report,
 `aidetectarena.com`, `DFBench/Leaderboard-Image-2025`, and the pinned Hub
-baseline revisions) to the workflow summary. Victor's personal website
+baseline revisions) to the workflow summary. The `RAIW_SOURCE_CLASSIFY_TOKEN`
+repository secret is a fine-grained token limited to
+`wiltodelta/raiw-source-classify`, with Contents read and write access; without
+it the GitHub repository sync step skips with a notice. Victor's personal website
 (`wiltodelta/wiltodelta-app`, `/projects/raiw-source-classify/`) polls
 `wiltodelta/raiw-source-classify` via `release-refresh.yml`, imports `README.md`
 ("Model architecture" and "Evaluation") and `website-content.json`, and
@@ -108,15 +116,17 @@ redeploys automatically whenever the Hub commit changes; review
 that changes supported providers or user-facing behavior (`wiltodelta-app`'s
 `docs/product-updates.md`, "Visitor copy selection" and "What product
 repositories owe the site"). A library version bump alone
-does not upload new weights - bump `WEIGHTS_REVISION` in
-`src/remove_ai_watermarks/source_classify.py` when a new Hub commit must reach
+does not upload new weights - bump `WEIGHTS_REVISION` and `GITHUB_WEIGHTS_TAG` in
+`src/remove_ai_watermarks/source_classify.py` when a new model freeze must reach
 installed clients. The private corpus, catalog, paths, hashes, embeddings, and
 feature caches are outside this flow.
 
-The workflow is manual and requires the model-freeze release tag plus an
-explicit `publish` confirmation. Keep model-freeze GitHub releases marked as
-pre-releases so a model artifact cannot replace the latest package release in
-GitHub's release UI. Package publication and distribution jobs run only for
+The workflow is manual and requires the model release tag plus an explicit
+`publish` confirmation. Prefer publishing frozen `.npz` releases directly on
+`wiltodelta/raiw-source-classify` (`v8`, `v9`, ...); if a model-freeze release
+is still created in `remove-ai-watermarks`, mark it as a pre-release so a model
+artifact cannot replace the latest package release in GitHub's release UI.
+Package publication and distribution jobs run only for
 non-prerelease `v*` tags, so model-only prereleases cannot enter PyPI or the
 package fan-out. A draft release keeps its target commit when published; target
 the commit containing those guards before creating a model-only release, not
