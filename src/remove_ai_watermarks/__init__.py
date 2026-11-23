@@ -46,7 +46,7 @@ _os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 _warnings.filterwarnings("ignore", message=r".*ImageProcessorFast.*")
 
 
-__version__ = "0.71.0"
+__version__ = "0.72.0"
 
 __all__ = [
     "AudioAllResult",
