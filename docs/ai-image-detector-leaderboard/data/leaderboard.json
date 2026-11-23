@@ -77,9 +77,9 @@
       "tier": "raiw",
       "revision": "ebc2dcf0cface677535fe7c1903dd68793ee1f30",
       "license": "apache-2.0",
-      "weights_mb": 57.8,
+      "weights_mb": 67.0,
       "runtime": "NumPy + ONNX Runtime (CPU)",
-      "median_cpu_ms": 385.9,
+      "median_cpu_ms": 371.8,
       "non_ai_total": 200,
       "non_ai_fp": 0,
       "non_ai_fpr_pct": 0.0,
@@ -90,176 +90,176 @@
         "scanned_document": 0.0
       },
       "ai_total": 378,
-      "ai_tp": 351,
-      "ai_recall_pct": 92.9,
+      "ai_tp": 313,
+      "ai_recall_pct": 82.8,
       "precision_pct": 100.0,
-      "provider_attribution_pct": 42.6,
-      "provider_attribution_when_classified_pct": 45.9,
+      "provider_attribution_pct": 38.6,
+      "provider_attribution_when_classified_pct": 46.6,
       "per_provider": {
         "bytedance": {
           "count": 6,
-          "detected_ai": 4,
+          "detected_ai": 1,
           "exact_provider": 0,
-          "recall_pct": 66.7,
+          "recall_pct": 16.7,
           "attribution_pct": 0.0
         },
         "flux": {
           "count": 60,
-          "detected_ai": 54,
-          "exact_provider": 35,
-          "recall_pct": 90.0,
-          "attribution_pct": 58.3
+          "detected_ai": 49,
+          "exact_provider": 42,
+          "recall_pct": 81.7,
+          "attribution_pct": 70.0
         },
         "google": {
           "count": 82,
-          "detected_ai": 79,
-          "exact_provider": 32,
-          "recall_pct": 96.3,
-          "attribution_pct": 39.0
+          "detected_ai": 72,
+          "exact_provider": 18,
+          "recall_pct": 87.8,
+          "attribution_pct": 22.0
         },
         "ideogram": {
           "count": 27,
-          "detected_ai": 27,
-          "exact_provider": 22,
-          "recall_pct": 100.0,
-          "attribution_pct": 81.5
+          "detected_ai": 26,
+          "exact_provider": 17,
+          "recall_pct": 96.3,
+          "attribution_pct": 63.0
         },
         "midjourney": {
           "count": 54,
-          "detected_ai": 49,
-          "exact_provider": 17,
-          "recall_pct": 90.7,
-          "attribution_pct": 31.5
+          "detected_ai": 38,
+          "exact_provider": 14,
+          "recall_pct": 70.4,
+          "attribution_pct": 25.9
         },
         "openai": {
           "count": 60,
-          "detected_ai": 56,
-          "exact_provider": 28,
-          "recall_pct": 93.3,
-          "attribution_pct": 46.7
+          "detected_ai": 47,
+          "exact_provider": 29,
+          "recall_pct": 78.3,
+          "attribution_pct": 48.3
         },
         "stable_diffusion": {
           "count": 58,
-          "detected_ai": 52,
-          "exact_provider": 27,
-          "recall_pct": 89.7,
-          "attribution_pct": 46.6
+          "detected_ai": 53,
+          "exact_provider": 26,
+          "recall_pct": 91.4,
+          "attribution_pct": 44.8
         },
         "xai": {
           "count": 31,
-          "detected_ai": 30,
+          "detected_ai": 27,
           "exact_provider": 0,
-          "recall_pct": 96.8,
+          "recall_pct": 87.1,
           "attribution_pct": 0.0
         }
       },
       "native_ai": {
         "total": 125,
-        "tp": 123,
-        "recall_pct": 98.4,
+        "tp": 117,
+        "recall_pct": 93.6,
         "precision_pct": 100.0,
-        "provider_attribution_pct": 80.8,
+        "provider_attribution_pct": 76.8,
         "provider_attribution_when_classified_pct": 82.1,
         "per_provider": {
           "flux": {
             "count": 25,
             "detected_ai": 25,
-            "exact_provider": 21,
+            "exact_provider": 24,
             "recall_pct": 100.0,
-            "attribution_pct": 84.0
+            "attribution_pct": 96.0
           },
           "google": {
             "count": 25,
-            "detected_ai": 24,
-            "exact_provider": 21,
-            "recall_pct": 96.0,
-            "attribution_pct": 84.0
+            "detected_ai": 21,
+            "exact_provider": 15,
+            "recall_pct": 84.0,
+            "attribution_pct": 60.0
           },
           "midjourney": {
             "count": 25,
-            "detected_ai": 24,
-            "exact_provider": 14,
-            "recall_pct": 96.0,
-            "attribution_pct": 56.0
+            "detected_ai": 22,
+            "exact_provider": 11,
+            "recall_pct": 88.0,
+            "attribution_pct": 44.0
           },
           "openai": {
             "count": 25,
-            "detected_ai": 25,
+            "detected_ai": 24,
             "exact_provider": 21,
-            "recall_pct": 100.0,
+            "recall_pct": 96.0,
             "attribution_pct": 84.0
           },
           "stable_diffusion": {
             "count": 25,
             "detected_ai": 25,
-            "exact_provider": 24,
+            "exact_provider": 25,
             "recall_pct": 100.0,
-            "attribution_pct": 96.0
+            "attribution_pct": 100.0
           }
         }
       },
       "arena_ai": {
         "total": 253,
-        "tp": 228,
-        "recall_pct": 90.1,
+        "tp": 196,
+        "recall_pct": 77.5,
         "precision_pct": 100.0,
-        "provider_attribution_pct": 23.7,
-        "provider_attribution_when_classified_pct": 26.3,
+        "provider_attribution_pct": 19.8,
+        "provider_attribution_when_classified_pct": 25.5,
         "per_provider": {
           "bytedance": {
             "count": 6,
-            "detected_ai": 4,
+            "detected_ai": 1,
             "exact_provider": 0,
-            "recall_pct": 66.7,
+            "recall_pct": 16.7,
             "attribution_pct": 0.0
           },
           "flux": {
             "count": 35,
-            "detected_ai": 29,
-            "exact_provider": 14,
-            "recall_pct": 82.9,
-            "attribution_pct": 40.0
+            "detected_ai": 24,
+            "exact_provider": 18,
+            "recall_pct": 68.6,
+            "attribution_pct": 51.4
           },
           "google": {
             "count": 57,
-            "detected_ai": 55,
-            "exact_provider": 11,
-            "recall_pct": 96.5,
-            "attribution_pct": 19.3
+            "detected_ai": 51,
+            "exact_provider": 3,
+            "recall_pct": 89.5,
+            "attribution_pct": 5.3
           },
           "ideogram": {
             "count": 27,
-            "detected_ai": 27,
-            "exact_provider": 22,
-            "recall_pct": 100.0,
-            "attribution_pct": 81.5
+            "detected_ai": 26,
+            "exact_provider": 17,
+            "recall_pct": 96.3,
+            "attribution_pct": 63.0
           },
           "midjourney": {
             "count": 29,
-            "detected_ai": 25,
+            "detected_ai": 16,
             "exact_provider": 3,
-            "recall_pct": 86.2,
+            "recall_pct": 55.2,
             "attribution_pct": 10.3
           },
           "openai": {
             "count": 35,
-            "detected_ai": 31,
-            "exact_provider": 7,
-            "recall_pct": 88.6,
-            "attribution_pct": 20.0
+            "detected_ai": 23,
+            "exact_provider": 8,
+            "recall_pct": 65.7,
+            "attribution_pct": 22.9
           },
           "stable_diffusion": {
             "count": 33,
-            "detected_ai": 27,
-            "exact_provider": 3,
-            "recall_pct": 81.8,
-            "attribution_pct": 9.1
+            "detected_ai": 28,
+            "exact_provider": 1,
+            "recall_pct": 84.8,
+            "attribution_pct": 3.0
           },
           "xai": {
             "count": 31,
-            "detected_ai": 30,
+            "detected_ai": 27,
             "exact_provider": 0,
-            "recall_pct": 96.8,
+            "recall_pct": 87.1,
             "attribution_pct": 0.0
           }
         }

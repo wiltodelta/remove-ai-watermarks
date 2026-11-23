@@ -21,7 +21,7 @@ import urllib.request
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias, TypeVar
 
 from remove_ai_watermarks._internal.utils import model_cache_dir, staged_sibling
 from remove_ai_watermarks.optional_deps import module_available
@@ -83,16 +83,18 @@ WEIGHTS_ENV = "RAIW_SOURCE_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
 WEIGHTS_REVISION = "ebc2dcf0cface677535fe7c1903dd68793ee1f30"
 GITHUB_WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
-GITHUB_WEIGHTS_TAG = "v8"
+GITHUB_WEIGHTS_TAG = "v10"
 CONFIG_FILE = "config.json"
-MODEL_FILE = "multi-provider-source-v8.npz"
-MODEL_SHA256 = "7e7a9ee708bc2d64b45b87829b2c45e487aed3936220fb09843267662c99e0da"
+MODEL_FILE = "multi-provider-source-v10.npz"
+MODEL_SHA256 = "b3eb961cc68cf283b399bebf11cdf61b2bf41b98fabca0579f8b61d9141f695f"
 MODEL_SCHEMA_V3 = "multi-provider-source-v3"
 MODEL_SCHEMA_V4 = "multi-provider-source-v4"
 MODEL_SCHEMA_V5 = "multi-provider-source-v5"
 MODEL_SCHEMA_V7 = "multi-provider-source-v7"
 MODEL_SCHEMA_V8 = "multi-provider-source-v8"
-MODEL_SCHEMA = MODEL_SCHEMA_V8
+MODEL_SCHEMA_V9 = "multi-provider-source-v9"
+MODEL_SCHEMA_V10 = "multi-provider-source-v10"
+MODEL_SCHEMA = MODEL_SCHEMA_V10
 SOURCE_CLASSIFY_EXTRA = "'remove-ai-watermarks[source-classify]'"
 
 VIT_SHORT_EDGE_V7 = 440
@@ -105,6 +107,96 @@ MM_PROV_IN_DIM_V7 = 82
 VIT_OUT_DIM_V8 = 59
 SYN_IN_DIM_V8 = 106
 MM_PROV_IN_DIM_V8 = 195
+
+VIT_IMG_SIZE_V9 = 392
+VIT_PATCH_SIZE_V9 = 14
+VIT_GRID_V9 = 28
+VIT_NUM_PATCHES_V9 = VIT_GRID_V9 * VIT_GRID_V9
+VIT_OUT_DIM_V9 = 64
+SYN_IN_DIM_V9 = 113
+MM_PROV_IN_DIM_V9 = 205
+LOCAL_IN_DIM_V9 = 36
+
+VIT_LAYOUT_V9: tuple[tuple[str, int, int], ...] = (
+    ("teacher_syn", 0, 3),
+    ("prov_logits", 3, 15),
+    ("gfx_logit", 15, 16),
+    ("dom_syn_logit", 16, 17),
+    ("arc_emb", 17, 41),
+    ("proto_sim", 41, 51),
+    ("sp_stats", 51, 64),
+)
+VIT_SLICE_V9: dict[str, slice] = {name: slice(lo, hi) for name, lo, hi in VIT_LAYOUT_V9}
+
+VIT_IMG_SIZE_V10 = 384
+VIT_PATCH_SIZE_V10 = 16
+VIT_GRID_V10 = 24
+VIT_NUM_PATCHES_V10 = VIT_GRID_V10 * VIT_GRID_V10
+VIT_OUT_DIM_V10 = 66
+SYN_IN_DIM_V10 = 117
+MM_PROV_IN_DIM_V10 = 209
+LOCAL_IN_DIM_V10 = 39
+
+VIT_LAYOUT_V10: tuple[tuple[str, int, int], ...] = (
+    ("orig_cf", 0, 2),
+    ("teacher_syn", 2, 5),
+    ("prov_logits", 5, 17),
+    ("gfx_logit", 17, 18),
+    ("dom_syn_logit", 18, 19),
+    ("arc_emb", 19, 43),
+    ("proto_sim", 43, 53),
+    ("sp_stats", 53, 66),
+)
+VIT_SLICE_V10: dict[str, slice] = {name: slice(lo, hi) for name, lo, hi in VIT_LAYOUT_V10}
+
+
+@dataclass(frozen=True)
+class _RoutedViTSpec:
+    """Schema, patch-grid geometry, and named slice metadata for routed-tile ViT models (`v9`, `v10`)."""
+
+    schema: str
+    bundle_tag: str
+    img_size: int
+    patch_size: int
+    grid: int
+    min_dist_sq: int
+    vit_out_dim: int
+    syn_in_dim: int
+    mm_prov_in_dim: int
+    local_in_dim: int
+    expected_layout: tuple[tuple[str, int, int], ...]
+    slices: dict[str, slice]
+
+
+ROUTED_SPEC_V9 = _RoutedViTSpec(
+    schema=MODEL_SCHEMA_V9,
+    bundle_tag="v9",
+    img_size=VIT_IMG_SIZE_V9,
+    patch_size=VIT_PATCH_SIZE_V9,
+    grid=VIT_GRID_V9,
+    min_dist_sq=81,
+    vit_out_dim=VIT_OUT_DIM_V9,
+    syn_in_dim=SYN_IN_DIM_V9,
+    mm_prov_in_dim=MM_PROV_IN_DIM_V9,
+    local_in_dim=LOCAL_IN_DIM_V9,
+    expected_layout=VIT_LAYOUT_V9,
+    slices=VIT_SLICE_V9,
+)
+
+ROUTED_SPEC_V10 = _RoutedViTSpec(
+    schema=MODEL_SCHEMA_V10,
+    bundle_tag="v10",
+    img_size=VIT_IMG_SIZE_V10,
+    patch_size=VIT_PATCH_SIZE_V10,
+    grid=VIT_GRID_V10,
+    min_dist_sq=64,
+    vit_out_dim=VIT_OUT_DIM_V10,
+    syn_in_dim=SYN_IN_DIM_V10,
+    mm_prov_in_dim=MM_PROV_IN_DIM_V10,
+    local_in_dim=LOCAL_IN_DIM_V10,
+    expected_layout=VIT_LAYOUT_V10,
+    slices=VIT_SLICE_V10,
+)
 
 _IMAGENET_MEAN_RGB: tuple[float, float, float] = (0.485, 0.456, 0.406)
 _IMAGENET_STD_RGB: tuple[float, float, float] = (0.229, 0.224, 0.225)
@@ -475,6 +567,9 @@ class _V7OnnxHolder:
             ort: Any = import_module("onnxruntime")
             sess_opts = ort.SessionOptions()
             sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            if os.environ.get("RAIW_ORT_DISABLE_ARENA", "").strip() == "1":
+                sess_opts.enable_cpu_mem_arena = False
+                sess_opts.enable_mem_pattern = False
             omp_threads = os.environ.get("OMP_NUM_THREADS", "").strip()
             if omp_threads.isdigit() and int(omp_threads) > 0:
                 sess_opts.intra_op_num_threads = int(omp_threads)
@@ -606,7 +701,84 @@ class _SourceModelV8:
     mm_version_heads: dict[str, _MMStage2HeadV8] | None = None
 
 
-_LoadedSourceModel: TypeAlias = _SourceModel | _SourceModelV4 | _SourceModelV5 | _SourceModelV7 | _SourceModelV8
+@dataclass(frozen=True)
+class _RoutedTileConfigV9:
+    """Coordinate-routed 1:1 native-tile configuration for gray-zone, local-inpaint, and attribution."""
+
+    min_short_px: int
+    min_long_px: int
+    gray_lo: float
+    gray_hi: float
+    gfx_ceil: float
+    min_photo_frac: float
+    detail_alpha: float
+    thr_offset: float
+    local_peak_trigger: float
+    local_contrast_trigger: float
+    attr_enable: bool
+    attr_min_short_px: int
+    attr_uncertain_gap: float
+
+
+@dataclass(frozen=True)
+class _LocalEditHeadV9:
+    """Separate spatial-anomaly residual MLP head for localized diffusion inpainting / splicing."""
+
+    in_mean: FloatArray
+    in_scale: FloatArray
+    w1: FloatArray
+    b1: FloatArray
+    ln_g: FloatArray
+    ln_b: FloatArray
+    w2: FloatArray
+    b2: float
+    skip_w: FloatArray
+    threshold: float
+    conf_scale: float
+
+
+@dataclass(frozen=True)
+class _SourceModelV9:
+    """Unified pickle-free v9 model (`DINOv2-Reg4-Small @ 392` padded + coordinate-routed 1:1 tiles)."""
+
+    spec: ClassVar[_RoutedViTSpec] = ROUTED_SPEC_V9
+    base_v5: _SourceModelV5
+    onnx_holder: _V7OnnxHolder
+    vit_attr_alpha: float
+    phys_veto_cap: float
+    phys_veto_syn_floor: float
+    foreign_phys_cap: float
+    foreign_mm_floor: float
+    syn_in_mean: FloatArray
+    syn_in_scale: FloatArray
+    syn_w1: FloatArray
+    syn_b1: FloatArray
+    syn_ln_g: FloatArray
+    syn_ln_b: FloatArray
+    syn_w2: FloatArray
+    syn_b2: float
+    syn_skip_w: FloatArray
+    syn_threshold: float
+    syn_conf_scale: float
+    mm_prov: _MMProvHeadV8 | None = None
+    nt_cfg: _RoutedTileConfigV9 | None = None
+    local_head: _LocalEditHeadV9 | None = None
+    mm_version_heads: dict[str, _MMStage2HeadV8] | None = None
+
+
+@dataclass(frozen=True)
+class _SourceModelV10(_SourceModelV9):
+    """Unified pickle-free v10 model (`CommFor-MIT @ 384` dual-branch split-tail + routed 1:1 tiles)."""
+
+    spec: ClassVar[_RoutedViTSpec] = ROUTED_SPEC_V10
+
+
+_RoutedModelT = TypeVar("_RoutedModelT", bound=_SourceModelV9)
+
+
+_LoadedSourceModel: TypeAlias = (
+    _SourceModel | _SourceModelV4 | _SourceModelV5 | _SourceModelV7 | _SourceModelV8 | _SourceModelV9 | _SourceModelV10
+)
 
 
 def is_available() -> bool:
@@ -809,7 +981,7 @@ def resolve_weights_path(weights_path: Path | None = None) -> Path:
 _resolve_weights_path = resolve_weights_path
 
 
-def _get_v7_onnx_session(model: _SourceModelV7 | _SourceModelV8) -> Any:
+def _get_v7_onnx_session(model: _SourceModelV7 | _SourceModelV8 | _SourceModelV9) -> Any:
     return model.onnx_holder.get_session()
 
 
@@ -1949,57 +2121,7 @@ def _load_model_v8(data: Any, resolved: Path) -> _SourceModelV8:
             attr_uncertain_gap=nt_attr_gap,
         )
 
-    mm_version_heads: dict[str, _MMStage2HeadV8] | None = None
-    if "mm_s2_classes" in data:
-        mm_version_heads = {}
-        mm_s2_cls = [str(x) for x in np.asarray(data["mm_s2_classes"]).tolist()]
-        for c_name in mm_s2_cls:
-            if c_name not in ALL_PROVIDER_CLASSES:
-                raise ValueError(f"Unknown provider in mm_s2_classes: {c_name!r}")
-            subs = tuple(str(x) for x in np.asarray(data[f"mm_s2_{c_name}_subfamilies"]).tolist())
-            n_k = len(subs)
-            n_s1_subs = len(base_v5.backbone.sub_by_provider.get(c_name, ()))
-            d_s2 = n_k + n_s1_subs + 102
-            s2_mean, s2_scale = _load_1d_standardizer(
-                data,
-                f"mm_s2_{c_name}_in_mean",
-                f"mm_s2_{c_name}_in_scale",
-                d_s2,
-                err_msg=f"Invalid mm_s2_{c_name} standardization arrays",
-            )
-            s2_w1 = np.asarray(data[f"mm_s2_{c_name}_w1"], dtype=np.float64)
-            s2_b1 = np.asarray(data[f"mm_s2_{c_name}_b1"], dtype=np.float64)
-            s2_w2 = np.asarray(data[f"mm_s2_{c_name}_w2"], dtype=np.float64)
-            s2_b2 = np.asarray(data[f"mm_s2_{c_name}_b2"], dtype=np.float64)
-            s2_sw = np.asarray(data[f"mm_s2_{c_name}_skip_w"], dtype=np.float64)
-            s2_alpha = float(np.asarray(data[f"mm_s2_{c_name}_blend_alpha"], dtype=np.float64).squeeze())
-            s2_min_m = float(np.asarray(data[f"mm_s2_{c_name}_min_prob_margin"], dtype=np.float64).squeeze())
-            h_s2 = s2_b1.shape[0] if s2_b1.ndim == 1 else -1
-            if (
-                n_k < 2
-                or h_s2 < 4
-                or s2_w1.shape != (d_s2, h_s2)
-                or s2_w2.shape != (h_s2, n_k)
-                or s2_b2.shape != (n_k,)
-                or s2_sw.shape != (d_s2, n_k)
-                or not (math.isfinite(s2_alpha) and 0.0 <= s2_alpha <= 1.0)
-                or not (math.isfinite(s2_min_m) and 0.0 <= s2_min_m < 1.0)
-                or not all(np.all(np.isfinite(a)) for a in (s2_w1, s2_b1, s2_w2, s2_b2, s2_sw))
-            ):
-                raise ValueError(f"Invalid v8 mm_s2 head arrays for {c_name}")
-            mm_version_heads[c_name] = _MMStage2HeadV8(
-                subfamilies=subs,
-                in_mean=s2_mean,
-                in_scale=s2_scale,
-                w1=s2_w1,
-                b1=s2_b1,
-                w2=s2_w2,
-                b2=s2_b2,
-                skip_w=s2_sw,
-                blend_alpha=s2_alpha,
-                min_prob_margin=s2_min_m,
-            )
-
+    mm_version_heads = _load_mm_version_heads(data, base_v5, bundle_tag="v8")
     return _SourceModelV8(
         base_v5=base_v5,
         onnx_holder=_V7OnnxHolder(resolved),
@@ -2025,6 +2147,261 @@ def _load_model_v8(data: Any, resolved: Path) -> _SourceModelV8:
     )
 
 
+def _load_mm_version_heads(
+    data: Any,
+    base_v5: _SourceModelV5,
+    *,
+    bundle_tag: str,
+) -> dict[str, _MMStage2HeadV8] | None:
+    import numpy as np
+
+    if "mm_s2_classes" not in data:
+        return None
+    mm_version_heads: dict[str, _MMStage2HeadV8] = {}
+    mm_s2_cls = [str(x) for x in np.asarray(data["mm_s2_classes"]).tolist()]
+    for c_name in mm_s2_cls:
+        if c_name not in ALL_PROVIDER_CLASSES:
+            raise ValueError(f"Unknown provider in mm_s2_classes: {c_name!r}")
+        subs = tuple(str(x) for x in np.asarray(data[f"mm_s2_{c_name}_subfamilies"]).tolist())
+        n_k = len(subs)
+        n_s1_subs = len(base_v5.backbone.sub_by_provider.get(c_name, ()))
+        d_s2 = n_k + n_s1_subs + 102
+        s2_mean, s2_scale = _load_1d_standardizer(
+            data,
+            f"mm_s2_{c_name}_in_mean",
+            f"mm_s2_{c_name}_in_scale",
+            d_s2,
+            err_msg=f"Invalid mm_s2_{c_name} standardization arrays",
+        )
+        s2_w1 = np.asarray(data[f"mm_s2_{c_name}_w1"], dtype=np.float64)
+        s2_b1 = np.asarray(data[f"mm_s2_{c_name}_b1"], dtype=np.float64)
+        s2_w2 = np.asarray(data[f"mm_s2_{c_name}_w2"], dtype=np.float64)
+        s2_b2 = np.asarray(data[f"mm_s2_{c_name}_b2"], dtype=np.float64)
+        s2_sw = np.asarray(data[f"mm_s2_{c_name}_skip_w"], dtype=np.float64)
+        s2_alpha = float(np.asarray(data[f"mm_s2_{c_name}_blend_alpha"], dtype=np.float64).squeeze())
+        s2_min_m = float(np.asarray(data[f"mm_s2_{c_name}_min_prob_margin"], dtype=np.float64).squeeze())
+        h_s2 = s2_b1.shape[0] if s2_b1.ndim == 1 else -1
+        if (
+            n_k < 2
+            or h_s2 < 4
+            or s2_w1.shape != (d_s2, h_s2)
+            or s2_w2.shape != (h_s2, n_k)
+            or s2_b2.shape != (n_k,)
+            or s2_sw.shape != (d_s2, n_k)
+            or not (math.isfinite(s2_alpha) and 0.0 <= s2_alpha <= 1.0)
+            or not (math.isfinite(s2_min_m) and 0.0 <= s2_min_m < 1.0)
+            or not all(np.all(np.isfinite(a)) for a in (s2_w1, s2_b1, s2_w2, s2_b2, s2_sw))
+        ):
+            raise ValueError(f"Invalid {bundle_tag} mm_s2 head arrays for {c_name}")
+        mm_version_heads[c_name] = _MMStage2HeadV8(
+            subfamilies=subs,
+            in_mean=s2_mean,
+            in_scale=s2_scale,
+            w1=s2_w1,
+            b1=s2_b1,
+            w2=s2_w2,
+            b2=s2_b2,
+            skip_w=s2_sw,
+            blend_alpha=s2_alpha,
+            min_prob_margin=s2_min_m,
+        )
+    return mm_version_heads
+
+
+def _load_local_edit_head_v9(
+    data: Any,
+    *,
+    in_dim: int = LOCAL_IN_DIM_V9,
+    bundle_tag: str = "v9",
+) -> _LocalEditHeadV9 | None:
+    import numpy as np
+
+    if "loc_in_mean" not in data:
+        return None
+    in_mean, in_scale = _load_1d_standardizer(
+        data,
+        "loc_in_mean",
+        "loc_in_scale",
+        in_dim,
+        err_msg=f"Invalid {bundle_tag} local-edit standardization arrays",
+    )
+    w1 = np.asarray(data["loc_w1"], dtype=np.float64)
+    b1 = np.asarray(data["loc_b1"], dtype=np.float64)
+    ln_g = np.asarray(data["loc_ln_g"], dtype=np.float64)
+    ln_b = np.asarray(data["loc_ln_b"], dtype=np.float64)
+    w2 = np.asarray(data["loc_w2"], dtype=np.float64)
+    b2 = float(np.asarray(data["loc_b2"], dtype=np.float64).squeeze())
+    sw = np.asarray(data["loc_skip_w"], dtype=np.float64)
+    thr = float(np.asarray(data["loc_threshold"], dtype=np.float64).squeeze())
+    csc = float(np.asarray(data["loc_conf_scale"], dtype=np.float64).squeeze())
+    h_dim = b1.shape[0] if b1.ndim == 1 else -1
+    if (
+        h_dim < 8
+        or w1.shape != (in_dim, h_dim)
+        or ln_g.shape != (h_dim,)
+        or ln_b.shape != (h_dim,)
+        or w2.shape != (h_dim,)
+        or sw.shape != (in_dim,)
+        or not (math.isfinite(b2) and math.isfinite(thr) and math.isfinite(csc) and csc > 0.0)
+        or not all(np.all(np.isfinite(a)) for a in (w1, b1, ln_g, ln_b, w2, sw))
+    ):
+        raise ValueError(f"Invalid {bundle_tag} local-edit head arrays")
+    return _LocalEditHeadV9(
+        in_mean=in_mean,
+        in_scale=in_scale,
+        w1=w1,
+        b1=b1,
+        ln_g=ln_g,
+        ln_b=ln_b,
+        w2=w2,
+        b2=b2,
+        skip_w=sw,
+        threshold=thr,
+        conf_scale=csc,
+    )
+
+
+def _load_routed_vit_model(
+    data: Any,
+    resolved: Path,
+    *,
+    cls_type: type[_RoutedModelT],
+) -> _RoutedModelT:
+    import numpy as np
+
+    spec = cls_type.spec
+    expected_layout = spec.expected_layout
+    bundle_tag = spec.bundle_tag
+    if "vit_layout_names" in data and "vit_layout_bounds" in data:
+        names = tuple(str(x) for x in np.asarray(data["vit_layout_names"]).tolist())
+        bounds = np.asarray(data["vit_layout_bounds"], dtype=np.int64)
+        expected_names = tuple(nm for nm, _, _ in expected_layout)
+        expected_bounds = np.asarray([[lo, hi] for _, lo, hi in expected_layout], dtype=np.int64)
+        if (
+            names != expected_names
+            or bounds.shape != expected_bounds.shape
+            or not np.array_equal(bounds, expected_bounds)
+        ):
+            raise ValueError(f"Mismatched {bundle_tag} named ViT output layout")
+
+    base_v5 = _load_model_v5(data)
+    (
+        syn_in_mean,
+        syn_in_scale,
+        syn_w1,
+        syn_b1,
+        syn_ln_g,
+        syn_ln_b,
+        syn_w2,
+        syn_b2,
+        syn_skip_w,
+        syn_threshold,
+        syn_conf_scale,
+        vit_attr_alpha,
+        phys_veto_cap,
+        phys_veto_syn_floor,
+    ) = _load_syn_fusion_arrays(data, in_dim=spec.syn_in_dim, bundle_tag=bundle_tag)
+    foreign_phys_cap = (
+        float(np.asarray(data["foreign_phys_cap"], dtype=np.float64).squeeze()) if "foreign_phys_cap" in data else 3.80
+    )
+    foreign_mm_floor = (
+        float(np.asarray(data["foreign_mm_floor"], dtype=np.float64).squeeze()) if "foreign_mm_floor" in data else 1.25
+    )
+    if not (math.isfinite(foreign_phys_cap) and math.isfinite(foreign_mm_floor)):
+        raise ValueError(f"Invalid {bundle_tag} foreign-guard scalar parameters")
+
+    mm_prov = _load_mm_prov_head(data, in_dim=spec.mm_prov_in_dim, bundle_tag=bundle_tag, allow_phys_beta=True)
+
+    nt_cfg: _RoutedTileConfigV9 | None = None
+    if "nt_detail_alpha" in data or "nt_attr_enable" in data:
+        nt_min_s = int(np.asarray(data["nt_min_short_px"], dtype=np.int64).squeeze())
+        nt_min_l = int(np.asarray(data["nt_min_long_px"], dtype=np.int64).squeeze())
+        nt_gray_lo = float(np.asarray(data["nt_gray_lo"], dtype=np.float64).squeeze())
+        nt_gray_hi = float(np.asarray(data["nt_gray_hi"], dtype=np.float64).squeeze())
+        nt_gfx_ceil = float(np.asarray(data["nt_gfx_ceil"], dtype=np.float64).squeeze())
+        nt_min_pf = float(np.asarray(data["nt_min_photo_frac"], dtype=np.float64).squeeze())
+        nt_alpha = float(np.asarray(data["nt_detail_alpha"], dtype=np.float64).squeeze())
+        nt_off = float(np.asarray(data["nt_thr_offset"], dtype=np.float64).squeeze())
+        nt_loc_pk = float(np.asarray(data["nt_local_peak_trigger"], dtype=np.float64).squeeze())
+        nt_loc_ct = float(np.asarray(data["nt_local_contrast_trigger"], dtype=np.float64).squeeze())
+        nt_attr_en = bool(int(np.asarray(data["nt_attr_enable"], dtype=np.int64).squeeze()))
+        nt_attr_min_s = int(np.asarray(data["nt_attr_min_short_px"], dtype=np.int64).squeeze())
+        nt_attr_gap = float(np.asarray(data["nt_attr_uncertain_gap"], dtype=np.float64).squeeze())
+        if (
+            nt_min_s < MIN_SIDE
+            or nt_min_l < nt_min_s
+            or nt_attr_min_s < MIN_SIDE
+            or not all(
+                math.isfinite(val)
+                for val in (
+                    nt_gray_lo,
+                    nt_gray_hi,
+                    nt_gfx_ceil,
+                    nt_min_pf,
+                    nt_alpha,
+                    nt_off,
+                    nt_loc_pk,
+                    nt_loc_ct,
+                    nt_attr_gap,
+                )
+            )
+            or not (0.0 <= nt_alpha <= 1.0)
+            or not (0.0 <= nt_min_pf <= 1.0)
+            or nt_attr_gap < 0.0
+        ):
+            raise ValueError(f"Invalid {bundle_tag} routed-tile configuration")
+        nt_cfg = _RoutedTileConfigV9(
+            min_short_px=nt_min_s,
+            min_long_px=nt_min_l,
+            gray_lo=nt_gray_lo,
+            gray_hi=nt_gray_hi,
+            gfx_ceil=nt_gfx_ceil,
+            min_photo_frac=nt_min_pf,
+            detail_alpha=nt_alpha,
+            thr_offset=nt_off,
+            local_peak_trigger=nt_loc_pk,
+            local_contrast_trigger=nt_loc_ct,
+            attr_enable=nt_attr_en,
+            attr_min_short_px=nt_attr_min_s,
+            attr_uncertain_gap=nt_attr_gap,
+        )
+
+    local_head = _load_local_edit_head_v9(data, in_dim=spec.local_in_dim, bundle_tag=bundle_tag)
+    mm_version_heads = _load_mm_version_heads(data, base_v5, bundle_tag=bundle_tag)
+    return cls_type(
+        base_v5=base_v5,
+        onnx_holder=_V7OnnxHolder(resolved),
+        vit_attr_alpha=vit_attr_alpha,
+        phys_veto_cap=phys_veto_cap,
+        phys_veto_syn_floor=phys_veto_syn_floor,
+        foreign_phys_cap=foreign_phys_cap,
+        foreign_mm_floor=foreign_mm_floor,
+        syn_in_mean=syn_in_mean,
+        syn_in_scale=syn_in_scale,
+        syn_w1=syn_w1,
+        syn_b1=syn_b1,
+        syn_ln_g=syn_ln_g,
+        syn_ln_b=syn_ln_b,
+        syn_w2=syn_w2,
+        syn_b2=syn_b2,
+        syn_skip_w=syn_skip_w,
+        syn_threshold=syn_threshold,
+        syn_conf_scale=syn_conf_scale,
+        mm_prov=mm_prov,
+        nt_cfg=nt_cfg,
+        local_head=local_head,
+        mm_version_heads=mm_version_heads,
+    )
+
+
+def _load_model_v9(data: Any, resolved: Path) -> _SourceModelV9:
+    return _load_routed_vit_model(data, resolved, cls_type=_SourceModelV9)
+
+
+def _load_model_v10(data: Any, resolved: Path) -> _SourceModelV10:
+    return _load_routed_vit_model(data, resolved, cls_type=_SourceModelV10)
+
+
 @functools.lru_cache(maxsize=4)
 def _load_model_from_path(resolved: Path) -> _LoadedSourceModel:
     import numpy as np
@@ -2033,6 +2410,10 @@ def _load_model_from_path(resolved: Path) -> _LoadedSourceModel:
         if "schema" not in data:
             raise ValueError(f"Missing schema key in {resolved}")
         schema = str(np.asarray(data["schema"]).item())
+        if schema == MODEL_SCHEMA_V10:
+            return _load_model_v10(data, resolved)
+        if schema == MODEL_SCHEMA_V9:
+            return _load_model_v9(data, resolved)
         if schema == MODEL_SCHEMA_V8:
             return _load_model_v8(data, resolved)
         if schema == MODEL_SCHEMA_V7:
@@ -2195,21 +2576,29 @@ def _resize_short_edge_bilinear(rgb: Image.Image, short_edge: int) -> Image.Imag
     from PIL import Image as PilImage
 
     w, h = rgb.size
+    floor_px = max(VIT_CROP_SIZE_V7, short_edge)
     if w <= h:
         new_w = short_edge
-        new_h = max(VIT_CROP_SIZE_V7, round(h * short_edge / w))
+        new_h = max(floor_px, round(h * short_edge / w))
     else:
         new_h = short_edge
-        new_w = max(VIT_CROP_SIZE_V7, round(w * short_edge / h))
+        new_w = max(floor_px, round(w * short_edge / h))
     return rgb.resize((new_w, new_h), PilImage.Resampling.BILINEAR)
 
 
-def _crops_to_imagenet_nchw(src: Image.Image, boxes: Sequence[tuple[int, int, int, int]]) -> FloatArray:
+def _crops_to_imagenet_nchw(
+    src: Image.Image,
+    boxes: Sequence[tuple[int, int, int, int]],
+    *,
+    crop_size: int = VIT_CROP_SIZE_V7,
+) -> FloatArray:
     import numpy as np
 
-    buf = np.empty((len(boxes), 3, VIT_CROP_SIZE_V7, VIT_CROP_SIZE_V7), dtype=np.float32)
+    sw, sh = src.size
+    buf = np.empty((len(boxes), 3, crop_size, crop_size), dtype=np.float32)
     for idx_b, box in enumerate(boxes):
-        buf[idx_b] = np.transpose(np.asarray(src.crop(box), dtype=np.uint8), (2, 0, 1))
+        patch = src if box == (0, 0, sw, sh) else src.crop(box)
+        buf[idx_b] = np.transpose(np.asarray(patch, dtype=np.uint8), (2, 0, 1))
     mean_rgb, std_rgb = _imagenet_norm_arrays()
     buf *= 1.0 / 255.0
     buf -= mean_rgb
@@ -2597,12 +2986,20 @@ def build_v7_mm_prov_input_1d(
     return np.concatenate([attr_sat, z_sat, exc_sat, vit_out_1d.astype(np.float64), r_std])
 
 
-def _eval_syn_head_scalar(s_in: FloatArray, model: _SourceModelV7 | _SourceModelV8) -> float:
+def _eval_syn_head_scalar(s_in: FloatArray, model: _SourceModelV7 | _SourceModelV8 | _SourceModelV9) -> float:
     import numpy as np
 
     s_std = np.clip((s_in - model.syn_in_mean) / model.syn_in_scale, -12.0, 12.0)
     h_syn = _silu_np(_layernorm_1d(s_std @ model.syn_w1 + model.syn_b1, model.syn_ln_g, model.syn_ln_b))
     return float(s_std @ model.syn_skip_w + h_syn @ model.syn_w2 + model.syn_b2)
+
+
+def _eval_local_head_scalar_v9(loc_in: FloatArray, head: _LocalEditHeadV9) -> float:
+    import numpy as np
+
+    l_std = np.clip((loc_in - head.in_mean) / head.in_scale, -12.0, 12.0)
+    h_loc = _silu_np(_layernorm_1d(l_std @ head.w1 + head.b1, head.ln_g, head.ln_b))
+    return float(l_std @ head.skip_w + h_loc @ head.w2 + head.b2)
 
 
 def _eval_mm_prov_head_log_odds(p_in: FloatArray, mm_head: _MMProvHeadV7) -> FloatArray:
@@ -2616,7 +3013,11 @@ def _eval_mm_prov_head_log_odds(p_in: FloatArray, mm_head: _MMProvHeadV7) -> Flo
     return logits_12[:n_cls] - open_null
 
 
-def _apply_phys_veto(accept_excess: float, syn_margin: float, model: _SourceModelV7 | _SourceModelV8) -> float:
+def _apply_phys_veto(
+    accept_excess: float,
+    syn_margin: float,
+    model: _SourceModelV7 | _SourceModelV8 | _SourceModelV9,
+) -> float:
     if 0.0 <= accept_excess < model.phys_veto_cap and syn_margin < model.phys_veto_syn_floor:
         return -1e-4
     return accept_excess
@@ -2885,19 +3286,22 @@ def build_v8_mm_prov_input_1d(
     r_std: FloatArray,
     vit_global_1d: FloatArray,
     vit_detail_2d: FloatArray | None = None,
+    *,
+    prov_slice: slice = slice(1, 13),
+    proto_slice: slice = slice(39, 49),
 ) -> FloatArray:
-    """Assemble the 195-d dual-view + ArcFace-prototype open-set provider attribution input vector."""
+    """Assemble the dual-view + ArcFace-prototype open-set provider attribution input vector."""
     import numpy as np
 
     attr_sat = 8.0 * np.tanh(attr_logits / 8.0)
     z_sat = 8.0 * np.tanh(z_det_std / 8.0)
     exc_sat = np.asarray([8.0 * math.tanh(accept_excess / 8.0)], dtype=np.float64)
-    vg = vit_global_1d.astype(np.float64)
+    vg = np.asarray(vit_global_1d, dtype=np.float64)
     if vit_detail_2d is not None:
-        vd = vit_detail_2d.astype(np.float64)
+        vd = np.asarray(vit_detail_2d, dtype=np.float64)
         v_nat_mean = 0.5 * (vd[0] + vd[1])
-        d_prov12 = np.maximum(vd[0, 1:13], vd[1, 1:13]) - vg[1:13]
-        d_proto10 = np.maximum(vd[0, 39:49], vd[1, 39:49]) - vg[39:49]
+        d_prov12 = np.maximum(vd[0, prov_slice], vd[1, prov_slice]) - vg[prov_slice]
+        d_proto10 = np.maximum(vd[0, proto_slice], vd[1, proto_slice]) - vg[proto_slice]
         v_nat_delta = np.concatenate([d_prov12, d_proto10])
         has_nat = np.asarray([1.0], dtype=np.float64)
     else:
@@ -3009,7 +3413,11 @@ def _eval_v8_mm_stage2_version(
     r_std: FloatArray,
     vit_out_1d: FloatArray,
     vit_detail_2d: FloatArray | None,
-    model: _SourceModelV8,
+    model: _SourceModelV8 | _SourceModelV9,
+    *,
+    prov_slice: slice = slice(1, 13),
+    emb_slice: slice = slice(15, 39),
+    proto_slice: slice = slice(39, 49),
 ) -> str | None:
     import numpy as np
 
@@ -3032,9 +3440,9 @@ def _eval_v8_mm_stage2_version(
         [float(mean_sub[s_idx]) for s_idx, _ in model.base_v5.backbone.sub_by_provider.get(best_cls, ())],
         dtype=np.float64,
     )
-    vit_emb_24 = vit_out_1d[15:39].astype(np.float64)
+    vit_emb_24 = np.asarray(vit_out_1d[emb_slice], dtype=np.float64)
     vit_nat_emb_24 = (
-        (0.5 * (vit_detail_2d[0, 15:39] + vit_detail_2d[1, 15:39])).astype(np.float64)
+        np.asarray(0.5 * (vit_detail_2d[0, emb_slice] + vit_detail_2d[1, emb_slice]), dtype=np.float64)
         if vit_detail_2d is not None
         else vit_emb_24
     )
@@ -3042,8 +3450,8 @@ def _eval_v8_mm_stage2_version(
         [
             np.clip(s2_logits, -12.0, 12.0),
             np.clip(s1_subs, -12.0, 12.0),
-            vit_out_1d[1:13].astype(np.float64),
-            vit_out_1d[39:49].astype(np.float64),
+            np.asarray(vit_out_1d[prov_slice], dtype=np.float64),
+            np.asarray(vit_out_1d[proto_slice], dtype=np.float64),
             vit_emb_24,
             vit_nat_emb_24,
             r_std,
@@ -3176,6 +3584,1059 @@ def _eval_v8_vit_native_onnx(image: Image.Image, model: _SourceModelV8) -> Float
     )
 
 
+def _preprocess_vit_padded(
+    image: Image.Image,
+    *,
+    target: int,
+    patch_size: int,
+    grid: int,
+) -> tuple[FloatArray, FloatArray, tuple[int, int, int, int, int, int]]:
+    import numpy as np
+    from PIL import Image as PilImage
+
+    rgb = _orient_rgb_image(image)
+    w, h = rgb.size
+    max_ar = 2.333333
+    cx0, cy0, cw, ch = 0, 0, w, h
+    if w > h * max_ar:
+        cw = max(target, round(h * max_ar))
+        cx0 = (w - cw) // 2
+        rgb = rgb.crop((cx0, 0, cx0 + cw, h))
+    elif h > w * max_ar:
+        ch = max(target, round(w * max_ar))
+        cy0 = (h - ch) // 2
+        rgb = rgb.crop((0, cy0, w, cy0 + ch))
+
+    scale = target / float(max(cw, ch))
+    nw = max(patch_size, min(target, round(cw * scale)))
+    nh = max(patch_size, min(target, round(ch * scale)))
+    resized = rgb.resize((nw, nh), PilImage.Resampling.BILINEAR) if (nw, nh) != (cw, ch) else rgb
+
+    pad_x = (target - nw) // 2
+    pad_y = (target - nh) // 2
+    pix = np.empty((1, 3, target, target), dtype=np.float32)
+    if (nw, nh) != (target, target):
+        pix[0, 0].fill(124.0)
+        pix[0, 1].fill(116.0)
+        pix[0, 2].fill(104.0)
+    pix[0, :, pad_y : pad_y + nh, pad_x : pad_x + nw] = np.transpose(np.asarray(resized, dtype=np.uint8), (2, 0, 1))
+    mean_rgb, std_rgb = _imagenet_norm_arrays()
+    pix *= 1.0 / 255.0
+    pix -= mean_rgb
+    pix /= std_rgb
+
+    centers = (np.arange(grid, dtype=np.float32) + 0.5) * patch_size
+    vx = (centers >= pad_x) & (centers <= (pad_x + nw))
+    vy = (centers >= pad_y) & (centers <= (pad_y + nh))
+    mask2d = (vy[:, None] & vx[None, :]).astype(np.float32)
+    if float(np.sum(mask2d)) < 1.0:
+        mask2d[grid // 2, grid // 2] = 1.0
+    return pix, mask2d.reshape(1, grid * grid), (cx0, cy0, cw, ch, pad_x, pad_y)
+
+
+def preprocess_vit_392_padded_v9(
+    image: Image.Image,
+) -> tuple[FloatArray, FloatArray, tuple[int, int, int, int, int, int]]:
+    """Aspect-preserving `392x392` letterbox preprocess + `784-d` valid-patch mask for v9."""
+    return _preprocess_vit_padded(
+        image,
+        target=VIT_IMG_SIZE_V9,
+        patch_size=VIT_PATCH_SIZE_V9,
+        grid=VIT_GRID_V9,
+    )
+
+
+def preprocess_vit_384_padded_v10(
+    image: Image.Image,
+) -> tuple[FloatArray, FloatArray, tuple[int, int, int, int, int, int]]:
+    """Aspect-preserving `384x384` letterbox preprocess + `576-d` (`24x24`) valid-patch mask for v10."""
+    return _preprocess_vit_padded(
+        image,
+        target=VIT_IMG_SIZE_V10,
+        patch_size=VIT_PATCH_SIZE_V10,
+        grid=VIT_GRID_V10,
+    )
+
+
+def _snap_crop_8(pos: int, limit: int) -> int:
+    """Snap crop offset to an 8-pixel JPEG MCU boundary within `[0, limit]`."""
+    if limit <= 0:
+        return 0
+    return min(max(0, (pos + 4) & ~7), limit & ~7 if limit >= 8 else limit)
+
+
+def _select_routed_boxes(
+    patch_clean_2d: FloatArray,
+    valid_mask_1d: FloatArray,
+    geom_6: tuple[int, int, int, int, int, int],
+    image_size: tuple[int, int],
+    *,
+    crop_sz: int,
+    patch_size: int,
+    grid: int,
+    min_dist_sq: int,
+) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
+    import numpy as np
+
+    w, h = image_size
+    limit_x = max(0, w - crop_sz)
+    limit_y = max(0, h - crop_sz)
+    cx0, cy0, cw, ch, pad_x, pad_y = geom_6
+    nw = max(1, crop_sz - 2 * pad_x)
+    nh = max(1, crop_sz - 2 * pad_y)
+
+    vm = valid_mask_1d.reshape(grid, grid).astype(np.float64)
+    pm = np.where(vm > 0.5, patch_clean_2d.reshape(grid, grid).astype(np.float64), 0.0)
+
+    p_pad = np.pad(pm, 1, mode="constant", constant_values=0.0)
+    v_pad = np.pad(vm, 1, mode="constant", constant_values=0.0)
+    s_sum = (
+        p_pad[:-2, :-2]
+        + p_pad[:-2, 1:-1]
+        + p_pad[:-2, 2:]
+        + p_pad[1:-1, :-2]
+        + p_pad[1:-1, 1:-1]
+        + p_pad[1:-1, 2:]
+        + p_pad[2:, :-2]
+        + p_pad[2:, 1:-1]
+        + p_pad[2:, 2:]
+    )
+    v_cnt = (
+        v_pad[:-2, :-2]
+        + v_pad[:-2, 1:-1]
+        + v_pad[:-2, 2:]
+        + v_pad[1:-1, :-2]
+        + v_pad[1:-1, 1:-1]
+        + v_pad[1:-1, 2:]
+        + v_pad[2:, :-2]
+        + v_pad[2:, 1:-1]
+        + v_pad[2:, 2:]
+    )
+    box3 = np.where((vm > 0.5) & (v_cnt > 0.5), s_sum / np.maximum(v_cnt, 1.0), -1e9)
+
+    flat1 = int(np.argmax(box3))
+    r1, c1 = divmod(flat1, grid)
+
+    def _grid_to_native_box(ri: int, ci: int) -> tuple[int, int, int, int]:
+        px = (ci + 0.5) * patch_size - pad_x
+        py = (ri + 0.5) * patch_size - pad_y
+        nat_cx = cx0 + (px / float(nw)) * cw
+        nat_cy = cy0 + (py / float(nh)) * ch
+        x0 = _snap_crop_8(round(nat_cx - 0.5 * crop_sz), limit_x)
+        y0 = _snap_crop_8(round(nat_cy - 0.5 * crop_sz), limit_y)
+        return (x0, y0, x0 + crop_sz, y0 + crop_sz)
+
+    b0 = _grid_to_native_box(r1, c1)
+
+    rr, cc = np.ogrid[:grid, :grid]
+    dist_sq = (rr - r1) ** 2 + (cc - c1) ** 2
+    far_box3 = np.where(dist_sq >= min_dist_sq, box3, -1e9)
+    if float(np.max(far_box3)) > -1e8:
+        flat2 = int(np.argmax(far_box3))
+        r2, c2 = divmod(flat2, grid)
+        b1 = _grid_to_native_box(r2, c2)
+    else:
+        ox = _snap_crop_8(limit_x - b0[0], limit_x)
+        oy = _snap_crop_8(limit_y - b0[1], limit_y)
+        b1 = (ox, oy, ox + crop_sz, oy + crop_sz)
+    return b0, b1
+
+
+def select_v9_routed_boxes(
+    patch_clean_28x28: FloatArray,
+    valid_mask_784: FloatArray,
+    geom_6: tuple[int, int, int, int, int, int],
+    image_size: tuple[int, int],
+) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
+    """Map top-2 spatially separated `3x3` anomaly peaks from `28x28` back to `1:1` native `392x392` boxes."""
+    return _select_routed_boxes(
+        patch_clean_28x28,
+        valid_mask_784,
+        geom_6,
+        image_size,
+        crop_sz=VIT_IMG_SIZE_V9,
+        patch_size=VIT_PATCH_SIZE_V9,
+        grid=VIT_GRID_V9,
+        min_dist_sq=81,
+    )
+
+
+def select_v10_routed_boxes(
+    patch_clean_24x24: FloatArray,
+    valid_mask_576: FloatArray,
+    geom_6: tuple[int, int, int, int, int, int],
+    image_size: tuple[int, int],
+) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
+    """Map top-2 spatially separated `3x3` anomaly peaks from `24x24` back to `1:1` native `384x384` boxes."""
+    return _select_routed_boxes(
+        patch_clean_24x24,
+        valid_mask_576,
+        geom_6,
+        image_size,
+        crop_sz=VIT_IMG_SIZE_V10,
+        patch_size=VIT_PATCH_SIZE_V10,
+        grid=VIT_GRID_V10,
+        min_dist_sq=64,
+    )
+
+
+def _preprocess_vit_routed_2chw(
+    image: Image.Image,
+    patch_clean_2d: FloatArray | None,
+    valid_mask_1d: FloatArray | None,
+    geom_6: tuple[int, int, int, int, int, int] | None,
+    *,
+    crop_sz: int,
+    patch_size: int,
+    grid: int,
+    min_dist_sq: int,
+) -> tuple[FloatArray, FloatArray]:
+    import numpy as np
+
+    rgb = _orient_rgb_image(image)
+    src = _resize_short_edge_bilinear(rgb, crop_sz) if min(rgb.size) < crop_sz else rgb
+
+    sw, sh = src.size
+    if patch_clean_2d is not None and valid_mask_1d is not None and geom_6 is not None and (sw, sh) == rgb.size:
+        b0, b1 = _select_routed_boxes(
+            patch_clean_2d,
+            valid_mask_1d,
+            geom_6,
+            (sw, sh),
+            crop_sz=crop_sz,
+            patch_size=patch_size,
+            grid=grid,
+            min_dist_sq=min_dist_sq,
+        )
+    else:
+        lx, ly = sw - crop_sz, sh - crop_sz
+        if sw >= sh:
+            x0, x1 = _snap_crop_8(lx // 4, lx), _snap_crop_8((3 * lx) // 4, lx)
+            y0 = _snap_crop_8(ly // 2, ly)
+            b0, b1 = (x0, y0, x0 + crop_sz, y0 + crop_sz), (x1, y0, x1 + crop_sz, y0 + crop_sz)
+        else:
+            y0, y1 = _snap_crop_8(ly // 4, ly), _snap_crop_8((3 * ly) // 4, ly)
+            x0 = _snap_crop_8(lx // 2, lx)
+            b0, b1 = (x0, y0, x0 + crop_sz, y0 + crop_sz), (x0, y1, x0 + crop_sz, y1 + crop_sz)
+
+    pix2 = _crops_to_imagenet_nchw(src, (b0, b1), crop_size=crop_sz)
+    mask2 = np.ones((2, grid * grid), dtype=np.float32)
+    return pix2, mask2
+
+
+def preprocess_vit_392_routed_2chw_v9(
+    image: Image.Image,
+    patch_clean_28x28: FloatArray | None = None,
+    valid_mask_784: FloatArray | None = None,
+    geom_6: tuple[int, int, int, int, int, int] | None = None,
+) -> tuple[FloatArray, FloatArray]:
+    """Extract two `1:1` JPEG-MCU-aligned `392x392` native crops routed to anomaly peaks (`[2, 3, 392, 392]`)."""
+    return _preprocess_vit_routed_2chw(
+        image,
+        patch_clean_28x28,
+        valid_mask_784,
+        geom_6,
+        crop_sz=VIT_IMG_SIZE_V9,
+        patch_size=VIT_PATCH_SIZE_V9,
+        grid=VIT_GRID_V9,
+        min_dist_sq=81,
+    )
+
+
+def preprocess_vit_384_routed_2chw_v10(
+    image: Image.Image,
+    patch_clean_24x24: FloatArray | None = None,
+    valid_mask_576: FloatArray | None = None,
+    geom_6: tuple[int, int, int, int, int, int] | None = None,
+) -> tuple[FloatArray, FloatArray]:
+    """Extract two `1:1` JPEG-MCU-aligned `384x384` native crops routed to anomaly peaks (`[2, 3, 384, 384]`)."""
+    return _preprocess_vit_routed_2chw(
+        image,
+        patch_clean_24x24,
+        valid_mask_576,
+        geom_6,
+        crop_sz=VIT_IMG_SIZE_V10,
+        patch_size=VIT_PATCH_SIZE_V10,
+        grid=VIT_GRID_V10,
+        min_dist_sq=64,
+    )
+
+
+def _build_routed_syn_input_1d(
+    x_1d: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_out_1d: FloatArray,
+    *,
+    slices: dict[str, slice],
+    gfx_score: float | None = None,
+) -> FloatArray:
+    import numpy as np
+
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    has_orig_cf = "orig_cf" in slices
+    tsyn = vit_out_1d[slices["teacher_syn"]]
+    t_commfor, t_dino, t_siglip = float(tsyn[0]), float(tsyn[1]), float(tsyn[2])
+    mean_tsyn = (t_commfor + t_dino + t_siglip) / 3.0
+
+    prov12 = vit_out_1d[slices["prov_logits"]]
+    vit_all_ai = prov12[: n_cls + 1]
+    vit_for = float(prov12[n_cls])
+    vit_real = float(prov12[n_cls + 1])
+    vit_gfx = float(vit_out_1d[slices["gfx_logit"]][0])
+    dom_syn = float(vit_out_1d[slices["dom_syn_logit"]][0])
+
+    vit_max_ai = float(np.max(vit_all_ai))
+    vit_lse_ai = float((vit_max_ai + math.log(float(np.sum(np.exp(vit_all_ai - vit_max_ai))))) - vit_real)
+    vit_max_lo = vit_max_ai - vit_real
+    vit_for_lo = vit_for - vit_real
+    gfx_softplus = math.log1p(math.exp(max(-15.0, min(15.0, vit_gfx))))
+    dom_syn_clean = dom_syn - 2.0 * gfx_softplus
+
+    proto10 = vit_out_1d[slices["proto_sim"]]
+    max_proto_sim = float(np.max(proto10))
+    sp = vit_out_1d[slices["sp_stats"]]
+    sp_top_mid = float(sp[1])
+    sp_box3 = float(sp[4])
+    sp_contrast = float(sp[6])
+    non_gfx_frac = max(0.0, min(1.0, float(sp[8])))
+    photo_syn = float(sp[9])
+    sp_smooth = float(sp[10])
+    sp_tex = float(sp[11])
+
+    vit_tail = np.asarray(vit_out_1d[slices["gfx_logit"].start :], dtype=np.float64)
+    z_sat = 8.0 * np.tanh(z_det_std / 8.0)
+    exc_sat = 8.0 * math.tanh(accept_excess / 8.0)
+    ch10 = float(z_det_std[n_cls])
+    phys_scalars = np.asarray([exc_sat, max(0.0, ch10), min(0.0, ch10)], dtype=np.float64)
+
+    g_score = eval_born_digital_graphics_score(x_1d) if gfx_score is None else gfx_score
+    pure_gfx_gate = max(0.0, vit_gfx) * max(0.0, 0.35 - non_gfx_frac)
+    social_photo_gate = sp_top_mid * non_gfx_frac
+    inpaint_box_gate = sp_box3 * max(0.0, sp_contrast)
+    phys_vit_agree = exc_sat * max(-6.0, min(6.0, dom_syn))
+
+    base_head = [
+        t_commfor,
+        t_dino,
+        t_siglip,
+        mean_tsyn,
+        vit_lse_ai,
+        vit_max_lo,
+        vit_for_lo,
+        dom_syn_clean,
+        photo_syn,
+        max_proto_sim,
+    ]
+    if has_orig_cf:
+        orig_cf = vit_out_1d[slices["orig_cf"]]
+        orig_cf_cls, orig_cf_patch = float(orig_cf[0]), float(orig_cf[1])
+        orig_cf_clean = orig_cf_patch - 1.8 * gfx_softplus
+        valid_frac = max(0.05, min(1.0, float(sp[12])))
+        scalars_head = np.asarray([orig_cf_cls, orig_cf_clean, *base_head], dtype=np.float64)
+        teacher_agree = min(orig_cf_clean, t_commfor, t_dino, t_siglip)
+        interactions = np.asarray(
+            [
+                g_score,
+                max(0.0, g_score),
+                pure_gfx_gate,
+                social_photo_gate,
+                inpaint_box_gate,
+                phys_vit_agree,
+                teacher_agree,
+                sp_tex - sp_smooth,
+                orig_cf_clean * valid_frac,
+                orig_cf_cls - t_dino,
+            ],
+            dtype=np.float64,
+        )
+    else:
+        scalars_head = np.asarray(base_head, dtype=np.float64)
+        teacher_agree = min(t_commfor, t_dino, t_siglip)
+        interactions = np.asarray(
+            [
+                g_score,
+                max(0.0, g_score),
+                pure_gfx_gate,
+                social_photo_gate,
+                inpaint_box_gate,
+                phys_vit_agree,
+                teacher_agree,
+                sp_tex - sp_smooth,
+            ],
+            dtype=np.float64,
+        )
+    return np.concatenate([scalars_head, vit_tail, z_sat, phys_scalars, interactions, r_std])
+
+
+def build_v9_syn_input_1d(
+    x_1d: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_out_1d: FloatArray,
+) -> FloatArray:
+    """Assemble the `113-d` multi-teacher + register-spatial + ArcFace synthetic-fusion input for v9."""
+    return _build_routed_syn_input_1d(x_1d, z_det_std, accept_excess, r_std, vit_out_1d, slices=VIT_SLICE_V9)
+
+
+def build_v10_syn_input_1d(
+    x_1d: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_out_1d: FloatArray,
+) -> FloatArray:
+    """Assemble the `117-d` dual-branch `CommFor-MIT` + 3-teacher + spatial + ArcFace input for v10."""
+    return _build_routed_syn_input_1d(x_1d, z_det_std, accept_excess, r_std, vit_out_1d, slices=VIT_SLICE_V10)
+
+
+def build_v9_mm_prov_input_1d(
+    attr_logits: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_global_1d: FloatArray,
+    vit_detail_2d: FloatArray | None = None,
+) -> FloatArray:
+    """Assemble the `205-d` dual-view + cross-view ArcFace open-set provider attribution input for v9."""
+    return build_v8_mm_prov_input_1d(
+        attr_logits,
+        z_det_std,
+        accept_excess,
+        r_std,
+        vit_global_1d,
+        vit_detail_2d,
+        prov_slice=VIT_SLICE_V9["prov_logits"],
+        proto_slice=VIT_SLICE_V9["proto_sim"],
+    )
+
+
+def build_v10_mm_prov_input_1d(
+    attr_logits: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_global_1d: FloatArray,
+    vit_detail_2d: FloatArray | None = None,
+) -> FloatArray:
+    """Assemble the `209-d` dual-view + cross-view ArcFace open-set provider attribution input for v10."""
+    return build_v8_mm_prov_input_1d(
+        attr_logits,
+        z_det_std,
+        accept_excess,
+        r_std,
+        vit_global_1d,
+        vit_detail_2d,
+        prov_slice=VIT_SLICE_V10["prov_logits"],
+        proto_slice=VIT_SLICE_V10["proto_sim"],
+    )
+
+
+def _build_routed_local_input_1d(
+    x_1d: FloatArray,
+    accept_excess: float,
+    vit_global_1d: FloatArray,
+    vit_detail_2d: FloatArray | None = None,
+    *,
+    slices: dict[str, slice],
+    gfx_score: float | None = None,
+) -> FloatArray:
+    import numpy as np
+
+    has_orig_cf = "orig_cf" in slices
+    tsyn = vit_global_1d[slices["teacher_syn"]]
+    mean_tsyn = float(np.mean(tsyn))
+    vit_gfx = float(vit_global_1d[slices["gfx_logit"]][0])
+    dom_syn = float(vit_global_1d[slices["dom_syn_logit"]][0])
+    gfx_softplus = math.log1p(math.exp(max(-15.0, min(15.0, vit_gfx))))
+    dom_syn_clean = dom_syn - 2.0 * gfx_softplus
+    g_score = eval_born_digital_graphics_score(x_1d) if gfx_score is None else gfx_score
+    exc_sat = 8.0 * math.tanh(accept_excess / 8.0)
+
+    sp_g = np.asarray(vit_global_1d[slices["sp_stats"]], dtype=np.float64)
+    if has_orig_cf:
+        orig_cf = vit_global_1d[slices["orig_cf"]]
+        orig_cf_cls, orig_cf_patch = float(orig_cf[0]), float(orig_cf[1])
+        orig_cf_clean = orig_cf_patch - 1.8 * gfx_softplus
+        ctx = np.asarray([orig_cf_cls, orig_cf_clean, mean_tsyn, dom_syn_clean, vit_gfx, g_score], dtype=np.float64)
+        if vit_detail_2d is not None:
+            sp_d0 = np.asarray(vit_detail_2d[0, slices["sp_stats"]], dtype=np.float64)
+            sp_d1 = np.asarray(vit_detail_2d[1, slices["sp_stats"]], dtype=np.float64)
+            sp_d_max = np.maximum(sp_d0, sp_d1)
+            cf_d_max = float(max(vit_detail_2d[0, slices["orig_cf"]][1], vit_detail_2d[1, slices["orig_cf"]][1]))
+            deltas = np.asarray(
+                [
+                    float(sp_d_max[4] - sp_g[4]),
+                    float(sp_d_max[0] - sp_g[0]),
+                    float(sp_d_max[6]),
+                    float(sp_d_max[9] - sp_g[9]),
+                    cf_d_max - orig_cf_patch,
+                    1.0,
+                ],
+                dtype=np.float64,
+            )
+        else:
+            sp_d_max = sp_g
+            deltas = np.asarray([0.0, 0.0, float(sp_g[6]), 0.0, 0.0, 0.0], dtype=np.float64)
+    else:
+        ctx = np.asarray([mean_tsyn, dom_syn_clean, vit_gfx, g_score], dtype=np.float64)
+        if vit_detail_2d is not None:
+            sp_d0 = np.asarray(vit_detail_2d[0, slices["sp_stats"]], dtype=np.float64)
+            sp_d1 = np.asarray(vit_detail_2d[1, slices["sp_stats"]], dtype=np.float64)
+            sp_d_max = np.maximum(sp_d0, sp_d1)
+            deltas = np.asarray(
+                [
+                    float(sp_d_max[4] - sp_g[4]),
+                    float(sp_d_max[0] - sp_g[0]),
+                    float(sp_d_max[6]),
+                    float(sp_d_max[9] - sp_g[9]),
+                    1.0,
+                ],
+                dtype=np.float64,
+            )
+        else:
+            sp_d_max = sp_g
+            deltas = np.asarray([0.0, 0.0, float(sp_g[6]), 0.0, 0.0], dtype=np.float64)
+    return np.concatenate([sp_g, ctx, sp_d_max, deltas, np.asarray([exc_sat], dtype=np.float64)])
+
+
+def build_v9_local_input_1d(
+    x_1d: FloatArray,
+    accept_excess: float,
+    vit_global_1d: FloatArray,
+    vit_detail_2d: FloatArray | None = None,
+) -> FloatArray:
+    """Assemble the `36-d` spatial-anomaly input vector for `_LocalEditHeadV9`."""
+    return _build_routed_local_input_1d(x_1d, accept_excess, vit_global_1d, vit_detail_2d, slices=VIT_SLICE_V9)
+
+
+def build_v10_local_input_1d(
+    x_1d: FloatArray,
+    accept_excess: float,
+    vit_global_1d: FloatArray,
+    vit_detail_2d: FloatArray | None = None,
+) -> FloatArray:
+    """Assemble the `39-d` spatial-anomaly + `orig_cf` contrast input vector for `_LocalEditHead` in v10."""
+    return _build_routed_local_input_1d(x_1d, accept_excess, vit_global_1d, vit_detail_2d, slices=VIT_SLICE_V10)
+
+
+def _is_routed_crop_pure_gfx(
+    vit_1d: FloatArray,
+    nt_cfg: _RoutedTileConfigV9,
+    *,
+    slices: dict[str, slice],
+) -> bool:
+    vit_gfx = float(vit_1d[slices["gfx_logit"]][0])
+    non_gfx_frac = float(vit_1d[slices["sp_stats"]][8])
+    return vit_gfx >= nt_cfg.gfx_ceil and non_gfx_frac < nt_cfg.min_photo_frac
+
+
+def _should_run_routed_tiles(
+    x_1d: FloatArray,
+    vit_primary_1d: FloatArray,
+    eff_phys_excess: float,
+    syn_margin_primary: float,
+    image_size: tuple[int, int] | None,
+    nt_cfg: _RoutedTileConfigV9 | None,
+    *,
+    slices: dict[str, slice],
+    gfx_score: float | None = None,
+) -> tuple[bool, bool]:
+    if nt_cfg is None or eff_phys_excess >= 0.0:
+        return False, False
+    if image_size is not None:
+        w, h = image_size
+        if min(w, h) < nt_cfg.min_short_px or max(w, h) < nt_cfg.min_long_px:
+            return False, False
+    sp = vit_primary_1d[slices["sp_stats"]]
+    non_gfx_frac = float(sp[8])
+    if non_gfx_frac < nt_cfg.min_photo_frac:
+        if float(vit_primary_1d[slices["gfx_logit"]][0]) >= nt_cfg.gfx_ceil:
+            return False, False
+        g_score = eval_born_digital_graphics_score(x_1d) if gfx_score is None else gfx_score
+        if g_score >= 1.50:
+            return False, False
+
+    need_gray = nt_cfg.detail_alpha > 0.0 and (nt_cfg.gray_lo <= syn_margin_primary < nt_cfg.gray_hi)
+    need_local = (
+        syn_margin_primary < 0.0
+        and float(sp[4]) >= nt_cfg.local_peak_trigger
+        and float(sp[6]) >= nt_cfg.local_contrast_trigger
+    )
+    return need_gray, need_local
+
+
+def _should_run_v9_routed_tiles(
+    x_1d: FloatArray,
+    vit_primary_1d: FloatArray,
+    eff_phys_excess: float,
+    syn_margin_primary: float,
+    image_size: tuple[int, int] | None,
+    nt_cfg: _RoutedTileConfigV9 | None,
+    *,
+    gfx_score: float | None = None,
+) -> tuple[bool, bool]:
+    """Return `(need_gray, need_local)` for v9's routed 1:1 native crops."""
+    return _should_run_routed_tiles(
+        x_1d,
+        vit_primary_1d,
+        eff_phys_excess,
+        syn_margin_primary,
+        image_size,
+        nt_cfg,
+        slices=VIT_SLICE_V9,
+        gfx_score=gfx_score,
+    )
+
+
+def _should_run_v10_routed_tiles(
+    x_1d: FloatArray,
+    vit_primary_1d: FloatArray,
+    eff_phys_excess: float,
+    syn_margin_primary: float,
+    image_size: tuple[int, int] | None,
+    nt_cfg: _RoutedTileConfigV9 | None,
+    *,
+    gfx_score: float | None = None,
+) -> tuple[bool, bool]:
+    """Return `(need_gray, need_local)` for v10's routed 1:1 native crops."""
+    return _should_run_routed_tiles(
+        x_1d,
+        vit_primary_1d,
+        eff_phys_excess,
+        syn_margin_primary,
+        image_size,
+        nt_cfg,
+        slices=VIT_SLICE_V10,
+        gfx_score=gfx_score,
+    )
+
+
+def _check_routed_attr_tiles(
+    eff_phys_excess: float,
+    syn_margin: float,
+    attr_logits: FloatArray,
+    z_det_std: FloatArray,
+    accept_excess: float,
+    r_std: FloatArray,
+    vit_primary_1d: FloatArray,
+    image_size: tuple[int, int] | None,
+    model: _SourceModelV9,
+) -> tuple[bool, FloatArray | None]:
+    import numpy as np
+
+    nt_cfg = model.nt_cfg
+    if nt_cfg is None or not nt_cfg.attr_enable or model.mm_prov is None:
+        return False, None
+    if eff_phys_excess < 0.0 and syn_margin < 0.0:
+        return False, None
+    if image_size is not None and min(image_size) < nt_cfg.attr_min_short_px:
+        return False, None
+    if 0.0 <= eff_phys_excess < model.foreign_phys_cap:
+        return True, None
+    slices = model.spec.slices
+    mm_lo_0 = _eval_mm_prov_head_log_odds(
+        build_v8_mm_prov_input_1d(
+            attr_logits,
+            z_det_std,
+            accept_excess,
+            r_std,
+            vit_primary_1d,
+            vit_detail_2d=None,
+            prov_slice=slices["prov_logits"],
+            proto_slice=slices["proto_sim"],
+        ),
+        model.mm_prov,
+    )
+    if eff_phys_excess < 0.0:
+        joint_0 = mm_lo_0 + model.mm_prov.phys_attr_beta * attr_logits
+        win_0 = int(np.argmax(joint_0))
+        exc_0 = float(joint_0[win_0] - model.mm_prov.prov_thresholds[win_0])
+        need = (-nt_cfg.attr_uncertain_gap <= exc_0 < nt_cfg.attr_uncertain_gap) or (
+            exc_0 >= 0.0 and _top2_gap(joint_0) < (model.mm_prov.min_gap + nt_cfg.attr_uncertain_gap)
+        )
+        return need, mm_lo_0
+    joint_p = attr_logits + model.vit_attr_alpha * mm_lo_0
+    need = _top2_gap(joint_p) < nt_cfg.attr_uncertain_gap or int(np.argmax(attr_logits)) != int(np.argmax(mm_lo_0))
+    return need, mm_lo_0
+
+
+def _fuse_mm_decision_v9(
+    *,
+    attr_logits: FloatArray,
+    mm_log_odds: FloatArray,
+    eff_phys_excess: float,
+    syn_margin: float,
+    local_margin: float | None,
+    model: _SourceModelV9,
+) -> tuple[FloatArray, float, bool, float]:
+    """Fuse physics, global ViT, local-edit head, and winner-consistent open-set provider attribution."""
+    import numpy as np
+
+    mm_prov = model.mm_prov
+    base_conf_scale = model.base_v5.conf_scale
+    joint_attr_logits = attr_logits + model.vit_attr_alpha * mm_log_odds
+    final_excess = eff_phys_excess
+    if eff_phys_excess >= 0.0:
+        synthetic_detected = True
+        scaled_joint = max(0.0, model.syn_conf_scale * syn_margin, base_conf_scale * eff_phys_excess)
+        synthetic_probability = _sigmoid_scalar(scaled_joint)
+        if (
+            mm_prov is not None
+            and eff_phys_excess < model.foreign_phys_cap
+            and float(np.max(mm_log_odds)) < model.foreign_mm_floor
+        ):
+            final_excess = -1e-4
+    else:
+        global_det = syn_margin >= 0.0
+        local_det = local_margin is not None and local_margin >= 0.0 and model.local_head is not None
+        synthetic_detected = global_det or local_det
+        prob_g = _sigmoid_scalar(model.syn_conf_scale * syn_margin)
+        if local_det and local_margin is not None and model.local_head is not None:
+            synthetic_probability = max(prob_g, _sigmoid_scalar(model.local_head.conf_scale * local_margin))
+        else:
+            synthetic_probability = prob_g
+        if global_det and mm_prov is not None:
+            cand_joint = mm_log_odds + mm_prov.phys_attr_beta * attr_logits
+            win_mm = int(np.argmax(cand_joint))
+            mm_exc = float(cand_joint[win_mm] - mm_prov.prov_thresholds[win_mm])
+            if mm_exc >= 0.0 and _top2_gap(cand_joint) >= mm_prov.min_gap:
+                joint_attr_logits = cand_joint
+                final_excess = max(1e-4, mm_exc * (mm_prov.conf_scale / max(base_conf_scale, 1e-4)))
+    return joint_attr_logits, final_excess, synthetic_detected, synthetic_probability
+
+
+def _classify_routed_with_vit(
+    x_1d: FloatArray,
+    vit_out_1d: FloatArray,
+    model: _SourceModelV9,
+    *,
+    vit_detail_2d: FloatArray | None = None,
+    vit_detail_loader: Callable[[], FloatArray] | None = None,
+    image_size: tuple[int, int] | None = None,
+    precomputed_v5_state: tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, float] | None = None,
+) -> SourceClassification:
+    spec = model.spec
+    slices = spec.slices
+    n_cls = len(ALL_PROVIDER_CLASSES)
+    z_det_std, attr_logits, r_std, mean_sub, u_vec, accept_excess = (
+        precomputed_v5_state if precomputed_v5_state is not None else _eval_v5_core_state(x_1d, model.base_v5)
+    )
+    gfx_score = eval_born_digital_graphics_score(x_1d)
+
+    syn_raw = _eval_syn_head_scalar(
+        _build_routed_syn_input_1d(
+            x_1d, z_det_std, accept_excess, r_std, vit_out_1d, slices=slices, gfx_score=gfx_score
+        ),
+        model,
+    )
+    syn_margin = syn_raw - model.syn_threshold
+    eff_phys_excess = _apply_phys_veto(accept_excess, syn_margin, model)
+
+    nt_cfg = model.nt_cfg
+    tile_gate_fn = _should_run_v10_routed_tiles if isinstance(model, _SourceModelV10) else _should_run_v9_routed_tiles
+    need_gray, need_local = tile_gate_fn(
+        x_1d,
+        vit_out_1d,
+        eff_phys_excess,
+        syn_margin,
+        image_size,
+        nt_cfg,
+        gfx_score=gfx_score,
+    )
+    cached_mm_lo_1v: FloatArray | None = None
+    if vit_detail_2d is None and vit_detail_loader is not None and nt_cfg is not None:
+        if need_gray or need_local:
+            vit_detail_2d = vit_detail_loader()
+        else:
+            need_attr, cached_mm_lo_1v = _check_routed_attr_tiles(
+                eff_phys_excess,
+                syn_margin,
+                attr_logits,
+                z_det_std,
+                accept_excess,
+                r_std,
+                vit_out_1d,
+                image_size,
+                model,
+            )
+            if need_attr:
+                vit_detail_2d = vit_detail_loader()
+
+    if need_gray and vit_detail_2d is not None and nt_cfg is not None:
+        valid_d = [
+            _eval_syn_head_scalar(
+                _build_routed_syn_input_1d(
+                    x_1d,
+                    z_det_std,
+                    accept_excess,
+                    r_std,
+                    vit_detail_2d[k_d],
+                    slices=slices,
+                    gfx_score=gfx_score,
+                ),
+                model,
+            )
+            for k_d in (0, 1)
+            if not _is_routed_crop_pure_gfx(vit_detail_2d[k_d], nt_cfg, slices=slices)
+        ]
+        if valid_d:
+            syn_detail_pool = 0.75 * max(valid_d) + 0.25 * min(valid_d) if len(valid_d) == 2 else valid_d[0]
+            syn_raw = (1.0 - nt_cfg.detail_alpha) * syn_raw + nt_cfg.detail_alpha * syn_detail_pool
+            syn_margin = syn_raw - (model.syn_threshold + nt_cfg.thr_offset)
+
+    local_margin: float | None = None
+    if (
+        eff_phys_excess < 0.0
+        and model.local_head is not None
+        and (nt_cfg is None or not _is_routed_crop_pure_gfx(vit_out_1d, nt_cfg, slices=slices))
+    ):
+        loc_raw = _eval_local_head_scalar_v9(
+            _build_routed_local_input_1d(
+                x_1d,
+                accept_excess,
+                vit_out_1d,
+                vit_detail_2d=vit_detail_2d,
+                slices=slices,
+                gfx_score=gfx_score,
+            ),
+            model.local_head,
+        )
+        local_margin = loc_raw - model.local_head.threshold
+
+    if model.mm_prov is not None:
+        mm_log_odds = (
+            cached_mm_lo_1v
+            if (vit_detail_2d is None and cached_mm_lo_1v is not None)
+            else _eval_mm_prov_head_log_odds(
+                build_v8_mm_prov_input_1d(
+                    attr_logits,
+                    z_det_std,
+                    accept_excess,
+                    r_std,
+                    vit_out_1d,
+                    vit_detail_2d=vit_detail_2d,
+                    prov_slice=slices["prov_logits"],
+                    proto_slice=slices["proto_sim"],
+                ),
+                model.mm_prov,
+            )
+        )
+    else:
+        prov12 = vit_out_1d[slices["prov_logits"]]
+        open_null_v = _logsumexp_pair(float(prov12[n_cls]), float(prov12[n_cls + 1]))
+        mm_log_odds = prov12[:n_cls] - open_null_v
+
+    joint_attr_logits, final_excess, synthetic_detected, synthetic_probability = _fuse_mm_decision_v9(
+        attr_logits=attr_logits,
+        mm_log_odds=mm_log_odds,
+        eff_phys_excess=eff_phys_excess,
+        syn_margin=syn_margin,
+        local_margin=local_margin,
+        model=model,
+    )
+
+    mm_heads = model.mm_version_heads
+
+    def _resolve_routed_version(best_prov: ProviderClass) -> tuple[bool, str | None]:
+        if mm_heads is None or best_prov not in mm_heads:
+            return False, None
+        return True, _eval_v8_mm_stage2_version(
+            best_prov,
+            mm_heads[best_prov],
+            x_1d,
+            u_vec,
+            mean_sub,
+            r_std,
+            vit_out_1d,
+            vit_detail_2d,
+            model,
+            prov_slice=slices["prov_logits"],
+            emb_slice=slices["arc_emb"],
+            proto_slice=slices["proto_sim"],
+        )
+
+    return _build_v5_like_result(
+        x_1d=x_1d,
+        base_model=model.base_v5,
+        z_det_std=z_det_std,
+        attr_logits=joint_attr_logits,
+        mean_sub=mean_sub,
+        u_vec=u_vec,
+        accept_excess=final_excess,
+        synthetic_detected=synthetic_detected,
+        synthetic_probability=synthetic_probability,
+        model_revision=spec.schema,
+        version_resolver=_resolve_routed_version if mm_heads else None,
+    )
+
+
+def _classify_v9_with_vit(
+    x_1d: FloatArray,
+    vit_out_1d: FloatArray,
+    model: _SourceModelV9,
+    *,
+    vit_detail_2d: FloatArray | None = None,
+    vit_detail_loader: Callable[[], FloatArray] | None = None,
+    image_size: tuple[int, int] | None = None,
+    precomputed_v5_state: tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, float] | None = None,
+) -> SourceClassification:
+    return _classify_routed_with_vit(
+        x_1d,
+        vit_out_1d,
+        model,
+        vit_detail_2d=vit_detail_2d,
+        vit_detail_loader=vit_detail_loader,
+        image_size=image_size,
+        precomputed_v5_state=precomputed_v5_state,
+    )
+
+
+def _classify_v10_with_vit(
+    x_1d: FloatArray,
+    vit_out_1d: FloatArray,
+    model: _SourceModelV10,
+    *,
+    vit_detail_2d: FloatArray | None = None,
+    vit_detail_loader: Callable[[], FloatArray] | None = None,
+    image_size: tuple[int, int] | None = None,
+    precomputed_v5_state: tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, float] | None = None,
+) -> SourceClassification:
+    return _classify_routed_with_vit(
+        x_1d,
+        vit_out_1d,
+        model,
+        vit_detail_2d=vit_detail_2d,
+        vit_detail_loader=vit_detail_loader,
+        image_size=image_size,
+        precomputed_v5_state=precomputed_v5_state,
+    )
+
+
+def _run_routed_vit_onnx(
+    model: _SourceModelV9,
+    pixel_values: FloatArray,
+    valid_mask: FloatArray,
+    expected_batch: int,
+    *,
+    need_patch_map: bool,
+    label: str,
+) -> tuple[FloatArray, FloatArray | None]:
+    import numpy as np
+
+    spec = model.spec
+    pmap_name = f"patch_clean_{spec.grid}x{spec.grid}"
+    out_names = ["vit_vec", pmap_name] if need_patch_map else ["vit_vec"]
+    outs = _get_v7_onnx_session(model).run(
+        out_names,
+        {"pixel_values": pixel_values, "valid_mask": valid_mask},
+    )
+    vec = np.asarray(outs[0], dtype=np.float64)
+    if vec.shape != (expected_batch, spec.vit_out_dim) or not np.all(np.isfinite(vec)):
+        raise RuntimeError(f"Invalid {label} ONNX vit_vec shape {vec.shape}")
+    if not need_patch_map:
+        return vec, None
+    pmap = np.asarray(outs[1], dtype=np.float64)
+    if pmap.shape != (expected_batch, spec.grid, spec.grid) or not np.all(np.isfinite(pmap)):
+        raise RuntimeError(f"Invalid {label} ONNX {pmap_name} shape {pmap.shape}")
+    return vec, pmap
+
+
+def _eval_routed_vit_primary_onnx(
+    image: Image.Image,
+    model: _SourceModelV9,
+    *,
+    need_patch_map: bool = True,
+) -> tuple[FloatArray, FloatArray | None, FloatArray, tuple[int, int, int, int, int, int]]:
+    spec = model.spec
+    pix, vmask, geom = _preprocess_vit_padded(
+        image,
+        target=spec.img_size,
+        patch_size=spec.patch_size,
+        grid=spec.grid,
+    )
+    vec, pmap = _run_routed_vit_onnx(
+        model,
+        pix,
+        vmask,
+        1,
+        need_patch_map=need_patch_map,
+        label=f"{spec.bundle_tag} ViT primary",
+    )
+    return vec[0], (pmap[0] if pmap is not None else None), vmask[0], geom
+
+
+def _eval_routed_vit_routed_onnx(
+    image: Image.Image,
+    model: _SourceModelV9,
+    patch_clean_2d: FloatArray | None,
+    valid_mask_1d: FloatArray,
+    geom_6: tuple[int, int, int, int, int, int],
+) -> FloatArray:
+    spec = model.spec
+    pix2, mask2 = _preprocess_vit_routed_2chw(
+        image,
+        patch_clean_2d,
+        valid_mask_1d,
+        geom_6,
+        crop_sz=spec.img_size,
+        patch_size=spec.patch_size,
+        grid=spec.grid,
+        min_dist_sq=spec.min_dist_sq,
+    )
+    vec2, _ = _run_routed_vit_onnx(
+        model,
+        pix2,
+        mask2,
+        2,
+        need_patch_map=False,
+        label=f"{spec.bundle_tag} ViT routed-tile",
+    )
+    return vec2
+
+
+def _eval_v9_vit_primary_onnx(
+    image: Image.Image,
+    model: _SourceModelV9,
+) -> tuple[FloatArray, FloatArray, FloatArray, tuple[int, int, int, int, int, int]]:
+    vec, pmap, vmask, geom = _eval_routed_vit_primary_onnx(image, model, need_patch_map=True)
+    if pmap is None:
+        raise RuntimeError("Missing v9 primary patch map")
+    return vec, pmap, vmask, geom
+
+
+def _eval_v9_vit_routed_onnx(
+    image: Image.Image,
+    model: _SourceModelV9,
+    patch_clean_28x28: FloatArray,
+    valid_mask_784: FloatArray,
+    geom_6: tuple[int, int, int, int, int, int],
+) -> FloatArray:
+    return _eval_routed_vit_routed_onnx(image, model, patch_clean_28x28, valid_mask_784, geom_6)
+
+
+def _eval_v10_vit_primary_onnx(
+    image: Image.Image,
+    model: _SourceModelV10,
+) -> tuple[FloatArray, FloatArray, FloatArray, tuple[int, int, int, int, int, int]]:
+    vec, pmap, vmask, geom = _eval_routed_vit_primary_onnx(image, model, need_patch_map=True)
+    if pmap is None:
+        raise RuntimeError("Missing v10 primary patch map")
+    return vec, pmap, vmask, geom
+
+
+def _eval_v10_vit_routed_onnx(
+    image: Image.Image,
+    model: _SourceModelV10,
+    patch_clean_24x24: FloatArray,
+    valid_mask_576: FloatArray,
+    geom_6: tuple[int, int, int, int, int, int],
+) -> FloatArray:
+    return _eval_routed_vit_routed_onnx(image, model, patch_clean_24x24, valid_mask_576, geom_6)
+
+
 def _classify_loaded_model(
     features: FloatArray,
     model: _LoadedSourceModel,
@@ -3192,13 +4653,19 @@ def _classify_loaded_model(
     if x_1d.ndim != 1 or not np.all(np.isfinite(x_1d)):
         return _unavailable_result()
 
-    if isinstance(model, (_SourceModelV4, _SourceModelV5, _SourceModelV7, _SourceModelV8)):
+    if isinstance(model, (_SourceModelV4, _SourceModelV5, _SourceModelV7, _SourceModelV8, _SourceModelV9)):
         if x_1d.shape != (FEATURE_DIM_V4,):
             return _unavailable_result()
-        if isinstance(model, (_SourceModelV7, _SourceModelV8)):
-            is_v8 = isinstance(model, _SourceModelV8)
-            vit_dim = VIT_OUT_DIM_V8 if is_v8 else VIT_OUT_DIM_V7
-            schema = MODEL_SCHEMA_V8 if is_v8 else MODEL_SCHEMA_V7
+        if isinstance(model, (_SourceModelV7, _SourceModelV8, _SourceModelV9)):
+            if isinstance(model, _SourceModelV9):
+                vit_dim = model.spec.vit_out_dim
+                schema = model.spec.schema
+            elif isinstance(model, _SourceModelV8):
+                vit_dim = VIT_OUT_DIM_V8
+                schema = MODEL_SCHEMA_V8
+            else:
+                vit_dim = VIT_OUT_DIM_V7
+                schema = MODEL_SCHEMA_V7
             if vit_features is None:
                 return _classify_v5_features(x_1d, model.base_v5, model_revision=schema)
             v_1d = np.asarray(vit_features, dtype=np.float64)
@@ -3209,6 +4676,26 @@ def _classify_loaded_model(
                 v_det = np.asarray(vit_detail_features, dtype=np.float64)
                 if v_det.shape != (2, vit_dim) or not np.all(np.isfinite(v_det)):
                     return _unavailable_result()
+            if isinstance(model, _SourceModelV10):
+                return _classify_v10_with_vit(
+                    x_1d,
+                    v_1d,
+                    model,
+                    vit_detail_2d=v_det,
+                    vit_detail_loader=vit_detail_loader,
+                    image_size=image_size,
+                    precomputed_v5_state=precomputed_v5_state,
+                )
+            if isinstance(model, _SourceModelV9):
+                return _classify_v9_with_vit(
+                    x_1d,
+                    v_1d,
+                    model,
+                    vit_detail_2d=v_det,
+                    vit_detail_loader=vit_detail_loader,
+                    image_size=image_size,
+                    precomputed_v5_state=precomputed_v5_state,
+                )
             if isinstance(model, _SourceModelV8):
                 return _classify_v8_with_vit(
                     x_1d,
@@ -3333,7 +4820,7 @@ def classify_source_features(
     vit_features: FloatArray | None = None,
     vit_detail_features: FloatArray | None = None,
 ) -> SourceClassification:
-    """Classify a precomputed 956-d (v3) or 512-d (v4-v8) feature vector into 10 providers or unknown."""
+    """Classify a precomputed 956-d (v3) or 512-d (v4-v10) feature vector into 10 providers or unknown."""
     import numpy as np
 
     x_1d = np.asarray(features, dtype=np.float64)
@@ -3374,19 +4861,51 @@ def classify_source(
         if min(img.size) < MIN_SIDE:
             return _unavailable_result()
         loaded_model = _load_model(weights_path)
-        if isinstance(loaded_model, (_SourceModelV7, _SourceModelV8)):
+        if isinstance(loaded_model, (_SourceModelV7, _SourceModelV8, _SourceModelV9)):
             _ = _get_v7_onnx_session(loaded_model)
         extracted = (
             extract_512d_v4_features(img)
-            if isinstance(loaded_model, (_SourceModelV4, _SourceModelV5, _SourceModelV7, _SourceModelV8))
+            if isinstance(
+                loaded_model, (_SourceModelV4, _SourceModelV5, _SourceModelV7, _SourceModelV8, _SourceModelV9)
+            )
             else extract_956d_features(img)
         )
         if extracted is None:
             return _unavailable_result()
-        if not isinstance(loaded_model, (_SourceModelV7, _SourceModelV8)):
+        if not isinstance(loaded_model, (_SourceModelV7, _SourceModelV8, _SourceModelV9)):
             return _classify_loaded_model(extracted, loaded_model)
 
         rgb_img = _orient_rgb_image(img)
+        if isinstance(loaded_model, _SourceModelV9):
+            if loaded_model.nt_cfg is None:
+                vit_vec, _, _, _ = _eval_routed_vit_primary_onnx(
+                    rgb_img,
+                    loaded_model,
+                    need_patch_map=False,
+                )
+                return _classify_loaded_model(
+                    extracted,
+                    loaded_model,
+                    vit_features=vit_vec,
+                    image_size=rgb_img.size,
+                )
+            if isinstance(loaded_model, _SourceModelV10):
+                vit_vec, pmap_24, vmask_576, geom_6 = _eval_v10_vit_primary_onnx(rgb_img, loaded_model)
+                detail_fn: Callable[[], FloatArray] = functools.partial(
+                    _eval_v10_vit_routed_onnx, rgb_img, loaded_model, pmap_24, vmask_576, geom_6
+                )
+            else:
+                vit_vec, pmap_28, vmask_784, geom_6 = _eval_v9_vit_primary_onnx(rgb_img, loaded_model)
+                detail_fn = functools.partial(
+                    _eval_v9_vit_routed_onnx, rgb_img, loaded_model, pmap_28, vmask_784, geom_6
+                )
+            return _classify_loaded_model(
+                extracted,
+                loaded_model,
+                vit_features=vit_vec,
+                vit_detail_loader=detail_fn,
+                image_size=rgb_img.size,
+            )
         if isinstance(loaded_model, _SourceModelV8):
             vit_vec = _eval_v8_vit_onnx(rgb_img, loaded_model)
             return _classify_loaded_model(

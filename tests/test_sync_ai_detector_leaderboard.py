@@ -123,6 +123,8 @@ def test_check_external_arenas_flags_stale_owned_surfaces(
 ) -> None:
     import huggingface_hub
 
+    from remove_ai_watermarks.source_classify import MODEL_FILE
+
     stale_lb = json.loads((sync_lb.LEADERBOARD_DIR / sync_lb.LEADERBOARD_JSON_REL).read_text(encoding="utf-8"))
     stale_lb["results"][0]["revision"] = "46b331cb8f0831e6ced6eb3a7f7b55db3f91867e"
 
@@ -147,7 +149,7 @@ def test_check_external_arenas_flags_stale_owned_surfaces(
         if "dataset_versions.md" in url:
             return 200, "| **0.1** | Feb 2026 |"
         if url.endswith("/issues/1/comments"):
-            return 200, json.dumps([{"body": "Updated run for multi-provider-source-v8.npz"}])
+            return 200, json.dumps([{"body": f"Updated run for {MODEL_FILE}"}])
         if "api.github.com/repos/AI-Detect-Arena" in url:
             return 200, json.dumps(
                 {
@@ -167,7 +169,7 @@ def test_check_external_arenas_flags_stale_owned_surfaces(
     assert set(report["owned_stale_surfaces"]) == {"hf_leaderboard_space", "hf_blog_article"}
     assert report["surfaces"]["ai_detector_arena"]["latest_dataset_version"] == "0.1"
     assert report["surfaces"]["ai_detector_arena"]["issue_matches_current_artifact"] is True
-    assert report["surfaces"]["ai_detector_arena"]["issue_latest_artifact"] == "multi-provider-source-v8.npz"
+    assert report["surfaces"]["ai_detector_arena"]["issue_latest_artifact"] == MODEL_FILE
     assert report["surfaces"]["dfbench_image_2025"]["entry_count"] == 1
     assert report["surfaces"]["dfbench_image_2025"]["dataset_matches_pinned_sha"] is True
     assert report["surfaces"]["upstream_hf_baselines"]["drifted_count"] == 0

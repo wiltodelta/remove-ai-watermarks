@@ -90,7 +90,7 @@ fan-out. They are published automatically together with
 `.github/workflows/publish-source-classify-hf.yml` whenever a push to `main`
 changes `docs/source-classify-hf/**` or the publisher workflow/scripts (and on
 manual `workflow_dispatch`). The workflow downloads the derivative
-`multi-provider-source-v8.npz` artifact (from `wiltodelta/raiw-source-classify`
+`multi-provider-source-v10.npz` artifact (from `wiltodelta/raiw-source-classify`
 GitHub Releases, a freeze tag in this repository, or Hugging Face Hub), verifies
 its SHA-256, uploads that file plus the tracked `README.md`, `metrics.json`,
 `website-content.json`, `infer.py`, `benchmark.py`, and `demo.ipynb` under
@@ -124,7 +124,7 @@ installed clients. The private corpus, catalog, paths, hashes, embeddings, and
 feature caches are outside this flow.
 
 Prefer publishing frozen `.npz` releases directly on
-`wiltodelta/raiw-source-classify` (`v8`, `v9`, ...); if a model-freeze release
+`wiltodelta/raiw-source-classify` (`v8`, `v9`, `v10`, ...); if a model-freeze release
 is still created in `remove-ai-watermarks`, mark it as a pre-release so a model
 artifact cannot replace the latest package release in GitHub's release UI.
 Package publication and distribution jobs run only for

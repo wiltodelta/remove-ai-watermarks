@@ -977,8 +977,10 @@ def _build_minimal_const_vit_onnx_bytes(
     *,
     r_chan_syn_slope: float = 0.0,
     g_chan_col_slopes: dict[int, float] | None = None,
+    img_size: int = 384,
+    patch_grid: int | None = None,
 ) -> bytes:
-    """Build a minimal valid dynamic-batch ONNX ModelProto (`[B, 3, 384, 384] -> [B, D]`)."""
+    """Build a minimal valid dynamic-batch ONNX ModelProto for v7/v8 or routed v9/v10."""
     vals = np.asarray(vit_vec, dtype=np.float32).reshape(-1)
     d_out = len(vals)
 
@@ -996,6 +998,9 @@ def _build_minimal_const_vit_onnx_bytes(
     def _f_varint(num: int, val: int) -> bytes:
         return _varint((num << 3) | 0) + _varint(val)
 
+    def _f_ints(num: int, ints: list[int]) -> bytes:
+        return b"".join(_f_varint(num, v) for v in ints)
+
     def _dim(d: int | bytes) -> bytes:
         return _f_bytes(2, d) if isinstance(d, bytes) else _f_varint(1, d)
 
@@ -1009,6 +1014,11 @@ def _build_minimal_const_vit_onnx_bytes(
         raw_b = struct.pack(f"<{len(flat)}f", *flat)
         return dims_b + _f_varint(2, 1) + _f_bytes(8, name.encode()) + _f_bytes(9, raw_b)
 
+    def _tensor_i64(name: str, shape: list[int], flat: list[int]) -> bytes:
+        dims_b = b"".join(_f_varint(1, s) for s in shape)
+        raw_b = struct.pack(f"<{len(flat)}q", *flat)
+        return dims_b + _f_varint(2, 7) + _f_bytes(8, name.encode()) + _f_bytes(9, raw_b)
+
     w_mat = np.zeros((3, d_out), dtype=np.float32)
     w_mat[0, 0] = float(r_chan_syn_slope)
     if g_chan_col_slopes:
@@ -1017,27 +1027,38 @@ def _build_minimal_const_vit_onnx_bytes(
     init_w = _tensor_f32("w_zero", [3, d_out], [float(x) for x in w_mat.ravel().tolist()])
     init_b = _tensor_f32("b_vec", [d_out], [float(x) for x in vals.tolist()])
 
+    out_vec_name = "vit_vec" if patch_grid is not None else "vit_out"
     n_gap = _f_bytes(1, b"pixel_values") + _f_bytes(2, b"gap_out") + _f_bytes(4, b"GlobalAveragePool")
     n_flat = _f_bytes(1, b"gap_out") + _f_bytes(2, b"flat_out") + _f_bytes(4, b"Flatten")
     n_gemm = (
         _f_bytes(1, b"flat_out")
         + _f_bytes(1, b"w_zero")
         + _f_bytes(1, b"b_vec")
-        + _f_bytes(2, b"vit_out")
+        + _f_bytes(2, out_vec_name.encode())
         + _f_bytes(4, b"Gemm")
     )
-    inp = _value_info("pixel_values", 1, [b"batch", 3, 384, 384])
-    out = _value_info("vit_out", 1, [b"batch", d_out])
-    graph = (
-        _f_bytes(1, n_gap)
-        + _f_bytes(1, n_flat)
-        + _f_bytes(1, n_gemm)
-        + _f_bytes(2, b"g")
-        + _f_bytes(5, init_w)
-        + _f_bytes(5, init_b)
-        + _f_bytes(11, inp)
-        + _f_bytes(12, out)
-    )
+    inp_px = _value_info("pixel_values", 1, [b"batch", 3, img_size, img_size])
+    out_vec = _value_info(out_vec_name, 1, [b"batch", d_out])
+    nodes = [_f_bytes(1, n_gap), _f_bytes(1, n_flat), _f_bytes(1, n_gemm)]
+    inits = [_f_bytes(5, init_w), _f_bytes(5, init_b)]
+    inputs = [_f_bytes(11, inp_px)]
+    outputs = [_f_bytes(12, out_vec)]
+
+    if patch_grid is not None:
+        pmap_name = f"patch_clean_{patch_grid}x{patch_grid}"
+        inits.append(_f_bytes(5, _tensor_i64("pm_shape", [3], [0, patch_grid, patch_grid])))
+        n_resh = (
+            _f_bytes(1, b"valid_mask")
+            + _f_bytes(1, b"pm_shape")
+            + _f_bytes(2, pmap_name.encode())
+            + _f_bytes(4, b"Reshape")
+        )
+        nodes.append(_f_bytes(1, n_resh))
+        inputs.append(_f_bytes(11, _value_info("valid_mask", 1, [b"batch", patch_grid * patch_grid])))
+        outputs.append(_f_bytes(12, _value_info(pmap_name, 1, [b"batch", patch_grid, patch_grid])))
+        _ = _f_ints  # keep helper bound
+
+    graph = b"".join(nodes) + _f_bytes(2, b"g") + b"".join(inits) + b"".join(inputs) + b"".join(outputs)
     return _f_varint(1, 7) + _f_bytes(7, graph) + _f_bytes(8, _f_varint(2, 13))
 
 
@@ -1066,6 +1087,8 @@ def _write_synthetic_vit_npz(
     vit_attr_alpha: float = 0.0,
     phys_veto_cap: float = 0.0,
     phys_veto_syn_floor: float = -3.0,
+    img_size: int = 384,
+    patch_grid: int | None = None,
     extra_payload: dict[str, Any] | None = None,
     overrides: dict[str, Any] | None = None,
 ) -> Path:
@@ -1075,7 +1098,11 @@ def _write_synthetic_vit_npz(
         det_score=det_score,
         det_threshold=det_threshold,
     )
-    onnx_bytes = _build_minimal_const_vit_onnx_bytes(default_vit_vec if vit_vec is None else vit_vec)
+    onnx_bytes = _build_minimal_const_vit_onnx_bytes(
+        default_vit_vec if vit_vec is None else vit_vec,
+        img_size=img_size,
+        patch_grid=patch_grid,
+    )
     h_s = 8
     syn_skip = np.zeros(syn_in_dim, dtype=np.float64)
     syn_skip[0] = 1.0
@@ -1175,10 +1202,15 @@ def install_stub_ort_if_missing(monkeypatch: pytest.MonkeyPatch) -> None:
             d_out = len(self._b)
             self._w = np.frombuffer(w_raw, dtype="<f4").reshape(3, d_out).copy()
 
-        def run(self, _outputs: list[str], feeds: dict[str, np.ndarray]) -> list[np.ndarray]:
+        def run(self, outputs: list[str], feeds: dict[str, np.ndarray]) -> list[np.ndarray]:
             x = np.asarray(feeds["pixel_values"], dtype=np.float32)
             gap = x.mean(axis=(2, 3))
-            return [(gap @ self._w + self._b).astype(np.float32)]
+            vec = (gap @ self._w + self._b).astype(np.float32)
+            if len(outputs) == 1:
+                return [vec]
+            vm = np.asarray(feeds["valid_mask"], dtype=np.float32)
+            grid = round(vm.shape[1] ** 0.5)
+            return [vec, vm.reshape(vm.shape[0], grid, grid)]
 
     stub_ort: Any = types.ModuleType("onnxruntime")
     stub_ort.SessionOptions = _StubSessionOptions
@@ -1831,3 +1863,318 @@ def test_v8_corrupted_bundle_validation(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="native-tile"):
         source_classify._load_model_from_path(w_bad_nt)
+
+
+def _write_synthetic_routed_vit_npz(
+    path: Path,
+    *,
+    spec: source_classify._RoutedViTSpec,
+    default_vit_vec: np.ndarray,
+    det_score: float = 0.5,
+    det_threshold: float = 3.0,
+    syn_threshold: float = 0.5,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    return _write_synthetic_vit_npz(
+        path,
+        schema=spec.schema,
+        default_vit_vec=default_vit_vec,
+        syn_in_dim=spec.syn_in_dim,
+        det_score=det_score,
+        det_threshold=det_threshold,
+        syn_threshold=syn_threshold,
+        img_size=spec.img_size,
+        patch_grid=spec.grid,
+        extra_payload={
+            "vit_layout_names": np.asarray([nm for nm, _, _ in spec.expected_layout], dtype="<U24"),
+            "vit_layout_bounds": np.asarray([[lo, hi] for _, lo, hi in spec.expected_layout], dtype=np.int64),
+            "foreign_phys_cap": np.asarray(3.80, dtype=np.float64),
+            "foreign_mm_floor": np.asarray(1.25, dtype=np.float64),
+        },
+        overrides=overrides,
+    )
+
+
+def _routed_local_and_nt_overrides(
+    d_loc: int,
+    loc_skip: np.ndarray,
+    *,
+    loc_threshold: float,
+    min_long_px: int,
+    peak_trigger: float,
+    contrast_trigger: float,
+) -> dict[str, Any]:
+    return {
+        "loc_in_mean": np.zeros(d_loc, dtype=np.float64),
+        "loc_in_scale": np.ones(d_loc, dtype=np.float64),
+        "loc_w1": np.zeros((d_loc, 8), dtype=np.float64),
+        "loc_b1": np.zeros(8, dtype=np.float64),
+        "loc_ln_g": np.ones(8, dtype=np.float64),
+        "loc_ln_b": np.zeros(8, dtype=np.float64),
+        "loc_w2": np.zeros(8, dtype=np.float64),
+        "loc_b2": np.asarray(0.0, dtype=np.float64),
+        "loc_skip_w": loc_skip,
+        "loc_threshold": np.asarray(loc_threshold, dtype=np.float64),
+        "loc_conf_scale": np.asarray(1.0, dtype=np.float64),
+        "nt_min_short_px": np.asarray(384, dtype=np.int64),
+        "nt_min_long_px": np.asarray(min_long_px, dtype=np.int64),
+        "nt_gray_lo": np.asarray(-1.5, dtype=np.float64),
+        "nt_gray_hi": np.asarray(0.0, dtype=np.float64),
+        "nt_gfx_ceil": np.asarray(1.5, dtype=np.float64),
+        "nt_min_photo_frac": np.asarray(0.20, dtype=np.float64),
+        "nt_detail_alpha": np.asarray(0.5, dtype=np.float64),
+        "nt_thr_offset": np.asarray(0.0, dtype=np.float64),
+        "nt_local_peak_trigger": np.asarray(peak_trigger, dtype=np.float64),
+        "nt_local_contrast_trigger": np.asarray(contrast_trigger, dtype=np.float64),
+        "nt_attr_enable": np.asarray(0, dtype=np.int64),
+        "nt_attr_min_short_px": np.asarray(min_long_px, dtype=np.int64),
+        "nt_attr_uncertain_gap": np.asarray(1.5, dtype=np.float64),
+    }
+
+
+def _write_synthetic_v9_npz(
+    path: Path,
+    *,
+    det_score: float = 0.5,
+    det_threshold: float = 3.0,
+    syn_threshold: float = 0.5,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    default_v = np.zeros(source_classify.VIT_OUT_DIM_V9, dtype=np.float32)
+    default_v[0] = 2.0
+    default_v[59] = 0.90  # non_gfx_frac at sp_stats[8]
+    return _write_synthetic_routed_vit_npz(
+        path,
+        spec=source_classify.ROUTED_SPEC_V9,
+        default_vit_vec=default_v,
+        det_score=det_score,
+        det_threshold=det_threshold,
+        syn_threshold=syn_threshold,
+        overrides=overrides,
+    )
+
+
+def _write_synthetic_v10_npz(
+    path: Path,
+    *,
+    det_score: float = 0.5,
+    det_threshold: float = 3.0,
+    syn_threshold: float = 0.5,
+    overrides: dict[str, Any] | None = None,
+) -> Path:
+    default_v = np.zeros(source_classify.VIT_OUT_DIM_V10, dtype=np.float32)
+    default_v[0] = 2.0  # orig_cf_cls
+    default_v[1] = 2.0  # orig_cf_patch
+    default_v[61] = 0.90  # non_gfx_frac at sp_stats[8] (53 + 8 = 61)
+    default_v[65] = 1.0  # valid_frac at sp_stats[12] (53 + 12 = 65)
+    return _write_synthetic_routed_vit_npz(
+        path,
+        spec=source_classify.ROUTED_SPEC_V10,
+        default_vit_vec=default_v,
+        det_score=det_score,
+        det_threshold=det_threshold,
+        syn_threshold=syn_threshold,
+        overrides=overrides,
+    )
+
+
+@pytest.mark.parametrize(
+    ("img_size", "grid", "prep_fn", "select_fn"),
+    [
+        (392, 28, source_classify.preprocess_vit_392_padded_v9, source_classify.select_v9_routed_boxes),
+        (384, 24, source_classify.preprocess_vit_384_padded_v10, source_classify.select_v10_routed_boxes),
+    ],
+)
+def test_routed_vit_padded_letterbox_and_coordinate_routed_boxes(
+    img_size: int,
+    grid: int,
+    prep_fn: Any,
+    select_fn: Any,
+) -> None:
+    wide = Image.fromarray(np.full((900, 1600, 3), 80, dtype=np.uint8), mode="RGB")
+    pix, vmask, geom = prep_fn(wide)
+    assert pix.shape == (1, 3, img_size, img_size)
+    assert vmask.shape == (1, grid * grid)
+    vm2 = vmask.reshape(grid, grid)
+    mid = grid // 2
+    assert vm2[0, mid] == 0.0
+    assert vm2[grid - 1, mid] == 0.0
+    assert vm2[mid, 0] == 1.0
+    assert vm2[mid, grid - 1] == 1.0
+
+    pmap = np.full((grid, grid), -3.0, dtype=np.float64)
+    pmap[mid - 1 : mid + 2, grid - 3 : grid] = 4.6
+    b0, b1 = select_fn(pmap, vmask[0], geom, wide.size)
+    assert (b0[2] - b0[0], b0[3] - b0[1]) == (img_size, img_size)
+    assert b0[0] % 8 == 0
+    assert b0[1] % 8 == 0
+    assert b0[0] >= 1600 - img_size - 16
+    assert abs(b1[0] - b0[0]) >= 300
+
+
+def test_v9_local_edit_rescue_and_winner_consistent_mm_attribution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_stub_ort_if_missing(monkeypatch)
+    n_cls = len(source_classify.ALL_PROVIDER_CLASSES)
+    d_mm = source_classify.MM_PROV_IN_DIM_V9
+    d_loc = source_classify.LOCAL_IN_DIM_V9
+    x_feat = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+
+    loc_skip = np.zeros(d_loc, dtype=np.float64)
+    loc_skip[21] = 1.0
+
+    g_idx = source_classify.ALL_PROVIDER_CLASSES.index("google")
+    x_idx = source_classify.ALL_PROVIDER_CLASSES.index("xai")
+    mm_b2 = np.full(n_cls + 2, -2.0, dtype=np.float64)
+    mm_b2[x_idx] = 0.1
+    mm_b2[g_idx] = -0.1
+    mm_b2[n_cls] = -2.693147
+    mm_b2[n_cls + 1] = -2.693147
+    mm_thrs = np.full(n_cls, 1.5, dtype=np.float64)
+    mm_thrs[g_idx] = 4.0
+
+    attr_b2 = np.zeros(n_cls, dtype=np.float64)
+    attr_b2[g_idx] = 2.0
+
+    w_v9 = _write_synthetic_v9_npz(
+        tmp_path / "v9_local_and_mm.npz",
+        det_score=0.2,
+        det_threshold=3.0,
+        syn_threshold=1.5,
+        overrides={
+            **_routed_local_and_nt_overrides(
+                d_loc,
+                loc_skip,
+                loc_threshold=3.0,
+                min_long_px=392,
+                peak_trigger=1.2,
+                contrast_trigger=0.8,
+            ),
+            "attr_b2": attr_b2,
+            "mm_prov_in_mean": np.zeros(d_mm, dtype=np.float64),
+            "mm_prov_in_scale": np.ones(d_mm, dtype=np.float64),
+            "mm_prov_w1": np.zeros((d_mm, 8), dtype=np.float64),
+            "mm_prov_b1": np.zeros(8, dtype=np.float64),
+            "mm_prov_ln_g": np.ones(8, dtype=np.float64),
+            "mm_prov_ln_b": np.zeros(8, dtype=np.float64),
+            "mm_prov_w2": np.zeros((8, n_cls + 2), dtype=np.float64),
+            "mm_prov_b2": mm_b2,
+            "mm_prov_skip_w": np.zeros((d_mm, n_cls + 2), dtype=np.float64),
+            "mm_prov_thresholds": mm_thrs,
+            "mm_prov_min_gap": np.asarray(0.5, dtype=np.float64),
+            "mm_prov_conf_scale": np.asarray(1.0, dtype=np.float64),
+            "mm_prov_phys_beta": np.asarray(0.5, dtype=np.float64),
+        },
+    )
+
+    v_real_host = np.zeros(source_classify.VIT_OUT_DIM_V9, dtype=np.float64)
+    v_real_host[0] = -2.5
+    v_real_host[55] = 1.8
+    v_real_host[57] = 1.4
+    v_real_host[59] = 0.90
+
+    v_peak_crops = np.zeros((2, source_classify.VIT_OUT_DIM_V9), dtype=np.float64)
+    v_peak_crops[0, 55] = 4.2
+    v_peak_crops[0, 59] = 0.90
+    v_peak_crops[1, 55] = -1.0
+    v_peak_crops[1, 59] = 0.90
+
+    loader_calls = 0
+
+    def _loader() -> np.ndarray:
+        nonlocal loader_calls
+        loader_calls += 1
+        return v_peak_crops
+
+    model_v9 = source_classify._load_model_from_path(w_v9)
+    res_loc = source_classify._classify_loaded_model(
+        x_feat,
+        model_v9,
+        vit_features=v_real_host,
+        vit_detail_loader=_loader,
+        image_size=(1024, 1024),
+    )
+    assert loader_calls == 1
+    assert res_loc.model_revision == source_classify.MODEL_SCHEMA_V9
+    assert res_loc.synthetic_detected is True
+    assert res_loc.label == "unknown"
+    assert res_loc.synthetic_probability > 0.75
+
+    v_syn_pos = np.zeros(source_classify.VIT_OUT_DIM_V9, dtype=np.float64)
+    v_syn_pos[0] = 3.0
+    v_syn_pos[59] = 0.90
+    res_mm_guard = source_classify.classify_source_features(x_feat, weights_path=w_v9, vit_features=v_syn_pos)
+    assert res_mm_guard.synthetic_detected is True
+    assert res_mm_guard.label == "unknown"
+
+    sample_rgb = Image.fromarray(
+        np.random.default_rng(7).integers(20, 220, size=(416, 416, 3), dtype=np.uint8), mode="RGB"
+    )
+    res_e2e_v9 = source_classify.classify_source(sample_rgb, weights_path=w_v9)
+    assert res_e2e_v9.model_revision == source_classify.MODEL_SCHEMA_V9
+    assert res_e2e_v9.synthetic_detected is True
+
+    w_bad_layout = _write_synthetic_v9_npz(
+        tmp_path / "v9_bad_layout.npz",
+        overrides={"vit_layout_names": np.asarray(["wrong_name"], dtype="<U24")},
+    )
+    with pytest.raises(ValueError, match="named ViT output layout"):
+        source_classify._load_model_from_path(w_bad_layout)
+
+
+def test_v10_orig_cf_local_rescue_and_end_to_end_classify_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_stub_ort_if_missing(monkeypatch)
+    d_loc = source_classify.LOCAL_IN_DIM_V10
+    x_feat = np.zeros(source_classify.FEATURE_DIM_V4, dtype=np.float64)
+    loc_skip = np.zeros(d_loc, dtype=np.float64)
+    loc_skip[36] = 1.0  # delta_orig_cf_patch (`13 + 6 + 13 + 4 = 36`)
+    w_v10 = _write_synthetic_v10_npz(
+        tmp_path / "v10_local.npz",
+        det_score=0.2,
+        det_threshold=3.0,
+        syn_threshold=1.5,
+        overrides=_routed_local_and_nt_overrides(
+            d_loc,
+            loc_skip,
+            loc_threshold=2.5,
+            min_long_px=384,
+            peak_trigger=1.0,
+            contrast_trigger=0.7,
+        ),
+    )
+    v_host = np.zeros(source_classify.VIT_OUT_DIM_V10, dtype=np.float64)
+    v_host[0] = -3.0
+    v_host[1] = -2.0  # global orig_cf_patch
+    v_host[57] = 1.5  # sp_box3_max >= 1.0
+    v_host[59] = 1.1  # sp_contrast >= 0.7
+    v_host[61] = 0.90
+    v_host[65] = 1.0
+
+    v_det = np.zeros((2, source_classify.VIT_OUT_DIM_V10), dtype=np.float64)
+    v_det[0, 1] = 2.2  # peak crop orig_cf_patch -> delta = 2.2 - (-2.0) = +4.2 >= 2.5!
+    v_det[0, 61] = 0.90
+    v_det[1, 61] = 0.90
+
+    model_v10 = source_classify._load_model_from_path(w_v10)
+    res = source_classify._classify_loaded_model(
+        x_feat,
+        model_v10,
+        vit_features=v_host,
+        vit_detail_loader=lambda: v_det,
+        image_size=(1024, 1024),
+    )
+    assert res.model_revision == source_classify.MODEL_SCHEMA_V10
+    assert res.synthetic_detected is True
+
+    sample_rgb = Image.fromarray(
+        np.random.default_rng(11).integers(20, 220, size=(416, 416, 3), dtype=np.uint8), mode="RGB"
+    )
+    res_e2e_v10 = source_classify.classify_source(sample_rgb, weights_path=w_v10)
+    assert res_e2e_v10.model_revision == source_classify.MODEL_SCHEMA_V10
+    assert res_e2e_v10.synthetic_detected is True
+    assert res.label == "unknown"

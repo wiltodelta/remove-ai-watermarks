@@ -32,6 +32,7 @@ def test_hub_ids_match_the_runtime_loader() -> None:
     assert publish.MODEL_FILE == MODEL_FILE
     assert "multi-provider-source-v6.npz" not in publish.RETIRED_FILES
     assert "multi-provider-source-v7.npz" not in publish.RETIRED_FILES
+    assert "multi-provider-source-v8.npz" not in publish.RETIRED_FILES
     assert "wiltodelta/raiw-photo-classify" in publish.RETIRED_HUB_REPOS
 
 

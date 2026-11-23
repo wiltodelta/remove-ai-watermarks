@@ -1914,16 +1914,32 @@ derived results influence detection.
 the opt-in 10-provider source-pipeline and synthetic-image classifier
 (`classify_source`, `resolve_weights_path`, and CLI command `classify-source`).
 By default it downloads `config.json` (for Hub download telemetry) and
-`multi-provider-source-v8.npz`
+`multi-provider-source-v10.npz`
 (`allow_pickle=False`, verified by SHA-256 from `wiltodelta/raiw-source-classify`
 on Hugging Face Hub with automatic SHA-256-verified fallback to the matching
 `wiltodelta/raiw-source-classify` GitHub Release, or overridden via
 `RAIW_SOURCE_CLASSIFY_WEIGHTS`), while supporting pickle-free
-runtime loading across five `.npz` bundle schemas:
+runtime loading across seven `.npz` bundle schemas:
 
+- `multi-provider-source-v10` (`512-d` + embedded `OwensLab/commfor-model-384`
+  dual-branch split-tail `66-d` selective weight-fp16 ONNX, pinned default
+  schema used by `multi-provider-source-v10.npz`, `_SourceModelV10`):
+  preserves unadapted MIT `CommFor @ 384` `[cls, valid_patch_mean]` logits on
+  Branch A while adding 4-layer `RINE` gating, 3-teacher logit distillation
+  (`CommFor-MIT` + `DINOv2-Reg4-Base` + `SigLIP2-Base`), a `3x3` 2D spatial
+  patch head (`patch_clean_24x24`, `patch_gfx_24x24`), and `24-d` Sub-Center
+  ArcFace + `10` provider prototypes on Branch B (`VIT_LAYOUT_V10`, `66-d`),
+  fused via `117-d` global detection, `39-d` `_LocalEditHeadV9` spatial anomaly
+  detection, coordinate-routed `384x384` `1:1` Pass-2 tiles, and `209-d`
+  open-set provider attribution.
+- `multi-provider-source-v9` (`512-d` + embedded `DINOv2-Reg4-Small @ 392`
+  `65-d` weight-fp16 ONNX, legacy schema, `_SourceModelV9`): aspect-preserving
+  reflection-padded `392x392` `28x28` patch layout (`VIT_LAYOUT_V9`) with
+  coordinate-routed `1:1` native tiles (`_RoutedTileConfigV9`) and
+  `_LocalEditHeadV9`.
 - `multi-provider-source-v8` (`512-d` + embedded residual-adapted
   `ViT-S/16 @ 384` `59-d` multi-layer + ArcFace + spatial weight-fp16 ONNX,
-  pinned default schema used by `multi-provider-source-v8.npz`,
+  legacy schema used by `multi-provider-source-v8.npz`,
   `_SourceModelV8`): extends the embedded MIT `ViT-S/16 @ 384` ONNX graph
   (`vit_onnx_bytes`) with a zero-initialized parallel residual token adapter
   preserving the generalist `orig_syn` logit (`vit_out[0]`), a multi-layer `RINE`
