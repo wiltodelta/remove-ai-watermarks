@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import wave
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
-import soundfile as sf
 
 import remove_ai_watermarks as raiw
 from remove_ai_watermarks import audio, video, video_invisible, video_seedance, video_wan
@@ -45,6 +45,7 @@ def _make_mp4(path: Path, *, width: int = 64, height: int = 48, fps: int = 12, d
 
 
 def test_wan21_4k_guided_window_preserves_4k_resolution_and_detail() -> None:
+    pytest.importorskip("torch")
     assert video_wan.WAN21_MAX_FRAME_PIXELS == 3840 * 2160
     assert video_wan._wan_guide_size(1920, 1080) is None
     guide_size = video_wan._wan_guide_size(3840, 2160)
@@ -124,8 +125,13 @@ def test_video_all_and_audio_emit_progress_callbacks_and_enforce_audio_duration_
     assert events[0][0] == "preflight"
     assert events[-1] == ("complete", 1.0)
 
+    pytest.importorskip("scipy")
     wav_path = tmp_path / "tone.wav"
-    sf.write(wav_path, np.zeros((16000, 1), dtype=np.float32), 16000)
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 16000)
     with pytest.raises(ValueError, match="max_duration_seconds"):
         audio.remove_audio_invisible(
             wav_path,
