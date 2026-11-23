@@ -494,7 +494,7 @@ def test_perceptual_audio_metrics_phase_invariance_and_markdown_rendering(
         shutil.copyfile(inv_wav, out)
         return SimpleNamespace(
             output=out,
-            method="focalcodec",
+            method="dac",
             before=SimpleNamespace(watermark_status="detected"),
             after=SimpleNamespace(watermark_status="not_detected"),
             skipped=False,
@@ -512,7 +512,7 @@ def test_perceptual_audio_metrics_phase_invariance_and_markdown_rendering(
         source_sha256=sha256_file(src_wav),
         output_suffix=".wav",
         expected_outcome="verified_removed",
-        method="focalcodec",
+        method="dac",
     )
     delivered_dir = tmp_path / "delivered"
     delivered_dir.mkdir()

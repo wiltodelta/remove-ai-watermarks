@@ -71,5 +71,9 @@ def test_no_tracked_code_matches_the_scanner_dynamic_execution_rule() -> None:
     ).stdout.split()
     assert tracked
     rule = re.compile(r"\beval\s*\(")
-    offenders = [name for name in tracked if rule.search((ROOT / name).read_text(encoding="utf-8", errors="ignore"))]
+    offenders = [
+        name
+        for name in tracked
+        if (ROOT / name).is_file() and rule.search((ROOT / name).read_text(encoding="utf-8", errors="ignore"))
+    ]
     assert offenders == []

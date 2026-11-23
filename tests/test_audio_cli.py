@@ -61,17 +61,17 @@ def test_forced_unverified_processing_has_a_structured_result(tmp_path):
     assert output.is_file()
 
 
-def test_bigvgan_cli_routes_device_and_retains_unverified_report(tmp_path, monkeypatch):
+def test_dac_cli_routes_device_and_retains_unverified_report(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
     calls = []
-    monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
 
-    def process(samples, rate, *, device, local_files_only):
+    def process(samples, rate, *, device="cpu", local_files_only=False):
         calls.append((samples.shape, rate, device, local_files_only))
         return samples
 
-    monkeypatch.setattr(audio.audio_vocoder, "resynthesize", process)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", process)
     result = CliRunner().invoke(
         main,
         [
@@ -79,7 +79,7 @@ def test_bigvgan_cli_routes_device_and_retains_unverified_report(tmp_path, monke
             "invisible",
             str(_source(tmp_path)),
             "--method",
-            "bigvgan",
+            "dac",
             "--vocoder-device",
             "mps",
             "--force",
@@ -90,7 +90,7 @@ def test_bigvgan_cli_routes_device_and_retains_unverified_report(tmp_path, monke
     assert result.exit_code == 0, result.output
     assert calls == [((16000, 1), 16000, "mps", False)]
     report = json.loads(result.output)
-    assert report["method"] == "bigvgan"
+    assert report["method"] == "dac"
     assert report["vocoder_device"] == "mps"
     assert report["verified_removed"] is None
 
@@ -154,105 +154,38 @@ def test_codec_method_reports_its_missing_extra(tmp_path, monkeypatch):
     assert not output.exists()
 
 
-@pytest.mark.parametrize("scheme", ["silentcipher", "silentcipher16"])
-def test_silentcipher_selection_keeps_a_short_source_unverified(tmp_path, monkeypatch, scheme):
-    from remove_ai_watermarks._internal import silentcipher, silentcipher16
+def test_silentcipher_selection_keeps_a_short_source_unverified(tmp_path, monkeypatch):
+    from remove_ai_watermarks._internal import silentcipher
 
-    backend = silentcipher16 if scheme == "silentcipher16" else silentcipher
-    monkeypatch.setattr(backend, "is_available", lambda: True)
-    monkeypatch.setattr(backend, "load_model", object)
-    result = CliRunner().invoke(main, ["audio", "identify", str(_source(tmp_path)), "--scheme", scheme, "--json"])
+    monkeypatch.setattr(silentcipher, "is_available", lambda: True)
+    monkeypatch.setattr(silentcipher, "load_model", object)
+    result = CliRunner().invoke(
+        main, ["audio", "identify", str(_source(tmp_path)), "--scheme", "silentcipher", "--json"]
+    )
     assert result.exit_code == 0, result.output
     report = json.loads(result.output)
     assert report["watermark_status"] == "unverified"
-    assert report["detections"][0]["scheme"] == scheme
-    if scheme == "silentcipher16":
-        assert report["detections"][0]["decoder_sample_rate"] == 16000
+    assert report["detections"][0]["scheme"] == "silentcipher"
     assert "three seconds" in report["detections"][0]["whole_clip_error"]
 
 
-def test_mimi_cli_routes_device_and_retains_unverified_report(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-
-    calls = []
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-
-    def process(samples, rate, *, local_files_only):
-        calls.append((samples.shape, rate, "cpu", local_files_only))
-        return samples
-
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", process)
-    result = CliRunner().invoke(
-        main,
-        [
-            "audio",
-            "invisible",
-            str(_source(tmp_path)),
-            "--method",
-            "mimi",
-            "--vocoder-device",
-            "cpu",
-            "--force",
-            "--no-verify",
-            "--json",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert calls == [((16000, 1), 16000, "cpu", False)]
-    report = json.loads(result.output)
-    assert report["method"] == "mimi"
-    assert report["vocoder_device"] == "cpu"
-    assert report["verified_removed"] is None
-
-
-def test_focalcodec_cli_routes_device_and_retains_unverified_report(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-
-    calls = []
-    monkeypatch.setattr(audio.audio_focalcodec, "is_available", lambda: True)
-
-    def process(samples, rate, *, local_files_only):
-        calls.append((samples.shape, rate, "cpu", local_files_only))
-        return samples
-
-    monkeypatch.setattr(audio.audio_focalcodec, "resynthesize", process)
-    result = CliRunner().invoke(
-        main,
-        [
-            "audio",
-            "invisible",
-            str(_source(tmp_path)),
-            "--method",
-            "focalcodec",
-            "--vocoder-device",
-            "cpu",
-            "--force",
-            "--no-verify",
-            "--json",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert calls == [((16000, 1), 16000, "cpu", False)]
-    report = json.loads(result.output)
-    assert report["method"] == "focalcodec"
-    assert report["vocoder_device"] == "cpu"
-    assert report["verified_removed"] is None
-
-
-def test_mimi_choices_align_cli_shared_catalog_and_legacy_mcp():
+def test_audio_method_choices_align_cli_shared_catalog_and_legacy_mcp():
     from remove_ai_watermarks import integration, mcp_server
 
     operations = integration.operation_catalog()
     for name in ["cli_audio_invisible", "cli_video_audio"]:
         operation = next(o for o in operations if o["id"] == name)
         method = next(p for p in operation["parameters"] if p["name"] == "method")
-        assert "mimi" in method["schema"]["enum"]
-        assert "focalcodec" in method["schema"]["enum"]
-        assert "experimental" in method["schema"]["description"]
+        assert "dac" in method["schema"]["enum"]
+        assert "snac" in method["schema"]["enum"]
+        assert "mimi" not in method["schema"]["enum"]
+        assert "focalcodec" not in method["schema"]["enum"]
+        assert "bigvgan" not in method["schema"]["enum"]
     for name in ["audio_invisible", "video_audio"]:
         tool = next(t for t in mcp_server.TOOLS if t["name"] == name)
-        assert "mimi" in tool["inputSchema"]["properties"]["method"]["enum"]
-        assert "focalcodec" in tool["inputSchema"]["properties"]["method"]["enum"]
+        assert "dac" in tool["inputSchema"]["properties"]["method"]["enum"]
+        assert "snac" in tool["inputSchema"]["properties"]["method"]["enum"]
+        assert "mimi" not in tool["inputSchema"]["properties"]["method"]["enum"]
 
 
 def test_audio_metadata_all_and_batch_cli_commands(tmp_path, monkeypatch):
@@ -261,7 +194,7 @@ def test_audio_metadata_all_and_batch_cli_commands(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
     from remove_ai_watermarks._internal import audio_io
 
-    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
     monkeypatch.setattr(audio.audioseal, "available", lambda: False)
 

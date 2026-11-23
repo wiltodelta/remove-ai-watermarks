@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from remove_ai_watermarks._internal.constants import (
     ISOBMFF_VIDEO_EXTENSIONS,
+    VIDEO_EXTENSIONS,
     VIDEO_INVISIBLE_PROFILES,
     VIDEO_PROFILE_ALIASES,
     WAN_EXPERIMENTAL_PROFILES,
@@ -47,7 +48,8 @@ if TYPE_CHECKING:
     from remove_ai_watermarks.video_visible import VideoScan
     from remove_ai_watermarks.video_wan import VideoWanRuntime
 
-VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".flv"})
+# Re-exported from _internal.constants for callers importing VIDEO_EXTENSIONS from video.
+_VIDEO_EXTENSIONS_EXPORT: frozenset[str] = VIDEO_EXTENSIONS
 VIDEO_VISIBLE_MARKS = (
     "sora",
     "veo",
@@ -73,9 +75,8 @@ _ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = ISOBMFF_VIDEO_EXTENSIONS
 _EBML_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".webm", ".mkv"})
 _RIFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".avi"})
 _FLV_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".flv"})
-_REGENERATED_VIDEO_EXTENSIONS: frozenset[str] = frozenset({*_ISOBMFF_VIDEO_EXTENSIONS, ".mkv", ".webm"})
+_REGENERATED_VIDEO_EXTENSIONS: frozenset[str] = VIDEO_EXTENSIONS
 _EXPECTED_REGENERATED_VIDEO_EXTENSIONS = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
-_EXPECTED_WAN_VIDEO_EXTENSIONS = ", ".join(sorted(_ISOBMFF_VIDEO_EXTENSIONS))
 
 
 def _require_video_runtime() -> None:
@@ -1237,7 +1238,7 @@ def _resolve_video_invisible_profile(
         from remove_ai_watermarks import video_wan
 
         can_wan = video_wan.can_run_wan_on_source(source_path, device=device, runtime=runtime, for_auto=True)
-        if not can_wan and (seed != 0 or source_path.suffix.lower() != ".mp4"):
+        if not can_wan and seed != 0:
             resolved = "synthid"
         else:
             from remove_ai_watermarks.metadata import get_ai_metadata
@@ -1476,21 +1477,8 @@ def remove_video_all(
                 )
     explicit_invisible = include_invisible is True
     auto_invisible = include_invisible == "auto"
-    norm_invisible_profile = _normalize_video_profile(invisible_profile)
-    if (
-        explicit_invisible
-        and norm_invisible_profile == "seedance-experimental"
-        and source_path.suffix.lower() != ".mp4"
-    ):
-        raise ValueError("Seedance processing requires MP4 input")
-    if (
-        explicit_invisible
-        and norm_invisible_profile in WAN_EXPERIMENTAL_PROFILES
-        and source_path.suffix.lower() not in _ISOBMFF_VIDEO_EXTENSIONS
-    ):
-        raise ValueError(f"Wan 2.1 processing requires one of: {_EXPECTED_WAN_VIDEO_EXTENSIONS}")
     if explicit_invisible and source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
-        raise ValueError(f"Video SynthID regeneration requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
+        raise ValueError(f"Video invisible regeneration requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
     from remove_ai_watermarks.audio import normalize_audio_vendor
 
     preflight_befores: tuple[AudioProvenanceReport, ...] = ()
@@ -2048,13 +2036,7 @@ def remove_video_batch(
                     else:
                         norm_prof = _normalize_video_profile(invisible_profile)
                         needs_wan = norm_prof in WAN_EXPERIMENTAL_PROFILES
-                        if norm_prof == "seedance-experimental":
-                            allowed_exts = {".mp4"}
-                        elif needs_wan:
-                            allowed_exts = _ISOBMFF_VIDEO_EXTENSIONS
-                        else:
-                            allowed_exts = _REGENERATED_VIDEO_EXTENSIONS
-                        if source_path.suffix.lower() in allowed_exts:
+                        if source_path.suffix.lower() in _REGENERATED_VIDEO_EXTENSIONS:
                             selected_runtime = _get_batch_runtime("wan" if needs_wan else "vae")
                 all_result = remove_video_all(
                     source_path,
@@ -2311,8 +2293,8 @@ def remove_video_seedance_experimental(
     from remove_ai_watermarks.metadata import get_ai_metadata
 
     source_path = _video_source(source)
-    if source_path.suffix.lower() != ".mp4":
-        raise ValueError("Experimental Seedance processing requires MP4 input")
+    if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
+        raise ValueError(f"Seedance processing requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
     if quality not in {"delivery", "master"}:
         raise ValueError("quality must be delivery or master")
     _require_video_runtime()
@@ -2360,8 +2342,8 @@ def remove_video_wan_experimental(
     from remove_ai_watermarks.metadata import get_ai_metadata
 
     source_path = _video_source(source)
-    if source_path.suffix.lower() not in _ISOBMFF_VIDEO_EXTENSIONS:
-        raise ValueError(f"Experimental Wan 2.1 processing requires one of: {_EXPECTED_WAN_VIDEO_EXTENSIONS}")
+    if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
+        raise ValueError(f"Wan 2.1 processing requires one of: {_EXPECTED_REGENERATED_VIDEO_EXTENSIONS}")
     if profile not in WAN_EXPERIMENTAL_PROFILES:
         raise ValueError("profile must be wan21-synthid-experimental or wan21-seedance-experimental")
     if quality not in {"delivery", "master"}:

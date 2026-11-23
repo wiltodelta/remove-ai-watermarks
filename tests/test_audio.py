@@ -54,68 +54,48 @@ def test_missing_optional_decoder_reports_unverified(tmp_path, monkeypatch):
     assert report.stream.channels == 2
 
 
-def test_bigvgan_delivery_routes_full_track_and_preserves_unverified_scope(tmp_path, monkeypatch):
+def test_dac_delivery_routes_full_track_and_preserves_unverified_scope(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
     calls = []
 
-    def process(samples, sample_rate, *, device, local_files_only):
+    def process(samples, sample_rate, *, device="cpu", local_files_only=False):
         calls.append((samples.shape, sample_rate, device, local_files_only))
         return samples * 0.5
 
-    monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_vocoder, "resynthesize", process)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", process)
     result = audio.remove_audio_invisible(
         _source(tmp_path, frames=16001),
-        tmp_path / "vocoder.wav",
-        method="bigvgan",
+        tmp_path / "dac.wav",
+        method="dac",
         vocoder_device="mps",
         force=True,
         verify=False,
     )
     assert calls == [((16001, 2), 16000, "mps", False)]
-    assert result.method == "bigvgan"
+    assert result.method == "dac"
     assert result.bandwidth_kbps is None
     assert result.verified_removed is None
     assert result.fidelity.frames == 16001
     assert result.fidelity.snr_db == pytest.approx(6.0206, abs=0.001)
-
     assert b"Lavf" not in result.output.read_bytes()
 
 
-def test_bigvgan_still_positive_does_not_replace_output(tmp_path, monkeypatch):
+def test_dac_still_positive_does_not_replace_output(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
     _spectral_detector(monkeypatch, resistant=True)
-    monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_vocoder, "resynthesize", lambda samples, *a, **kw: samples * 0.5)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda samples, *a, **kw: samples * 0.5)
     output = tmp_path / "protected.wav"
     output.write_bytes(b"previous output")
     with pytest.raises(audio.AudioVerificationIncomplete):
-        audio.remove_audio_invisible(_source(tmp_path), output, method="bigvgan")
+        audio.remove_audio_invisible(_source(tmp_path), output, method="dac")
     assert output.read_bytes() == b"previous output"
 
 
-@pytest.mark.parametrize("channels", [1, 2])
-def test_bigvgan_full_track_limit_stops_and_closes_before_model(monkeypatch, channels):
-    from remove_ai_watermarks import audio
-
-    closed = []
-    monkeypatch.setattr(audio.audio_vocoder, "resynthesize", lambda *a, **kw: pytest.fail("model must not run"))
-
-    def chunks():
-        try:
-            yield np.zeros((299, channels), dtype=np.float32)
-            yield np.zeros((2, channels), dtype=np.float32)
-        finally:
-            closed.append(True)
-
-    with pytest.raises(ValueError, match="30 seconds"):
-        list(audio._vocode_full_track(chunks(), 10, "cpu"))
-    assert closed == [True]
-
-
-def test_bigvgan_rejects_two_channels_that_are_not_a_stereo_pair(tmp_path, monkeypatch):
+def test_dac_rejects_two_channels_that_are_not_a_stereo_pair(tmp_path, monkeypatch):
     from dataclasses import replace
 
     from remove_ai_watermarks import audio
@@ -124,33 +104,31 @@ def test_bigvgan_rejects_two_channels_that_are_not_a_stereo_pair(tmp_path, monke
     before = audio.identify_audio(source, check_invisible=False)
     before = replace(before, stream=replace(before.stream, channel_layout="2 channels (FC+LFE)"))
     monkeypatch.setattr(audio, "identify_audio", lambda *a, **kw: before)
-    monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_vocoder, "resynthesize", lambda *a, **kw: pytest.fail("model must not run"))
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda *a, **kw: pytest.fail("model must not run"))
     output = tmp_path / "protected.wav"
     output.write_bytes(b"previous output")
-    with pytest.raises(ValueError, match="mono or stereo channel layout"):
-        audio.remove_audio_invisible(source, output, method="bigvgan", force=True, verify=False)
+    with pytest.raises(ValueError, match="channel layout"):
+        audio.remove_audio_invisible(source, output, method="dac", force=True, verify=False)
     assert output.read_bytes() == b"previous output"
 
 
-def test_bigvgan_missing_base_stack_names_the_complete_processing_extra(tmp_path, monkeypatch):
+def test_dac_missing_base_stack_names_the_complete_processing_extra(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
     monkeypatch.setattr(audio.audio_io, "is_available", lambda: False)
-    with pytest.raises(ImportError, match="audio-vocoder"):
-        audio.remove_audio_invisible(
-            _source(tmp_path), tmp_path / "out.wav", method="bigvgan", force=True, verify=False
-        )
+    with pytest.raises(ImportError, match="audio-codec"):
+        audio.remove_audio_invisible(_source(tmp_path), tmp_path / "out.wav", method="dac", force=True, verify=False)
 
 
-def test_bigvgan_missing_stack_preserves_existing_output(tmp_path, monkeypatch):
+def test_dac_missing_stack_preserves_existing_output(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
-    monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: False)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: False)
     output = tmp_path / "protected.wav"
     output.write_bytes(b"previous output")
-    with pytest.raises(ImportError, match="audio-vocoder"):
-        audio.remove_audio_invisible(_source(tmp_path), output, method="bigvgan", force=True, verify=False)
+    with pytest.raises(ImportError, match="audio-codec"):
+        audio.remove_audio_invisible(_source(tmp_path), output, method="dac", force=True, verify=False)
     assert output.read_bytes() == b"previous output"
 
 
@@ -253,7 +231,6 @@ def test_all_schemes_cannot_be_negative_with_an_unavailable_decoder(tmp_path, mo
     monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
     monkeypatch.setattr(audio.perth, "is_available", lambda: False)
     monkeypatch.setattr(audio.silentcipher, "is_available", lambda: False)
-    monkeypatch.setattr(audio.silentcipher16, "is_available", lambda: False)
     output = tmp_path / "processed.wav"
     output.write_bytes(b"existing output")
     with pytest.raises(audio.AudioVerificationIncomplete) as caught:
@@ -266,53 +243,11 @@ def test_all_schemes_cannot_be_negative_with_an_unavailable_decoder(tmp_path, mo
         "wavmark",
         "perth",
         "silentcipher",
-        "silentcipher16",
     ]
     assert output.read_bytes() == b"existing output"
 
 
-@pytest.mark.parametrize("rate", [16000, 44100, 48000])
-def test_silentcipher16_delivery_checks_native_windows_and_reports_ternary_symbols(tmp_path, monkeypatch, rate):
-    from remove_ai_watermarks import audio
-    from remove_ai_watermarks._internal import silentcipher16
-
-    lengths = []
-
-    def read(_model, samples, *, sample_rate):
-        assert sample_rate == rate
-        lengths.append(len(samples))
-        assert len(samples) >= 3 * rate
-        t = np.arange(len(samples)) / rate
-        found = abs(2 * np.mean(samples * np.exp(-2j * np.pi * 1250 * t))) > 0.01
-        return silentcipher16.SilentCipher16Reading(
-            (0, 1, 2, 0, 2, 1, 0) if found else None, float(found), 0, 103, "cpu"
-        )
-
-    monkeypatch.setattr(silentcipher16, "is_available", lambda: True)
-    monkeypatch.setattr(silentcipher16, "load_model", object)
-    monkeypatch.setattr(silentcipher16, "read", read)
-    result = audio.remove_audio_invisible(
-        _source(tmp_path, frames=3 * rate + 31, rate=rate),
-        tmp_path / "processed.wav",
-        scheme="silentcipher16",
-        method="spectral",
-    )
-    assert result.verified_removed is True
-    assert result.verification_scope == ("silentcipher16",)
-    assert result.before.detections[0].whole_clip.payload_symbols == (0, 1, 2, 0, 2, 1, 0)
-    assert result.before.detections[0].whole_clip.framing == "terminated8"
-    assert result.after.stream.sample_rate == rate
-    assert result.fidelity.frames == 3 * rate + 31
-    for detection in result.after.detections:
-        assert detection.whole_clip.framing == "terminated8"
-        assert detection.scheme == "silentcipher16"
-        assert detection.decoder_sample_rate == 16000
-        assert detection.windows[-1].start_frame == 31
-        assert detection.windows[-1].end_frame == 3 * rate + 31
-    assert min(lengths) == 3 * rate
-
-
-def test_all_requires_silentcipher16_even_when_every_other_receiver_is_negative(tmp_path, monkeypatch):
+def test_all_requires_silentcipher_even_when_every_other_receiver_is_negative(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
     _spectral_detector(monkeypatch)
@@ -324,21 +259,20 @@ def test_all_requires_silentcipher16_even_when_every_other_receiver_is_negative(
         reading = {
             "wavmark": audio.wavmark.WavMarkReading(None, ()),
             "perth": audio.perth.PerthReading(0.0),
-            "silentcipher": audio.silentcipher.SilentCipherReading(None, 0.4, None, 205, "cpu"),
         }[scheme]
         window = audio.AudioWindowReading(0, 3 * info.sample_rate, reading)
         return (audio.AudioDetection(scheme, 0, "not_detected", reading, (window,)),), ()
 
     monkeypatch.setattr(audio, "_scan_audio", scan)
-    for backend in [audio.wavmark, audio.perth, audio.silentcipher]:
+    for backend in [audio.wavmark, audio.perth]:
         monkeypatch.setattr(backend, "is_available", lambda: True)
-    monkeypatch.setattr(audio.silentcipher16, "is_available", lambda: False)
+    monkeypatch.setattr(audio.silentcipher, "is_available", lambda: False)
     output = tmp_path / "processed.wav"
     output.write_bytes(b"existing output")
     with pytest.raises(audio.AudioVerificationIncomplete) as caught:
         audio.remove_audio_invisible(_source(tmp_path, frames=48000), output, scheme="all", method="spectral")
     assert caught.value.after.watermark_status == "unverified"
-    assert caught.value.after.detections[-1].scheme == "silentcipher16"
+    assert caught.value.after.detections[-1].scheme == "silentcipher"
     assert caught.value.after.detections[-1].status == "unverified"
     assert output.read_bytes() == b"existing output"
 
@@ -532,178 +466,13 @@ def test_short_silentcipher_source_stays_unverified_and_preserves_output(tmp_pat
     assert output.read_bytes() == b"existing"
 
 
-def test_mimi_delivery_routes_full_track_and_preserves_unverified_scope(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-
-    calls = []
-
-    def process(samples, sample_rate, *, local_files_only):
-        calls.append((samples.shape, sample_rate, "cpu", local_files_only))
-        return samples * 0.5
-
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", process)
-    result = audio.remove_audio_invisible(
-        _source(tmp_path, frames=16001),
-        tmp_path / "vocoder.wav",
-        method="mimi",
-        vocoder_device="cpu",
-        force=True,
-        verify=False,
-    )
-    assert calls == [((16001, 2), 16000, "cpu", False)]
-    assert result.method == "mimi"
-    assert result.bandwidth_kbps is None
-    assert result.verified_removed is None
-    assert result.fidelity.frames == 16001
-    assert result.fidelity.snr_db == pytest.approx(6.0206, abs=0.001)
-
-    assert b"Lavf" not in result.output.read_bytes()
-
-
-def test_mimi_still_positive_does_not_replace_output(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-
-    _spectral_detector(monkeypatch, resistant=True)
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda samples, *a, **kw: samples * 0.5)
-    output = tmp_path / "protected.wav"
-    output.write_bytes(b"previous output")
-    with pytest.raises(audio.AudioVerificationIncomplete):
-        audio.remove_audio_invisible(_source(tmp_path), output, method="mimi")
-    assert output.read_bytes() == b"previous output"
-
-
-def test_mimi_rejects_two_channels_that_are_not_a_stereo_pair(tmp_path, monkeypatch):
-    from dataclasses import replace
-
-    from remove_ai_watermarks import audio
-
-    source = _source(tmp_path)
-    before = audio.identify_audio(source, check_invisible=False)
-    before = replace(before, stream=replace(before.stream, channel_layout="2 channels (FC+LFE)"))
-    monkeypatch.setattr(audio, "identify_audio", lambda *a, **kw: before)
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda *a, **kw: pytest.fail("model must not run"))
-    output = tmp_path / "protected.wav"
-    output.write_bytes(b"previous output")
-    with pytest.raises(ValueError, match="mono or stereo channel layout"):
-        audio.remove_audio_invisible(source, output, method="mimi", force=True, verify=False)
-    assert output.read_bytes() == b"previous output"
-
-
-def test_mimi_missing_base_stack_names_the_complete_processing_extra(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-
-    monkeypatch.setattr(audio.audio_io, "is_available", lambda: False)
-    with pytest.raises(ImportError, match="audio-codec"):
-        audio.remove_audio_invisible(_source(tmp_path), tmp_path / "out.wav", method="mimi", force=True, verify=False)
-
-
-def test_mimi_missing_stack_preserves_existing_output(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: False)
-    output = tmp_path / "protected.wav"
-    output.write_bytes(b"previous output")
-    with pytest.raises(ImportError, match="audio-codec"):
-        audio.remove_audio_invisible(_source(tmp_path), output, method="mimi", force=True, verify=False)
-    assert output.read_bytes() == b"previous output"
-
-
-@pytest.mark.parametrize("limit", ["seconds", "values"])
-def test_mimi_full_track_limit_closes_before_model(monkeypatch, limit):
-    from remove_ai_watermarks import audio
-
-    closed = []
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda *a, **k: pytest.fail("model must not run"))
-    if limit == "values":
-        monkeypatch.setattr(audio, "_MAX_WHOLE_VALUES", 4)
-
-    def chunks():
-        try:
-            yield np.zeros((301 if limit == "seconds" else 3, 2), dtype=np.float32)
-        finally:
-            closed.append(True)
-
-    with pytest.raises(ValueError, match="30 seconds and 16000000"):
-        list(audio._mimi_full_track(chunks(), 10))
-    assert closed == [True]
-
-
-def test_mimi_is_explicit_cpu_only_and_not_in_auto(tmp_path):
-    from remove_ai_watermarks import audio
-
-    assert all("mimi" not in profiles for profiles in audio._AUTO_PROFILES.values())
-    assert all("focalcodec" not in profiles for profiles in audio._AUTO_PROFILES.values())
-    with pytest.raises(ValueError, match="requires method=bigvgan"):
-        audio.remove_audio_invisible(_source(tmp_path), tmp_path / "out.wav", method="mimi", vocoder_device="mps")
-    with pytest.raises(ValueError, match="requires method=bigvgan"):
-        audio.remove_audio_invisible(_source(tmp_path), tmp_path / "out.wav", method="focalcodec", vocoder_device="mps")
-
-
-def test_focalcodec_delivery_and_still_positive_safeguard(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-
-    calls = []
-
-    def process(samples, sample_rate, *, local_files_only):
-        calls.append((samples.shape, sample_rate, local_files_only))
-        return samples * 0.5
-
-    monkeypatch.setattr(audio.audio_focalcodec, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_focalcodec, "resynthesize", process)
-    result = audio.remove_audio_invisible(
-        _source(tmp_path, frames=16001),
-        tmp_path / "focal.wav",
-        method="focalcodec",
-        vocoder_device="cpu",
-        force=True,
-        verify=False,
-    )
-    assert calls == [((16001, 2), 16000, False)]
-    assert result.method == "focalcodec"
-    assert result.bandwidth_kbps is None
-    assert result.verified_removed is None
-    assert result.fidelity.frames == 16001
-    assert b"Lavf" not in result.output.read_bytes()
-
-    _spectral_detector(monkeypatch, resistant=True)
-    protected = tmp_path / "protected_focal.wav"
-    protected.write_bytes(b"previous output")
-    with pytest.raises(audio.AudioVerificationIncomplete):
-        audio.remove_audio_invisible(_source(tmp_path), protected, method="focalcodec")
-    assert protected.read_bytes() == b"previous output"
-
-
-def test_focalcodec_missing_stack_and_channel_layout_guards(tmp_path, monkeypatch):
-    from dataclasses import replace
-
-    from remove_ai_watermarks import audio
-
-    monkeypatch.setattr(audio.audio_focalcodec, "is_available", lambda: False)
-    with pytest.raises(ImportError, match="audio-codec"):
-        audio.remove_audio_invisible(
-            _source(tmp_path), tmp_path / "out.wav", method="focalcodec", force=True, verify=False
-        )
-
-    source = _source(tmp_path)
-    before = audio.identify_audio(source, check_invisible=False)
-    before = replace(before, stream=replace(before.stream, channel_layout="2 channels (FC+LFE)"))
-    monkeypatch.setattr(audio, "identify_audio", lambda *a, **kw: before)
-    monkeypatch.setattr(audio.audio_focalcodec, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_focalcodec, "resynthesize", lambda *a, **kw: pytest.fail("model must not run"))
-    with pytest.raises(ValueError, match="FocalCodec requires a mono or stereo channel layout"):
-        audio.remove_audio_invisible(source, tmp_path / "out.wav", method="focalcodec", force=True, verify=False)
-
-
-def test_mimi_source_change_rejected_after_resynthesis(tmp_path, monkeypatch):
+def test_dac_source_change_rejected_after_resynthesis(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
     source = _source(tmp_path)
     output = tmp_path / "protected.wav"
     output.write_bytes(b"existing output")
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
 
     def process(samples, *a, **kw):
         data = bytearray(source.read_bytes())
@@ -711,17 +480,17 @@ def test_mimi_source_change_rejected_after_resynthesis(tmp_path, monkeypatch):
         source.write_bytes(data)
         return samples
 
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", process)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", process)
     with pytest.raises(RuntimeError, match="source changed"):
-        audio.remove_audio_invisible(source, output, method="mimi", force=True, verify=False)
+        audio.remove_audio_invisible(source, output, method="dac", force=True, verify=False)
     assert output.read_bytes() == b"existing output"
 
 
-def test_mimi_flac_uses_separate_non_bitexact_encoding(tmp_path, monkeypatch):
+def test_dac_flac_uses_separate_non_bitexact_encoding(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda samples, *a, **k: samples)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda samples, *a, **k: samples)
     real = audio.audio_io.write_audio
     calls = []
 
@@ -731,7 +500,7 @@ def test_mimi_flac_uses_separate_non_bitexact_encoding(tmp_path, monkeypatch):
 
     monkeypatch.setattr(audio.audio_io, "write_audio", write)
     result = audio.remove_audio_invisible(
-        _source(tmp_path), tmp_path / "mimi.flac", method="mimi", force=True, verify=False
+        _source(tmp_path), tmp_path / "dac.flac", method="dac", force=True, verify=False
     )
     assert calls == [(".flac", False)]
     assert result.frames_processed == 16000
@@ -776,13 +545,13 @@ def test_audio_quality_gate_rejects_silent_erasure_and_clipping_unless_forced(tm
     protected = tmp_path / "protected.wav"
     protected.write_bytes(b"existing output")
 
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda samples, *a, **k: np.zeros_like(samples))
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda samples, *a, **k: np.zeros_like(samples))
     with pytest.raises(audio.AudioVerificationIncomplete, match="quality gate"):
-        audio.remove_audio_invisible(source, protected, method="mimi")
+        audio.remove_audio_invisible(source, protected, method="dac")
     assert protected.read_bytes() == b"existing output"
 
-    forced_silent = audio.remove_audio_invisible(source, tmp_path / "forced_silent.wav", method="mimi", force=True)
+    forced_silent = audio.remove_audio_invisible(source, tmp_path / "forced_silent.wav", method="dac", force=True)
     assert forced_silent.verified_removed is True
     assert forced_silent.quality_passed is False
 
@@ -799,12 +568,12 @@ def test_audio_quality_gate_rejects_silent_erasure_and_clipping_unless_forced(tm
         expected_frames=src_pcm.shape[0],
     )
     monkeypatch.setattr(
-        audio.audio_mimi,
+        audio.audio_dac,
         "resynthesize",
         lambda samples, rate, *a, **k: next(audio.audio_spectral.filter_audio_chunks(iter([samples]), rate)) * 8.0,
     )
     with pytest.raises(audio.AudioVerificationIncomplete, match="quality gate"):
-        audio.remove_audio_invisible(float_source, protected, method="mimi")
+        audio.remove_audio_invisible(float_source, protected, method="dac")
     assert protected.read_bytes() == b"existing output"
 
 
@@ -812,7 +581,7 @@ def test_missing_decoder_under_all_names_install_extra(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
 
     _spectral_detector(monkeypatch)
-    for backend in (audio.wavmark, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
     monkeypatch.setattr(audio.perth, "is_available", lambda: False)
     with pytest.raises(audio.AudioVerificationIncomplete, match=r"remove-ai-watermarks\[audio-perth\]"):
@@ -823,7 +592,7 @@ def test_scheme_auto_scans_installed_decoders_and_selects_adaptive_minimal_profi
     from remove_ai_watermarks import audio
 
     _spectral_detector(monkeypatch)
-    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
 
     # Unlike scheme="all" (which marks missing optional decoders as unverified),
@@ -875,7 +644,7 @@ def test_audio_metadata_all_and_batch_suites(tmp_path, monkeypatch):
     from remove_ai_watermarks._internal import audio_io
 
     _spectral_detector(monkeypatch)
-    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
 
     marked_wav = _source(tmp_path)
@@ -947,16 +716,10 @@ def test_auto_scheme_skips_experimental_silentcipher_and_short_clip_wavmark_unve
     monkeypatch.setattr(audio.wavmark, "load_model", object)
     monkeypatch.setattr(audio.perth, "is_available", lambda: False)
     monkeypatch.setattr(audio.silentcipher, "is_available", lambda: True)
-    monkeypatch.setattr(audio.silentcipher16, "is_available", lambda: True)
     monkeypatch.setattr(
         audio.silentcipher,
         "load_model",
         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("experimental silentcipher must not run under auto")),
-    )
-    monkeypatch.setattr(
-        audio.silentcipher16,
-        "load_model",
-        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("experimental silentcipher16 must not run under auto")),
     )
 
     short_wav = _source(tmp_path, frames=12800)  # 0.8s < 1.0s WavMark minimum window

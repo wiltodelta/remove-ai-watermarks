@@ -14,16 +14,12 @@ from remove_ai_watermarks import metadata
 from remove_ai_watermarks._internal import (
     audio_codec,
     audio_dac,
-    audio_focalcodec,
     audio_io,
-    audio_mimi,
     audio_snac,
     audio_spectral,
-    audio_vocoder,
     audioseal,
     perth,
     silentcipher,
-    silentcipher16,
     wavmark,
 )
 from remove_ai_watermarks._internal.audio_quality import (
@@ -64,14 +60,13 @@ from remove_ai_watermarks._internal.constants import (
 
 log = logging.getLogger(__name__)
 AudioWatermarkStatus = Literal["detected", "not_detected", "unverified"]
-_NAMED_SCHEMES = ("audioseal", "wavmark", "perth", "silentcipher", "silentcipher16")
+_NAMED_SCHEMES = ("audioseal", "wavmark", "perth", "silentcipher")
 _AUTO_SCHEMES = ("audioseal", "wavmark", "perth")
 _AUTO_PROFILES: dict[AudioScheme, tuple[AudioProfile, ...]] = {
     "audioseal": ("spectral", "combined"),
     "wavmark": ("encodec", "combined"),
     "perth": ("spectral", "combined"),
     "silentcipher": ("encodec", "combined"),
-    "silentcipher16": ("encodec", "combined"),
     "all": ("combined",),
     "auto": ("spectral", "combined"),
 }
@@ -81,7 +76,6 @@ AudioModelReading = (
     | wavmark.WavMarkSignatureReading
     | perth.PerthReading
     | silentcipher.SilentCipherReading
-    | silentcipher16.SilentCipher16Reading
 )
 _MAX_WHOLE_SECONDS = 30
 _MAX_WHOLE_VALUES = 16_000_000
@@ -282,10 +276,9 @@ def _model_samples(samples: NDArray[Any], sample_rate: int) -> NDArray[Any]:
 def _read_model(
     model: Any, samples: NDArray[Any], rate: int, scheme: str, *, native_audioseal: bool = False
 ) -> tuple[AudioModelReading | None, str | None, bool]:
-    if scheme in {"silentcipher", "silentcipher16"}:
-        backend = silentcipher16 if scheme == "silentcipher16" else silentcipher
+    if scheme == "silentcipher":
         try:
-            return backend.read(model, samples, sample_rate=rate), None, False
+            return silentcipher.read(model, samples, sample_rate=rate), None, False
         except (RuntimeError, ValueError) as exc:
             log.warning(
                 "SilentCipher check failed: scheme=%s sample_rate=%s sample_count=%s error=%s",
@@ -398,7 +391,6 @@ def _scan_audio_at_clock(
         "wavmark": wavmark.load_model,
         "perth": perth.load_model,
         "silentcipher": silentcipher.load_model,
-        "silentcipher16": silentcipher16.load_model,
     }[scheme]
     model = loader()
     channels: list[int | Literal["mix"]] = list(range(info.channels))
@@ -408,8 +400,7 @@ def _scan_audio_at_clock(
     segments: dict[int | Literal["mix"], list[AudioWindowReading]] = {channel: [] for channel in channels}
     count = 0
     previous = np.empty((0, info.channels), dtype=np.float32)
-    window_seconds = {"silentcipher": silentcipher.WINDOW_SECONDS, "silentcipher16": silentcipher16.WINDOW_SECONDS}
-    window_frames = info.sample_rate * window_seconds.get(scheme, 1)
+    window_frames = info.sample_rate * (silentcipher.WINDOW_SECONDS if scheme == "silentcipher" else 1)
     max_segment_frames = min(
         _MAX_WHOLE_SECONDS * info.sample_rate,
         max(window_frames, _MAX_WHOLE_VALUES // max(1, info.channels)),
@@ -482,8 +473,6 @@ def _scan_audio_at_clock(
             decoder_rate = info.sample_rate if native_audioseal else audioseal.SAMPLE_RATE
         elif scheme == "silentcipher":
             decoder_rate = silentcipher.SAMPLE_RATE
-        elif scheme == "silentcipher16":
-            decoder_rate = silentcipher16.SAMPLE_RATE
         detections.append(
             AudioDetection(
                 scheme,
@@ -510,18 +499,7 @@ def _scan_audio_at_clock(
             "A matching public-model mark does not identify LTX."
         )
     elif scheme == "silentcipher":
-        caveats.append(
-            "SilentCipher checks use the pinned 44.1 kHz model, including for 16 kHz input audio. "
-            "This receiver excludes the 16 kHz model. Separate silentcipher16 checks cover only an experimental "
-            "terminated eight-symbol pattern, not the incompatible SDK byte API or general 32-bit framing."
-        )
-    elif scheme == "silentcipher16":
-        caveats.append(
-            "SilentCipher-16k checks cover only an experimental terminated eight-symbol pattern. "
-            "payload_symbols contains seven ternary symbols, not bytes. The SDK byte API and general 32-bit "
-            "profile remain unqualified. Known-message recovery failed on exploratory tone and noise carriers. "
-            "A negative does not rule out other framing or certify erasure of every residual payload bit."
-        )
+        caveats.append("SilentCipher checks use the pinned 44.1 kHz model, including for 16 kHz input audio.")
     if multi_segment:
         caveats.append("Long-clip decoding used bounded overlapping segments alongside all sample windows.")
     if any(
@@ -590,18 +568,14 @@ def resolve_audio_device(
     """Resolve ``auto`` to the fastest verified accelerator for neural audio codecs."""
     if requested != "auto":
         return requested
-    if method in {"spectral", "mimi", "focalcodec"}:
+    if method == "spectral":
         return "cpu"
     try:
         import torch
 
         if torch.cuda.is_available():
             return "cuda"
-        if (
-            method in {"dac", "snac", "bigvgan"}
-            and hasattr(torch.backends, "mps")
-            and torch.backends.mps.is_available()
-        ):
+        if method in {"dac", "snac"} and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return "mps"
     except Exception:
         return "cpu"
@@ -648,7 +622,7 @@ def identify_audio(
     scans every installed compatible decoder without requiring absent optional extras.
     """
     if scheme not in _AUTO_PROFILES:
-        raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
+        raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, all, or auto")
     path, info = _source(source, stream)
     digest = sha256_file(path)
     markers = dict(_metadata_markers) if _metadata_markers is not None else metadata.get_ai_metadata(path)
@@ -659,14 +633,12 @@ def identify_audio(
         "wavmark": wavmark.is_available,
         "perth": perth.is_available,
         "silentcipher": silentcipher.is_available,
-        "silentcipher16": silentcipher16.is_available,
     }
     extras = {
         "audioseal": "audio-detect",
         "wavmark": "audio-wavmark",
         "perth": "audio-perth",
         "silentcipher": "audio-silentcipher",
-        "silentcipher16": "audio-silentcipher",
     }
     if not check_invisible:
         caveats.append("Audio watermark decoding was skipped.")
@@ -761,13 +733,7 @@ def verification_outcome(before: AudioProvenanceReport, after: AudioProvenanceRe
 
 def _require_base_audio_runtime(method: str) -> None:
     if not audio_io.is_available() or not audio_spectral.is_available():
-        extra = (
-            "audio-vocoder"
-            if method == "bigvgan"
-            else "audio-codec"
-            if method in {"mimi", "focalcodec", "dac", "snac"}
-            else "audio"
-        )
+        extra = "audio-codec" if method in {"dac", "snac"} else "audio"
         raise ImportError(f"Audio processing requires 'remove-ai-watermarks[{extra}]' and ffmpeg")
 
 
@@ -775,22 +741,16 @@ def require_audio_profile_runtime(method: AudioProfile) -> None:
     """Ensure runtime dependencies for a concrete audio processing profile are installed."""
     if method in {"encodec", "combined"} and not audio_codec.is_available():
         raise ImportError("Neural audio processing requires remove-ai-watermarks[audio-codec]")
-    if method == "mimi" and not audio_mimi.is_available():
-        raise ImportError("Mimi processing requires remove-ai-watermarks[audio-codec]")
-    if method == "focalcodec" and not audio_focalcodec.is_available():
-        raise ImportError("FocalCodec processing requires remove-ai-watermarks[audio-codec]")
     if method == "dac" and not audio_dac.is_available():
         raise ImportError("DAC processing requires remove-ai-watermarks[audio-codec]")
     if method == "snac" and not audio_snac.is_available():
         raise ImportError("SNAC processing requires remove-ai-watermarks[audio-codec]")
-    if method == "bigvgan" and not audio_vocoder.is_available():
-        raise ImportError("BigVGAN processing requires remove-ai-watermarks[audio-vocoder]")
     _require_base_audio_runtime(method)
 
 
 _SURROUND_51_LAYOUTS: frozenset[str] = frozenset({"5.1", "5.1(side)"})
 _SURROUND_71_LAYOUTS: frozenset[str] = frozenset({"7.1", "7.1(wide)", "7.1(wide-side)"})
-_RAW_CODEC_PROFILES: frozenset[str] = frozenset({"bigvgan", "mimi", "focalcodec", "dac", "snac"})
+_RAW_CODEC_PROFILES: frozenset[str] = frozenset({"dac", "snac"})
 
 
 def _is_mono_or_stereo(info: audio_io.AudioStreamInfo) -> bool:
@@ -804,19 +764,11 @@ def _is_tagged_surround(info: audio_io.AudioStreamInfo) -> bool:
 
 
 def validate_audio_stream_for_profile(info: audio_io.AudioStreamInfo, method: AudioProfile) -> None:
-    """Validate channel layout and bounded full-track limits for a selected audio profile."""
+    """Validate channel layout for a selected audio profile."""
     if method in {"dac", "snac"}:
         label = "DAC" if method == "dac" else "SNAC"
         if not (_is_mono_or_stereo(info) or _is_tagged_surround(info)):
             raise ValueError(f"{label} requires a mono or stereo (or tagged 5.1/7.1) channel layout")
-    elif method in {"bigvgan", "mimi", "focalcodec"} and not _is_mono_or_stereo(info):
-        label = {"bigvgan": "BigVGAN", "mimi": "Mimi", "focalcodec": "FocalCodec"}[method]
-        raise ValueError(f"{label} requires a mono or stereo channel layout")
-    if method in {"bigvgan", "mimi"} and info.duration is not None:
-        label = "BigVGAN" if method == "bigvgan" else "Mimi"
-        est_frames = int(info.duration * info.sample_rate)
-        if est_frames > _MAX_WHOLE_SECONDS * info.sample_rate or est_frames * info.channels > _MAX_WHOLE_VALUES:
-            raise ValueError(f"{label} full-track processing is limited to 30 seconds and 16000000 sample values")
 
 
 def normalize_audio_vendor(vendor: str | None) -> str | None:
@@ -857,7 +809,7 @@ def adaptive_auto_profiles(
     detected = {item.scheme for item in before.detections if item.status == "detected"}
     if detected and detected <= {"audioseal", "perth"}:
         return ("spectral", "combined")
-    if detected and detected <= {"wavmark", "silentcipher", "silentcipher16"}:
+    if detected and detected <= {"wavmark", "silentcipher"}:
         return ("encodec", "combined")
     return ("combined",)
 
@@ -896,15 +848,13 @@ def validate_audio_arguments(
     if not verify and not (force or allow_unverified or explicit_vendor is not None):
         raise ValueError("Disabling verification requires force=True or allow_unverified=True")
     if method not in AUDIO_METHODS:
-        raise ValueError(
-            "Audio method must be auto, spectral, encodec, combined, bigvgan, mimi, focalcodec, dac, or snac"
-        )
+        raise ValueError("Audio method must be auto, spectral, encodec, combined, dac, or snac")
     if vocoder_device not in AUDIO_VOCODER_DEVICES:
         raise ValueError("Vocoder device must be auto, cpu, mps, or cuda")
-    if vocoder_device not in {"auto", "cpu"} and method in {"spectral", "mimi", "focalcodec"}:
-        raise ValueError("A non-CPU vocoder device requires method=bigvgan, dac, snac, encodec, combined, or auto")
+    if vocoder_device not in {"auto", "cpu"} and method == "spectral":
+        raise ValueError("A non-CPU vocoder device requires method=dac, snac, encodec, combined, or auto")
     if scheme not in _AUTO_PROFILES:
-        raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, silentcipher16, all, or auto")
+        raise ValueError("Audio scheme must be audioseal, wavmark, perth, silentcipher, all, or auto")
     if method in {"auto", "encodec", "combined"} and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
         raise ValueError("EnCodec bandwidth must be 6, 12, or 24 kbps")
     return _AUTO_PROFILES[scheme] if method == "auto" else (method,)
@@ -964,15 +914,12 @@ def remove_audio_invisible(
     while keeping positive-detection and quality gates active; ``allow_positive=True``
     permits a still-positive output; ``allow_quality_override=True`` overrides a
     failed integrity gate; ``force=True`` remains an alias enabling all three.
-    Output files (.wav, .flac, .mp3, .m4a, .ogg, .opus) discard metadata and
-    preserve channel geometry.
-    Explicit bigvgan, mimi, and focalcodec are experimental bounded full-track
-    raw M/S profiles, excluded from auto; dac is selected by auto only when
-    pre-strip metadata identifies ElevenLabs or Google SynthID. None supplies a
-    SynthID verifier. Mimi, FocalCodec, and DAC use CPU float32 (fixed
-    32-quantizer Mimi; conditioned 50 Hz WavLM-to-Vocos FocalCodec; 3-codebook
-    44.1 kHz DAC); BigVGAN retains its selected device. Codec reconstruction
-    does not guarantee voice identity.
+    Output files (.wav, .flac, .mp3, .m4a, .ogg, .oga, .opus, .aac, .mka)
+    discard metadata and preserve channel geometry.
+    Auto routes ElevenLabs and Google SynthID metadata to DAC (44.1 kHz,
+    3-codebook, with default 14 kHz high-frequency preservation on >= 44.1 kHz
+    tracks) and falls back to SNAC/EnCodec/spectral as configured. Codec
+    reconstruction does not guarantee voice identity.
     """
     explicit_vendor = _normalize_audio_vendor(vendor)
     eff_allow_unverified = allow_unverified or explicit_vendor is not None
@@ -1096,7 +1043,7 @@ def _remove_audio_profile(
     if not verify and not eff_unverified:
         raise ValueError("Disabling verification requires force=True or allow_unverified=True")
     if method not in AUDIO_PROFILES:
-        raise ValueError("Audio method must be spectral, encodec, combined, bigvgan, mimi, focalcodec, dac, or snac")
+        raise ValueError("Audio method must be spectral, encodec, combined, dac, or snac")
     neural = method in {"encodec", "combined"}
     if neural and bandwidth_kbps not in AUDIO_BANDWIDTHS_KBPS:
         raise ValueError("EnCodec bandwidth must be 6, 12, or 24 kbps")
@@ -1184,15 +1131,10 @@ def _remove_audio_profile(
                         stereo_mode=stereo_mode,
                         device=resolved_device,
                     )
-        if method == "bigvgan":
-            transformed = _vocode_full_track(transformed, before.stream.sample_rate, resolved_device)
-        if method == "mimi":
-            transformed = _mimi_full_track(transformed, before.stream.sample_rate)
-        if method == "focalcodec":
-            transformed = _focalcodec_full_track(transformed, before.stream.sample_rate)
         if method == "dac":
+            eff_hf = 14000.0 if (preserve_hf_hz is None and before.stream.sample_rate >= 44100) else preserve_hf_hz
             transformed = _dac_full_track(
-                transformed, before.stream.sample_rate, resolved_device, preserve_hf_hz=preserve_hf_hz
+                transformed, before.stream.sample_rate, resolved_device, preserve_hf_hz=eff_hf
             )
         if method == "snac":
             transformed = _snac_full_track(
@@ -1262,30 +1204,6 @@ def _remove_audio_profile(
 
 missing_decoder_reason = _missing_decoder_reason
 remove_audio_profile = _remove_audio_profile
-
-
-def _vocode_full_track(
-    chunks: Iterator[NDArray[Any]], sample_rate: int, device: Literal["cpu", "mps", "cuda"]
-) -> Iterator[NDArray[Any]]:
-    """Use the bounded collector without changing BigVGAN math or arguments."""
-    samples = _collect_full_track(chunks, sample_rate, "BigVGAN")
-    yield audio_vocoder.resynthesize(samples, sample_rate, device=device, local_files_only=False)
-
-
-def _mimi_full_track(chunks: Iterator[NDArray[Any]], sample_rate: int) -> Iterator[NDArray[Any]]:
-    """Apply the explicit experimental CPU Mimi profile to one complete track."""
-    samples = _collect_full_track(chunks, sample_rate, "Mimi")
-    yield audio_mimi.resynthesize(samples, sample_rate, local_files_only=False)
-
-
-def _focalcodec_full_track(chunks: Iterator[NDArray[Any]], sample_rate: int) -> Iterator[NDArray[Any]]:
-    """Apply the explicit experimental CPU FocalCodec feature profile across short or long tracks."""
-    yield from _stream_neural_track(
-        chunks,
-        sample_rate,
-        "FocalCodec",
-        lambda samples: audio_focalcodec.resynthesize_conditioned(samples, sample_rate, local_files_only=False),
-    )
 
 
 def _lowpass_lfe_channel(lfe: NDArray[Any], sample_rate: int) -> NDArray[Any]:
@@ -1436,7 +1354,8 @@ def _stream_neural_track(
             eof = True
             return False
         if chunk.ndim != 2 or chunk.shape[1] not in allowed_channels:
-            raise ValueError(f"{label} processing requires mono or stereo")
+            expected = "mono, stereo, 5.1, or 7.1" if allow_surround else "mono or stereo"
+            raise ValueError(f"{label} processing requires {expected}")
         if channels is None:
             channels = int(chunk.shape[1])
         elif int(chunk.shape[1]) != channels:
@@ -1511,29 +1430,6 @@ def _stream_neural_track(
         close = getattr(chunks, "close", None)
         if callable(close):
             close()
-
-
-def _collect_full_track(chunks: Iterator[NDArray[Any]], sample_rate: int, label: str) -> NDArray[Any]:
-    """Bound full-track inference and close the producer before invoking a model."""
-    import numpy as np
-
-    collected: list[NDArray[Any]] = []
-    count = 0
-    try:
-        for chunk in chunks:
-            count += len(chunk)
-            if count > _MAX_WHOLE_SECONDS * sample_rate or count * chunk.shape[1] > _MAX_WHOLE_VALUES:
-                raise ValueError(f"{label} full-track processing is limited to 30 seconds and 16000000 sample values")
-            if chunk.shape[1] not in (1, 2):
-                raise ValueError(f"{label} full-track processing requires mono or stereo")
-            collected.append(chunk)
-    finally:
-        close = getattr(chunks, "close", None)
-        if callable(close):
-            close()
-    if not collected:
-        raise ValueError(f"{label} requires nonempty audio")
-    return np.concatenate(collected, axis=0)
 
 
 def _audio_source(source: str | Path) -> Path:

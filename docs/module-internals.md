@@ -231,10 +231,7 @@ the delivered candidate, rather than before encoding.
 ffprobe (falling back to `video_tools.find_video_tool` from
 `portable-ffmpeg-full` when system `PATH` lacks them, shared with
 `_internal/audio_creation.py`), closes producers and child processes on failure,
-and writes atomic `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR + Xing header), `.m4a` (`aac` 192 kbps + faststart), `.ogg`, or `.opus` (`libopus` 192 kbps; RFC 7845 48 kHz resampled back to `info.sample_rate` during `audio_quality.measure_fidelity`) outputs. BigVGAN, Mimi, and FocalCodec WAV outputs select the deterministic bitexact short-RIFF
-writer, omitting encoder tags and RF64 reserve padding. Its size guard runs
-before scanning or encoding a large input view. Other methods retain the
-default RF64-capable writer; FLAC remains a separate encoding and verdict scope.
+and writes atomic `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR + Xing header), `.m4a` (`aac` 192 kbps + faststart), `.ogg`, `.oga`, `.opus` (`libopus` 192 kbps; RFC 7845 48 kHz resampled back to `info.sample_rate` during `audio_quality.measure_fidelity`), `.aac` (`aac` 192 kbps ADTS), or `.mka` (`flac` in Matroska) outputs. WAV outputs default to the RF64-capable writer; FLAC/MKA remain separate encoding and verdict scopes.
 `_internal/audio_spectral.py` applies the fixed zero-phase SOS
 profile with neighboring context at streaming boundaries. `_internal/audioseal.py`
 owns the hash-pinned open-model loader and decoder math; the development
@@ -275,86 +272,39 @@ supports `stereo_mode="ms"` Mid/Side resynthesis on 2-channel inputs (used by `a
 model/resampler padding to retain native frame counts. This implementation is
 separate from development studies using the original EnCodec package.
 
-`_internal/audio_vocoder.py` implements the separately selected experimental
-BigVGAN full-track profile. `_bigvgan_network.py` contains the lazy inference
-architecture; upstream license texts and notices ship in `licenses/bigvgan/`.
-Configuration and weights are revision/hash pinned, loaded with weights-only
-strict state matching. `_internal/audio_resampling.py` preserves the rational
-native half-open sample grid across the 44.1 kHz model clock and explicit model
-context padding. Stereo uses raw mid/side; mono is independent. Public audio
-and selected-video-track processing share this profile, its explicit device,
-30-second/sample-value memory bounds, and existing saved-output local decoder
-gates. It is excluded from `auto`; no clipping, normalization, chunk seams,
-global Torch configuration changes, or device fallback are added. Numerical
-parity is distinct from perceptual quality and provider verification.
-
-`_internal/audio_mimi.py` uses the built-in Transformers Mimi architecture with
-revision/hash-checked configuration and safetensors, strict complete loading,
-fixed 32 quantizers and disabled inference caches. CPU FP32 mono/stereo passes
-remain optional; stereo defaults to raw mid/side. The rational resampler maps
-the exact native duration to 24 kHz and back, without external model padding.
-The official forward method owns decoder-excess prefix selection and must
-return the requested model-grid count. No clipping, normalization or alignment
-is added. Its weight attribution is in `licenses/mimi/NOTICE.txt`. Public audio
-and selected-video-track routes expose it only as an explicit experimental
-method, with the shared full-track bounds and existing saved-output decoder
-gates. Local compatibility and numerical parity do not certify SynthID or
-general voice fidelity.
-
-`_internal/audio_focalcodec.py` and `_internal/_focalcodec_network.py` implement
-the separately selected experimental FocalCodec continuous feature-to-Vocos
-profile (`lucadellalib/focalcodec_50hz@d6d6d9524e52155c85193c2c3b8da1cf8842f019`,
-matching upstream `v0.0.1` `cad8bf81d70875f756770449c34909d8b0951642`,
-Apache-2.0 text and third-party notices in `licenses/focalcodec/`). Config and
-safetensors are revision/hash-checked and strictly loaded across all 355 model
-keys without importing unused `knn` conversion dependencies. Inference runs in
-CPU FP32 without binary spherical quantization (`toks_to_feats(feats_to_toks(...))`
-bypassed in favor of continuous 6-layer WavLM features decoded by FocalDecoder
-and Vocos). `_internal/audio_resampling.py` maps the exact native duration to
-the 16 kHz model grid and back with explicit symmetric `(40, 40)` WavLM context
-samples (`RF=400`, `hop=320`) and raw mid/side stereo; non-multiple frame tails
-pad on the right before cropping back to the exact core sample count.
-`resynthesize_conditioned` preconditions the 1.0-1.5 kHz band, runs FocalCodec
-resynthesis, restores complementary zero-phase Butterworth sub-band 35 Hz
-envelopes (`[0.0, 2.5]` gain clamp), and applies a smooth `tanh` soft-knee peak
-ceiling (`min(max(source_peak, 0.25), 0.96)` when `source_peak <= 1.0`) so
-constructive random-phase sub-band summation cannot push lossy MP3/AAC
-reconstruction past the quality gate. The route remains excluded
-from `auto` and enforces the saved-output decoder gate unless explicitly forced.
-
-`_internal/audio_dac.py` implements the separately selected experimental 44.1 kHz
+`_internal/audio_dac.py` implements the 44.1 kHz
 Descript Audio Codec profile (`descript/dac_44khz@c1bc521685adf9cfe247bc39a5ca58917eda1ac4`,
 MIT weights attributed in `licenses/dac/NOTICE.txt`) using built-in
-`transformers.DacModel` in FP32 on the explicit vocoder device (CPU default;
-`mps` or `cuda` only when available, never a silent fallback; EnCodec takes the
-same device) with SHA-256-verified configuration and
-safetensors, fixed `n_quantizers=3`, rational half-open resampling around the
-44.1 kHz hop-512 grid, raw mid/side stereo decomposition (skipping silent Side
-stems below `1e-5` RMS), stem-level RMS restoration, and `0.999` peak ceiling.
+`transformers.DacModel` in FP32 on the selected vocoder device (`auto` resolves
+to CUDA/MPS when available, else CPU; EnCodec takes the same device) with
+SHA-256-verified configuration and safetensors, fixed `n_quantizers=3`, default
+`preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks, rational half-open resampling
+around the 44.1 kHz hop-512 grid, raw mid/side stereo decomposition (skipping
+silent Side stems below `1e-5` RMS), stem-level RMS restoration with quiet-stem
+gain staging, and `0.999` peak ceiling.
 It preserves full `22.05 kHz` stereo bandwidth without adding lockfile packages,
 runs single-pass resynthesis up to 30 seconds and raised-cosine overlap-window
-streaming (`_stream_neural_track`, shared with `FocalCodec`) on longer audio,
-is selected by `adaptive_auto_profiles` only for a vendor cohort (explicit or from
-pre-strip metadata), and enforces the saved-output decoder gate unless
-explicitly forced. DAC and EnCodec also accept a tagged 5.1 or 7.1 layout:
+streaming (`_stream_neural_track`) on longer audio,
+is selected by `adaptive_auto_profiles` for wideband AI vendor cohorts (explicit
+or from pre-strip metadata), and enforces the saved-output decoder gate unless
+explicitly forced. DAC, SNAC, and EnCodec also accept a tagged 5.1 or 7.1 layout:
 `_transform_surround_stems` runs the model on FL/FR, the center, and each
 surround pair as mid/side stems and only low-passes the LFE channel below
-120 Hz (`test_surround_5_1_stem_processing_preserves_channels_and_lowpasses_lfe`);
-BigVGAN, Mimi and FocalCodec stay mono/stereo.
+120 Hz (`test_surround_5_1_stem_processing_preserves_channels_and_lowpasses_lfe`).
 
 `_internal/audio_snac.py` and `_internal/_snac_network.py` implement the
-separately selected experimental 44.1 kHz Multi-Scale Neural Audio Codec profile
+44.1 kHz Multi-Scale Neural Audio Codec profile
 (`hubertsiuzdak/snac_44khz@873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT weights
 and adaptation notices in `licenses/snac/`) via a pure-PyTorch lazy builder with
 SHA-256-verified configuration and 286-key checkpoint (`weights_only=True`),
 post-load weight-norm fusion, fixed `n_quantizers=3` (`vq_strides` `8, 4, 2`,
 dropping the finest `stride=1` residual codebook where `Perth` survives), rational
 half-open resampling around the 44.1 kHz hop-3072 grid, raw mid/side stereo and
-`5.1`/`7.1` surround stem routing, and overlap-window streaming on `cpu`, `mps`,
-or `cuda`.
+`5.1`/`7.1` surround stem routing, and overlap-window streaming on `auto`, `cpu`,
+`mps`, or `cuda`.
 
 The default `auto` sequence is fixed by requested scheme: spectral then combined
-for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers, combined for all. Inspection
+for AudioSeal and Perth v1, neural then combined for WavMark and SilentCipher-44k, combined for all. Inspection
 of the source is reused across candidates. Failed intermediate candidates are
 discarded before trying the next profile; only a verified candidate or an
 explicitly forced final candidate can be published. Missing fallback dependencies
@@ -384,20 +334,6 @@ failures can retry CPU; numerical failures cannot. Reports record the 44.1 kHz
 decoder clock independently of source geometry, including for 16 kHz sources.
 This route excludes the 16 kHz model, whose SDK byte framing is incompatible;
 see [the artifact analysis](audio-video-removal.md#experimental-silentcipher-44k-receiver).
-
-`_internal/silentcipher16.py` is the separate `silentcipher16` receiver for a terminated
-eight-symbol candidate, with seven ternary payload symbols rather than bytes.
-It pins the released 16 kHz artifacts, uses four decoder classes and a 512-bin
-message band, and shares safe checkpoint loading with the 44.1 kHz receiver.
-The network factory preserves the 44.1 kHz defaults while accepting the 16 kHz
-shape and FFT settings. The candidate requires a single terminator, three
-complete repetitions, agreement at least 0.9, and all 103 phase-grid positions
-for a negative. Silent inputs and invalid model values remain unverified;
-only device failures can retry CPU. `audio.py`, the CLI, and MCP select it
-explicitly or through `all`, using the same `audio-silentcipher` extra. Reports
-record a 16 kHz decoder clock independently of native source geometry.
-Its auto-processing order is neural then combined, with the existing saved-file
-and final-mux gates. SDK byte framing and the general 32-bit profile remain unqualified.
 
 `_internal/audio_quality.py` shares saved-file fidelity, model-free
 `audio_quality_passed` gating (method-aware SNR, clipping-delta, global silent-drop,
@@ -808,20 +744,23 @@ lists are read only for an actual repair; source and duration-only probes read
 stream fields. The engine checks the saved output clock and decoded frame count before atomic publication,
 and measures PSNR/flow-aligned temporal residual at delivered geometry. Encoded
 guides and masters are task-owned temporary files, with bounded pixel batches.
-The profile accepts SDR 8-bit MP4 with even dimensions and handles visible
-labels as a separate input-preparation concern.
+The profile accepts SDR 8-bit and 10-bit HEVC/HDR video across all 7 containers
+(`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, `.flv`) with even dimensions
+and handles visible labels as a separate input-preparation concern.
 
 [`video_wan.py`](../src/remove_ai_watermarks/video_wan.py) packages the optional
-3D causal video diffusion profiles (`wan21-synthid-experimental` at
-`strength=0.38` and `wan21-seedance-experimental` at `strength=0.12` on BF16 NVIDIA CUDA and explicit Apple Silicon `mps`), exposed
-through `remove_video_wan_experimental` and the shared `profile` /
-`invisible_profile` selectors (`VideoWanExperimentalResult`, which carries
-explicit `strength` alongside the compatible `noise_std` mirror). It verifies
-hardware BF16 NVIDIA CUDA capability (`torch.version.hip` excluded,
-`torch.cuda.is_bf16_supported(including_emulation=False)`) or explicit `mps` availability and enforces
-`WAN21_MAX_FRAME_PIXELS` (`3840 * 2160`, using 1080p-guided high-frequency texture restoration above `WAN21_NATIVE_MAX_PIXELS = 1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
-(`7200 * 1920 * 1080`, 5 minutes at 1080p24) before frame decoding, loads pinned
-Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers@0fad780a534b6463e45facd96134c9f345acfa5b`
+3D causal video diffusion profiles (`wan21-synthid` at `strength=0.38` and
+`wan21-seedance` at `strength=0.12`, with legacy `*-experimental` aliases, on
+BF16 NVIDIA CUDA and explicit Apple Silicon `mps`), exposed through
+`remove_video_wan` (alias `remove_video_wan_experimental`) and the shared
+`profile` / `invisible_profile` selectors (`VideoWanExperimentalResult`, which
+carries explicit `strength` alongside the compatible `noise_std` mirror). It
+verifies hardware BF16 NVIDIA CUDA capability (`torch.version.hip` excluded,
+`torch.cuda.is_bf16_supported(including_emulation=False)`) or explicit `mps`
+availability, uses 1080p-guided high-frequency texture restoration above
+`WAN21_NATIVE_MAX_PIXELS = 1920 * 1080` with no hard frame-area or duration cap,
+loads pinned Apache-2.0
+`Wan-AI/Wan2.1-T2V-1.3B-Diffusers@0fad780a534b6463e45facd96134c9f345acfa5b`
 (`licenses/wan/NOTICE.txt`) with an FP32 tiled/sliced `AutoencoderKLWan`, BF16/FP16
 `WanVideoToVideoPipeline`, and `UniPCMultistepScheduler(flow_shift=3.0, 20 steps,
 guidance_scale=1.0)`, pre-encodes `WAN21_DEFAULT_PROMPT` on CPU into cached
@@ -833,14 +772,12 @@ raised-cosine temporal crossfades with symmetric 16-pixel reflection padding and
 the static neutral prompt embedding on disk via `_wan_prompt_cache_path` so
 `UMT5-XXL` is not downloaded or loaded on warm cache hits)
 without buffering the full decoded video in host RAM. `WAN_SUPPORTED_EXTENSIONS`
-covers `.mp4`, `.mov`, and `.m4v`. `video.py` also exposes
-`profile="auto"`, routing eligible ByteDance/Seedance MP4, MOV, and M4V clips (`WAN21_AUTO_MAX_FRAME_PIXELS = 3840 * 2160`
-and `WAN21_MIN_CUDA_VRAM_BYTES = 8 GiB`, stepping down to `WAN21_MPS_CHUNK_FRAMES = 33` / `WAN21_MPS_OVERLAP_FRAMES = 9` on `mps` or `WAN21_COMPACT_CHUNK_FRAMES = 81` on `1080p` or `< 16 GiB` CUDA, and passing float32 tensors directly for 10-bit/16-bit sources) to `wan21-seedance-experimental` on BF16 CUDA
-(`seedance-experimental` fallback on CPU/MPS MP4, which streams SD-VAE guides in memory without an intermediate lossy `guide.mp4`, applies guide-resolution `iter_stabilized_regenerated_frames` plus ultra-low-frequency `anchor_low_freq_color` in CIE Lab before sigma-1 texture restoration, or `synthid` on MOV/M4V/MKV/WebM or when the auto Wan budget is
-exceeded) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental` on BF16 CUDA
-(`synthid` fallback otherwise, with `temporal_stabilize=True` and `anchor_low_freq_color` enabled by default). The invisible stage of `remove_video_all`
-accepts `_REGENERATED_VIDEO_EXTENSIONS` (MP4, MOV, M4V, `.mkv`, and `.webm`); MKV and WebM
-sources never qualify for Wan, so `auto` resolves them to `synthid`. Coverage in
+and `_REGENERATED_VIDEO_EXTENSIONS` both cover all 7 video containers (`.mp4`,
+`.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, `.flv`). `video.py` also exposes
+`profile="auto"`, routing eligible ByteDance/Seedance clips
+(`WAN21_MIN_CUDA_VRAM_BYTES = 8 GiB`, stepping down to `WAN21_MPS_CHUNK_FRAMES = 33` / `WAN21_MPS_OVERLAP_FRAMES = 9` on `mps` or `WAN21_COMPACT_CHUNK_FRAMES = 81` on `1080p` or `< 16 GiB` CUDA, and passing float32 tensors directly for 10-bit/16-bit sources) to `wan21-seedance` on BF16 CUDA
+(`seedance` fallback on CPU/MPS, which streams SD-VAE guides in memory without an intermediate lossy `guide.mp4`, applies guide-resolution `iter_stabilized_regenerated_frames` plus ultra-low-frequency `anchor_low_freq_color` in CIE Lab before sigma-1 texture restoration) and other eligible clips to `wan21-synthid` on BF16 CUDA
+(`synthid` fallback otherwise, with `temporal_stabilize=True` and `anchor_low_freq_color` enabled by default). Coverage in
 `tests/test_video_seedance.py` includes source-detail separation, quantization,
 VFR/nonzero-start/audio-tail preservation, and failure-before-publication.
 

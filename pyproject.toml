@@ -4,8 +4,8 @@
 # on it, including the ComfyUI node package. The console script below carries
 # the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.72.0"
-description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
+version = "0.73.0"
+description = "AI watermark remover for visible, invisible, and provenance marks in images, video, audio, and text"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 license = {text = "Apache-2.0"}
@@ -147,13 +147,6 @@ audio-codec = [
     "safetensors",
     "huggingface-hub>=0.20.0,<2",
 ]
-# Optional pinned full-track mel-vocoder, independent of watermark decoders.
-audio-vocoder = [
-    "remove-ai-watermarks[audio]",
-    "torch>=2.6",
-    "librosa>=0.10",
-    "huggingface-hub>=0.20.0,<2",
-]
 # Open DWT-DCT watermarks used by Stable Diffusion / SDXL / FLUX. The in-tree
 # decoder avoids the upstream invisible-watermark package's mandatory torch and
 # non-headless OpenCV dependencies.
@@ -286,7 +279,7 @@ dev = [
 ]
 # ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
 # independently sufficient for a removal, which it is not.
-all = ["remove-ai-watermarks[video,video-detect,heif,detect,trustmark,text-restoration,migan,source-classify,audio-detect,audio-codec,audio-vocoder,audio-wavmark,audio-perth,audio-silentcipher,text,text-mlx]"]
+all = ["remove-ai-watermarks[video,video-detect,heif,detect,trustmark,text-restoration,migan,source-classify,audio-detect,audio-codec,audio-wavmark,audio-perth,audio-silentcipher,text,text-mlx]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"

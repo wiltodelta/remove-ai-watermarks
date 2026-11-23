@@ -107,7 +107,7 @@ uv tool install --force "remove-ai-watermarks[audio-detect]"
 `audio` installs NumPy and SciPy, without OpenCV or Torch. `audio-detect` adds
 the pinned open AudioSeal runtime and downloads hash-checked detector weights
 on first use. It needs no CUDA. Default removal requires that decoder; explicit
-`--method spectral --allow-unverified --no-verify` processing only requires `audio` while retaining the audio integrity gate. Outputs are WAV, FLAC, MP3, M4A, OGG, or Opus.
+`--method spectral --allow-unverified --no-verify` processing only requires `audio` while retaining the audio integrity gate. Outputs are WAV, FLAC, MP3, M4A, OGG, OGA, Opus, AAC, or MKA.
 See [audio coverage and limitations](audio-video-removal.md).
 
 Add `audio-codec` for EnCodec resynthesis with `--method encodec`, `combined`,
@@ -119,34 +119,16 @@ Combine it with `audio-detect` for default compatible-source verification:
 uv tool install --force "remove-ai-watermarks[audio-detect,audio-codec]"
 ```
 
-This backend uses Torch and Transformers on CPU and downloads pinned,
+This backend uses Torch and Transformers (auto-accelerated on CUDA/MPS) and downloads pinned,
 hash-checked model/configuration artifacts on first use. It is a distinct
 processing method, with its own quality and watermark-verification results.
-The same extra also supplies explicit experimental `--method mimi`, a pinned
-CPU FP32 codec with 32 default quantizers, explicit experimental
-`--method focalcodec`, a pinned CPU FP32 continuous 6-layer WavLM feature-to-Vocos
-resynthesizer (`lucadellalib/focalcodec_50hz` at revision
-`d6d6d9524e52155c85193c2c3b8da1cf8842f019`), and explicit experimental
-`--method dac`, a pinned FP32 44.1 kHz 3-codebook Descript Audio Codec (CPU by
-default; `--vocoder-device mps` or `cuda` also apply)
-(`descript/dac_44khz` at revision `c1bc521685adf9cfe247bc39a5ca58917eda1ac4`).
-Each downloads separate safetensors and configuration artifacts.
-[Mimi weights](https://huggingface.co/kyutai/mimi) are CC-BY-4.0 with
-attribution recorded in `licenses/mimi/NOTICE.txt`,
-[FocalCodec code and weights](https://huggingface.co/lucadellalib/focalcodec_50hz)
-are Apache-2.0 with attribution and third-party notices in
-`licenses/focalcodec/`, and [DAC weights](https://huggingface.co/descript/dac_44khz)
-are MIT with attribution in `licenses/dac/NOTICE.txt`. Model licenses remain
-distinct from the library and Transformers code licenses. None of the three
-methods is selected automatically, and all require the requested decoder extra
-for checks.
-
-Add `audio-vocoder` for explicit experimental `--method bigvgan`. This installs
-Torch, librosa, and Hugging Face Hub alongside the numerical audio stack. The
-runtime downloads revision-pinned configuration and weights on first use,
-verifies both hashes, then loads weights strictly without remote Python.
-CPU is the default; `--vocoder-device mps` or `cuda` selects that device explicitly.
-Retain the chosen decoder extra for verification. See the [CLI limits](cli.md).
+The same extra supplies `--method dac`, a pinned FP32 44.1 kHz 3-codebook
+Descript Audio Codec (`descript/dac_44khz` at revision
+`c1bc521685adf9cfe247bc39a5ca58917eda1ac4`, MIT weights in
+`licenses/dac/NOTICE.txt`), and `--method snac`, a pinned 44.1 kHz multi-scale
+SNAC codec (`hubertsiuzdak/snac_44khz`). Model licenses remain distinct from the
+library and Transformers code licenses. Retain the requested decoder extra for
+verification.
 
 The explicit `video audio` route uses these same extras. It copies video packets
 and does not require OpenCV, PyAV, or the `video` extra.
@@ -167,9 +149,6 @@ config, and weights are hash-checked
 before loading. Missing or incompatible installations remain unverified.
 
 Public SilentCipher-44k uses `audio-silentcipher` and `--scheme silentcipher`.
-The same extra supports `--scheme silentcipher16`, an experimental terminated
-eight-symbol pattern with seven ternary payload symbols. It does not qualify
-the SDK byte API or general 32-bit profile. `all` includes both receivers.
 It installs modern Torch, librosa, and Hugging Face Hub, without the legacy SDK
 and its Torch upper bound. Pinned config and weights are checked before loading.
 The experimental receiver requires at least three seconds and checks every
@@ -266,9 +245,8 @@ application actually uses:
 | `audio-detect` | Public AudioSeal checks | `audio`, AudioSeal, Hugging Face Hub | Yes |
 | `audio-wavmark` | Public WavMark checks | `audio`, WavMark | Yes |
 | `audio-perth` | Public Perth v1 checks | `audio`, validated Perth model modules | Yes |
-| `audio-silentcipher` | Experimental SilentCipher-44k and terminated 16k receivers | `audio`, Torch, librosa, Hugging Face Hub | Yes |
-| `audio-codec` | Pinned EnCodec and experimental Mimi / FocalCodec / DAC resynthesis | `audio`, Torch, Transformers, safetensors | Yes |
-| `audio-vocoder` | Experimental pinned full-track BigVGAN | `audio`, Torch, librosa, Hugging Face Hub | Yes |
+| `audio-silentcipher` | Experimental SilentCipher-44k receiver | `audio`, Torch, librosa, Hugging Face Hub | Yes |
+| `audio-codec` | Pinned EnCodec, DAC, and SNAC neural audio resynthesis | `audio`, Torch, Transformers, safetensors | Yes |
 | `video-detect` | Public VideoSeal/PixelSeal/ChunkySeal known-message and blind presence checks | `video`, Torch | Yes |
 | `video` | Visible video identification/removal and timestamp preservation | `visible`, PyAV, FFmpeg/ffprobe bundle | No |
 | `detect` | Open DWT-DCT detection for Stable Diffusion, SDXL, and FLUX | `pixels`, PyWavelets | No |

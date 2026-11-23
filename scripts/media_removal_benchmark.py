@@ -241,7 +241,7 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
     import numpy as np
     import soundfile as sf
 
-    from remove_ai_watermarks._internal import audio_dac, audio_focalcodec, audio_snac, audioseal, perth, wavmark
+    from remove_ai_watermarks._internal import audio_dac, audio_snac, audioseal, perth, wavmark
     from remove_ai_watermarks.video_decode import open_video_capture
     from remove_ai_watermarks.video_encoding import (
         finish_raw_video_encoder,
@@ -483,7 +483,7 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
         sf.write(wm_stereo_p, np.column_stack((wm_marked, wm_marked_r)), 16000, subtype="FLOAT")
         add_row("wavmark-stereo-ms-marked", "audio_invisible", "wavmark", wm_stereo_p, ".wav", "verified_removed")
 
-    # 3. Perth 16 kHz (both auto and conditioned focalcodec when cached)
+    # 3. Perth 16 kHz (both auto and DAC when cached)
     if perth.available():
         p_model = perth.load_model()
         p_clean = _synthetic_speechlike_carrier(16000, 3.0, seed=301)
@@ -494,27 +494,6 @@ def build_builtin_suite(work_dir: Path, *, strict: bool = False) -> Path:
         sf.write(p_marked_p, p_marked, 16000, subtype="FLOAT")
         add_row("perth-clean", "audio_invisible", "perth", p_clean_p, ".wav", "skipped_clean")
         add_row("perth-marked-auto", "audio_invisible", "perth", p_marked_p, ".wav", "verified_removed")
-        if audio_focalcodec.is_available():
-            try:
-                from huggingface_hub import hf_hub_download
-
-                hf_hub_download(
-                    repo_id=audio_focalcodec.MODEL_REPOSITORY,
-                    filename=audio_focalcodec.CHECKPOINT_FILENAME,
-                    revision=audio_focalcodec.MODEL_REVISION,
-                    local_files_only=True,
-                )
-                add_row(
-                    "perth-marked-focalcodec",
-                    "audio_invisible",
-                    "perth",
-                    p_marked_p,
-                    ".wav",
-                    "verified_removed",
-                    method="focalcodec",
-                )
-            except Exception:
-                log.info("Skipping optional focalcodec builtin case because weights are not cached locally")
         if audio_dac.is_available():
             try:
                 from huggingface_hub import hf_hub_download

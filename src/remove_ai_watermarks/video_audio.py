@@ -276,10 +276,10 @@ def remove_video_audio(
     if out_ext not in {".mkv", ".mov", ".mp4", ".m4v", ".webm"}:
         raise ValueError("Audio-only video output must be MKV, MOV, MP4, M4V, or WebM")
     lossy = out_ext in {".mp4", ".m4v", ".webm"}
-    codec_label = "Opus/Vorbis" if out_ext == ".webm" else "AAC"
+    codec_label = "Opus" if out_ext == ".webm" else "AAC"
     caveats = (
         *_CAVEATS,
-        f"The selected track uses lossy {codec_label} with a target bitrate of 192 kbps; "
+        f"The selected track uses lossy {codec_label} (160k mono / 256k stereo+); "
         "verification and fidelity cover the delivered decoded audio."
         if lossy
         else _PCM_CAVEAT,
@@ -387,10 +387,7 @@ def remove_video_audio(
                         flags = "+".join(k for k, v in s.get("disposition", {}).items() if v) or "0"
                         command.extend([f"-disposition:{s['index']}", flags])
                         command.extend([f"-map_metadata:s:{s['index']}", f"0:s:{s['index']}"])
-                    webm_audio_codec = (
-                        "libopus" if info.sample_rate in {8000, 12000, 16000, 24000, 48000} else "libvorbis"
-                    )
-                    target_audio_codec = webm_audio_codec if out_ext == ".webm" else ("aac" if lossy else "pcm_f32le")
+                    target_audio_codec = "libopus" if out_ext == ".webm" else ("aac" if lossy else "pcm_f32le")
                     command.extend(
                         [
                             "-c",
@@ -427,8 +424,15 @@ def remove_video_audio(
                         ):
                             raise RuntimeError("Audio processing changed stream language or disposition")
                     output_tick = Fraction(delivered_streams[info.index]["time_base"])
-                    delivered_start, delivered_count = _timeline(staged, info.index, info.sample_rate, output_tick)
-                    if count != delivered_count or abs(start - delivered_start) > output_tick:
+                    delivered_rate = int(delivered_streams[info.index]["sample_rate"])
+                    delivered_start, delivered_count = _timeline(staged, info.index, delivered_rate, output_tick)
+                    if target_audio_codec == "libopus":
+                        expected_count = round(count * delivered_rate / info.sample_rate)
+                        count_slack = max(2, delivered_rate // 100)
+                        bad_count = abs(delivered_count - expected_count) > count_slack
+                    else:
+                        bad_count = count != delivered_count
+                    if bad_count or abs(start - delivered_start) > output_tick:
                         raise RuntimeError("Mux changed the selected audio timeline")
                     after = audio.identify_audio(staged, check_invisible=verify, stream=stream, scheme=scheme)
                     verified = audio.verification_outcome(before, after)
@@ -858,7 +862,8 @@ def remove_video_audio_all_streams(
                 verified=verified,
                 quality_ok=q_ok,
                 force=force,
-                allow_unverified=allow_unverified,
+                allow_unverified=eff_allow_unverified
+                or audio.should_auto_scrub_audio(before_rep, method=method, explicit_vendor=explicit_vendor),
                 allow_positive=allow_positive,
                 allow_quality_override=allow_quality_override,
             )

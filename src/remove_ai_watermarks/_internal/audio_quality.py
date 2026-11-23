@@ -10,7 +10,7 @@ from math import isfinite, log10, sqrt
 from typing import TYPE_CHECKING, Any
 
 from remove_ai_watermarks._internal import audio_io
-from remove_ai_watermarks._internal.constants import AUDIO_LOSSY_OUTPUT_EXTENSIONS
+from remove_ai_watermarks._internal.constants import AUDIO_LOSSY_OUTPUT_EXTENSIONS, AUDIO_OPUS_EXTENSIONS
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
@@ -108,8 +108,8 @@ def _opus_aligned_decode_info(
     strict_geometry: bool = False,
 ) -> tuple[audio_io.AudioStreamInfo, bool]:
     suffix = output.suffix.lower()
-    opus_clock = suffix in {".ogg", ".opus"}
     delivered = delivered_info if delivered_info is not None else audio_io.probe_audio(output, stream=stream)
+    opus_clock = suffix in AUDIO_OPUS_EXTENSIONS or delivered.codec == "opus"
     if strict_geometry:
         expected_sr = 48000 if opus_clock else info.sample_rate
         if (delivered.channels, delivered.sample_rate) != (info.channels, expected_sr):
@@ -156,9 +156,11 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
     import numpy as np
 
     decode_info, opus_clock = _opus_aligned_decode_info(info, output, stream=stream, strict_geometry=True)
+    adts_padding = output.suffix.lower() == ".aac"
+    relaxed_len = opus_clock or adts_padding
     power = output_power = residual = max_error = peak = source_peak = 0.0
     count = above = source_above = 0
-    tail_slack = max(2, info.sample_rate // 100) if opus_clock else 0
+    tail_slack = max(2, info.sample_rate // 100) if opus_clock else (4096 if adts_padding else 0)
     total_before = total_after = 0
     win_target = max(1, info.sample_rate)
     win_min_tail = max(1, win_target // 4)
@@ -201,7 +203,7 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
                 total_before += len(before)
             if after is not None:
                 total_after += len(after)
-            if not opus_clock:
+            if not relaxed_len:
                 if before is None or after is None or before.shape != after.shape:
                     raise RuntimeError("Delivered audio changed the decoded sample-frame count")
                 pair_len = len(before)
@@ -254,7 +256,7 @@ def measure_fidelity(source: Path, info: audio_io.AudioStreamInfo, output: Path,
                     flush_window()
         if win_frames >= win_min_tail or (min_win_ratio is None and win_frames > 0):
             flush_window()
-        if opus_clock:
+        if relaxed_len:
             for extra_b in left:
                 total_before += len(extra_b)
             for extra_a in right:

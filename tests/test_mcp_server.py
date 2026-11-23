@@ -67,16 +67,16 @@ def test_audio_tools_reject_invalid_track_ordinals(stream):
 
 
 @pytest.mark.parametrize("tool", ["audio_identify", "audio_invisible", "video_audio"])
-def test_audio_tools_preserve_explicit_silentcipher16_scope(tool):
+def test_audio_tools_preserve_explicit_silentcipher_scope(tool):
     runner = _Recorder(stdout="{}")
-    arguments = {"path": "clip.mkv" if tool == "video_audio" else "speech.wav", "scheme": "silentcipher16"}
+    arguments = {"path": "clip.mkv" if tool == "video_audio" else "speech.wav", "scheme": "silentcipher"}
     if tool != "audio_identify":
         arguments["output"] = "processed.mkv" if tool == "video_audio" else "processed.wav"
     result = mcp_server.call_tool(tool, arguments, runner)
     assert result.get("isError") is not True
     assert len(runner.calls) == 1
     command = runner.calls[0]
-    assert command[command.index("--scheme") + 1] == "silentcipher16"
+    assert command[command.index("--scheme") + 1] == "silentcipher"
 
 
 def test_audio_tool_refuses_source_output():
@@ -125,18 +125,18 @@ def test_neural_audio_options_are_forwarded_to_the_cli():
     assert runner.calls[0][-6:] == ["--method", "encodec", "--bandwidth", "6", "--", "input.wav"]
 
 
-def test_bigvgan_audio_options_reach_legacy_and_catalog_mcp():
+def test_dac_audio_options_reach_legacy_and_catalog_mcp():
     runner = _Recorder(stdout="{}")
     result = mcp_server.call_tool(
-        "audio_invisible", {"path": "input.wav", "method": "bigvgan", "vocoder_device": "mps"}, runner
+        "audio_invisible", {"path": "input.wav", "method": "dac", "vocoder_device": "mps"}, runner
     )
     assert result["isError"] is False
-    assert runner.calls[0][-6:] == ["--method", "bigvgan", "--vocoder-device", "mps", "--", "input.wav"]
+    assert runner.calls[0][-6:] == ["--method", "dac", "--vocoder-device", "mps", "--", "input.wav"]
     from remove_ai_watermarks.integration import operation_catalog, plan_operation
 
     operation = next(item for item in operation_catalog() if item["id"] == "cli_video_audio")
-    args, _ = plan_operation(operation, {"source": "input.mp4", "method": "bigvgan", "vocoder_device": "mps"})
-    assert args[args.index("--method") + 1] == "bigvgan"
+    args, _ = plan_operation(operation, {"source": "input.mp4", "method": "dac", "vocoder_device": "mps"})
+    assert args[args.index("--method") + 1] == "dac"
     assert args[args.index("--vocoder-device") + 1] == "mps"
 
 
@@ -437,7 +437,6 @@ def test_legacy_audio_and_video_message_tools_stay_in_lockstep_with_cli_catalog_
         "wavmark",
         "perth",
         "silentcipher",
-        "silentcipher16",
         "all",
         "auto",
     )
@@ -446,9 +445,6 @@ def test_legacy_audio_and_video_message_tools_stay_in_lockstep_with_cli_catalog_
         "spectral",
         "encodec",
         "combined",
-        "bigvgan",
-        "mimi",
-        "focalcodec",
         "dac",
         "snac",
     )

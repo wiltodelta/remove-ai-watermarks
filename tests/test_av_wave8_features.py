@@ -96,8 +96,7 @@ def test_audio_auto_scrub_restricts_to_certified_vendors_and_resolves_device(
 
     # CPU-only profiles always resolve "auto" to "cpu"
     assert audio.resolve_audio_device("auto", "spectral") == "cpu"
-    assert audio.resolve_audio_device("auto", "mimi") == "cpu"
-    assert audio.resolve_audio_device("auto", "focalcodec") == "cpu"
+    assert audio.resolve_audio_device("auto", "spectral") == "cpu"
     assert audio.resolve_audio_device("cpu", "dac") == "cpu"
     assert audio.resolve_audio_device("auto", "dac") in {"cpu", "mps", "cuda"}
 

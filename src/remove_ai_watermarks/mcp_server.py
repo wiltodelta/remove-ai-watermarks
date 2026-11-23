@@ -162,7 +162,7 @@ for _name, _description, _options in (
     ),
     (
         "audio_invisible",
-        "Process one audio track to WAV, FLAC, MP3, M4A, OGG, or Opus. Default publication requires "
+        "Process one audio track to WAV, FLAC, MP3, M4A, OGG, OGA, Opus, AAC, or MKA. Default publication requires "
         "a compatible source positive under the requested models and a fully negative saved output. "
         "Force permits explicitly unverified results.",
         {},
@@ -199,10 +199,7 @@ for _name, _description, _options in (
                 "type": "string",
                 "enum": list(AUDIO_METHODS),
                 "default": AUDIO_METHODS[0],
-                "description": (
-                    "SNAC, Mimi, FocalCodec, DAC, and BigVGAN are explicit full-track neural-codec profiles, "
-                    "not SynthID decoders."
-                ),
+                "description": ("DAC and SNAC are explicit 44.1 kHz neural-codec profiles, not SynthID decoders."),
             },
             "vocoder_device": {
                 "type": "string",

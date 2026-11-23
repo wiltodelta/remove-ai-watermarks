@@ -1273,7 +1273,7 @@ def _audio_method_options(func: Any) -> Any:
         type=click.Choice(list(AUDIO_VOCODER_DEVICES)),
         default=AUDIO_VOCODER_DEVICES[0],
         show_default=True,
-        help="Neural audio inference device for BigVGAN, DAC, EnCodec, and combined; CPU-only profiles require cpu.",
+        help="Neural audio inference device for DAC, SNAC, EnCodec, and combined; spectral requires cpu.",
     )(func)
     func = click.option(
         "--bandwidth",
@@ -1288,8 +1288,8 @@ def _audio_method_options(func: Any) -> Any:
         default=AUDIO_METHODS[0],
         show_default=True,
         help=(
-            "Select automatically, or choose spectral, EnCodec, combined, or full-track "
-            "BigVGAN, experimental CPU Mimi / CPU FocalCodec, or 44.1 kHz DAC (no SynthID decoder)."
+            "Select automatically, or choose spectral, EnCodec, combined, 44.1 kHz DAC, "
+            "or 44.1 kHz SNAC (fast on Apple Silicon MPS)."
         ),
     )(func)
 
@@ -1341,9 +1341,8 @@ def _audio_check_label(scheme: str) -> str:
         "audioseal": "open AudioSeal",
         "wavmark": "public WavMark",
         "perth": "public Perth v1",
-        "silentcipher": "public SilentCipher-44k experimental receiver",
-        "silentcipher16": "public SilentCipher-16k experimental terminated pattern",
-        "all": "AudioSeal, WavMark, Perth v1, SilentCipher-44k, and the SilentCipher-16k terminated pattern",
+        "silentcipher": "public SilentCipher-44k",
+        "all": "AudioSeal, WavMark, Perth v1, and SilentCipher-44k",
         "auto": "installed compatible public audio watermark",
     }[scheme]
 
@@ -1455,7 +1454,7 @@ def cmd_audio_metadata(
     "-o",
     "--output",
     type=click.Path(dir_okay=False, path_type=Path),
-    help="Output WAV, FLAC, MP3, M4A, OGG, or Opus, default SOURCE_processed.wav.",
+    help="Output WAV, FLAC, MP3, M4A, OGG, OGA, Opus, AAC, or MKA, default SOURCE_processed.wav.",
 )
 @click.option(
     "--force",
@@ -1955,7 +1954,12 @@ def cmd_video_message_detect(
 @cmd_video_message.command("remove")
 @_video_message_options
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("-o", "--output", type=click.Path(dir_okay=False, path_type=Path), help="Output MP4, MOV, or M4V.")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Output MP4, MOV, M4V, MKV, WebM, AVI, or FLV.",
+)
 @click.option(
     "--method",
     type=click.Choice(list(VIDEO_MESSAGE_METHODS)),
@@ -3005,14 +3009,14 @@ def cmd_text_invisible(
 @click.option("--strict-residual", is_flag=True, help="With Ollama, regenerate retained sentences in a second pass.")
 def cmd_text_all(
     source: Path,
-    output: Path | None,
-    invisible: bool,
-    seed: int,
-    allow_partial: bool,
-    rewriter_backend: _TextBackend,
-    rewriter_model: str | None,
-    ollama_url: str | None,
-    strict_residual: bool,
+    output: Path | None = None,
+    invisible: bool = False,
+    seed: int = 0,
+    allow_partial: bool = False,
+    rewriter_backend: _TextBackend = "transformers",
+    rewriter_model: str | None = None,
+    ollama_url: str | None = None,
+    strict_residual: bool = False,
 ) -> None:
     """Strip deterministic text provenance and optionally regenerate prose spans."""
     from remove_ai_watermarks.text import remove_text_all
@@ -3098,7 +3102,7 @@ def cmd_identify(ctx: click.Context, source: Path, no_visible: bool, as_json: bo
         ctx.invoke(
             cmd_audio_identify,
             source=source,
-            check_invisible=not no_visible,
+            no_invisible=no_visible,
             stream=0,
             as_json=as_json,
             scheme="auto",
@@ -3224,9 +3228,8 @@ def _resolve_preset(
     backend: str,
 ) -> tuple[bool, str, bool]:
     eff_force = force or preset == "deep-clean"
-    eff_backend = "auto" if preset in {"balanced", "deep-clean"} and backend == "cv2" else backend
     lossless_only = preset == "lossless-fast" and not force
-    return eff_force, eff_backend, lossless_only
+    return eff_force, backend, lossless_only
 
 
 # ── Combined "all" mode ──

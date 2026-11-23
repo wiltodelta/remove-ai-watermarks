@@ -70,7 +70,7 @@ when an optional backend is absent.
 | `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all --invisible` for audio; `text metadata --remove` or `text all` for text (or top-level `all --preset` when `preset` is set) | One output file, `<name>_clean` beside the source unless `output` is given |
 | `batch` | `batch --mode` for images or mixed directories (`media: "all"`), with optional `--preset`; `video batch --mode` for video (`media: "video"`); or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
 | `audio_identify` | `audio identify --json`; `check_invisible: false` skips models | Nothing |
-| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `vendor`, `allow_unverified`, `allow_positive`, `allow_quality_override`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, `<name>_processed.wav` by default |
+| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `vendor`, `allow_unverified`, `allow_positive`, `allow_quality_override`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka`, `<name>_processed.wav` by default |
 | `video_message_identify` | `video message identify --json`, required `reference`, optional `scheme` | Nothing |
 | `video_message_remove` | `video message remove --json`, same reference and scheme, profile and verification options | MP4, MOV, or M4V, `<name>_message_processed.mp4` by default |
 | `video_audio` | `video audio --json`, with the same audio options plus `all_streams` | MKV/MOV with PCM or MP4 with AAC, `<name>_audio_processed.mkv` by default |
@@ -81,37 +81,20 @@ or `"combined"`, and integer
 `bandwidth` (`6`, `12`, or `24`, default `24`) for the optional codec backend.
 `audio_invisible` requires `audio-detect` for default source-positive and
 saved-output-negative verification. A `vendor` other than `"auto"` (`google`, `elevenlabs`, `suno`, `udio`, `openai`, `cartesia`, `meta`, `resemble`, `microsoft`) names a known source cohort for stripped files, selects a vendor-matched profile sequence, and implies `allow_unverified`. `allow_unverified: true` (for example with `method: "dac"`, or alongside `verify: false`) permits unverified processing with the `audio` extra while keeping the audio SNR/RMS/window integrity gate active (`force: true` remains an alias enabling `allow_unverified`, `allow_positive`, and `allow_quality_override`). Audio tools require ffmpeg and
-ffprobe. `scheme: "audioseal"` (default), `"auto"` (scans installed non-experimental decoders `audioseal`, `wavmark`, `perth` without failing on missing optional extras), `"wavmark"`, `"perth"`, `"silentcipher"`, `"silentcipher16"`, or `"all"` selects
-compatible public-model checks. WavMark needs `audio-wavmark`, Perth v1 needs `audio-perth`, and both experimental SilentCipher receivers need
+ffprobe. `scheme: "audioseal"` (default), `"auto"` (scans installed non-experimental decoders `audioseal`, `wavmark`, `perth` without failing on missing optional extras), `"wavmark"`, `"perth"`, `"silentcipher"`, or `"all"` selects
+compatible public-model checks. WavMark needs `audio-wavmark`, Perth v1 needs `audio-perth`, and SilentCipher-44k needs
 `audio-silentcipher`; `all` needs every decoder extra. Auto tries spectral then combined for AudioSeal and Perth v1, neural then
-combined for WavMark and both experimental SilentCipher receivers, and combined for `all`. Neural profiles need `audio-codec`.
-Explicit `method: "bigvgan"` instead needs `audio-vocoder`; `vocoder_device`
-accepts `"cpu"` (default), `"mps"`, or `"cuda"`. This experimental full-track
-mono/stereo profile is limited to 30 seconds and 16 million sample values.
-It is excluded from auto selection; codec bandwidth does not apply. The shared
-catalog exposes the same options on CLI-derived MCP, Space and ComfyUI routes.
-Local decoder negatives do not certify SynthID.
-Explicit `method: "mimi"` instead uses the separate CPU FP32 Mimi backend from
-`audio-codec`, with fixed 32 quantizers and the same bounded full-track and
-saved-output gates. Explicit `method: "focalcodec"` uses the separate CPU FP32
-FocalCodec continuous WavLM-to-Vocos backend from `audio-codec`, operating on an
-internal 16 kHz grid with symmetric `(40, 40)` WavLM boundary context, single-pass
-resynthesis up to 30 seconds, raised-cosine overlap-window streaming on longer
-audio, and the same saved-output gates. Explicit `method: "dac"` uses the
-separate FP32 44.1 kHz 3-codebook DAC backend from `audio-codec` with raw
-mid/side stereo, stem RMS preservation, and the same single-pass / overlap-window
-streaming path. Keep `vocoder_device: "cpu"` for Mimi and FocalCodec; DAC,
-EnCodec, and `combined` also accept `"mps"` or `"cuda"`. Bandwidth applies only
-to EnCodec. All three methods are experimental, have no
-built-in provider verifier (`mimi` and `focalcodec` are excluded from `auto`;
-`dac` is selected by `auto` only when pre-strip metadata identifies ElevenLabs or
-Google SynthID, or `vendor` names a cohort), and are exposed by
-legacy tools and the shared operation catalog.
-`silentcipher16` covers only a terminated eight-symbol pattern. Its
-readings label `framing="terminated8"`; `payload_symbols` are seven ternary
-symbols, not bytes. Its decoder clock is
-16000 regardless of the source rate. The SDK byte API and general 32-bit
-profile remain unqualified. `all` requests both SilentCipher receivers.
+combined for WavMark and SilentCipher-44k, and combined for `all`. Neural profiles need `audio-codec`.
+Explicit `method: "dac"` uses the FP32 44.1 kHz 3-codebook DAC backend from
+`audio-codec` (defaulting `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks) with
+raw mid/side stereo, stem RMS preservation, and single-pass / overlap-window
+streaming. Explicit `method: "snac"` uses the 44.1 kHz multi-scale SNAC backend
+from `audio-codec`. `vocoder_device` (`"auto"` default, `"cpu"`, `"mps"`, or
+`"cuda"`) applies to DAC, SNAC, EnCodec, and `combined`. Bandwidth applies only
+to EnCodec. `dac` is selected by `auto` when pre-strip metadata identifies
+ElevenLabs or Google SynthID, or `vendor` names a cohort. Neither DAC nor SNAC
+provides a built-in provider verifier; both are exposed by legacy tools and the
+shared operation catalog.
 
 `mode` is `metadata` (the default), `visible` or `all`. For an image, `all`
 adds the invisible-watermark scrub where the installed extras and a CUDA GPU

@@ -274,3 +274,28 @@ In Wave 9 (2026-11-22, `v0.70.0`):
     stamped directly at 48 kHz without 16 kHz downsampling): before `mean_detect_prob=0.999974`
     (`frac=1.0`); after `DAC q=3` `0.0140` (`frac=0.0024`), and with `preserve_hf_hz=14000`
     `0.0139` (`frac=0.0008`, lower `RMS err 0.05277 -> 0.04990`).
+
+In Wave 11 (2026-11-22, `v0.73.0`):
+- **Live Google Gemini SynthID oracle checks (`gemini.google.com/u/1/app`, `2/2` `not_detected`)**:
+  - `higgsfield-veo-3-1-lite_dac_hf14k_v071.wav`
+    (`sha256:94215d0981e47778dc38db06aae9c4cbde2627e972fedeea691c15a72cf11f0b`,
+    `DAC 44.1 kHz` `q=3` + `preserve_hf_hz=14000.0`, `quality_passed=True`):
+    `"This audio file does not contain a SynthID watermark indicating it was made with Google AI."`
+    Combined with the prior `synthid.com` check on `google-gemini-omni-flash-api_dac_hf14k.wav`,
+    `DAC + preserve_hf_hz=14000.0` is now **`2/2` `not_detected`** on live Google SynthID
+    oracles and promoted to the default for `DAC` on `>= 44.1 kHz` tracks.
+  - `higgsfield-veo-3-1-lite_2d_synthid_v071_silent.mp4`
+    (`sha256:2d557ef65283020babe853065675e001344bb610ad1eb4aaa6157f84c6799d62`,
+    `v0.70.0+` 2D SynthID `temporal_stabilize=True` + CIE Lab low-frequency color anchoring):
+    `"No SynthID watermark from Google AI was detected in this video, and no valid C2PA Content Credentials were found."`
+- **Unified containers and pruned obsolete experimental audio backends**:
+  - Removed obsolete experimental audio methods (`bigvgan`, `mimi`, `focalcodec`) and
+    the terminated `silentcipher16` scheme; retained production `spectral`, `encodec`,
+    `combined`, `dac`, and `snac`.
+  - Unified all video pipelines (`seedance`, `wan21-synthid`, `wan21-seedance`, `synthid`,
+    `visible`, `erase`, `video audio`) to accept all seven video containers (`.mp4`, `.mov`,
+    `.m4v`, `.mkv`, `.webm`, `.avi`, `.flv`), unified all nine audio formats (`.wav`, `.flac`,
+    `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, `.mka`) on both input and output, and
+    removed artificial resolution/duration hard caps in `video_wan.py` (keeping explicit
+    opt-in worker guardrails `max_duration_seconds` / `max_frame_pixels` defaulting to `None`).
+

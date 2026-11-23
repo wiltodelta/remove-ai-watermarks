@@ -296,30 +296,10 @@ or SilentCipher do not certify an entire song or an unsupported provider.
 ### Standalone `video invisible` copies the audio track unchanged
 
 The `audio identify`, `audio metadata`, `audio invisible`, `audio all`, and `audio batch` commands provide named
-public AudioSeal/WavMark/Perth v1/SilentCipher-44k/16k checks (`--scheme auto` scans installed decoders) and spectral, neural-codec (with Mid/Side stereo EnCodec or 44.1 kHz DAC, which `auto` selects when pre-strip metadata identifies ElevenLabs or Google SynthID),
-combined, or explicit experimental BigVGAN/Mimi/FocalCodec processing
-into `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus`, while `video audio` (`--stream N` or `--all-streams`) and `video all --audio-invisible` clean compatible audio tracks inside video containers.
-The BigVGAN profile is full-track mono/stereo only, bounded in duration and
-memory, and excluded from automatic selection. Its local decoder checks do not
-verify SynthID. Fixed provider experiments have both a negative outcome on one
-native Veo source and retained SynthID on independent native and speech sources;
-see the [research roadmap](media-removal-roadmap.md). It is not a general solution.
-Mimi is a separate CPU FP32 explicit codec, excluded from auto selection. Its
-24 kHz internal grid cannot preserve higher source bandwidth. Local Perth checks
-passed independent speech examples, but a short example failed the frozen
-relative voice-consistency guard, and a held-out native speech example showed
-lexical regularization (`"wind"` to `"wooden"`) and crossed the Perth threshold
-after lossy AAC MP4 encoding.
-FocalCodec is a separate CPU FP32 explicit continuous WavLM-to-Vocos profile,
-excluded from auto selection, whose 16 kHz internal grid limits output bandwidth
-to 8 kHz. It passed complete paired WAV, MOV, and AAC MP4 gates on one long
-native speech generation and preserved exact words on the held-out generation,
-but Vocos STFT synthesis cross-reacted with Perth in a pause window on that
-held-out source (including on its unwatermarked twin). Native-provider
-candidates remain unverified across all three explicit experimental backends.
-Short-window speaker comparisons without a qualified context length remain
-exploratory, not proof that a person's identity changed.
-They write standalone `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus` outputs. They do not change standalone `video invisible`
+public AudioSeal/WavMark/Perth v1/SilentCipher-44k checks (`--scheme auto` scans installed decoders) and spectral, neural-codec (with Mid/Side stereo EnCodec, 44.1 kHz DAC with default `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks, or 44.1 kHz SNAC; `auto` selects DAC when pre-strip metadata identifies ElevenLabs or Google SynthID),
+or combined processing
+into `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka`, while `video audio` (`--stream N` or `--all-streams`) and `video all --audio-invisible` clean compatible audio tracks inside video containers.
+They write standalone `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka` outputs. They do not change standalone `video invisible`
 described below. The fixed spectral profile changes audible content and fails
 on the calibrated tone-stack carrier. Verification is limited to the pinned
 compatible decoders, and bounded whole-clip checks can remain unverified.
@@ -327,17 +307,12 @@ WavMark also checks the published OpenVoice default message at fixed native
 offsets; custom messages and shifted/resampled framing remain outside that
 receiver. Its signature correlation does not identify a provider.
 `silentcipher` uses only the pinned 44.1 kHz model, including for 16 kHz input.
-The separate `silentcipher16` route covers only an experimental terminated
-eight-symbol pattern. Its seven ternary payload symbols are not bytes.
-The published 16 kHz SDK byte framing is incompatible, and the general 32-bit
-profile remains unqualified. Known-message recovery failed on exploratory
-tone and noise carriers. See the [artifact analysis](audio-video-removal.md#experimental-silentcipher-44k-receiver).
 Missing requested decoders cannot become negative results. A negative public
 model check does not certify a production provider or complete payload erasure.
 See [audio coverage](audio-video-removal.md) before interpreting a result.
 
 The `seedance` (alias `seedance-experimental`) video profile is available through the common invisible/all/batch pipeline and the standalone
-`remove_video_seedance_experimental` API. It accepts SDR 8-bit and 10-bit HEVC/HDR (`yuv420p10le`, `BT.709`/`BT.2020`, `PQ`/`HLG`) MP4 with even dimensions and preserves
+`remove_video_seedance` API. It accepts SDR 8-bit and 10-bit HEVC/HDR (`yuv420p10le`, `BT.709`/`BT.2020`, `PQ`/`HLG`) in `.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, or `.flv` with even dimensions and preserves
 the native bit depth, color tags, frame clock, and geometry. Its two encoding modes reproduce the label-free `forest` and held-out `bottle`
 experiments in [the study](seedance-video-study.md), where CapCut detected
 matched controls and did not detect processed outputs (whereas Dreamina and
@@ -346,12 +321,9 @@ This result is scene-dependent, and
 there is no runtime CapCut detector or external upload. Visible labels must
 be handled before this pixel stage. Temporary guide/master videos need disk
 space, although pixel processing uses bounded batches. Both `all` and `video all`/`video invisible` default to `--profile auto` (`profile="auto"`), routing ByteDance/Seedance clips automatically. The `wan21-synthid` and `wan21-seedance` (legacy aliases `wan21-synthid-experimental`, `wan21-seedance-experimental`) 3D diffusion
-profiles (`remove_video_wan_experimental`) require an Ampere-or-newer BF16 NVIDIA
+profiles (`remove_video_wan`) require an Ampere-or-newer BF16 NVIDIA
 CUDA GPU, or an explicit `device="mps"` on Apple Silicon that automatic profile
-selection never chooses, and SDR 8-bit or 10-bit HDR (`yuv420p10le`/`yuv422p10le`/`yuv444p10le`, `BT.2020`, `PQ`/`HLG`) MP4, MOV, or M4V input within
-`WAN21_MAX_FRAME_PIXELS` (`3840x2160`, using 1080p-guided high-frequency texture
-restoration above `1920x1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
-(`7200 * 1920 * 1080`). They stream clips longer than `193` frames across `4k+1`
+selection never chooses, and accept SDR 8-bit or 10-bit HDR (`yuv420p10le`/`yuv422p10le`/`yuv444p10le`, `BT.2020`, `PQ`/`HLG`) across all 7 containers (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, `.flv`), using 1080p-guided high-frequency texture restoration above `1920x1080`. They stream clips longer than `193` frames across `4k+1`
 3D causal windows (`chunk_frames=193`, `overlap_frames=17`) with raised-cosine
 temporal crossfades directly to the encoder, have oracle evidence from an NVIDIA
 H100 at `1280x720`, and likewise perform no runtime detector

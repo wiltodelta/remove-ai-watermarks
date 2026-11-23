@@ -52,9 +52,9 @@ removal.
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
 | Identify supported video provenance | `video identify` | No |
-| Inspect audio metadata and compatible public-model evidence | `audio identify` (`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`, `silentcipher16`, or `all`) | No |
+| Inspect audio metadata and compatible public-model evidence | `audio identify` (`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`, or `all`) | No |
 | Strip AI metadata from audio | `audio metadata` | No |
-| Process a detected compatible audio watermark and verify the saved file (`.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.opus`) | `audio invisible` | No |
+| Process a detected compatible audio watermark and verify the saved file (`.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, `.mka`) | `audio invisible` | No |
 | Strip AI metadata and optionally clean compatible audio watermarks | `audio all` / `audio batch` | No |
 | Process one or all audio tracks (`--all-streams`) while copying encoded video | `video audio` | No |
 | Remove visible marks, AI metadata, and opt-in video/audio invisible marks | `video all` | Depends on `--invisible` |
@@ -107,7 +107,7 @@ specialized Python API can inspect and disrupt the validated local
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
 | Audio sample processing and spectral disruption | `remove-ai-watermarks[audio]` |
 | Compatible public audio watermark detection (AudioSeal) | `remove-ai-watermarks[audio-detect]` |
-| Neural audio codec resynthesis (EnCodec / FocalCodec / DAC) | `remove-ai-watermarks[audio-codec]` |
+| Neural audio codec resynthesis (EnCodec / DAC / SNAC) | `remove-ai-watermarks[audio-codec]` |
 | Torch-free DWT-DCT detection | `remove-ai-watermarks[detect]` |
 | Direct local Paint InvisMark disruption | `remove-ai-watermarks[pixels]` |
 | Invisible image removal (needs CUDA) | `remove-ai-watermarks[qwen-zimage]` |
@@ -115,7 +115,7 @@ specialized Python API can inspect and disrupt the validated local
 | Optional OCR proposals for operator verification | `remove-ai-watermarks[text-draft]` |
 
 Lower-level and specialized extras include `pixels`, `heif`, `trustmark`,
-`migan`, `lama`, `diffusion`, `source-classify`, `audio-vocoder`,
+`migan`, `lama`, `diffusion`, `source-classify`,
 `audio-wavmark`, `audio-perth`, and `audio-silentcipher`. The
 [installation guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/installation.md#feature-extras) documents their exact
 dependency composition, Python compatibility, and model requirements.
@@ -367,8 +367,8 @@ version.
 
 One command (`remove-ai-watermarks all <file> -o <clean>`) handles visible marks,
 provenance-triggered invisible removal, and metadata stripping across images
-(`PNG`, `JPG`, `WebP`, `HEIC`, `TIFF`), video (`MP4`, `MOV`, `WebM`, `MKV`,
-including 10-bit HEVC/HDR), audio (`WAV`, `MP3`, `M4A`, `FLAC`, `OGG`, `Opus`),
+(`PNG`, `JPG`, `WebP`, `HEIC`, `TIFF`), video (`MP4`, `MOV`, `M4V`, `WebM`, `MKV`, `AVI`, `FLV`,
+including 10-bit HEVC/HDR), audio (`WAV`, `FLAC`, `MP3`, `M4A`, `OGG`, `OGA`, `Opus`, `AAC`, `MKA`),
 and text (`MD`, `HTML`, `TXT`):
 
 ```bash

@@ -224,12 +224,12 @@ def test_cli_and_api_wire_dac_method(tmp_path, monkeypatch):
         wav.writeframes(np.column_stack((pcm, pcm)).tobytes())
 
     assert all("dac" not in profiles for profiles in audio._AUTO_PROFILES.values())
-    with pytest.raises(ValueError, match="method=bigvgan"):
+    with pytest.raises(ValueError, match="method=dac"):
         audio.remove_audio_invisible(source, tmp_path / "out.wav", method="spectral", vocoder_device="mps")
 
     seen = []
 
-    def fake_resynth(samples, sample_rate, *, local_files_only=False, device="cpu"):
+    def fake_resynth(samples, sample_rate, *, local_files_only=False, device="cpu", preserve_hf_hz=None):
         seen.append((samples.shape, sample_rate, local_files_only, device))
         return samples
 
@@ -271,7 +271,7 @@ def test_cli_and_api_wire_dac_method(tmp_path, monkeypatch):
     assert out.is_file()
 
 
-@pytest.mark.parametrize("method", ["dac", "focalcodec"])
+@pytest.mark.parametrize("method", ["dac", "snac"])
 def test_long_audio_streams_via_raised_cosine_overlap_windows_preserving_exact_frames(monkeypatch, method):
     sr = 1000
     total_frames = 47503  # 47.503 s > 30 s whole-track limit
@@ -290,8 +290,8 @@ def test_long_audio_streams_via_raised_cosine_overlap_windows_preserving_exact_f
         monkeypatch.setattr(audio.audio_dac, "resynthesize", fake_resynth)
         runner = audio._dac_full_track
     else:
-        monkeypatch.setattr(audio.audio_focalcodec, "resynthesize_conditioned", fake_resynth)
-        runner = audio._focalcodec_full_track
+        monkeypatch.setattr(audio.audio_snac, "resynthesize", fake_resynth)
+        runner = audio._snac_full_track
 
     closed: list[bool] = []
 

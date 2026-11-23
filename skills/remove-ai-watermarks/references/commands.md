@@ -166,46 +166,40 @@ that order and co-selects spatially disjoint vendor-compatible marks (such as `j
 a trailing static AI outro card, and `--track` on `erase` or `video erase` to track moving
 user-specified `--region` boxes across frames.
 
-`video invisible` and `video all --invisible` accept MP4, MOV, M4V, MKV, and WebM.
+`video invisible` and `video all --invisible` accept MP4, MOV, M4V, MKV, WebM, AVI, and FLV.
 That is the default SynthID profile. It is lossy; its shipped noise profile
-is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only, and `focalcodec` failed on a held-out 10 s Gemini audio track).
+is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only).
 
-For an owned Seedance MP4, explicitly opt into the experimental fixed recipe
-(since CLI 0.56.0):
+For an owned Seedance video, `--profile auto` routes ByteDance/Seedance clips automatically, or opt in explicitly with `--profile seedance` (legacy alias `seedance-experimental`):
 
 ```bash
-remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile seedance-experimental
-remove-ai-watermarks video invisible label-cleaned.mp4 -o clean.mp4 --profile seedance-experimental
-remove-ai-watermarks video batch ./videos --invisible --profile seedance-experimental
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile seedance
+remove-ai-watermarks video invisible label-cleaned.mp4 -o clean.mp4 --profile seedance
+remove-ai-watermarks video batch ./videos --invisible --profile seedance
 ```
 
-Seedance requires SDR 8-bit MP4 with even dimensions. `--quality delivery`
-(default) writes H.264 High CRF18; `--quality master` retains a larger
+Seedance accepts SDR 8-bit and 10-bit HEVC/HDR across all 7 containers (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, `.flv`) with even dimensions. `--quality delivery`
+(default) writes H.264/H.265 CRF18; `--quality master` retains a larger
 lossless-coded master. Leave SynthID tuning flags at their defaults; nondefault
 values are rejected for this fixed recipe. All/batch requires `--invisible`
 with this profile. Only all mode runs the supported visible stage first;
-unhandled visible overlays need separate preparation. The experiment has
+unhandled visible overlays need separate preparation. The profile has
 matched-control CapCut evidence but performs no per-file detector request.
-These profile options require a build containing the experimental Seedance
-integration; verify `video all --help` before using them.
 
 On machines with a hardware BF16-capable NVIDIA CUDA GPU (Ampere or newer; ROCm
-and pre-Ampere emulation are excluded), two additional
-experimental 3D video diffusion profiles preserve native resolution and frame
-rate on SDR 8-bit MP4, MOV, and M4V clips within the conservative decoded-frame budget
-(`<= 1920x1080` frame area and `<= 552,960,000` decoded pixel-frames, streaming
-clips over 193 frames via overlapping 3D causal windows, since CLI 0.63.0), and
-`--profile auto` (the default on `video all`, `video batch`, `video invisible`,
-and `clean`) automatically routes eligible ByteDance/Seedance MP4, MOV, and M4V clips
-(`<= 1920x1080` frame area and `>= 8 GiB` total GPU VRAM, stepping down from 193-frame to 81-frame chunks on 1080p or `< 16 GiB` CUDA) to
-`wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` fallback on
-CPU/MPS MP4, or `synthid` on MOV/M4V/MKV/WebM or over budget) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental`
+and pre-Ampere emulation are excluded) or explicit Apple Silicon `--device mps`, two
+3D video diffusion profiles (`wan21-synthid` and `wan21-seedance`; legacy aliases `wan21-synthid-experimental`, `wan21-seedance-experimental`) preserve native resolution and frame
+rate on SDR 8-bit and 10-bit HDR clips across all 7 containers (using 1080p-guided high-frequency texture restoration above `1920x1080` and streaming
+clips over 193 frames via overlapping 3D causal windows), and
+`--profile auto` (the default on `all`, `video all`, `video batch`, and `video invisible`) automatically routes eligible ByteDance/Seedance clips
+(`>= 8 GiB` total GPU VRAM on BF16 CUDA, stepping down from 193-frame to 81-frame chunks on 1080p or `< 16 GiB` CUDA) to
+`wan21-seedance` on BF16 CUDA (`seedance` fallback on CPU/MPS) and other eligible clips to `wan21-synthid`
 on BF16 CUDA (`synthid` fallback otherwise):
 
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile auto
-remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile wan21-synthid-experimental
-remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile wan21-seedance-experimental
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile wan21-synthid
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile wan21-seedance
 ```
 
 Both `wan21-*` profiles use pinned Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`
@@ -237,64 +231,27 @@ remove-ai-watermarks audio batch ./tracks -o ./tracks_clean --mode all --invisib
 
 `audio identify` and `audio invisible` accept `--stream N`, a zero-based audio-track ordinal (`audio identify` also emits `recommended_recipe` when AI metadata or a compatible watermark signal is found). `audio metadata` checks (`--check`) or strips (`--remove`) AI metadata via stream-copy remuxing (`--keep-standard/--remove-all`, `-o`). `audio all` strips AI metadata and, with `--invisible`, removes compatible waveform watermarks (`--scheme auto` default, writing a metadata-cleaned passthrough when no positive compatible watermark is detected). `audio batch` runs `--mode [all|metadata]` across a directory (`-o` / `--output-dir`). Inspection without
 models needs ffmpeg and ffprobe. `--scheme audioseal` (default on `identify`/`invisible`) needs
-`audio-detect`; `--scheme auto` scans every installed compatible decoder without failing on absent optional extras; `--scheme wavmark` needs `audio-wavmark`; `--scheme perth` needs `audio-perth`; `--scheme silentcipher` and `--scheme silentcipher16` need `audio-silentcipher`; `--scheme all` checks
+`audio-detect`; `--scheme auto` scans every installed compatible decoder without failing on absent optional extras; `--scheme wavmark` needs `audio-wavmark`; `--scheme perth` needs `audio-perth`; `--scheme silentcipher` needs `audio-silentcipher`; `--scheme all` checks
 all named models and needs all named decoder extras. WavMark also checks the
 published OpenVoice default raw framing at native samples 0 and 32000. JSON
 labels it `framing="openvoice-default"` with its native `decoder_sample_rate`.
-`silentcipher` reports `decoder_sample_rate=44100` regardless of input rate;
-the 16 kHz model is outside that route. The separate `silentcipher16` route
-checks only an experimental terminated eight-symbol pattern, with
-`decoder_sample_rate=16000`, `framing="terminated8"`, and seven ternary
-`payload_symbols`, not bytes.
-The SDK byte API and general 32-bit profile remain unqualified. `all` includes
-both receivers; missing requested checks keep the combined result unverified.
+`silentcipher` reports `decoder_sample_rate=44100` regardless of input rate.
 For OpenVoice, custom messages and shifted/resampled framing remain outside
 the receiver; its binomial-tail diagnostic is not a calibrated false-positive probability. For validated 24 and 48 kHz sources, AudioSeal checks the resampled 16 kHz and native sample clocks independently; other native clocks are not added automatically. JSON `decoder_sample_rate` identifies each AudioSeal receiver; a verified negative requires both clocks to be negative. Removal requires a compatible source positive and a
 fully negative saved output. No positive source exits 2 without writing.
-Rejected verification exits 1 and preserves an existing output. `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, and `.opus`
+Rejected verification exits 1 and preserves an existing output. `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, and `.mka`
 outputs preserve channels and sample clock (Opus codes internally at 48 kHz and resamples back during fidelity checks), with AI metadata
 discarded and saved-file decoder verification enforced after encoding. The spectral profile changes audible content and can fail.
 
 `--method auto` (default) tries spectral filtering then combined filtering and
-neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and both experimental SilentCipher receivers (using Mid/Side stereo on 2-channel EnCodec passes), routes mono, stereo, or tagged 5.1/7.1 audio carrying ElevenLabs metadata to `dac` (or `encodec`/`combined` when `dac` is absent) and Google SynthID metadata exclusively to `dac`/`combined` (failing closed rather than falling back to `encodec` when `dac` is absent or the layout is unsupported) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
-`--method spectral`, `encodec`, or `combined` fixes one profile. Neural profiles
+neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and SilentCipher (using Mid/Side stereo on 2-channel EnCodec passes), routes mono, stereo, or tagged 5.1/7.1 audio carrying ElevenLabs metadata to `dac` (or `encodec`/`combined` when `dac` is absent) and Google SynthID metadata exclusively to `dac`/`combined` (failing closed rather than falling back to `encodec` when `dac` is absent or the layout is unsupported) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
+`--method spectral`, `encodec`, `combined`, `dac`, or `snac` fixes one profile. Neural profiles
 need `audio-codec`; a missing required fallback fails without replacing output.
-`--bandwidth` accepts `6`, `12`, or `24` kbps, default `24`, for neural profiles.
+`--bandwidth` accepts `6`, `12`, or `24` kbps, default `24`, for EnCodec profiles.
 Keep the requested decoder extras for verification. Neural processing changes speech
 timbre or music and can retain a watermark. Whole-clip and window checks must
 both pass; a negative whole-clip result alone is insufficient. These options
 also apply to `video audio` and its MCP tool.
-
-`--method bigvgan` selects a separate experimental pinned full-track mel-vocoder
-and requires `audio-vocoder`. It accepts mono/stereo, at most 30 seconds and
-16 million sample values, with raw mid/side stereo and exact native sample counts.
-`--vocoder-device cpu` (default), `mps`, or `cuda` explicitly selects inference;
-non-CPU values require this method. No chunking or automatic fallback is used.
-EnCodec bandwidth does not apply. `auto` never selects this method. Keep the
-requested compatible decoder extras and verification gates. They do not check
-Google SynthID; external provider observations remain file-hash scoped.
-
-`--method mimi` selects a separate experimental Mimi codec, fixed at its default
-32 quantizers on CPU FP32 with the `audio-codec` extra. It shares the mono/stereo
-full-track bounds, raw mid/side processing, bitexact WAV encoding and native
-half-open sample grid. The internal codec rate is 24 kHz; output at a higher
-native rate does not restore its missing bandwidth. Keep `--vocoder-device cpu`;
-EnCodec bandwidth does not apply. Auto selection excludes this method. Apply
-the same requested decoder checks and report quality separately. Local Perth
-success does not verify a native-provider watermark, words, or voice on new files.
-
-`--method focalcodec` selects a separate experimental 50 Hz FocalCodec
-continuous-feature profile (`WavLM` 6-layer encoder to `Vocos` ISTFT decoder) on
-CPU FP32 with the `audio-codec` extra. It runs single-pass resynthesis up to
-30 seconds and raised-cosine overlap-window streaming on longer mono/stereo
-audio (`> 30 s`), preserving raw mid/side stereo, bitexact WAV encoding, and a
-rational half-open native clock (`16 kHz` internal grid, `8 kHz` Nyquist ceiling), with
-smooth source-activity conditioning (`resynthesize_conditioned`) that preserves
-quiet pause intervals where unconditioned Vocos phase randomization could
-cross-react with magnitude-domain Perth windows. Keep `--vocoder-device cpu`;
-EnCodec bandwidth does not apply, and `auto` excludes this method. Default
-verification still requires a clean saved-output check before publication and
-reports `quality_passed`.
 
 `--method dac` selects the 44.1 kHz Descript Audio Codec profile
 (`descript/dac_44khz`, MIT weights) fixed at 3 codebooks on FP32 with the
@@ -302,7 +259,7 @@ reports `quality_passed`.
 30 seconds and raised-cosine overlap-window streaming on longer audio (`> 30 s`),
 supporting mono, raw mid/side stereo, and tagged `5.1`/`7.1` surround stem
 decomposition with `<120 Hz` LFE filtering while preserving full 22.05 kHz
-bandwidth. `--vocoder-device` accepts `cpu` (default), `mps`, or `cuda`; EnCodec
+bandwidth (defaulting `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks). `--vocoder-device` accepts `auto` (default), `cpu`, `mps`, or `cuda`; EnCodec
 bandwidth does not apply, and `auto` selects `dac` when pre-strip metadata or an
 explicit `--vendor` cohort identifies a wideband AI audio generator.
 
@@ -311,7 +268,7 @@ explicit `--vendor` cohort identifies a wideband AI audio generator.
 (strides 8, 4, 2) on FP32 with the `audio-codec` extra. Like `dac`, it runs
 single-pass resynthesis up to 30 seconds and overlap-window streaming on longer
 audio (`> 30 s`), supporting mono, raw mid/side stereo, and tagged `5.1`/`7.1`
-surround stems on `--vocoder-device [cpu|mps|cuda]`; `auto` excludes `snac`.
+surround stems on `--vocoder-device [auto|cpu|mps|cuda]`; `auto` excludes `snac`.
 
 `--allow-unverified` permits processing without a local source-positive decoder match (or with `--no-verify`) while keeping the audio SNR/RMS/window integrity gate active (`--allow-positive` permits a still-positive final candidate; `--allow-quality-override` overrides the integrity gate; `--force` enables all three).
 `--method spectral --allow-unverified --no-verify` only needs the `audio` extra. Other
@@ -362,8 +319,8 @@ Emoji `U+200D` ZWJ sequences. Without `-o`, `text` commands write
 tags, and Markdown headings verbatim and regenerate unlocked prose spans with an
 unwatermarked local causal LM (default Transformers backend, `text` extra;
 `diffusion` remains compatible).
-Since CLI 0.63.0, both regeneration commands accept `--rewriter-model` and
-`--rewriter-backend transformers|mlx`. For local Apple silicon MLX checkpoints,
+Since CLI 0.63.0, both regeneration commands accept `--rewriter-model`,
+`--rewriter-backend transformers|mlx|ollama`, `--ollama-url`, and `--strict-residual`. For local Apple silicon MLX checkpoints,
 install `text-mlx` and pass
 `--rewriter-backend mlx --rewriter-model /path/to/checkpoint`. `text all` requires
 `--invisible` with these options. The MLX backend uses the same acceptance guards

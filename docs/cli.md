@@ -30,7 +30,6 @@ defaults. This page focuses on choosing the right command.
 | `audio identify --no-invisible` | Default package plus ffmpeg and ffprobe |
 | `audio identify` and verified `audio invisible` | `remove-ai-watermarks[audio-detect]` plus ffmpeg and ffprobe |
 | Audio `--scheme silentcipher` | `audio-silentcipher`, for the experimental public SilentCipher-44k receiver |
-| Audio `--scheme silentcipher16` | `audio-silentcipher`, for the experimental terminated eight-symbol 16k pattern |
 | Audio `--scheme perth` | `audio-perth`, for pinned public Perth v1 |
 | Audio `--scheme wavmark` | `audio-wavmark`; `--scheme all` needs `audio-detect`, `audio-wavmark`, `audio-perth`, and `audio-silentcipher` |
 | `audio invisible --allow-unverified --no-verify` | `remove-ai-watermarks[audio]` plus ffmpeg and ffprobe |
@@ -63,8 +62,8 @@ remove-ai-watermarks audio batch ./tracks -o ./tracks_clean --mode all --invisib
 `--json`. Inspection reports metadata, a source SHA-256, stream geometry, named
 compatible decoder checks, and a suggested `recommended_recipe` when AI metadata
 or a compatible watermark signal is found. `--no-invisible` skips model inference.
-`--scheme` selects `audioseal` (default on `identify`/`invisible`), `auto` (scans every *installed* non-experimental compatible public decoder — `audioseal`, `wavmark`, and `perth` — without failing when an optional decoder extra is absent or a clip is shorter than WavMark's 1-second minimum window, leaving the overall status `unverified` only if no applicable decoder completes), `wavmark`, `perth`, `silentcipher`, `silentcipher16`, or `all` (requires all named public
-models, including both experimental SilentCipher receivers). A missing explicitly requested decoder keeps the combined result unverified.
+`--scheme` selects `audioseal` (default on `identify`/`invisible`), `auto` (scans every *installed* non-experimental compatible public decoder — `audioseal`, `wavmark`, and `perth` — without failing when an optional decoder extra is absent or a clip is shorter than WavMark's 1-second minimum window, leaving the overall status `unverified` only if no applicable decoder completes), `wavmark`, `perth`, `silentcipher`, or `all` (requires all named public
+models, including the experimental SilentCipher-44k receiver). A missing explicitly requested decoder keeps the combined result unverified.
 For validated 24 and 48 kHz sources, AudioSeal checks both a resampled 16 kHz
 clock and the original sample clock. Other native clocks are not added automatically. JSON detections identify the clock in `decoder_sample_rate`;
 verification requires both clocks to be negative, across channels and windows.
@@ -78,18 +77,11 @@ and records their native `decoder_sample_rate`. Custom messages and
 shifted/resampled framing are outside this receiver. SilentCipher-44k uses
 three-second windows and an experimental consistency threshold, with exhaustive
 phase search. Shorter sources stay unverified; CPU decoding can be slow.
-Its JSON `decoder_sample_rate` is 44100 even for 16 kHz input. This receiver
-does not check the 16 kHz model. The separate `silentcipher16` route checks only
-an experimental terminated eight-symbol pattern, with `decoder_sample_rate=16000`
-regardless of input rate. Readings label `framing="terminated8"`. JSON
-`payload_symbols` contains seven ternary symbols,
-not bytes. The SDK byte API and general 32-bit profile remain unqualified.
-Three-second windows and the complete 103-position phase grid are required for
-a negative. `all` includes both SilentCipher receivers. Neither negative
+Its JSON `decoder_sample_rate` is 44100 even for 16 kHz input. Neither negative
 certifies a production provider, other framing, or complete payload erasure.
 
 `audio invisible` defaults to `--method auto`, an adaptive minimal-distortion profile sequence for the
-requested scheme and pre-strip vendor metadata. AudioSeal and Perth v1 try spectral then combined processing; WavMark and both experimental SilentCipher receivers
+requested scheme and pre-strip vendor metadata. AudioSeal and Perth v1 try spectral then combined processing; WavMark and SilentCipher-44k
 try neural then combined; when pre-strip C2PA/container metadata identifies ElevenLabs (`("dac", "encodec", "combined")` on mono, stereo, or tagged 5.1/7.1 when `dac` is installed, else `("encodec", "combined")`) or Google SynthID (`("dac", "combined")` on the same layouts when `dac` is installed, else `dac` alone, which fails closed), `--method auto` skips `spectral` and routes directly to neural codec resynthesis; an explicit `--vendor` cohort (`google`, `elevenlabs`, `suno`, `udio`, `openai`, `cartesia`, `meta`, `resemble`, `microsoft`) selects the same kind of vendor-matched sequence when metadata was already stripped and authorizes processing without `--allow-unverified`; when `--scheme auto` or `--scheme all` detects a specific subset of public schemes on the source, `--method auto` adapts to the lightest profile sequence covering only the positively detected schemes before falling back to `combined`. Publication requires
 a positive compatible source check and proceeds only after the
 saved output is negative in whole-clip and window checks. A resistant or
@@ -99,7 +91,7 @@ No targeted source signal exits 2 without writing. Hard failures exit 1.
 Use `--allow-unverified` (for example with `--method dac` on proprietary audio marks or alongside `--no-verify`) to process without a local source-positive decoder match while still enforcing the saved-file SNR, RMS, and 1-second active-window integrity gate. Use `--allow-positive` only when you explicitly want to retain an output that still tests positive on the final attempt (exits 1), and `--allow-quality-override` only when you explicitly want to bypass the audio integrity gate. `--force` remains an alias enabling `--allow-unverified`, `--allow-positive`, and `--allow-quality-override` on the final attempt. Unverified processing exits 0 with
 `verified_removed: null`; this is not a removal certificate. `--verify` is the
 default. The default output is `SOURCE_processed.wav`; `-o` / `--output`
-accepts `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, or `.opus` (`libopus` 192 kbps). Encoding discards AI metadata and preserves native sample
+accepts `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, `.oga`, `.opus` (`libopus` 192 kbps), `.aac` (`aac` 192 kbps ADTS), or `.mka` (`flac` in Matroska). Encoding discards AI metadata and preserves native sample
 rate and channels (Opus internally codes on its RFC 7845 48 kHz grid and resamples back to the source clock during fidelity measurement). Reports measure fidelity (including `worst_window_rms_ratio` across 1-second active windows and stereo `max_side_mid_drift_db`) and run decoder verification on
 the actual saved file, so lossy recompression relapses and mid-track dropouts are caught before publication. The filter changes audible content and can fail on tonal inputs.
 See [audio coverage](audio-video-removal.md) for tested families and limits.
@@ -113,55 +105,18 @@ See [audio coverage](audio-video-removal.md) for tested families and limits.
 `--method spectral` fixes the spectral profile. `--method encodec` selects
 optional neural resynthesis. `--bandwidth` accepts
 `6`, `12`, or `24` kbps and defaults to `24`; it applies only to EnCodec.
-`--vocoder-device` (`cpu` default, `mps`, or `cuda`) applies to EnCodec,
-`combined`, BigVGAN, and DAC; spectral, Mimi, and FocalCodec require `cpu`.
+`--vocoder-device` (`auto` default, `cpu`, `mps`, or `cuda`) applies to EnCodec,
+`combined`, DAC, and SNAC; `spectral` requires `cpu`.
 Lower bandwidth can change speech timbre or music substantially. On 2-channel stereo tracks, EnCodec resynthesizes in Mid/Side (`M/S`) space rather than independent L/R passes so stereo phantom-center phase coherence is preserved, while retaining native channels, rate, and sample-frame count using bounded context.
 It has the same source-positive and saved-output verification gate, and can
 fail even when a whole-clip reading is negative but a window remains positive.
 `--method combined` applies the spectral filter followed by that neural codec.
 It uses the same optional extra and bandwidth choices. Automatic neural
 fallback also needs `audio-codec`; if unavailable, output remains unpublished.
-`--method bigvgan` explicitly selects the experimental pinned mel-vocoder
-(`audio-vocoder` extra). It processes one complete mono/stereo track, limited
-to 30 seconds and 16 million sample values, without chunking, normalization,
-or added output clipping. Stereo uses raw mid/side reconstruction. Select
-`--vocoder-device cpu` (default), `mps`, or `cuda`; no automatic device fallback
-is performed. CUDA and short-signal perceptual quality remain unqualified.
-The method is never selected by `auto`, ignores EnCodec bandwidth, and retains
-the same local decoder gates. Those gates do not verify Google SynthID.
-BigVGAN WAV serialization is deterministic and omits the encoder tag and RF64
-reserve padding. Exact-file provider verdicts can be reused only when the
-complete output hash and verification surface match; PCM equality alone is
-insufficient. FLAC output is separately encoded and needs its own qualification.
-`--method mimi` selects the separate experimental CPU FP32 Mimi codec using
-its fixed default 32 quantizers (`audio-codec` extra). It uses the same bounded
-full-track mono/stereo collector, raw mid/side stereo, native sample grid and
-bitexact WAV writer. Its internal 24 kHz grid limits representable bandwidth;
-retaining the source rate is not preservation of its highest frequencies.
-EnCodec bandwidth and a non-CPU vocoder device do not apply. `auto` never
-selects Mimi. Local Perth experiments removed the signal on independent speech
-generations, but one short generation failed the frozen relative voice guard.
-Native-provider candidates remain unverified.
-`--method focalcodec` selects the separate experimental CPU FP32 continuous
-6-layer WavLM feature-to-Vocos resynthesizer (`audio-codec` extra, pinned to
-`lucadellalib/focalcodec_50hz@d6d6d9524e52155c85193c2c3b8da1cf8842f019` and
-upstream `v0.0.1` `cad8bf81d70875f756770449c34909d8b0951642`). It runs
-single-pass resynthesis up to 30 seconds and raised-cosine overlap-window
-streaming on longer mono/stereo audio (`> 30 s`), preserving raw mid/side stereo, exact native
-sample grid, symmetric `(40, 40)` WavLM receptive-field context, smooth
-source-activity pause conditioning (`-42 dBFS` active speech / `-50 dBFS` quiet
-intervals), and bitexact WAV writer. Its internal 16 kHz grid limits representable
-bandwidth to 8 kHz. EnCodec bandwidth and a non-CPU vocoder device do not apply,
-and `auto` never selects FocalCodec. On native speech, conditioned FocalCodec
-passed complete paired WAV, PCM MOV, and AAC 192 kbps MP4 checks across `LONG03`,
-`LONG04`, and an untouched held-out `LONG05` generation while preserving atypical
-lexical phrasing where Mimi regularized a word. None of BigVGAN, Mimi,
-FocalCodec, or DAC supplies a SynthID decoder or guarantees words, voice, music,
-or ambience fidelity on a new input.
-`--method dac` selects the separate experimental FP32 44.1 kHz 3-codebook
+`--method dac` selects the FP32 44.1 kHz 3-codebook
 Descript Audio Codec (`audio-codec` extra, pinned to
 `descript/dac_44khz@c1bc521685adf9cfe247bc39a5ca58917eda1ac4`, MIT weights in
-`licenses/dac/NOTICE.txt`). It accepts mono, stereo, and tagged 5.1/7.1 layouts,
+`licenses/dac/NOTICE.txt`, defaulting `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks). It accepts mono, stereo, and tagged 5.1/7.1 layouts,
 and runs single-pass resynthesis up to 30 seconds
 and raised-cosine overlap-window streaming on longer audio (`> 30 s`),
 with raw mid/side stereo, stem RMS preservation, exact
@@ -752,8 +707,9 @@ provider-oracle evidence covers short single-pass clips (`<= 10 s`);
 remove-ai-watermarks video invisible input.mp4 -o clean.mp4 --profile seedance
 ```
 
-The fixed recipe accepts owned SDR 8-bit and **10-bit HEVC/HDR** MP4 files with
-even dimensions, preserving native bit depth (`yuv420p10le`), color tags
+The fixed recipe accepts owned SDR 8-bit and **10-bit HEVC/HDR** video files
+across all 7 supported containers (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`,
+`.avi`, `.flv`) with even dimensions, preserving native bit depth (`yuv420p10le`), color tags
 (`color_primaries`, `color_trc`, `colorspace`, `color_range`), geometry, frame
 timestamps, terminal video duration, and source audio. `--quality delivery`
 (default) writes H.264 High CRF18 for 8-bit or HEVC (`libx265`, `hvc1`) CRF18
@@ -768,35 +724,32 @@ SynthID. The default profile is `auto`, which routes ByteDance/Seedance clips
 to the Seedance pipeline automatically and SynthID/other clips to the SynthID
 pipeline (or Wan 2.1 on eligible BF16 CUDA hosts).
 
-This experimental transform reproduced the matched-control CapCut outcome
+This transform reproduced the matched-control CapCut outcome
 recorded in [the study](seedance-video-study.md). No detector or external upload
 runs during processing. The standalone invisible command expects visible labels
 to have been handled already; `video all` runs its existing visible stage first.
 
-## Apply the experimental CUDA 3D Wan 2.1 video diffusion profiles and `--profile auto`
+## Apply the 3D Wan 2.1 video diffusion profiles and `--profile auto`
 
 On hosts with a hardware BF16-capable NVIDIA CUDA GPU (Ampere or newer; ROCm and
-pre-Ampere emulation are excluded), two explicit 3D causal video diffusion
-profiles preserve native resolution and frame rate on SDR 8-bit MP4, MOV, and
-M4V clips within
-the conservative decoded-frame budget (`<= 1920x1080` frame area and
-`<= 552,960,000` total decoded pixel-frames, streaming clips longer than 193
-frames through overlapping 3D causal windows with 17-frame raised-cosine
-temporal crossfades directly to the encoder without buffering the full clip in
-host RAM), and `--profile auto` automatically routes eligible ByteDance/Seedance
-MP4, MOV, and M4V clips (`<= 1920x1080` frame area and `>= 8 GiB` total GPU VRAM,
-stepping down from 193-frame to 81-frame chunks on 1080p or `< 16 GiB` CUDA and
-skipping the UMT5 text encoder whenever the static neutral prompt embedding is
-cached locally) to
-`wan21-seedance-experimental` on BF16 CUDA (`seedance-experimental` on CPU/MPS
-for MP4, or `synthid` for MOV/M4V/MKV/WebM or when the auto Wan budget is exceeded) and
-other eligible SDR 8-bit MP4, MOV, and M4V clips to
-`wan21-synthid-experimental` on BF16 CUDA (`synthid` fallback otherwise):
+pre-Ampere emulation are excluded) or explicit Apple Silicon `--device mps`, two
+3D causal video diffusion profiles preserve native resolution and frame rate on
+SDR 8-bit and 10-bit HDR clips across all 7 containers (`.mp4`, `.mov`, `.m4v`,
+`.mkv`, `.webm`, `.avi`, `.flv`), using 1080p-guided high-frequency texture
+restoration above `1920x1080` and streaming clips longer than 193 frames through
+overlapping 3D causal windows with 17-frame raised-cosine temporal crossfades
+directly to the encoder without buffering the full clip in host RAM.
+`--profile auto` automatically routes eligible ByteDance/Seedance clips
+(`>= 8 GiB` total GPU VRAM on BF16 CUDA, stepping down from 193-frame to
+81-frame chunks on 1080p or `< 16 GiB` CUDA and skipping the UMT5 text encoder
+whenever the static neutral prompt embedding is cached locally) to
+`wan21-seedance` on BF16 CUDA (`seedance` on CPU/MPS) and other eligible clips
+to `wan21-synthid` on BF16 CUDA (`synthid` fallback otherwise):
 
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile auto
-remove-ai-watermarks video invisible veo.mp4 -o veo_clean.mp4 --profile wan21-synthid-experimental
-remove-ai-watermarks video all seedance.mp4 -o seedance_clean.mp4 --invisible --profile wan21-seedance-experimental
+remove-ai-watermarks video invisible veo.mp4 -o veo_clean.mp4 --profile wan21-synthid
+remove-ai-watermarks video all seedance.mp4 -o seedance_clean.mp4 --invisible --profile wan21-seedance
 ```
 
 Both load pinned Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` (`0fad780a534b6463e45facd96134c9f345acfa5b`,
@@ -1236,7 +1189,7 @@ The JSON result includes delivered-file SSIM, PSNR, temporal measurements, and
 `quality_passed`.
 
 Processing accepts one video stream with optional audio streams and uniform,
-zero-based video timestamps. Outputs are MP4, MOV, or M4V, defaulting to
+zero-based video timestamps. Outputs are MP4, MOV, M4V, MKV, WebM, AVI, or FLV, defaulting to
 `SOURCE_message_processed.mp4`. Audio is copied with packet, timing, decoded
 sample, language, and disposition checks. Its watermarks remain unverified.
 Source metadata is dropped. Additional stream types and unsupported timelines

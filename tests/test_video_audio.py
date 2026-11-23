@@ -99,29 +99,29 @@ def test_video_audio_verifies_actual_mux_and_keeps_other_tracks(tmp_path, monkey
     assert tracks[2]["disposition"]["default"] == tracks[2]["disposition"]["original"] == 1
 
 
-def test_bigvgan_selected_track_routes_device_and_checks_final_mux(tmp_path, monkeypatch):
+def test_dac_selected_track_routes_device_and_checks_final_mux(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
     from remove_ai_watermarks.video_audio import remove_video_audio
 
     calls = []
-    monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
 
-    def process(samples, rate, *, device, local_files_only):
+    def process(samples, rate, *, device="cpu", local_files_only=False):
         calls.append((samples.shape, rate, device, local_files_only))
         return samples * 0.5
 
-    monkeypatch.setattr(audio.audio_vocoder, "resynthesize", process)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", process)
     result = remove_video_audio(
         _video(tmp_path),
-        tmp_path / "vocoder.mkv",
+        tmp_path / "dac.mkv",
         stream=1,
-        method="bigvgan",
+        method="dac",
         vocoder_device="mps",
         force=True,
         verify=False,
     )
     assert calls == [((24031, 2), 16000, "mps", False)]
-    assert result.method == "bigvgan"
+    assert result.method == "dac"
     assert result.vocoder_device == "mps"
     assert result.verified_removed is None
     assert result.unchanged_streams == (0, 1)
@@ -254,72 +254,13 @@ def test_corrupted_mux_is_rejected_atomically(tmp_path, monkeypatch, fault):
     assert output.read_bytes() == b"existing output"
 
 
-def test_mimi_selected_track_routes_device_and_checks_final_mux(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-    from remove_ai_watermarks.video_audio import remove_video_audio
-
-    calls = []
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-
-    def process(samples, rate, *, local_files_only):
-        calls.append((samples.shape, rate, "cpu", local_files_only))
-        return samples * 0.5
-
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", process)
-    result = remove_video_audio(
-        _video(tmp_path),
-        tmp_path / "vocoder.mkv",
-        stream=1,
-        method="mimi",
-        vocoder_device="cpu",
-        force=True,
-        verify=False,
-    )
-    assert calls == [((24031, 2), 16000, "cpu", False)]
-    assert result.method == "mimi"
-    assert result.vocoder_device == "cpu"
-    assert result.verified_removed is None
-    assert result.unchanged_streams == (0, 1)
-    assert result.fidelity.frames == 24031
-    assert result.fidelity.snr_db == pytest.approx(6.0206, abs=0.001)
-
-
-def test_focalcodec_selected_track_routes_device_and_checks_final_mux(tmp_path, monkeypatch):
-    from remove_ai_watermarks import audio
-    from remove_ai_watermarks.video_audio import remove_video_audio
-
-    calls = []
-    monkeypatch.setattr(audio.audio_focalcodec, "is_available", lambda: True)
-
-    def process(samples, rate, *, local_files_only):
-        calls.append((samples.shape, rate, local_files_only))
-        return samples * 0.5
-
-    monkeypatch.setattr(audio.audio_focalcodec, "resynthesize", process)
-    result = remove_video_audio(
-        _video(tmp_path),
-        tmp_path / "focal.mkv",
-        stream=1,
-        method="focalcodec",
-        vocoder_device="cpu",
-        force=True,
-        verify=False,
-    )
-    assert calls == [((24031, 2), 16000, False)]
-    assert result.method == "focalcodec"
-    assert result.vocoder_device == "cpu"
-    assert result.verified_removed is None
-    assert result.unchanged_streams == (0, 1)
-    assert result.fidelity.frames == 24031
-
-
-def test_mimi_final_mux_positive_rejected_after_negative_intermediate(tmp_path, monkeypatch):
+def test_dac_final_mux_positive_rejected_after_negative_intermediate(tmp_path, monkeypatch):
     from remove_ai_watermarks import audio
     from remove_ai_watermarks.video_audio import remove_video_audio
 
     _spectral_detector(monkeypatch)
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda x, *a, **k: x * 0.01)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda x, *a, **k: x * 0.01)
     real = audio.identify_audio
     checked = []
 
@@ -334,7 +275,7 @@ def test_mimi_final_mux_positive_rejected_after_negative_intermediate(tmp_path, 
     output = tmp_path / "processed.mkv"
     output.write_bytes(b"existing output")
     with pytest.raises(audio.AudioVerificationIncomplete):
-        remove_video_audio(_video(tmp_path), output, method="mimi", stream=1)
+        remove_video_audio(_video(tmp_path), output, method="dac", stream=1)
     assert checked == ["not_detected"]
     assert output.read_bytes() == b"existing output"
 
@@ -343,8 +284,8 @@ def test_mp4_aac_preserves_odd_sample_count_and_other_tracks(tmp_path, monkeypat
     from remove_ai_watermarks import audio, video_audio
 
     _spectral_detector(monkeypatch)
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda x, *a, **k: x * 0.01)
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda x, *a, **k: x * 0.01)
     source = _video(
         tmp_path,
         audio_codec="aac",
@@ -364,7 +305,7 @@ def test_mp4_aac_preserves_odd_sample_count_and_other_tracks(tmp_path, monkeypat
 
     monkeypatch.setattr(video_audio.subprocess, "Popen", capture)
     output = tmp_path / "processed.mp4"
-    result = video_audio.remove_video_audio(source, output, stream=1, method="mimi")
+    result = video_audio.remove_video_audio(source, output, stream=1, method="dac")
     assert result.verified_removed is True
     assert result.frames_processed == result.fidelity.frames == 24031
     assert result.source_audio_start == result.output_audio_start
@@ -540,16 +481,16 @@ def test_video_audio_quality_gate_rejects_silent_erasure_unless_forced(tmp_path,
     from remove_ai_watermarks import audio, video_audio
 
     _spectral_detector(monkeypatch)
-    monkeypatch.setattr(audio.audio_mimi, "is_available", lambda: True)
-    monkeypatch.setattr(audio.audio_mimi, "resynthesize", lambda samples, *a, **k: np.zeros_like(samples))
+    monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
+    monkeypatch.setattr(audio.audio_dac, "resynthesize", lambda samples, *a, **k: np.zeros_like(samples))
     source = _video(tmp_path)
     output = tmp_path / "processed.mkv"
     output.write_bytes(b"existing output")
     with pytest.raises(audio.AudioVerificationIncomplete, match="quality gate"):
-        video_audio.remove_video_audio(source, output, stream=1, method="mimi")
+        video_audio.remove_video_audio(source, output, stream=1, method="dac")
     assert output.read_bytes() == b"existing output"
 
-    forced = video_audio.remove_video_audio(source, output, stream=1, method="mimi", force=True)
+    forced = video_audio.remove_video_audio(source, output, stream=1, method="dac", force=True)
     assert forced.verified_removed is True
     assert forced.quality_passed is False
 
@@ -561,7 +502,7 @@ def test_remove_video_audio_all_streams_cleans_multiple_tracks_and_cli_all_strea
     from remove_ai_watermarks.cli import main
 
     _spectral_detector(monkeypatch)
-    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
 
     source = _video(tmp_path, first_offset=0, selected_offset=0)
@@ -605,7 +546,7 @@ def test_remove_video_audio_all_streams_preserves_existing_destination_on_late_f
     from remove_ai_watermarks import audio, video_audio
 
     _spectral_detector(monkeypatch)
-    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
 
     source = _video(tmp_path, first_offset=0, selected_offset=0)
@@ -672,7 +613,7 @@ def test_remove_video_audio_all_streams_unverified_unprocessed_track_blocks_aggr
     from remove_ai_watermarks import audio, video_audio
 
     _spectral_detector(monkeypatch)
-    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
 
     source = _video(tmp_path, first_offset=0, selected_offset=0)
@@ -709,7 +650,7 @@ def test_preflight_untagged_stereo_post_fidelity_hash_and_selected_stream_ordina
     from remove_ai_watermarks import audio, video_audio
 
     _spectral_detector(monkeypatch)
-    for backend in (audio.wavmark, audio.perth, audio.silentcipher, audio.silentcipher16):
+    for backend in (audio.wavmark, audio.perth, audio.silentcipher):
         monkeypatch.setattr(backend, "is_available", lambda: False)
 
     # 1. Forced preflight accepts untagged 2-channel PCM stereo in MKV (where raw channel_layout is omitted)

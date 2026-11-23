@@ -7,9 +7,9 @@ from typing import Literal, get_args
 
 from remove_ai_watermarks._internal._generated_c2pa_soft_bindings import C2PA_SOFT_BINDING_ROWS
 
-AudioScheme = Literal["audioseal", "wavmark", "perth", "silentcipher", "silentcipher16", "all", "auto"]
-AudioProfile = Literal["spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac", "snac"]
-AudioMethod = Literal["auto", "spectral", "encodec", "combined", "bigvgan", "mimi", "focalcodec", "dac", "snac"]
+AudioScheme = Literal["audioseal", "wavmark", "perth", "silentcipher", "all", "auto"]
+AudioProfile = Literal["spectral", "encodec", "combined", "dac", "snac"]
+AudioMethod = Literal["auto", "spectral", "encodec", "combined", "dac", "snac"]
 AudioVendor = Literal[
     "auto",
     "google",
@@ -28,7 +28,6 @@ AUDIO_SCHEMES: tuple[AudioScheme, ...] = (
     "wavmark",
     "perth",
     "silentcipher",
-    "silentcipher16",
     "all",
     "auto",
 )
@@ -36,9 +35,6 @@ AUDIO_PROFILES: tuple[AudioProfile, ...] = (
     "spectral",
     "encodec",
     "combined",
-    "bigvgan",
-    "mimi",
-    "focalcodec",
     "dac",
     "snac",
 )
@@ -47,10 +43,12 @@ AudioDevice = Literal["auto", "cpu", "mps", "cuda"]
 AUDIO_VOCODER_DEVICES: tuple[AudioDevice, ...] = ("auto", "cpu", "mps", "cuda")
 AUDIO_BANDWIDTHS_KBPS: tuple[int, ...] = (6, 12, 24)
 AUDIO_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".aac", ".mka")
-AUDIO_OUTPUT_EXTENSIONS: tuple[str, ...] = (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".opus")
-AUDIO_LOSSY_OUTPUT_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".m4a", ".ogg", ".opus"})
+AUDIO_OUTPUT_EXTENSIONS: tuple[str, ...] = AUDIO_EXTENSIONS
+AUDIO_OPUS_EXTENSIONS: frozenset[str] = frozenset({".ogg", ".oga", ".opus"})
+AUDIO_LOSSY_OUTPUT_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".m4a", *AUDIO_OPUS_EXTENSIONS, ".aac"})
 
 ISOBMFF_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".m4v"})
+VIDEO_EXTENSIONS: frozenset[str] = frozenset({*ISOBMFF_VIDEO_EXTENSIONS, ".mkv", ".webm", ".avi", ".flv"})
 
 WanExperimentalProfile = Literal[
     "wan21-synthid",
@@ -64,7 +62,7 @@ WAN_EXPERIMENTAL_PROFILES: tuple[WanExperimentalProfile, ...] = (
     "wan21-synthid-experimental",
     "wan21-seedance-experimental",
 )
-WAN_SUPPORTED_EXTENSIONS: frozenset[str] = ISOBMFF_VIDEO_EXTENSIONS
+WAN_SUPPORTED_EXTENSIONS: frozenset[str] = VIDEO_EXTENSIONS
 VideoInvisibleProfile = Literal[
     "auto",
     "synthid",

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import cv2
 import numpy as np
 
+from remove_ai_watermarks._internal.constants import ISOBMFF_VIDEO_EXTENSIONS
 from remove_ai_watermarks.video_decode import open_video_capture, open_video_capture_16bit
 from remove_ai_watermarks.video_encoding import (
     HIGH_BIT_DEPTH_PIXEL_FORMATS,
@@ -135,7 +136,10 @@ def _match_video_end(encoded: Path, source: Path) -> None:
     repair = video_end_repair(original, _clock(encoded, include_packets=True))
     ffmpeg = require_video_tool("ffmpeg")
     with TemporaryDirectory(prefix="seedance-clock-", dir=encoded.parent) as directory:
-        retimed = Path(directory) / "retimed.mp4"
+        suffix = encoded.suffix.lower()
+        retimed = Path(directory) / f"retimed{suffix}"
+        from remove_ai_watermarks.video_encoding import container_format_args
+
         _run_command(
             [
                 ffmpeg,
@@ -156,6 +160,7 @@ def _match_video_end(encoded: Path, source: Path) -> None:
                 "disabled",
                 "-movflags",
                 "+faststart",
+                *container_format_args(suffix),
                 str(retimed),
             ]
         )
@@ -221,10 +226,13 @@ def _encode_frames(
                 writer.write(frame, timestamp)
             writer.close()
             writer = None
-            finish_raw_video_encoder(encoder, encoded, operation="Experimental Seedance encode")
-            _match_video_end(encoded, source)
+            finish_raw_video_encoder(encoder, encoded, operation="Seedance encode")
+            is_isobmff = output.suffix.lower() in ISOBMFF_VIDEO_EXTENSIONS
+            if is_isobmff:
+                _match_video_end(encoded, source)
             mux_encoded_video(encoded, source, temporary, strip_metadata=True, copy_input_timestamps=True)
-            _match_video_end(temporary, source)
+            if is_isobmff:
+                _match_video_end(temporary, source)
         except Exception:
             if writer is not None:
                 with suppress(Exception):
@@ -290,8 +298,11 @@ def _encode_delivery(master: Path, source: Path, output: Path) -> None:
         "-fps_mode",
         "passthrough",
     ]
-    if time_base.numerator == 1:
+    is_isobmff = output.suffix.lower() in ISOBMFF_VIDEO_EXTENSIONS
+    if is_isobmff and time_base.numerator == 1:
         command.extend(["-video_track_timescale", str(time_base.denominator)])
+    from remove_ai_watermarks.video_encoding import container_format_args
+
     command.extend(
         [
             "-avoid_negative_ts",
@@ -300,13 +311,14 @@ def _encode_delivery(master: Path, source: Path, output: Path) -> None:
             "-1",
             "-map_chapters",
             "-1",
-            "-movflags",
-            "+faststart",
+            *(["-movflags", "+faststart"] if is_isobmff else []),
+            *container_format_args(output.suffix),
             str(output),
         ]
     )
     _run_command(command)
-    _match_video_end(output, source)
+    if is_isobmff:
+        _match_video_end(output, source)
 
 
 def _measure(source: Path, output: Path, fps: float, count: int, *, high_depth: bool = False) -> RegenerationMetrics:
@@ -320,22 +332,28 @@ def _measure(source: Path, output: Path, fps: float, count: int, *, high_depth: 
     width, height, _ = probe_video_geometry(source)
     src_iter = _frames(source, high_depth=high_depth, width=width, height=height)
     out_iter = _frames(output, high_depth=high_depth, width=width, height=height)
-    for original, delivered in zip(src_iter, out_iter, strict=True):
-        if original.shape != delivered.shape:
-            raise RuntimeError("Experimental Seedance output geometry changed")
-        difference = original.astype(np.float64) - delivered.astype(np.float64)
-        squared_error += float(np.sum(difference * difference))
-        pixels += original.size
-        orig_u8 = (original >> 8).astype(np.uint8) if original.dtype == np.uint16 else original
-        deliv_u8 = (delivered >> 8).astype(np.uint8) if delivered.dtype == np.uint16 else delivered
-        current = cv2.cvtColor(orig_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
-        current_output = cv2.cvtColor(deliv_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
-        if previous is not None and previous_output is not None:
-            maps = _backward_map(current, previous)
-            baseline += _motion_residual(current, previous, maps)
-            residual += _motion_residual(current_output, previous_output, maps)
-        previous, previous_output = current, current_output
-        frames += 1
+    try:
+        for original, delivered in zip(src_iter, out_iter, strict=True):
+            if original.shape != delivered.shape:
+                raise RuntimeError("Experimental Seedance output geometry changed")
+            difference = original.astype(np.float64) - delivered.astype(np.float64)
+            squared_error += float(np.sum(difference * difference))
+            pixels += original.size
+            orig_u8 = (original >> 8).astype(np.uint8) if original.dtype == np.uint16 else original
+            deliv_u8 = (delivered >> 8).astype(np.uint8) if delivered.dtype == np.uint16 else delivered
+            current = cv2.cvtColor(orig_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
+            current_output = cv2.cvtColor(deliv_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
+            if previous is not None and previous_output is not None:
+                maps = _backward_map(current, previous)
+                baseline += _motion_residual(current, previous, maps)
+                residual += _motion_residual(current_output, previous_output, maps)
+            previous, previous_output = current, current_output
+            frames += 1
+    finally:
+        for it in (src_iter, out_iter):
+            close = getattr(it, "close", None)
+            if callable(close):
+                close()
     if frames != count:
         raise RuntimeError("Experimental Seedance decoded frame count changed")
     mse = squared_error / pixels
@@ -377,6 +395,18 @@ def validate_experimental_mp4_source(
     return width, height, fps, active_timestamps
 
 
+def _verify_isobmff_timing(source: Path, staged: Path, timestamps: tuple[float, ...], label: str) -> None:
+    """Verify exact timestamps and terminal duration for ISOBMFF containers."""
+    if staged.suffix.lower() not in ISOBMFF_VIDEO_EXTENSIONS:
+        return
+    if probe_video_timestamps(staged) != timestamps:
+        raise RuntimeError(f"{label} output timestamps changed")
+    staged_dur = float(_clock(staged)["streams"][0]["duration"])
+    source_dur = float(_clock(source)["streams"][0]["duration"])
+    if abs(staged_dur - source_dur) > 0.000002:
+        raise RuntimeError(f"{label} output duration changed")
+
+
 def _finalize_experimental_output(
     frames: Iterable[NDArray[Any]],
     source: Path,
@@ -395,12 +425,7 @@ def _finalize_experimental_output(
         _encode_delivery(master, source, staged)
     else:
         master.replace(staged)
-    if probe_video_timestamps(staged) != timestamps:
-        raise RuntimeError(f"{label} output timestamps changed")
-    staged_dur = float(_clock(staged)["streams"][0]["duration"])
-    source_dur = float(_clock(source)["streams"][0]["duration"])
-    if abs(staged_dur - source_dur) > 0.000002:
-        raise RuntimeError(f"{label} output duration changed")
+    _verify_isobmff_timing(source, staged, timestamps, label)
     return _measure(source, staged, fps, len(timestamps), high_depth=high_depth)
 
 
@@ -439,7 +464,7 @@ def regenerate_seedance_experimental(
         atomic_video_output(output) as staged,
         TemporaryDirectory(prefix="seedance-experimental-", dir=output.parent) as directory,
     ):
-        master = Path(directory) / "master.mp4"
+        master = Path(directory) / f"master{source.suffix.lower()}"
         owned_runtime = runtime is None
         active_runtime = runtime or load_video_vae_runtime(model="stabilityai/sd-vae-ft-mse", device=device)
         guide_size = _fit_size(width, height, 512)

@@ -230,28 +230,35 @@ def _source_pcm_bit_depth(info: AudioStreamInfo) -> int | None:
     return None
 
 
+_FLAC_CONTAINERS: frozenset[str] = frozenset({".flac", ".mka"})
+
+
 def _audio_codec_args(suffix: str, info: AudioStreamInfo, *, bitexact: bool) -> list[str]:
+    from remove_ai_watermarks._internal.constants import AUDIO_OPUS_EXTENSIONS
+
     pcm_depth = None if bitexact else _source_pcm_bit_depth(info)
     if suffix == ".wav":
         wav_codec = {16: "pcm_s16le", 24: "pcm_s24le"}.get(pcm_depth or 32, "pcm_f32le")
         return ["-c:a", wav_codec, "-rf64", "never" if bitexact else "auto"]
-    if suffix == ".flac":
+    if suffix in _FLAC_CONTAINERS:
         if pcm_depth == 16:
             return ["-c:a", "flac", "-sample_fmt", "s16"]
         return ["-c:a", "flac", "-sample_fmt", "s32"]
     if suffix == ".m4a":
         return ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+    if suffix == ".aac":
+        return ["-c:a", "aac", "-b:a", "192k"]
     if suffix == ".mp3":
         if info.channels not in (1, 2):
-            raise ValueError("MP3 output supports mono or stereo; use WAV, FLAC, or M4A")
+            raise ValueError("MP3 output supports mono or stereo; use WAV, FLAC, MKA, or M4A")
         if info.sample_rate not in _MP3_RATES:
-            raise ValueError(f"MP3 output does not support {info.sample_rate} Hz; use WAV, FLAC, or M4A")
+            raise ValueError(f"MP3 output does not support {info.sample_rate} Hz; use WAV, FLAC, MKA, or M4A")
         return ["-c:a", "libmp3lame", "-b:a", "256k", "-write_xing", "1"]
-    if suffix in {".ogg", ".opus"}:
+    if suffix in AUDIO_OPUS_EXTENSIONS:
         if info.channels not in (1, 2):
-            raise ValueError("Opus/Ogg output supports mono or stereo; use WAV, FLAC, or M4A")
+            raise ValueError("Opus/Ogg output supports mono or stereo; use WAV, FLAC, MKA, or M4A")
         return ["-c:a", "libopus", "-b:a", "192k"]
-    raise ValueError("Audio sample output must be WAV, FLAC, MP3, M4A, OGG, or OPUS")
+    raise ValueError("Audio sample output must be WAV, FLAC, MP3, M4A, OGG, OGA, OPUS, AAC, or MKA")
 
 
 def write_audio(
@@ -316,8 +323,8 @@ def write_audio(
                     raise ValueError("Bitexact WAV exceeds the short RIFF size bound; use the default RF64 writer")
                 if not np.isfinite(frames).all():
                     raise ValueError("Audio samples must be finite")
-                if suffix == ".flac" and frames.size and (float(frames.min()) < -1 or float(frames.max()) > 1):
-                    raise ValueError("FLAC cannot preserve samples outside [-1, 1]; use floating-point WAV")
+                if suffix in _FLAC_CONTAINERS and frames.size and (float(frames.min()) < -1 or float(frames.max()) > 1):
+                    raise ValueError("FLAC/MKA cannot preserve samples outside [-1, 1]; use floating-point WAV")
                 process.stdin.write(np.ascontiguousarray(frames).tobytes())
                 count += len(frames)
             if count == 0 or (expected_frames is not None and count != expected_frames):
@@ -325,12 +332,14 @@ def write_audio(
             process.stdin.close()
             finish_process(process, stderr, command)
             delivered = probe_audio(staged)
-            expected_sr = 48000 if suffix in {".ogg", ".opus"} else info.sample_rate
+            from remove_ai_watermarks._internal.constants import AUDIO_OPUS_EXTENSIONS
+
+            expected_sr = 48000 if suffix in AUDIO_OPUS_EXTENSIONS else info.sample_rate
             if (delivered.sample_rate, delivered.channels) != (expected_sr, info.channels):
                 raise RuntimeError("Audio encoder changed the sample rate or channel count")
             if (
                 info.channel_layout
-                and suffix in {".wav", ".flac", ".m4a"}
+                and suffix in {".wav", ".flac", ".m4a", ".mka"}
                 and delivered.channel_layout != info.channel_layout
             ):
                 raise RuntimeError("Audio encoder changed the channel layout")

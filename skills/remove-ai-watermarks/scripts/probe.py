@@ -29,14 +29,16 @@ _GPU_MARKERS = ("GPU ", "gpu:")
 # 0.64.0 adds `video erase`, `video message detect`, the chunkyseal scheme, and
 # audio --vendor/--audio-vendor cohorts;
 # 0.63.0 added audio commands, text --allow-partial/--rewriter-backend/--rewriter-model
-# (text-mlx), video message, --profile auto/wan21-*, and --method dac/focalcodec;
+# (text-mlx), video message, --profile auto/wan21-*, and --method dac/snac;
 # 0.48.0 added `classify-source`; 0.39.0 added the `liblib_pill` mark and `auto`
 # routing OpenAI provenance to qwen-zimage (`--pipeline auto` 0.36.0;
 # chroma-zimage and the doubao video mark 0.35.0; the `microsoft` mark 0.34.0;
 # `--vendor` 0.32.0), and a stale floor told an agent its CLI was current right
-# before it typed a value that build rejects. tests/test_agent_skill.py pins it
+# 0.73.0 unified all 7 video containers and 9 audio output formats, pruned
+# obsolete experimental audio backends, and promoted non-experimental video
+# profile names across skill references. tests/test_agent_skill.py pins it
 # against the package version and against every "(since CLI X.Y.Z)" annotation.
-MIN_CLI_VERSION = (0, 68, 0)
+MIN_CLI_VERSION = (0, 73, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # legacy Homebrew installs can still contain such a build.

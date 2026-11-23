@@ -30,11 +30,9 @@ from remove_ai_watermarks.video_encoding import (
     HIGH_BIT_DEPTH_PIXEL_FORMATS,
     atomic_video_output,
     probe_video_encode_profile,
-    probe_video_timestamps,
 )
 from remove_ai_watermarks.video_seedance import (
     SeedanceQuality,
-    _clock,
     _encode_frames,
     _frames,
     _measure,
@@ -66,9 +64,6 @@ WAN21_MPS_CHUNK_FRAMES = 33
 WAN21_DEFAULT_OVERLAP_FRAMES = 17
 WAN21_MPS_OVERLAP_FRAMES = 9
 WAN21_NATIVE_MAX_PIXELS = 1920 * 1080
-WAN21_AUTO_MAX_FRAME_PIXELS = 3840 * 2160
-WAN21_MAX_FRAME_PIXELS = 3840 * 2160
-WAN21_MAX_TOTAL_PIXEL_FRAMES = 7200 * 1920 * 1080
 WAN21_MIN_CUDA_VRAM_BYTES = 8 * 1024**3
 WAN21_HIGH_VRAM_BYTES = 16 * 1024**3
 WAN21_DEFAULT_PROMPT = "High fidelity natural video, sharp details, accurate motion, clean cinematic lighting."
@@ -282,21 +277,6 @@ def _validate_wan_window_args(chunk_frames: int, overlap_frames: int) -> None:
         raise ValueError("overlap_frames must satisfy 0 <= overlap_frames < chunk_frames")
 
 
-def _validate_wan_source_budget(width: int, height: int, frame_count: int) -> None:
-    """Enforce conservative spatial and total-frame limits before decoding."""
-    frame_pixels = width * height
-    if frame_pixels > WAN21_MAX_FRAME_PIXELS:
-        raise ValueError(
-            f"Experimental Wan 2.1 processing requires frame area <= {WAN21_MAX_FRAME_PIXELS} pixels "
-            f"(got {width}x{height})"
-        )
-    if frame_pixels * frame_count > WAN21_MAX_TOTAL_PIXEL_FRAMES:
-        raise ValueError(
-            f"Experimental Wan 2.1 host-memory budget exceeded: {frame_count} frames at {width}x{height} "
-            f"exceeds {WAN21_MAX_TOTAL_PIXEL_FRAMES} pixel-frames"
-        )
-
-
 def can_run_wan_on_source(
     source: Path,
     *,
@@ -324,20 +304,13 @@ def can_run_wan_on_source(
         except Exception:
             return False
     try:
-        width, height, _fps, timestamps = validate_experimental_mp4_source(
+        validate_experimental_mp4_source(
             source,
             label="Experimental Wan 2.1 processing",
             encode_profile=probe_video_encode_profile(source),
             allow_high_depth=True,
         )
     except Exception:
-        return False
-    if for_auto and width * height > WAN21_AUTO_MAX_FRAME_PIXELS:
-        return False
-    try:
-        _validate_wan_source_budget(width, height, len(timestamps))
-    except ValueError as exc:
-        log.warning("Wan 2.1 eligibility skipped for %s (%s); auto profile will use 2D fallback", source.name, exc)
         return False
     return True
 
@@ -552,14 +525,11 @@ def _finalize_wan_output(
     high_depth: bool = False,
 ) -> RegenerationMetrics:
     """Encode Wan 2.1 frames directly to delivery (CRF 18) or master (CRF 0) in a single pass."""
+    from remove_ai_watermarks.video_seedance import _verify_isobmff_timing
+
     target_crf = 18 if quality == "delivery" else 0
     _encode_frames(frames, source, staged, fps, timestamps, crf=target_crf)
-    if probe_video_timestamps(staged) != timestamps:
-        raise RuntimeError("Experimental Wan 2.1 output timestamps changed")
-    staged_dur = float(_clock(staged)["streams"][0]["duration"])
-    source_dur = float(_clock(source)["streams"][0]["duration"])
-    if abs(staged_dur - source_dur) > 0.000002:
-        raise RuntimeError("Experimental Wan 2.1 output duration changed")
+    _verify_isobmff_timing(source, staged, timestamps, "Wan 2.1")
     return _measure(source, staged, fps, len(timestamps), high_depth=high_depth)
 
 
@@ -599,7 +569,6 @@ def regenerate_wan_experimental(
         encode_profile=encode_profile,
         allow_high_depth=True,
     )
-    _validate_wan_source_budget(width, height, len(timestamps))
     if runtime is None and not is_available():
         raise RuntimeError("Wan 2.1 video processing requires 'remove-ai-watermarks[video,diffusion]'")
     if runtime is None:

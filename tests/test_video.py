@@ -1561,14 +1561,15 @@ class TestVideoAllApi:
         from remove_ai_watermarks import video
         from remove_ai_watermarks.video import remove_video_all
 
-        source = _video_with_tc260_avi(tmp_path / "source.avi")
+        source = tmp_path / "source.wmv"
+        source.write_bytes(b"\x30\x26\xb2\x75\x8e\x66\xcf\x11")
         monkeypatch.setattr(
             video,
             "remove_video_visible",
             lambda *_args, **_kwargs: pytest.fail("visible scan must not start"),
         )
 
-        with pytest.raises(ValueError, match="requires one of"):
+        with pytest.raises(ValueError, match="Unsupported video format"):
             remove_video_all(source, include_invisible=True)
 
 
@@ -2002,12 +2003,13 @@ class TestVideoInvisibleApi:
 
         assert result.output == tmp_path / "source_clean.mp4"
 
-    def test_rejects_avi_regeneration(self, tmp_path: Path):
+    def test_rejects_unsupported_container_regeneration(self, tmp_path: Path):
         from remove_ai_watermarks.video import remove_video_invisible
 
-        source = _video_with_tc260_avi(tmp_path / "source.avi")
+        source = tmp_path / "source.wmv"
+        source.write_bytes(b"\x30\x26\xb2\x75\x8e\x66\xcf\x11")
 
-        with pytest.raises(ValueError, match="requires one of"):
+        with pytest.raises(ValueError, match="Unsupported video format"):
             remove_video_invisible(source)
 
 
@@ -4291,10 +4293,10 @@ class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
         res_silent = remove_video_all(source, out_silent, include_audio_invisible=True)
         assert res_silent.audio == VideoAudioStatus(stream_action="absent", watermark_status="unverified")
 
-        # 2. Preflight must reject unsupported 5.1 layout or >30s BigVGAN BEFORE remove_video_visible runs
+        # 2. Preflight must reject unsupported 4-channel quad layout BEFORE remove_video_visible runs
         visible_calls.clear()
         monkeypatch.undo()
-        monkeypatch.setattr(audio.audio_vocoder, "is_available", lambda: True)
+        monkeypatch.setattr(audio.audio_dac, "is_available", lambda: True)
         monkeypatch.setattr(
             video,
             "remove_video_visible",
@@ -4309,8 +4311,8 @@ class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
                     "index": 1,
                     "codec_type": "audio",
                     "sample_rate": "48000",
-                    "channels": 6,
-                    "channel_layout": "5.1(side)",
+                    "channels": 4,
+                    "channel_layout": "quad",
                     "duration": "5.0",
                 },
             ],
@@ -4320,7 +4322,7 @@ class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
                 source,
                 tmp_path / "surround_fail.mp4",
                 include_audio_invisible=True,
-                audio_method="bigvgan",
+                audio_method="dac",
                 audio_force=True,
             )
         assert visible_calls == []

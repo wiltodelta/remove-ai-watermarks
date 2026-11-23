@@ -46,13 +46,15 @@ def _make_mp4(path: Path, *, width: int = 64, height: int = 48, fps: int = 12, d
 
 def test_wan21_4k_guided_window_preserves_4k_resolution_and_detail() -> None:
     pytest.importorskip("torch")
-    assert video_wan.WAN21_MAX_FRAME_PIXELS == 3840 * 2160
     assert video_wan._wan_guide_size(1920, 1080) is None
     guide_size = video_wan._wan_guide_size(3840, 2160)
     assert guide_size is not None
     assert guide_size[0] * guide_size[1] <= video_wan.WAN21_NATIVE_MAX_PIXELS
     assert guide_size[0] % 16 == 0
     assert guide_size[1] % 16 == 0
+    guide_8k = video_wan._wan_guide_size(7680, 4320)
+    assert guide_8k is not None
+    assert guide_8k[0] * guide_8k[1] <= video_wan.WAN21_NATIVE_MAX_PIXELS
 
     seen_sizes: list[tuple[int, int]] = []
 

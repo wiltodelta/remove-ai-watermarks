@@ -455,8 +455,10 @@ def remove_video_message(
     target = Path(output).expanduser()
     if target.resolve() == original or (target.exists() and original.exists() and target.samefile(original)):
         raise ValueError("Video output must differ from the source")
-    if target.suffix.lower() not in {".mp4", ".mov", ".m4v", ".mkv", ".webm"}:
-        raise ValueError("Video message outputs must be MP4, MOV, M4V, MKV, or WebM")
+    from remove_ai_watermarks._internal.constants import VIDEO_EXTENSIONS
+
+    if target.suffix.lower() not in VIDEO_EXTENSIONS:
+        raise ValueError("Video message outputs must be MP4, MOV, M4V, MKV, WebM, AVI, or FLV")
     before = identify_video_message(original, reference_hex=reference_hex, scheme=scheme, check_message=verify)
     if before.status != "matched" and not force:
         return VideoMessageRemovalResult(original, None, before, None, None, True)

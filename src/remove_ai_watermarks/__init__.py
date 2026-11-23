@@ -13,8 +13,8 @@ High-level API (lazy, so ``import remove_ai_watermarks`` stays cheap)::
     raiw.remove_video_batch("videos", "videos_clean")   # complete per-file results
     raiw.remove_video_metadata("in.mp4", "out.mp4")     # verified metadata strip
     raiw.remove_video_invisible("in.mp4", "out.mp4")    # calibrated video-pixel regeneration
-    raiw.remove_video_seedance_experimental("in.mp4", "out.mp4")  # opt-in Seedance experiment
-    raiw.remove_video_wan_experimental("in.mp4", "out.mp4")       # opt-in CUDA 3D Wan 2.1 experiment
+    raiw.remove_video_seedance("in.mp4", "out.mp4")     # Seedance video regeneration
+    raiw.remove_video_wan("in.mp4", "out.mp4")          # 3D Wan 2.1 video regeneration (CUDA/MPS)
     raiw.remove_video_visible("in.mp4", "out.mp4")      # stable visible video-mark removal
     raiw.identify_audio("in.wav", scheme="auto")        # -> AudioProvenanceReport
     raiw.inspect_audio_metadata("in.mp3")               # -> AudioMetadataReport
@@ -46,7 +46,7 @@ _os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 _warnings.filterwarnings("ignore", message=r".*ImageProcessorFast.*")
 
 
-__version__ = "0.72.0"
+__version__ = "0.73.0"
 
 __all__ = [
     "AudioAllResult",

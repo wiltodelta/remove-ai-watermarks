@@ -373,5 +373,5 @@ def test_video_messages_accepts_mkv_and_webm_suffix(tmp_path: Path) -> None:
 
     src = tmp_path / "clip.mp4"
     src.write_bytes(b"")
-    with pytest.raises(ValueError, match="MP4, MOV, M4V, MKV, or WebM"):
-        video_messages.remove_video_message(src, tmp_path / "out.avi", reference_hex="0" * 64)
+    with pytest.raises(ValueError, match="MP4, MOV, M4V, MKV, WebM, AVI, or FLV"):
+        video_messages.remove_video_message(src, tmp_path / "out.wmv", reference_hex="0" * 64)

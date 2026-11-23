@@ -168,9 +168,9 @@ def test_validation_rejects_hdr_odd_dims_wrong_runtime_and_2d_vae_flags(tmp_path
             invisible_profile="wan21-synthid-experimental",
             long_side=768,
         )
-    other = tmp_path / "owned.webm"
-    other.write_bytes(b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm")
-    with pytest.raises(ValueError, match=r"requires one of: \.m4v, \.mov, \.mp4"):
+    other = tmp_path / "owned.wmv"
+    other.write_bytes(b"\x30\x26\xb2\x75\x8e\x66\xcf\x11")
+    with pytest.raises(ValueError, match=r"Unsupported video format"):
         raiw.remove_video_wan_experimental(other)
 
     bad_runtime = wan.VideoWanRuntime(
@@ -240,7 +240,7 @@ def test_cli_routes_wan21_profiles_and_prints_experimental_label(tmp_path, monke
     assert "calibrated SynthID" not in res.output
 
 
-def test_wan_batch_reuses_wan_runtime_across_isobmff_items(tmp_path, monkeypatch):
+def test_wan_batch_reuses_wan_runtime_across_supported_containers(tmp_path, monkeypatch):
     directory = tmp_path / "clips"
     directory.mkdir()
     payload = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
@@ -277,8 +277,8 @@ def test_wan_batch_reuses_wan_runtime_across_isobmff_items(tmp_path, monkeypatch
         seed=5,
         device="cuda",
     )
-    assert batch_res.processed == 3
-    assert batch_res.failed == 1
+    assert batch_res.processed == 4
+    assert batch_res.failed == 0
     assert loaded == [{"device": "cuda"}]
     assert (
         used
@@ -293,9 +293,8 @@ def test_wan_batch_reuses_wan_runtime_across_isobmff_items(tmp_path, monkeypatch
                 "runtime": runtime,
             }
         ]
-        * 3
+        * 4
     )
-    assert "requires one of: .m4v, .mov, .mp4" in (batch_res.items[-1].error or "")
 
 
 def test_pad_and_run_wan_sliding_windows_crossfade_long_clips_smoothly():
@@ -438,20 +437,15 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
         wan.resolve_wan_device("auto")
     monkeypatch.setattr(torch.version, "hip", None, raising=False)
 
-    # 2. Frame-pixel / host-RAM budget & VRAM floor & 4K cap (>4K rejected)
-    frames_decoded = []
-    monkeypatch.setattr(wan, "_frames", lambda p: (frames_decoded.append(p), iter(()))[1])
+    # 2. High-res (8K) and 1080p clips are accepted (1080p-guided restoration removes artificial >4K/duration caps)
     monkeypatch.setattr(
         wan,
         "validate_experimental_mp4_source",
-        lambda *_a, **_k: (7680, 4320, 24.0, tuple(range(10))),
+        lambda *_a, **_k: (7680, 4320, 24.0, tuple(range(10000))),
     )
-    with pytest.raises(ValueError, match="frame area"):
-        wan.regenerate_wan_experimental(source, output)
-    assert frames_decoded == []
-    assert wan.can_run_wan_on_source(source, device="auto") is False
+    assert wan.can_run_wan_on_source(source, device="auto", for_auto=True) is True
+    assert wan.can_run_wan_on_source(source, device="auto", for_auto=False) is True
 
-    # 1080p and 4K UHD are accepted for both auto and explicit wan21-* within total budget, while >4K is rejected
     monkeypatch.setattr(
         wan,
         "validate_experimental_mp4_source",

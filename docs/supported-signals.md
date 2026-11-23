@@ -222,16 +222,12 @@ fixed native offsets, alongside its synchronized public-model scan. This
 signature does not cover custom messages or shifted/resampled framing, and its
 binomial-tail diagnostic is not a calibrated false-positive probability.
 They provide
-streaming spectral, neural-codec, and combined processing, plus explicit
-experimental full-track BigVGAN, Mimi, and FocalCodec profiles. Mimi uses fixed
-CPU FP32 and an internal 24 kHz grid; FocalCodec uses fixed CPU FP32 continuous
-6-layer WavLM-to-Vocos resynthesis on an internal 16 kHz grid (`8 kHz` ceiling);
-BigVGAN has an explicit device selector. All three use
-bounded mono/stereo processing, preserve the native sample grid and expose
-quality limitations separately. The 44.1 kHz DAC codec profile also handles
-tagged 5.1/7.1 surround and is what `auto` selects when pre-strip metadata or an
-explicit audio vendor names ElevenLabs, Google SynthID, or another wideband AI
-audio cohort. None implements a SynthID decoder.
+streaming spectral, neural-codec (EnCodec, 44.1 kHz DAC with default
+`preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks, and 44.1 kHz SNAC), and
+combined processing. The 44.1 kHz DAC codec profile handles mono, raw mid/side
+stereo, and tagged 5.1/7.1 surround and is what `auto` selects when pre-strip
+metadata or an explicit audio vendor names ElevenLabs, Google SynthID, or
+another wideband AI audio cohort. None implements a SynthID decoder.
 Default removal requires a
 source-positive and saved-output-negative check; resistant and incomplete
 candidates are rejected. This does not establish compatibility with proprietary
@@ -244,14 +240,6 @@ identify Chatterbox. This does not certify proprietary PerTh v2. SilentCipher-44
 `audio-silentcipher`, with three-second windows and a project-defined repeated-symbol
 threshold. Neither its negative nor loss of a fixed message certifies complete erasure.
 Reports identify its 44.1 kHz decoder clock separately from the source rate.
-The published 16 kHz model has incompatible SDK byte framing and is outside
-this receiver, including when the input itself is 16 kHz.
-The separate `--scheme silentcipher16` route checks an experimental terminated
-eight-symbol pattern with the pinned 16 kHz model and the same `audio-silentcipher`
-extra. It labels readings `framing="terminated8"` and reports seven ternary
-`payload_symbols`, not bytes, and a 16 kHz decoder
-clock. `all` includes both receivers. The SDK byte API and general 32-bit profile
-remain unqualified; a negative does not rule out other framing or deployed marks.
 Negative results cover the requested decoder checks; they do not certify
 erasure of every residual payload bit. See [audio coverage and local results](audio-video-removal.md).
 
@@ -376,7 +364,7 @@ and `chroma-zimage` at `0.50`: `0/18` detected) and already cleared `6/6` on
 resolution-adaptive `qwen-zimage` default (`0.090-0.099`) provides a 3x safety
 margin with no separate vendor strength floor needed.
 
-For MP4, MOV, and M4V, `video invisible` or the explicit
+For `.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, and `.flv`, `video invisible` or the explicit
 `video all --invisible` option can regenerate the video through a VAE and strip
 source metadata. The shipped profile is oracle-certified for SynthID, but it is
 not a local decoder. A fresh source-positive, output-negative pair from Gemini's built-in

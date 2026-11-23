@@ -137,10 +137,10 @@ Default: inspect first.
 | Known visible AI label on video | `video visible` or `video all` | `video_visible=needs_video_extra`, `needs_ffmpeg`, or `unverified` |
 | Invisible image / image SynthID | `invisible` | `invisible_images=unavailable_no_cuda` |
 | Owned Seedance video | `all <clip.mp4>` or `video all --invisible` (default `--profile auto` routes ByteDance/Seedance 8-bit SDR and 10-bit HEVC/HDR clips automatically to `wan21-seedance` on BF16 NVIDIA CUDA or `seedance` on CPU/MPS MP4) | `video,diffusion` required; `wan21-*` also requires CUDA |
-| Video SynthID | `all <clip.mp4>`, `video invisible`, or `video all --invisible` (default `--profile auto` selects `wan21-synthid` on BF16 NVIDIA CUDA for eligible `<= 1920x1080` MP4/MOV/M4V clips with `>= 8 GiB` VRAM, or 2D `synthid` fallback otherwise; Google SynthID audio tracks auto-route to `dac` when metadata identifies Google) | `video_invisible=needs_video_and_diffusion_extras`, `needs_ffmpeg`, or `unverified` |
+| Video SynthID | `all <clip.mp4>`, `video invisible`, or `video all --invisible` (default `--profile auto` selects `wan21-synthid` on BF16 NVIDIA CUDA for eligible `.mp4`/`.mov`/`.m4v`/`.mkv`/`.webm`/`.avi`/`.flv` clips, or 2D `synthid` fallback otherwise; Google SynthID audio tracks auto-route to `dac` when metadata identifies Google) | `video_invisible=needs_video_and_diffusion_extras`, `needs_ffmpeg`, or `unverified` |
 | Public VideoSeal, PixelSeal, or ChunkySeal with an independent encoder message | `video message identify` then `video message remove` (`video message detect` for a blind public-model presence check) | requires `video-detect`, plus `diffusion` for VAE; no AI-origin verdict |
 | Inspect audio | `audio identify` | use `--no-invisible` for metadata-only inspection; ffmpeg and ffprobe are required |
-| Compatible public AudioSeal, WavMark, Perth v1, or experimental SilentCipher audio patterns | `audio invisible` or `audio all --invisible` (`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`, or `silentcipher16`) | install `audio-detect`, `audio-wavmark`, `audio-perth`, or `audio-silentcipher` for verification; `audio_stack` only checks the CPU processor |
+| Compatible public AudioSeal, WavMark, Perth v1, or experimental SilentCipher audio patterns | `audio invisible` or `audio all --invisible` (`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`, or `all`) | install `audio-detect`, `audio-wavmark`, `audio-perth`, or `audio-silentcipher` for verification; `audio_stack` only checks the CPU processor |
 | Everything on an audio file | `audio all` (add `--invisible` for compatible waveform watermarks) | needs ffmpeg and ffprobe; add decoder extras for `--invisible` |
 | Text token watermark / full text clean | `text invisible` or `text all` | `text invisible` and `text all --invisible` need `text` for Transformers (`diffusion` remains compatible), or `text-mlx` with an explicit Apple silicon MLX checkpoint; see the Text section of `references/commands.md` |
 | Everything on an image | `all` | `image_all=do_not_run_writes_nothing` |
@@ -161,7 +161,7 @@ Audio defaults require a compatible source positive and a fully negative saved
 output. Inspect first. `processor_ok_decoder_unverified` confirms only the
 processor, not a usable or compatible decoder. Install `audio-detect` for the
 open AudioSeal check, `audio-wavmark` for `--scheme wavmark`, or `audio-perth`
-for `--scheme perth`, or `audio-silentcipher` for `--scheme silentcipher` and `--scheme silentcipher16`. `--scheme all`
+for `--scheme perth`, or `audio-silentcipher` for `--scheme silentcipher`. `--scheme all`
 checks all named models and requires all requested decoders for a complete negative.
 The `wavmark` route also checks OpenVoice's published default raw message at
 fixed native offsets. JSON labels it `framing="openvoice-default"`; custom
@@ -173,36 +173,19 @@ Other voices, forks, and hosted PerTh v2 need separate qualification; a PerTh
 response alone does not attribute a file to Chatterbox.
 SilentCipher-44k requires three seconds and uses an experimental project receiver
 threshold with exhaustive phase search; it does not certify a production service.
-Its `decoder_sample_rate` is 44100 regardless of input rate. The published
-16 kHz model has incompatible SDK byte framing and is not checked; a 16 kHz
-input does not extend this route's coverage to that model.
-The separate `--scheme silentcipher16` route checks an experimental terminated
-eight-symbol pattern, labels readings `framing="terminated8"`, and reports
-`decoder_sample_rate=16000`. Its seven ternary
-`payload_symbols` are not bytes. The SDK byte API and general 32-bit profile
-remain unqualified. `all` includes both receivers. Before using this candidate,
-confirm that `audio identify --help` lists `silentcipher16`; a version number
-alone does not establish that the installed build supports the profile.
+Its `decoder_sample_rate` is 44100 regardless of input rate.
 An unverified report never means clean. Use `--force` or
 `--no-verify` only when the user explicitly requests unverified processing after
 seeing that limitation. The fixed spectral filter changes audible content and
 can fail. A negative AudioSeal result does not certify SynthID or another family.
 Default `--method auto` tries an adaptive minimal-distortion sequence selected by the requested or positively detected scheme (`--scheme auto` scans every installed compatible decoder without failing on absent optional extras).
-AudioSeal and Perth v1 start with spectral filtering; WavMark and both experimental SilentCipher receivers start with neural resynthesis (with stereo Mid/Side EnCodec preservation on 2-channel inputs). Outputs support `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, and `.opus` with saved-file verification.
-Explicit `--method bigvgan` is a separate experimental full-track mono/stereo
-profile requiring `audio-vocoder`; `--vocoder-device` chooses CPU, MPS, or CUDA.
-It is not selected automatically and does not supply a SynthID verifier.
-Explicit `--method mimi` uses the separate experimental CPU FP32 Mimi codec
-with fixed 32 quantizers and the `audio-codec` extra. Explicit
-`--method focalcodec` uses the separate experimental CPU FP32 FocalCodec 50 Hz
-conditioned continuous-feature profile (`audio-codec` extra, Apache-2.0 weights).
-Explicit `--method dac` uses the separate experimental FP32 44.1 kHz DAC
-3-codebook codec (`audio-codec` extra, MIT weights; CPU by default, `mps` or
-`cuda` via `--vocoder-device`). All three share the raw mid/side route and
-saved-output gates (`mimi` and `focalcodec` are excluded from `auto`; `dac` is
-selected by `auto` only when pre-strip metadata identifies ElevenLabs or Google
-SynthID, or `--vendor` names a cohort), and none checks SynthID. Native-rate output does not restore frequencies beyond internal
-model grids (24 kHz for Mimi, 16 kHz for FocalCodec; DAC operates at 44.1 kHz).
+AudioSeal and Perth v1 start with spectral filtering; WavMark and SilentCipher start with neural resynthesis (with stereo Mid/Side EnCodec preservation on 2-channel inputs). Outputs support `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, and `.mka` with saved-file verification.
+Explicit `--method dac` uses the FP32 44.1 kHz DAC 3-codebook codec (`audio-codec`
+extra, MIT weights; auto-accelerated on CUDA/MPS, or controlled via
+`--vocoder-device`) with default `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks.
+Explicit `--method snac` uses the 44.1 kHz multi-scale SNAC codec (`audio-codec`
+extra). `auto` routes ElevenLabs and Google SynthID metadata to `dac` (or when
+`--vendor` names a cohort); neither supplies a local SynthID verifier.
 Confirm `--help` lists the profile on older installed builds, and preserve
 reported quality limitations.
 The fallback combines both. EnCodec profiles need `audio-codec`; a missing

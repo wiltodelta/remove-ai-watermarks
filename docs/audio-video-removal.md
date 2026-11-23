@@ -409,83 +409,36 @@ The `audio identify`, `audio metadata`, `audio invisible`, `audio all`, and
 `audio batch` commands implement the optional audio runtime. `audio` provides
 streaming spectral processing, `audio-detect` adds the pinned open AudioSeal
 verifier, and `audio-wavmark` adds the public WavMark verifier. Select
-`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`,
-`silentcipher16`, or `all`; `--scheme auto` scans installed production-ready
-decoders (`audioseal`, `wavmark`, `perth`) and adapts candidate profiles to the
-detected scheme(s), whereas a missing explicitly requested decoder prevents a
-complete negative. `audio-codec` adds pinned EnCodec resynthesis (using stereo
-Mid/Side coding on 2-channel audio to preserve inter-channel spatial image).
-Default `--method auto` tries spectral then combined for AudioSeal and Perth v1,
-neural then combined for WavMark and both experimental SilentCipher receivers,
-and combined when multiple schemes require joint removal. Explicit `spectral`,
-`encodec`, or `combined` fixes one profile. The default publishes `.wav`,
-`.flac`, `.mp3`, `.m4a`, `.ogg`, or `.opus` only after a positive source and
-fully negative saved output (re-decoded from the delivered file, including post-encode
-lossy verification and Opus 48 kHz rate adaptation). Explicit force can write an
-unverified or resistant candidate, with that outcome preserved in the report.
-Native channels, rate (48 kHz for Opus), and sample-frame count (within codec
-priming bounds on lossy containers) are checked. Fidelity is measured on the
-delivered file. Whole-clip verification uses segmented `<= 30 s` windows on long
-inputs; window-only discovery negatives cannot certify the whole clip.
+`--scheme auto`, `audioseal`, `wavmark`, `perth`, `silentcipher`, or `all`;
+`--scheme auto` scans installed production-ready decoders (`audioseal`,
+`wavmark`, `perth`) and adapts candidate profiles to the detected scheme(s),
+whereas a missing explicitly requested decoder prevents a complete negative.
+`audio-codec` adds pinned EnCodec (using stereo Mid/Side coding on 2-channel
+audio), 44.1 kHz DAC (`--method dac`, default `preserve_hf_hz=14000.0` on
+`>= 44.1 kHz` tracks), and 44.1 kHz multi-scale SNAC (`--method snac`) neural
+resynthesis. Default `--method auto` tries spectral then combined for AudioSeal
+and Perth v1, neural then combined for WavMark and SilentCipher-44k, routes
+wideband AI audio cohorts (ElevenLabs, Google SynthID, Suno, Udio, etc.) to
+`dac`, and uses combined when multiple schemes require joint removal. Explicit
+`spectral`, `encodec`, `combined`, `dac`, or `snac` fixes one profile. The
+default publishes `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`,
+`.aac`, or `.mka` only after a positive source and fully negative saved output
+(re-decoded from the delivered file, including post-encode lossy verification
+and Opus 48 kHz rate adaptation). Explicit force can write an unverified or
+resistant candidate, with that outcome preserved in the report. Native channels,
+rate (48 kHz for Opus), and sample-frame count (within codec priming bounds on
+lossy containers) are checked. Fidelity is measured on the delivered file.
+Whole-clip verification uses segmented `<= 30 s` windows on long inputs;
+window-only discovery negatives cannot certify the whole clip.
 
-Explicit `--method bigvgan` adds the pinned experimental full-track mel-vocoder
-through `audio-vocoder`. It uses raw mid/side for stereo and the original rational
-sample grid; mono/stereo, 30-second and sample-value bounds apply. CPU/MPS/CUDA
-are explicitly selected through `--vocoder-device`, without fallback or chunking.
-It is excluded from auto selection and uses the same local source/saved-output
-decoder gates. See the [research roadmap](media-removal-roadmap.md) for separately
-recorded provider observations; those are not a built-in SynthID verifier.
-
-Explicit `--method mimi` uses the separate experimental pinned CPU FP32 codec
-with its default 32 quantizers from `audio-codec`. Its full-track mono/stereo
-route shares the native rational sample grid and bitexact WAV writer. The model
-owns decoder-excess prefix selection; no external padding, normalization,
-alignment or clipping is added. Auto selection excludes it, and native output
-rate does not undo the internal 24 kHz bandwidth limit. Local independent Perth
-examples became negative, but one short example failed the frozen relative
-voice guard; provider and general fidelity qualification remain separate.
-
-On a later complete long native generation, EnCodec 6 was negative over the
-whole file but remained positive in individual windows. The detector therefore
-reported a positive overall result. Mimi passed complete full-file and window
-verification on the marked file, with exact recognized words, both-reference
-speaker consistency and full-duration timing. Its processed clean twin failed
-exact transcript agreement, so general paired qualification still failed.
-The exact marked Mimi file also passed verified public WAV and selected-track
-MOV delivery. A separate AAC MP4 experiment passed fresh quality and complete
-Perth checks on the actual final decoded track, preserving native count/start,
-priming/tail interpretation and untouched stream packets. These are scoped
-local Perth results on one native Chatterbox Nano file. They establish neither
-hosted Resemble compatibility nor Google SynthID removal; short speaker
-embeddings and ASR agreement are measured guards, not identity or listening
-certificates.
-
-Explicit `--method focalcodec` uses the separate experimental pinned CPU FP32
-continuous 6-layer WavLM feature-to-Vocos resynthesizer from `audio-codec`
-(`lucadellalib/focalcodec_50hz@d6d6d9524e52155c85193c2c3b8da1cf8842f019`,
-matching upstream `v0.0.1` `cad8bf81d70875f756770449c34909d8b0951642` under
-Apache-2.0). It operates on an internal 16 kHz grid (`8 kHz` ceiling) with
-symmetric `(40, 40)` WavLM boundary context, raw mid/side stereo, exact native
-sample counts, and bitexact WAV serialization, while bypassing binary spherical
-quantization. Synthetic impulse and bandlimited burst probes showed that Vocos
-ISTFT synthesis introduces a small consistent group delay (around `+2.38 ms`)
-while randomizing carrier waveform phase. Measured with a calibrated
-phase-invariant log-mel onset-flux and modulation-envelope timing observer,
-FocalCodec passed complete paired clean and marked checks on that first long
-native Chatterbox Nano generation across WAV, selected-track PCM MOV, and lossy
-AAC MP4 (negative full-file and quarter-second Perth windows, exact words,
-speaker cosine `>= 0.98` against both source references, bounded loudness/RMS
-change, zero clipping, full-duration timing within `10 ms`, and untouched
-non-target container packets). On a second held-out native speech generation,
-FocalCodec preserved an atypical phrase (`"a wind shelf"`) where Mimi
-regularized `"wind"` to `"wooden"` and failed Perth after AAC MP4 encoding,
-whereas FocalCodec's Vocos STFT synthesis cross-reacted with Perth in a pause
-interval (`[4.0s, 5.0s]`), including on the unwatermarked clean twin. Both
-explicit experimental codecs therefore remain excluded from `auto` and gated by
-mandatory saved-output verification. Both `--method focalcodec` and
-`--method dac` process tracks up to `30 s` in a single pass and stream tracks
-longer than `30 s` across `20 s` windows with `2 s` raised-cosine crossfades
-while preserving the exact native sample-frame count.
+Both `--method dac` and `--method snac` process tracks up to `30 s` in a single
+pass and stream tracks longer than `30 s` across `20 s` windows with `2 s`
+raised-cosine crossfades while preserving the exact native sample-frame count.
+Earlier experimental prototypes (`bigvgan`, `mimi`, `focalcodec`, and the
+terminated `silentcipher16` candidate) were retired in `v0.73.0` after 44.1 kHz
+DAC and SNAC outperformed them across quality and live SynthID oracle checks;
+their historical benchmark records remain in
+[the evidence log](media-removal-evidence-log.md).
 
 ### Local exploratory study, 2026-11-09
 

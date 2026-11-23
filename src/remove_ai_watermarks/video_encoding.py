@@ -496,6 +496,11 @@ def _profile_args(profile: VideoEncodeProfile) -> list[str]:
     return args
 
 
+def container_format_args(suffix: str) -> list[str]:
+    """Return explicit ffmpeg muxer format flags when extension auto-detection is restrictive."""
+    return ["-f", "mp4"] if suffix.lower() == ".m4v" else []
+
+
 def raw_video_command(
     output: Path,
     *,
@@ -552,6 +557,7 @@ def raw_video_command(
         numerator, denominator = (int(part) for part in profile.time_base.split("/", 1))
         if numerator == 1:
             command.extend(["-video_track_timescale", str(denominator)])
+    command.extend(container_format_args(output.suffix))
     command.append(str(output))
     return command
 
@@ -593,6 +599,7 @@ def mux_encoded_video(
         command.extend(["-avoid_negative_ts", "disabled"])
     if output.suffix.lower() in {".mp4", ".mov", ".m4v"}:
         command.extend(["-movflags", "+faststart"])
+    command.extend(container_format_args(output.suffix))
     command.append(str(output))
     with tempfile.TemporaryFile(mode="w+b") as stderr_buffer:
         result = subprocess.run(  # noqa: S603

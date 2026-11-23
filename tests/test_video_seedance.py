@@ -85,9 +85,9 @@ def test_rejects_in_place_processing_and_other_containers(tmp_path):
     with pytest.raises(ValueError, match="distinct output"):
         raiw.remove_video_seedance_experimental(source, source)
     assert source.read_bytes() == payload
-    other = tmp_path / "owned.mov"
-    other.write_bytes(payload)
-    with pytest.raises(ValueError, match="MP4 input"):
+    other = tmp_path / "owned.wmv"
+    other.write_bytes(b"\x30\x26\xb2\x75\x8e\x66\xcf\x11")
+    with pytest.raises(ValueError, match="Unsupported video format"):
         raiw.remove_video_seedance_experimental(other)
 
 
@@ -343,13 +343,13 @@ def test_invalid_pipeline_profile_options_fail_before_visible_stage(tmp_path, mo
     assert output.read_bytes() == b"previous output"
 
 
-def test_seedance_batch_reuses_runtime_and_rejects_other_containers(tmp_path, monkeypatch):
+def test_seedance_batch_reuses_runtime_across_supported_containers(tmp_path, monkeypatch):
     from remove_ai_watermarks import video, video_invisible
 
     directory = tmp_path / "videos"
     directory.mkdir()
     payload = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
-    for name in ("one.mp4", "two.mp4", "unsupported.mov"):
+    for name in ("one.mp4", "two.mp4", "three.mov"):
         (directory / name).write_bytes(payload)
     runtime = SimpleNamespace(model="stabilityai/sd-vae-ft-mse", requested_device="cpu")
     loaded, used = [], []
@@ -375,12 +375,11 @@ def test_seedance_batch_reuses_runtime_and_rejects_other_containers(tmp_path, mo
         invisible_profile="seedance-experimental",
         device="cpu",
     )
-    assert result.processed == 2
-    assert result.failed == 1
+    assert result.processed == 3
+    assert result.failed == 0
     assert loaded == [{"model": "stabilityai/sd-vae-ft-mse", "device": "cpu"}]
-    assert used == [{"device": "cpu", "quality": "delivery", "runtime": runtime}] * 2
-    assert "MP4 input" in result.items[-1].error
-    assert not (result.output_directory / "unsupported.mov").exists()
+    assert used == [{"device": "cpu", "quality": "delivery", "runtime": runtime}] * 3
+    assert (result.output_directory / "three.mov").exists()
 
 
 @pytest.mark.parametrize("command", ["invisible", "all", "batch"])
