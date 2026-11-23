@@ -299,3 +299,36 @@ In Wave 11 (2026-11-22, `v0.73.0`):
     removed artificial resolution/duration hard caps in `video_wan.py` (keeping explicit
     opt-in worker guardrails `max_duration_seconds` / `max_frame_pixels` defaulting to `None`).
 
+In Wave 12 (2026-11-23, `v0.74.0`):
+- **Live Google Gemini SynthID oracle check on `SNAC 44.1 kHz + preserve_hf_hz=14000.0`**
+  (`gemini.google.com/u/1/app/e7c5c997ababf122` & `/u/1/app/a334f969227f34ff`):
+  - `veo_snac_hf14k.wav` (`sha256:16aba611ab22c73df45995035169234a0d08effaad01b2cca69c13656edffe2c`,
+    `hubertsiuzdak/snac_44khz@873ebef9718b89660340c6f55a2b515e98cfa1d9`, `q=3`, `preserve_hf_hz=14000.0`,
+    `quality_passed=True` on `higgsfield-veo-3-1-lite.mp4`): **`not_detected`**
+    (`"No SynthID watermark or valid C2PA Content Credentials were detected in this audio file, and there is no indication that it was made with Google AI..."`).
+    Recorded in `data/evaluations/audio-synthid-oracle.csv`, and promoted `preserve_hf_hz=14000.0`
+    to the default for `snac` on `>= 44.1 kHz` audio (matching `dac`).
+- **Fast native-resolution guided 2D SynthID (`--native-guide`), pyramid-scaled optical flow, and `--wan-steps`**:
+  - Scaling dense Farneback flow to `<= 512` long-side accelerated 720p/1080p motion estimation
+    by `6.25x-14x`; disabling `AutoencoderKL` tiling at `<= 768` kept `512p` MPS VAE throughput
+    at `0.87 s/frame` (`11x` faster than `1280p` tiled VAE at `9.6 s/frame`).
+  - `native_guide=True` (`--native-guide`) runs `512p` 2D VAE regeneration and upscales cleanly
+    to native `WxH @ native fps` with clean-guide unsharp and CIE Lab color anchoring, measuring
+    **`32.482 dB` PSNR** on `veo/provider-original.mp4` (`1280x720@24fps`).
+  - Exposed `--wan-steps` / `wan_steps` (`26.872 dB` PSNR at 6 steps, `3.3x` fewer DiT steps than
+    the certified 20-step default).
+- **23-mark visible video suite (`+5` marks + international `Qwen`) & selective GOP stream-copy**:
+  - Added `pixverse`, `luma`, `heygen` (corner badge only), `sync_labs`, and `tiktok_ai`, plus
+    the international 3-lobe pinwheel + `Qwen` arm inside `qwen`, verified across 8 native corpus
+    positives, 23/23 synthetic gallery examples, and 0 false positives across 70+ negative clips
+    (including HeyGen diagonal tiled preview and PixVerse clean paid exports).
+  - Added clean-segment donor fast-forward in `iter_clean_video_frames` and verified H.264
+    keyframe GOP stream-copy (`_try_selective_gop_clean_encode`) for untouched GOPs (`>= 30` frames)
+    and keyframe-aligned `--trim-bumper` cuts.
+- **Audio/video provenance & detect/strip parity fixes (`signal-discovery` 2,426-file audit)**:
+  - Registered `PixVerse` and `Suno Inc` in `C2PA_AI_VENDORS`, `com.suno.fingerprint` ->
+    `Suno Audio Fingerprint` soft-binding label, `"suno"` in `_audio_metadata_vendor`,
+    `audio_generator` fallback in `_platform_from_video_metadata`, `HZ_XYKJ` Honor TC260 video
+    code, and standalone ISOBMFF/XMP `IPTC_AI_MARKERS` (`source_type` + Meta/Canva `app_aigc`)
+    in `get_ai_metadata()` for 100% `has_ai_metadata` <-> `get_ai_metadata` <-> `strip_and_verify` parity.
+

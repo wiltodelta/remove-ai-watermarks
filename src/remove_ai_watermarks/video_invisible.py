@@ -12,6 +12,7 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false
 import logging
 import math
+from collections import deque
 from contextlib import ExitStack
 from dataclasses import dataclass
 from itertools import chain
@@ -20,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 
+from remove_ai_watermarks.humanizer import unsharp_mask
 from remove_ai_watermarks.video_decode import open_video_capture, open_video_capture_16bit
 from remove_ai_watermarks.video_encoding import (
     HIGH_BIT_DEPTH_PIXEL_FORMATS,
@@ -287,13 +289,21 @@ def _iter_sampled_frames(
                 if max_selected is not None and frame_index > max_selected:
                     break
                 if frame_index in selected_set:
-                    yield cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
+                    yield (
+                        frame
+                        if (frame.shape[1], frame.shape[0]) == size
+                        else cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
+                    )
                 continue
             timestamp = frame_index / source_fps
             if duration is not None and timestamp + 1e-9 >= duration:
                 break
             if timestamp + 1e-9 >= next_sample_time:
-                yield cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
+                yield (
+                    frame
+                    if (frame.shape[1], frame.shape[0]) == size
+                    else cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4)
+                )
                 next_sample_time += sample_period
         return
 
@@ -330,13 +340,21 @@ def _iter_sampled_frames(
                     ok, frm = capture.retrieve()
                     if not ok or frm is None:
                         break
-                    yield cv2.resize(frm, size, interpolation=cv2.INTER_LANCZOS4)
+                    yield (
+                        frm
+                        if (frm.shape[1], frm.shape[0]) == size
+                        else cv2.resize(frm, size, interpolation=cv2.INTER_LANCZOS4)
+                    )
             else:
                 ok, frm = capture.read()
                 if not ok or frm is None:
                     break
                 if want:
-                    yield cv2.resize(frm, size, interpolation=cv2.INTER_LANCZOS4)
+                    yield (
+                        frm
+                        if (frm.shape[1], frm.shape[0]) == size
+                        else cv2.resize(frm, size, interpolation=cv2.INTER_LANCZOS4)
+                    )
             frame_index += 1
     finally:
         capture.release()
@@ -463,6 +481,20 @@ def encode_video_frames(
                 raise
 
 
+def _upscale_clean_guide(
+    native_reference: NDArray[Any],
+    small_reference: NDArray[Any],
+    guide_small: NDArray[Any],
+) -> NDArray[Any]:
+    """Color-anchor at guide resolution and upscale cleanly without source HF residual leakage."""
+    target_h, target_w = native_reference.shape[:2]
+    anchored_small = anchor_low_freq_color(small_reference, guide_small)
+    if anchored_small.shape[:2] == (target_h, target_w):
+        return anchored_small
+    upscaled = cv2.resize(anchored_small, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+    return unsharp_mask(upscaled, amount=0.35, sigma=1.2)
+
+
 def regenerate_video_candidate(
     source: Path,
     output: Path,
@@ -477,6 +509,7 @@ def regenerate_video_candidate(
     duration: float | None = None,
     runtime: VideoVaeRuntime | None = None,
     temporal_stabilize: bool = True,
+    native_guide: bool = False,
     timestamps: Sequence[float] | None = None,
     _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> RegenerationMetrics:
@@ -485,6 +518,8 @@ def regenerate_video_candidate(
     The default profile is certified against the provider oracle. This function
     does not perform a per-file SynthID decode because Google exposes no local
     decoder. When ``fps=None``, the source video's native frame rate is preserved.
+    When ``native_guide=True``, latent regeneration runs at ``long_side`` and
+    upscales cleanly to native ``(width, height)`` with CIE Lab color anchoring.
     """
     if not 0.0 <= noise_std <= 1.0:
         raise ValueError("noise_std must be between 0 and 1")
@@ -498,16 +533,17 @@ def regenerate_video_candidate(
         raise ValueError("device must be auto, cuda, mps, or cpu")
     width, height, source_fps = _probe_video(source)
     size = _fit_size(width, height, long_side)
+    out_w, out_h = (width, height) if native_guide else size
     effective_fps = source_fps if fps is None else min(fps, source_fps)
-    if size[0] < width or size[1] < height or effective_fps < source_fps - 0.5:
+    if out_w < width or out_h < height or effective_fps < source_fps - 0.5:
         log.warning(
             "2D SynthID VAE fallback downscaling %dx%d@%.2ffps -> %dx%d@%.2ffps; "
-            "use CUDA Wan 2.1 (wan21-synthid) for native-resolution output",
+            "use --native-guide or CUDA Wan 2.1 (wan21-synthid) for native-resolution output",
             width,
             height,
             source_fps,
-            size[0],
-            size[1],
+            out_w,
+            out_h,
             effective_fps,
         )
 
@@ -517,6 +553,10 @@ def regenerate_video_candidate(
         raise ValueError("The supplied video VAE runtime does not match the requested model and device")
     resolved_device = runtime.resolved_device
     vae = runtime.vae
+    if max(size) > 768 and callable(getattr(vae, "enable_tiling", None)):
+        vae.enable_tiling()
+    elif callable(getattr(vae, "disable_tiling", None)):
+        vae.disable_tiling()
 
     encode_profile = probe_video_encode_profile(source)
     high_depth = getattr(encode_profile, "pixel_format", None) in HIGH_BIT_DEPTH_PIXEL_FORMATS
@@ -535,8 +575,8 @@ def regenerate_video_candidate(
         process = start_raw_video_encoder(
             raw_video_command(
                 encoded_video,
-                width=size[0],
-                height=size[1],
+                width=out_w,
+                height=out_h,
                 fps=effective_fps,
                 crf=18,
                 profile=encode_profile,
@@ -558,7 +598,7 @@ def regenerate_video_candidate(
                 "source_fps": source_fps,
                 "duration": duration,
                 "effective_fps": effective_fps,
-                "size": size,
+                "size": (out_w, out_h),
             }
             if high_depth:
                 sample_kwargs["high_depth"] = True
@@ -569,48 +609,59 @@ def regenerate_video_candidate(
                 sample_kwargs["_frame_stream"] = _frame_stream
             sampled_frames = _iter_sampled_frames(source, **sample_kwargs)
 
-            def _regenerated_pairs() -> Generator[tuple[NDArray[Any], NDArray[Any]], None, None]:
+            def _encode_decode_small(small_frames: Sequence[NDArray[Any]]) -> list[NDArray[Any]]:
                 nonlocal shared_noise
-                for frames in _stream_batches(sampled_frames, batch_size):
-                    latent_batches = _encode_frame_latents(
-                        frames,
-                        vae=vae,
-                        device=resolved_device,
-                        batch_size=batch_size,
-                        scaling_factor=runtime.scaling_factor,
+                latent_batches = _encode_frame_latents(
+                    small_frames,
+                    vae=vae,
+                    device=resolved_device,
+                    batch_size=batch_size,
+                    scaling_factor=runtime.scaling_factor,
+                )
+                latents = latent_batches[0]
+                if shared_noise is None:
+                    log.info(
+                        "First latent batch spread %.4f against noise_std %.4f",
+                        float(latents.float().std()),
+                        noise_std,
                     )
-                    latents = latent_batches[0]
-                    if shared_noise is None:
-                        # Removal strength is the ratio of the perturbation to this spread,
-                        # not noise_std alone: it is the only local quantity that makes two
-                        # models' doses comparable.
-                        log.info(
-                            "First latent batch spread %.4f against noise_std %.4f",
-                            float(latents.float().std()),
-                            noise_std,
-                        )
-                        shared_noise = _shared_latent_noise(
-                            latents.shape[1:],
-                            seed=seed,
-                            device=resolved_device,
-                            dtype=latents.dtype,
-                        )
-                    decode_kwargs: dict[str, Any] = {
-                        "vae": vae,
-                        "noise_std": noise_std,
-                        "shared_noise": shared_noise,
-                        "scaling_factor": runtime.scaling_factor,
-                    }
-                    if high_depth:
-                        decode_kwargs["high_depth"] = True
-                    regenerated = _decode_frame_latents(latent_batches, **decode_kwargs)
-                    yield from zip(frames, regenerated, strict=True)
+                    shared_noise = _shared_latent_noise(
+                        latents.shape[1:],
+                        seed=seed,
+                        device=resolved_device,
+                        dtype=latents.dtype,
+                    )
+                decode_kwargs: dict[str, Any] = {
+                    "vae": vae,
+                    "noise_std": noise_std,
+                    "shared_noise": shared_noise,
+                    "scaling_factor": runtime.scaling_factor,
+                }
+                if high_depth:
+                    decode_kwargs["high_depth"] = True
+                return _decode_frame_latents(latent_batches, **decode_kwargs)
 
-            pair_stream: Iterable[tuple[NDArray[Any], NDArray[Any]]] = (
-                iter_stabilized_regenerated_frames(_regenerated_pairs()) if temporal_stabilize else _regenerated_pairs()
-            )
-            for reference, candidate in pair_stream:
-                candidate = anchor_low_freq_color(reference, candidate)
+            def _final_pairs() -> Generator[tuple[NDArray[Any], NDArray[Any]], None, None]:
+                frame_queue: deque[NDArray[Any]] = deque()
+
+                def _small_pairs() -> Generator[tuple[NDArray[Any], NDArray[Any]], None, None]:
+                    for out_batch in _stream_batches(sampled_frames, batch_size):
+                        frame_queue.extend(out_batch)
+                        small_batch = (
+                            [cv2.resize(frm, size, interpolation=cv2.INTER_AREA) for frm in out_batch]
+                            if size != (out_w, out_h)
+                            else out_batch
+                        )
+                        yield from zip(small_batch, _encode_decode_small(small_batch), strict=True)
+
+                raw_pairs: Iterable[tuple[NDArray[Any], NDArray[Any]]] = (
+                    iter_stabilized_regenerated_frames(_small_pairs()) if temporal_stabilize else _small_pairs()
+                )
+                for small_ref, small_cand in raw_pairs:
+                    out_ref = frame_queue.popleft()
+                    yield out_ref, _upscale_clean_guide(out_ref, small_ref, small_cand)
+
+            for reference, candidate in _final_pairs():
                 frame_pipe.write(candidate.tobytes())
                 reference_f32 = reference.astype(np.float32)
                 candidate_f32 = candidate.astype(np.float32)
@@ -648,8 +699,8 @@ def regenerate_video_candidate(
         return RegenerationMetrics(
             frames=frame_count,
             fps=effective_fps,
-            width=size[0],
-            height=size[1],
+            width=out_w,
+            height=out_h,
             psnr_db=math.inf if mse == 0.0 else 20.0 * math.log10(peak / math.sqrt(mse)),
             temporal_residual_ratio=temporal_candidate / max(temporal_baseline, 1e-6),
         )

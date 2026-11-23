@@ -17,9 +17,11 @@ npx skills add wiltodelta/remove-ai-watermarks    # agent skill for Claude Code,
 ```
 
 Video support covers provenance identification, complete visible-plus-metadata
-cleaning, directory batches, visible Sora, Veo, Seedance, Doubao, Dola,
-Hailuo AI, and Kling AI mark removal, and oracle-certified VAE regeneration for video SynthID
-removal.
+cleaning, directory batches, 23 visible AI video marks (including Sora, Veo,
+Seedance, Doubao, Dola, Hailuo AI, Vidu, Wan, Qwen, PixVerse, Luma AI, HeyGen,
+Sync Labs, TikTok AI, and Kling AI) with selective GOP stream-copy, and
+oracle-certified 2D VAE (including `--native-guide`) and 3D `Wan 2.1`
+regeneration for video SynthID and Seedance removal.
 
 > [raiw.cc](https://raiw.cc) runs this library as a hosted service, with the GPU
 > included and nothing to install. Visible mark and metadata removal at Standard
@@ -215,7 +217,7 @@ policy. These are separate from pixel detection and per-file removal verificatio
 strips verified AI metadata. If neither signal is found, it still writes a
 same-container passthrough, so application callers get one predictable output
 contract. Proprietary invisible-video removal is excluded by default:
-`--invisible` opts into the lossy, oracle-certified video SynthID profile (with motion-compensated temporal stabilization enabled by default and `--keep-fps` to retain native frame rate), and `--audio-invisible` inspects and cleans compatible watermarked audio tracks in the same atomic pipeline.
+`--invisible` opts into the lossy, oracle-certified video SynthID profile (with motion-compensated temporal stabilization enabled by default, `--keep-fps` to retain native frame rate, `--native-guide` for fast 512p-guided native-resolution 2D upscaling, and `--wan-steps` for fast 3D `Wan 2.1` denoising), and `--audio-invisible` inspects and cleans compatible watermarked audio tracks in the same atomic pipeline.
 
 Process a directory with the same contract:
 

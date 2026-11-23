@@ -512,7 +512,7 @@ def _scan_audio_at_clock(
 
 def _audio_metadata_vendor(
     markers: dict[str, str],
-) -> Literal["elevenlabs", "google_synthid", "cartesia", "openai"] | None:
+) -> Literal["elevenlabs", "google_synthid", "cartesia", "openai", "suno"] | None:
     """Identify proprietary AI-audio waveform vendors from pre-strip metadata."""
     if not markers:
         return None
@@ -524,12 +524,15 @@ def _audio_metadata_vendor(
             markers.get("claim_generator", ""),
             markers.get("issuer", ""),
             markers.get("ai_tool", ""),
+            markers.get("audio_generator", ""),
         )
     ).casefold()
     if "elevenlabs" in identity_text or "eleven labs" in identity_text:
         return "elevenlabs"
     if "cartesia" in identity_text:
         return "cartesia"
+    if "suno" in identity_text:
+        return "suno"
     if "openai" in identity_text and markers_claim_ai(markers):
         return "openai"
     synthid_marker = markers.get("synthid_watermark", "").casefold()
@@ -1132,9 +1135,8 @@ def _remove_audio_profile(
                         device=resolved_device,
                     )
         if method == "dac":
-            eff_hf = 14000.0 if (preserve_hf_hz is None and before.stream.sample_rate >= 44100) else preserve_hf_hz
             transformed = _dac_full_track(
-                transformed, before.stream.sample_rate, resolved_device, preserve_hf_hz=eff_hf
+                transformed, before.stream.sample_rate, resolved_device, preserve_hf_hz=preserve_hf_hz
             )
         if method == "snac":
             transformed = _snac_full_track(
@@ -1282,12 +1284,14 @@ def _surround_codec_full_track(
     *,
     preserve_hf_hz: float | None = None,
 ) -> Iterator[NDArray[Any]]:
+    eff_hf = 14000.0 if (preserve_hf_hz is None and sample_rate >= 44100) else preserve_hf_hz
+
     def _stem(part: NDArray[Any]) -> NDArray[Any]:
         kwargs: dict[str, Any] = {"local_files_only": False}
         if device != "cpu":
             kwargs["device"] = device
-        if preserve_hf_hz is not None:
-            kwargs["preserve_hf_hz"] = preserve_hf_hz
+        if eff_hf is not None:
+            kwargs["preserve_hf_hz"] = eff_hf
         return resynthesize_fn(part, sample_rate, **kwargs)
 
     yield from _stream_neural_track(

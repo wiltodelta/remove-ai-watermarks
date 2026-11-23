@@ -223,6 +223,8 @@ C2PA_AI_VENDORS: tuple[C2paAiVendor, ...] = (
     _vendor(b"xAI Grok Imagine", "xAI Grok Imagine", "xAI Grok Imagine", "xAI", asserts_ai=True),
     _vendor(b"Producer.ai", "Producer.ai", "Producer.ai", "Producer.ai", asserts_ai=True),
     _vendor(b"Synchronicity Labs", "Sync Labs", "Sync Labs", "Sync Labs", asserts_ai=True),
+    _vendor(b"PixVerse", "PixVerse", "PixVerse", "PixVerse", asserts_ai=True),
+    _vendor(b"Suno Inc", "Suno", "Suno", "Suno", asserts_ai=True),
     _vendor(b"pixelbin.io", "PixelBin.io", "PixelBin.io", "PixelBin.io"),
     # This signature names only SPRING's legal entity, not a product. Preserve
     # that signer identity without guessing which product produced a file.
@@ -402,6 +404,20 @@ _C2PA_SOFT_BINDING_LABEL_OVERRIDES = {
     b"ai.contentlens": "ContentLens",
     b"io.iscc": "ISCC (content code)",
 }
+
+C2PA_VENDOR_SOFT_BINDING_PREFIXES: tuple[C2paSoftBindingAlgorithm, ...] = (
+    C2paSoftBindingAlgorithm(
+        identifier=0,
+        algorithm="com.suno.fingerprint",
+        kind="fingerprint",
+        decoded_media_types=("audio/*",),
+        encoded_media_types=("audio/*",),
+        display_label="Suno Audio Fingerprint",
+        date_entered="",
+        resolution_apis=(),
+        deprecated=False,
+    ),
+)
 
 C2PA_SOFT_BINDING_REGISTRY = tuple(C2paSoftBindingAlgorithm(*row) for row in C2PA_SOFT_BINDING_ROWS)
 

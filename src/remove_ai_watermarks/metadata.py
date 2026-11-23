@@ -960,6 +960,16 @@ def _samsung_genai_impl(image_path: Path) -> int | None:
 
 
 _CLI_FLAG_GARBAGE_RE = re.compile(r"^-[A-Za-z0-9_:-]+=")
+_CANVA_XMP_AIGC_RE = re.compile(
+    r'ContainsAiGeneratedContent(?::ContainsAiGeneratedContent)?\s*=\s*["\'](?:Yes|True)["\']',
+    re.IGNORECASE,
+)
+_META_XMP_PUBLISHER_RE = re.compile(r"<dc:publisher>\s*<rdf:(?:Bag|Seq)>\s*<rdf:li>\s*Meta\s*</rdf:li>")
+_XMP_IPTC_SOURCE_TYPE_RE = re.compile(
+    rb"DigitalSourceType(?:\s*=\s*[\"']|\s*>)[^<\"']*?"
+    rb"(compositeWithTrainedAlgorithmicMedia|trainedAlgorithmicMedia|compositeSynthetic)",
+    re.IGNORECASE,
+)
 
 
 def iptc_ai_system_in(data: bytes) -> str | None:
@@ -1127,7 +1137,10 @@ _CAPCUT_AI_FLAG_RE = re.compile(
 )
 
 
-_APP_METADATA_BYTES_HINT_RE = re.compile(rb"product|aigc_info", re.IGNORECASE)
+_APP_METADATA_BYTES_HINT_RE = re.compile(
+    rb"product|aigc_info|ContainsAiGeneratedContent|dc:publisher",
+    re.IGNORECASE,
+)
 
 
 def _normalized_app_metadata(value: object) -> str:
@@ -1147,6 +1160,8 @@ def _normalized_app_metadata(value: object) -> str:
 def _app_metadata_evidence(value: object) -> tuple[str | None, str | None]:
     """Return removable product provenance and stronger AI-origin evidence."""
     normalized = _normalized_app_metadata(value)
+    if not normalized:
+        return None, None
     products = tuple(match.group(1).lower() for match in _APP_PRODUCT_RE.finditer(normalized))
     provenance = next(
         (_APP_PROVENANCE_PRODUCTS[product] for product in products if product in _APP_PROVENANCE_PRODUCTS), None
@@ -1163,6 +1178,17 @@ def _app_metadata_evidence(value: object) -> tuple[str | None, str | None]:
             generator = "ByteDance Aweme AI"
         elif _APP_AIGC_LABEL_RE.search(normalized):
             generator = "Embedded app AIGC disclosure"
+    elif "ContainsAiGeneratedContent" in normalized and _CANVA_XMP_AIGC_RE.search(normalized):
+        generator = "Canva"
+    elif (
+        "dc:publisher" in normalized
+        and _META_XMP_PUBLISHER_RE.search(normalized)
+        and any(
+            marker in normalized
+            for marker in ("trainedAlgorithmicMedia", "compositeWithTrainedAlgorithmicMedia", "compositeSynthetic")
+        )
+    ):
+        generator = "Meta AI"
     return provenance, generator
 
 
@@ -1660,9 +1686,24 @@ def get_ai_metadata(image_path: Path) -> dict[str, str]:
     if xai_signature(image_path):
         result.setdefault("xai_signature", "xAI/Grok signature (UUID + Signature blob)")
 
-    # IPTC 2025.1 AI-disclosure XMP fields (Iptc4xmpExt:AISystemUsed etc.).
+    # IPTC 2025.1 AI-disclosure XMP fields (Iptc4xmpExt:AISystemUsed etc.) and
+    # standalone IPTC DigitalSourceType XMP packets (Meta, Canva, Adobe Premiere).
     if system := iptc_ai_system(image_path):
         result.setdefault("ai_system", f"IPTC 2025.1 AI disclosure ({system})")
+    if (b"<x:xmpmeta" in app_scan or b"<?xpacket" in app_scan or b"Iptc4xmpExt:" in app_scan) and (
+        xmp_st_match := _XMP_IPTC_SOURCE_TYPE_RE.search(app_scan)
+    ):
+        st_token = xmp_st_match.group(1).lower()
+        iptc_source_label = (
+            "compositeWithTrainedAlgorithmicMedia (AI-enhanced)"
+            if st_token == b"compositewithtrainedalgorithmicmedia"
+            else (
+                "compositeSynthetic (AI-generated)"
+                if st_token == b"compositesynthetic"
+                else "trainedAlgorithmicMedia (AI-generated)"
+            )
+        )
+        result.setdefault("source_type", iptc_source_label)
 
     # Higgsfield job marker (hf-job-id PNG text chunk); key name kept for compatibility.
     if job := huggingface_job(image_path):

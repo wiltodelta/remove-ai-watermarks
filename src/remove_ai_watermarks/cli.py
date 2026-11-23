@@ -1768,6 +1768,17 @@ def _video_visible_options(f: Any) -> Any:
 def _video_invisible_options(f: Any) -> Any:
     """Apply the shared invisible-video removal options."""
     f = click.option(
+        "--wan-steps",
+        type=click.IntRange(min=1, max=50),
+        default=None,
+        help="Inference steps for Wan 2.1 3D profiles (default: certified 20; e.g. 6 for fast scrubbing).",
+    )(f)
+    f = click.option(
+        "--native-guide",
+        is_flag=True,
+        help="Run fast 512p 2D VAE regeneration and upscale cleanly to native resolution and frame rate.",
+    )(f)
+    f = click.option(
         "--temporal-stabilize/--no-temporal-stabilize",
         default=True,
         show_default=True,
@@ -2330,12 +2341,27 @@ def _print_video_audio_status(
         _print_video_audio_unverified()
 
 
+def _effective_cli_fps(
+    ctx: click.Context,
+    fps: float,
+    *,
+    keep_fps: bool,
+    native_guide: bool,
+) -> float | None:
+    """Resolve CLI FPS, preserving source FPS when --keep-fps or --native-guide (with default --fps) is active."""
+    if keep_fps or (native_guide and ctx.get_parameter_source("fps") == click.core.ParameterSource.DEFAULT):
+        return None
+    return fps
+
+
 @cmd_video.command("invisible")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_video_output_option
 @_video_invisible_options
 @click.option("--json", "as_json", is_flag=True, help="Emit the regeneration result as JSON.")
+@click.pass_context
 def cmd_video_invisible(
+    ctx: click.Context,
     source: Path,
     output: Path | None,
     profile: VideoInvisibleProfile,
@@ -2345,6 +2371,8 @@ def cmd_video_invisible(
     fps: float,
     keep_fps: bool,
     temporal_stabilize: bool,
+    native_guide: bool,
+    wan_steps: int | None,
     batch_size: int,
     seed: int,
     device: str,
@@ -2354,6 +2382,7 @@ def cmd_video_invisible(
 
     from remove_ai_watermarks.video import remove_video_invisible
 
+    eff_fps = _effective_cli_fps(ctx, fps, keep_fps=keep_fps, native_guide=native_guide)
     if not as_json:
         _banner()
         console.print(f"  Regenerating {source.name} with the {profile} profile...")
@@ -2365,11 +2394,13 @@ def cmd_video_invisible(
             quality=quality,
             noise_std=noise_std,
             long_side=long_side,
-            fps=None if keep_fps else fps,
+            fps=eff_fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
             temporal_stabilize=temporal_stabilize,
+            native_guide=native_guide,
+            wan_steps=wan_steps,
         )
     except (OSError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -2535,7 +2566,9 @@ def cmd_video_erase(
 @_video_audio_invisible_options
 @click.option("--trim-bumper", is_flag=True, help="Detect and trim a trailing full-screen static AI outro bumper.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the complete video cleaning result as JSON.")
+@click.pass_context
 def cmd_video_all(
+    ctx: click.Context,
     source: Path,
     output: Path | None,
     mark: str,
@@ -2549,25 +2582,28 @@ def cmd_video_all(
     fps: float,
     keep_fps: bool,
     temporal_stabilize: bool,
-    batch_size: int,
-    seed: int,
-    device: str,
-    audio_invisible: bool,
-    audio_scheme: AudioScheme,
-    audio_method: AudioMethod,
-    audio_force: bool,
-    audio_allow_unverified: bool,
-    audio_allow_positive: bool,
-    audio_allow_quality_override: bool,
-    audio_streams: tuple[int, ...],
-    audio_vendor: AudioVendor,
-    trim_bumper: bool | Literal["auto"],
-    as_json: bool,
+    native_guide: bool = False,
+    wan_steps: int | None = None,
+    batch_size: int = 4,
+    seed: int = 0,
+    device: str = "auto",
+    audio_invisible: bool = False,
+    audio_scheme: AudioScheme = "auto",
+    audio_method: AudioMethod = "auto",
+    audio_force: bool = False,
+    audio_allow_unverified: bool = False,
+    audio_allow_positive: bool = False,
+    audio_allow_quality_override: bool = False,
+    audio_streams: tuple[int, ...] = (),
+    audio_vendor: AudioVendor = "auto",
+    trim_bumper: bool | Literal["auto"] = False,
+    as_json: bool = False,
 ) -> None:
     """Remove stable visible marks, AI metadata, and optional pixel/audio marks from video."""
 
     from remove_ai_watermarks.video import remove_video_all
 
+    eff_fps = _effective_cli_fps(ctx, fps, keep_fps=keep_fps, native_guide=native_guide)
     if not as_json:
         _banner()
         stage_parts = ["visible marks"]
@@ -2593,11 +2629,13 @@ def cmd_video_all(
             invisible_quality=quality,
             noise_std=float(noise_std),
             long_side=long_side,
-            fps=None if keep_fps else fps,
+            fps=eff_fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
             temporal_stabilize=temporal_stabilize,
+            native_guide=native_guide,
+            wan_steps=wan_steps,
             include_audio_invisible=audio_invisible,
             audio_scheme=audio_scheme,
             audio_method=audio_method,
@@ -2668,7 +2706,9 @@ def cmd_video_all(
 @_video_invisible_options
 @_video_audio_invisible_options
 @click.option("--json", "as_json", is_flag=True, help="Emit the video batch summary as JSON.")
+@click.pass_context
 def cmd_video_batch(
+    ctx: click.Context,
     directory: Path,
     output_dir: Path | None,
     mode: Literal["all", "visible", "metadata"],
@@ -2683,25 +2723,28 @@ def cmd_video_batch(
     fps: float,
     keep_fps: bool,
     temporal_stabilize: bool,
-    batch_size: int,
-    seed: int,
-    device: str,
-    audio_invisible: bool,
-    audio_scheme: AudioScheme,
-    audio_method: AudioMethod,
-    audio_force: bool,
-    audio_allow_unverified: bool,
-    audio_allow_positive: bool,
-    audio_allow_quality_override: bool,
-    audio_streams: tuple[int, ...],
-    audio_vendor: AudioVendor,
-    as_json: bool,
+    native_guide: bool = False,
+    wan_steps: int | None = None,
+    batch_size: int = 4,
+    seed: int = 0,
+    device: str = "auto",
+    audio_invisible: bool = False,
+    audio_scheme: AudioScheme = "auto",
+    audio_method: AudioMethod = "auto",
+    audio_force: bool = False,
+    audio_allow_unverified: bool = False,
+    audio_allow_positive: bool = False,
+    audio_allow_quality_override: bool = False,
+    audio_streams: tuple[int, ...] = (),
+    audio_vendor: AudioVendor = "auto",
+    as_json: bool = False,
 ) -> None:
     """Process every supported video in a directory."""
     from dataclasses import asdict
 
     from remove_ai_watermarks.video import remove_video_batch
 
+    eff_fps = _effective_cli_fps(ctx, fps, keep_fps=keep_fps, native_guide=native_guide)
     if not as_json:
         _banner()
         console.print(f"  Processing video directory {directory} in {mode} mode...")
@@ -2718,11 +2761,13 @@ def cmd_video_batch(
             invisible_quality=quality,
             noise_std=noise_std,
             long_side=long_side,
-            fps=None if keep_fps else fps,
+            fps=eff_fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
             temporal_stabilize=temporal_stabilize,
+            native_guide=native_guide,
+            wan_steps=wan_steps,
             include_audio_invisible=audio_invisible,
             audio_scheme=audio_scheme,
             audio_method=audio_method,
@@ -3316,6 +3361,8 @@ def cmd_all(
             fps=DEFAULT_VIDEO_SYNTHID_FPS,
             keep_fps=False,
             temporal_stabilize=True,
+            native_guide=False,
+            wan_steps=None,
             batch_size=4,
             seed=(seed or 0) if vid_inv_mode else 0,
             device="auto",

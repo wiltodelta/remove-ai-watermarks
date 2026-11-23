@@ -628,8 +628,9 @@ asserts a wideband AI audio generator. Tagged `5.1` / `7.1` tracks under
 `encodec` and `combined` use the same stem decomposition. Explicit `method="snac"`
 uses the `audio-codec` extra and fixed FP32 3-codebook 44.1 kHz Multi-Scale Neural
 Audio Codec (`hubertsiuzdak/snac_44khz` at revision
-`873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT weights, `vq_strides = (8, 4, 2)`)
-on `vocoder_device` (`"cpu"`, `"mps"`, or `"cuda"`), sharing the same mono, raw
+`873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT weights, `vq_strides = (8, 4, 2)`),
+defaulting `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks,
+on `vocoder_device` (`"auto"`, `"cpu"`, `"mps"`, or `"cuda"`), sharing the same mono, raw
 mid/side stereo, tagged `5.1` / `7.1` surround stem decomposition, and
 overlap-window streaming while remaining excluded from `auto`.
 
@@ -915,8 +916,12 @@ the static prompt embedding is cached locally; `seedance` fallback on CPU/MPS)
 when ByteDance/Seedance metadata or visible marks are present, and
 `wan21-synthid` (`synthid` fallback) otherwise. `wan21-synthid` uses `strength=0.38`
 and `wan21-seedance` uses `strength=0.12`. Both accept
-`quality="delivery"` or `"master"` and `seed`, reuse one loaded pipeline across
-batch items, and perform no runtime oracle verification. `VideoAllResult` also
+`quality="delivery"` or `"master"`, `seed`, and optional `inference_steps` / `wan_steps`
+(defaulting to the oracle-certified 20 steps; e.g. `wan_steps=6` for 3.3x faster denoising),
+reuse one loaded pipeline across
+batch items, and perform no runtime oracle verification. On the 2D `synthid` profile,
+`native_guide=True` runs latent regeneration at `long_side` (default 512) and upscales
+cleanly to native `(width, height)` with CIE Lab low-frequency color anchoring. `VideoAllResult` also
 records `audio_verification_scope` and `audio_quality_passed` when
 `include_audio_invisible=True`.
 

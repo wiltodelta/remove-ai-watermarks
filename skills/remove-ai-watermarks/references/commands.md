@@ -160,7 +160,8 @@ remove-ai-watermarks video batch ./videos --mode all
 
 Video mark keys: `sora`, `veo`, `dreamina`, `jimeng`, `jimeng_pill`, `seedance`, `doubao`,
 `dola`, `hailuo`, `vidu`, `wan`, `qwen`, `yuanbao`, `baidu`, `runninghub`, `microsoft`,
-`generic_ai_label`, `kling`. Default `--mark auto` selects the first temporally stable match in
+`pixverse`, `luma`, `heygen`, `sync_labs`, `tiktok_ai`,
+`generic_ai_label`, `kling` (since CLI 0.74.0). Default `--mark auto` selects the first temporally stable match in
 that order and co-selects spatially disjoint vendor-compatible marks (such as `jimeng` +
 `jimeng_pill`) in a single pass. Pass `--trim-bumper` on `video visible` or `video all` to trim
 a trailing static AI outro card, and `--track` on `erase` or `video erase` to track moving
@@ -168,7 +169,7 @@ user-specified `--region` boxes across frames.
 
 `video invisible` and `video all --invisible` accept MP4, MOV, M4V, MKV, WebM, AVI, and FLV.
 That is the default SynthID profile. It is lossy; its shipped noise profile
-is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), and `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only).
+is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps, and `--native-guide` (since CLI 0.74.0) runs fast 512p 2D VAE regeneration and upscales cleanly to native resolution and frame rate. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only).
 
 For an owned Seedance video, `--profile auto` routes ByteDance/Seedance clips automatically, or opt in explicitly with `--profile seedance` (legacy alias `seedance-experimental`):
 
@@ -205,7 +206,7 @@ remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile wan2
 Both `wan21-*` profiles use pinned Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`
 (`strength=0.38` for SynthID, `strength=0.12` for Seedance, 193-frame chunks
 with 17-frame raised-cosine temporal crossfades on longer clips), accept
-`--quality [delivery|master]` and `--seed`, require `device=auto`, `cuda`, or an
+`--quality [delivery|master]`, `--seed`, and `--wan-steps` (default certified 20; e.g. `--wan-steps 6` for fast scrubbing, since CLI 0.74.0), require `device=auto`, `cuda`, or an
 explicit `mps` (FP16 transformer; `auto` never selects MPS), and
 reject 2D VAE SynthID tuning flags. Neither performs per-file oracle verification.
 
@@ -265,7 +266,7 @@ explicit `--vendor` cohort identifies a wideband AI audio generator.
 
 `--method snac` selects the 44.1 kHz Multi-Scale Neural Audio Codec profile
 (`hubertsiuzdak/snac_44khz`, MIT weights) fixed at 3 multi-scale codebooks
-(strides 8, 4, 2) on FP32 with the `audio-codec` extra. Like `dac`, it runs
+(strides 8, 4, 2) on FP32 with the `audio-codec` extra (defaulting `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks). Like `dac`, it runs
 single-pass resynthesis up to 30 seconds and overlap-window streaming on longer
 audio (`> 30 s`), supporting mono, raw mid/side stereo, and tagged `5.1`/`7.1`
 surround stems on `--vocoder-device [auto|cpu|mps|cuda]`; `auto` excludes `snac`.

@@ -874,8 +874,9 @@ are not comparable: selection applies each provider's temporal arbiter and
 takes the first stable result in specificity order (`VIDEO_VISIBLE_MARKS`:
 `sora`, `veo`, `dreamina`, `jimeng`, `jimeng_pill`, `seedance`, `doubao`, `dola`,
 `hailuo`, `vidu`, `wan`, `qwen`, `yuanbao`, `baidu`, `runninghub`, `microsoft`,
+`pixverse`, `luma`, `heygen`, `sync_labs`, `tiktok_ai`,
 `generic_ai_label`, `kling`), co-selecting spatially disjoint vendor-compatible
-marks (such as `jimeng` + `jimeng_pill`) in a single pass and splitting disjoint
+marks (such as `jimeng` + `jimeng_pill` or ByteDance marks + `tiktok_ai`) in a single pass, bypassing optical-flow donor windows outside `[first_dirty - donor_radius, last_dirty + donor_radius]`, and using selective H.264 keyframe GOP stream-copy (`_try_selective_gop_clean_encode`) when untouched GOPs (`>= 30` frames) or keyframe-aligned `--trim-bumper` cuts verify frame-exact, while splitting disjoint
 connected mask components (`_split_disjoint_masks`) so optical-flow donor recovery
 and inpainting stay bounded to each local corner ROI. `video_temporal.py` also
 provides `detect_ai_bumper_start` for `--trim-bumper` static end-card trimming and

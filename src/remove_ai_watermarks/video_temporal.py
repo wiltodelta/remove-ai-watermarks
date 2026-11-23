@@ -20,23 +20,33 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 
+_FLOW_MAX_LONG_SIDE = 512
+
+
+def _scaled_farneback(from_gray: NDArray[Any], to_gray: NDArray[Any]) -> NDArray[Any]:
+    """Run Farneback optical flow at bounded resolution and scale vectors back to native geometry."""
+    height, width = from_gray.shape[:2]
+    long_side = max(width, height)
+    if long_side <= _FLOW_MAX_LONG_SIDE:
+        return cv2.calcOpticalFlowFarneback(from_gray, to_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+    scale = _FLOW_MAX_LONG_SIDE / float(long_side)
+    work_w = max(16, round(width * scale))
+    work_h = max(16, round(height * scale))
+    small_from = cv2.resize(from_gray, (work_w, work_h), interpolation=cv2.INTER_AREA)
+    small_to = cv2.resize(to_gray, (work_w, work_h), interpolation=cv2.INTER_AREA)
+    small_flow = cv2.calcOpticalFlowFarneback(small_from, small_to, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+    full_flow = cv2.resize(small_flow, (width, height), interpolation=cv2.INTER_LINEAR)
+    full_flow[..., 0] *= float(width) / float(work_w)
+    full_flow[..., 1] *= float(height) / float(work_h)
+    return full_flow
+
+
 def _backward_map(
     current_gray: NDArray[Any],
     previous_gray: NDArray[Any],
 ) -> tuple[NDArray[Any], NDArray[Any]]:
     """Build a remap from a previous frame into current coordinates."""
-    flow = cv2.calcOpticalFlowFarneback(
-        current_gray,
-        previous_gray,
-        None,
-        0.5,
-        3,
-        15,
-        3,
-        5,
-        1.2,
-        0,
-    )
+    flow = _scaled_farneback(current_gray, previous_gray)
     height, width = current_gray.shape
     flow[..., 0] += np.arange(width, dtype=np.float32)[None, :]
     flow[..., 1] += np.arange(height, dtype=np.float32)[:, None]
@@ -524,18 +534,7 @@ def _flow_field(
     to_gray: NDArray[Any],
 ) -> NDArray[Any]:
     """Estimate dense Farneback displacement from ``from_gray`` into ``to_gray``."""
-    return cv2.calcOpticalFlowFarneback(
-        from_gray,
-        to_gray,
-        None,
-        0.5,
-        3,
-        15,
-        3,
-        5,
-        1.2,
-        0,
-    )
+    return _scaled_farneback(from_gray, to_gray)
 
 
 def _displacement_to_maps(flow: NDArray[Any]) -> tuple[NDArray[Any], NDArray[Any]]:

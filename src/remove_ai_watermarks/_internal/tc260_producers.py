@@ -25,8 +25,8 @@ class Tc260Producer:
 
 
 TC260_PRODUCERS = (
-    # YOYO JPEG exports; USCC independently verified in Honor's privacy statement.
-    Tc260Producer("honor", ("91440300MA5G49LC9K",), "Honor", image_platform="Honor"),
+    # YOYO JPEG exports and Honor AI video clips; USCC independently verified in Honor's privacy statement.
+    Tc260Producer("honor", ("91440300MA5G49LC9K", "HZ_XYKJ"), "Honor", video_platform="Honor", image_platform="Honor"),
     Tc260Producer("doubao", ("91110102MACQD9K640", "doubao"), "ByteDance", "doubao", "doubao", "ByteDance Doubao"),
     Tc260Producer(
         "jimeng", ("9144030008867405X2",), "ByteDance", "jimeng", "dreamina", video_platform="ByteDance Dreamina"

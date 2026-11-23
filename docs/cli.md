@@ -126,12 +126,12 @@ bandwidth), and bitexact WAV writer. EnCodec bandwidth does not apply;
 ElevenLabs (falling back to `encodec` / `combined` if DAC is absent or the
 layout is unsupported) or Google SynthID (failing closed rather than falling back to
 `encodec` if DAC is absent or the layout is unsupported), or when `--vendor` names a cohort.
-`--method snac` selects the separate experimental FP32 44.1 kHz 3-codebook
+`--method snac` selects the FP32 44.1 kHz 3-codebook
 Multi-Scale Neural Audio Codec (`audio-codec` extra, pinned to
 `hubertsiuzdak/snac_44khz@873ebef9718b89660340c6f55a2b515e98cfa1d9`, MIT weights in
-`licenses/snac/NOTICE.txt`), accepting mono, raw mid/side stereo, and tagged 5.1/7.1
+`licenses/snac/NOTICE.txt`, defaulting `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks), accepting mono, raw mid/side stereo, and tagged 5.1/7.1
 layouts with single-pass resynthesis up to 30 seconds and overlap-window streaming
-on longer tracks across `--vocoder-device [cpu|mps|cuda]`; `auto` excludes `snac`.
+on longer tracks across `--vocoder-device [auto|cpu|mps|cuda]`; `auto` excludes `snac`.
 Long audio tracks (`> 30 s`) are verified across
 bounded `<= 30 s` whole-clip segments in addition to sliding windows, missing
 requested decoders emit actionable install hints, and JSON output includes
@@ -431,15 +431,15 @@ Invisible regeneration is deliberately opt-in:
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --keep-fps --audio-invisible
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --native-guide
 ```
 
-That option is supported only for MP4, MOV, and M4V. It is lossy and uses the
-same default SynthID profile as `video invisible` (including default motion-compensated `--temporal-stabilize` / `--no-temporal-stabilize` and optional `--keep-fps` to preserve native source frame rate). Pass `--audio-invisible` (`--no-audio-invisible` is the default) alongside `--audio-scheme` (default `auto`), `--audio-method` (default `auto`), repeatable `--audio-stream N` (to restrict inspection/processing to specific zero-based audio tracks), and optional `--audio-allow-unverified` (`--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline, yielding 4-layer audiovisual cleaning (metadata + visible marks + video pixels + audio tracks). Silent videos skip `scipy` audio-extra requirements even when `--audio-invisible` is set. To select the experimental
-Seedance recipe for an owned MP4:
+That option is supported across all seven video containers (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, `.flv`). It is lossy and uses the
+same default SynthID profile as `video invisible` (including default motion-compensated `--temporal-stabilize` / `--no-temporal-stabilize`, `--keep-fps` to preserve native source frame rate, `--native-guide` for fast 512p-guided native-resolution 2D upscaling, and `--wan-steps` to customize 3D `Wan 2.1` denoising steps). Pass `--audio-invisible` (`--no-audio-invisible` is the default) alongside `--audio-scheme` (default `auto`), `--audio-method` (default `auto`), repeatable `--audio-stream N` (to restrict inspection/processing to specific zero-based audio tracks), and optional `--audio-allow-unverified` (`--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline, yielding 4-layer audiovisual cleaning (metadata + visible marks + video pixels + audio tracks). Silent videos skip `scipy` audio-extra requirements even when `--audio-invisible` is set. To select the Seedance recipe:
 
 ```bash
-remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile seedance-experimental
-remove-ai-watermarks video batch ./videos --invisible --profile seedance-experimental
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile seedance
+remove-ai-watermarks video batch ./videos --invisible --profile seedance
 ```
 
 The complete pipeline runs supported visible-mark removal before this pixel

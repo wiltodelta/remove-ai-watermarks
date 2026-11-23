@@ -321,6 +321,88 @@ def probe_video_duration(path: Path) -> float:
     return duration
 
 
+@dataclass(frozen=True)
+class VideoKeyframeSpec:
+    """Keyframe packet layout and codec properties for selective GOP stream-copy."""
+
+    codec_name: str
+    profile_name: str | None
+    start_pts: int | None
+    has_b_frames: int
+    packet_count: int
+    keyframes: tuple[tuple[int, float], ...]
+
+
+def probe_video_keyframes(source: Path) -> VideoKeyframeSpec | None:
+    """Inspect packet keyframe indices, timestamps, and H.264 stream parameters."""
+    raw = _run_ffprobe(
+        source,
+        (
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,profile,start_pts,has_b_frames:packet=pts_time,flags",
+        ),
+        purpose="video keyframes",
+        output_format="json",
+    )
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw)
+        stream = payload["streams"][0]
+        packets = payload.get("packets", [])
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return None
+    codec_name = stream.get("codec_name")
+    if not isinstance(codec_name, str) or not packets:
+        return None
+    keyframes: list[tuple[int, float]] = []
+    for idx, pkt in enumerate(packets):
+        flags = pkt.get("flags", "")
+        pts_raw = pkt.get("pts_time")
+        if isinstance(flags, str) and "K" in flags and pts_raw is not None:
+            try:
+                pts_val = float(pts_raw)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(pts_val):
+                return None
+            keyframes.append((idx, pts_val))
+    if not keyframes:
+        return None
+    raw_start_pts = stream.get("start_pts")
+    raw_b = stream.get("has_b_frames")
+    return VideoKeyframeSpec(
+        codec_name=codec_name,
+        profile_name=stream.get("profile") if isinstance(stream.get("profile"), str) else None,
+        start_pts=raw_start_pts if isinstance(raw_start_pts, int) else None,
+        has_b_frames=raw_b if isinstance(raw_b, int) else 0,
+        packet_count=len(packets),
+        keyframes=tuple(keyframes),
+    )
+
+
+def count_decoded_video_frames(source: Path) -> int | None:
+    """Count exact decodable video frames via ffprobe without materializing Python buffers."""
+    raw = _run_ffprobe(
+        source,
+        (
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames",
+        ),
+        purpose="decoded frame count",
+        output_format="csv=p=0",
+    )
+    if raw is None:
+        return None
+    token = raw.strip().splitlines()[0].strip() if raw.strip() else ""
+    return int(token) if token.isdigit() else None
+
+
 def probe_video_timestamps(source: Path) -> tuple[float, ...]:
     """Read authoritative display timestamps for the first video stream."""
     raw_timestamps = _run_ffprobe(
@@ -418,6 +500,7 @@ def _video_codec_args(
     profile: VideoEncodeProfile,
     encoder: str = "software",
     ffmpeg_path: str | None = None,
+    h264_profile: str | None = None,
 ) -> list[str]:
     high_depth = profile.pixel_format in HIGH_BIT_DEPTH_PIXEL_FORMATS
     is_isobmff = suffix in {".mp4", ".mov", ".m4v"}
@@ -466,6 +549,8 @@ def _video_codec_args(
         args.extend(["-x265-params", ":".join(x265_params)])
         return args
     args = ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
+    if h264_profile is not None:
+        args.extend(["-profile:v", h264_profile])
     x264_params: list[str] = []
     if profile.color_primaries == "bt709":
         x264_params.append("colorprim=bt709")
@@ -501,6 +586,15 @@ def container_format_args(suffix: str) -> list[str]:
     return ["-f", "mp4"] if suffix.lower() == ".m4v" else []
 
 
+def mp4_timescale_args(suffix: str, time_base: str | None) -> list[str]:
+    """Return ISOBMFF video track timescale flags when the source time base has unit numerator."""
+    if suffix.lower() in {".mp4", ".mov", ".m4v"} and time_base is not None:
+        numerator, denominator = (int(part) for part in time_base.split("/", 1))
+        if numerator == 1:
+            return ["-video_track_timescale", str(denominator)]
+    return []
+
+
 def raw_video_command(
     output: Path,
     *,
@@ -513,6 +607,7 @@ def raw_video_command(
     copy_input_timestamps: bool = False,
     input_pix_fmt: str = "bgr24",
     encoder: str = "software",
+    h264_profile: str | None = None,
 ) -> list[str]:
     """Build an ffmpeg command for BGR/BGR48LE frames on standard input."""
     if encoder not in VIDEO_ENCODERS:
@@ -543,7 +638,14 @@ def raw_video_command(
         *frame_input,
         "-map",
         "0:v:0",
-        *_video_codec_args(output.suffix.lower(), crf=crf, profile=profile, encoder=encoder, ffmpeg_path=ffmpeg),
+        *_video_codec_args(
+            output.suffix.lower(),
+            crf=crf,
+            profile=profile,
+            encoder=encoder,
+            ffmpeg_path=ffmpeg,
+            h264_profile=h264_profile,
+        ),
         *_profile_args(profile),
         "-map_metadata",
         "-1",
@@ -553,10 +655,7 @@ def raw_video_command(
     command.extend(["-fps_mode", "passthrough"])
     if copy_input_timestamps:
         command.extend(["-avoid_negative_ts", "disabled"])
-    if output.suffix.lower() in {".mp4", ".mov", ".m4v"} and profile.time_base is not None:
-        numerator, denominator = (int(part) for part in profile.time_base.split("/", 1))
-        if numerator == 1:
-            command.extend(["-video_track_timescale", str(denominator)])
+    command.extend(mp4_timescale_args(output.suffix, profile.time_base))
     command.extend(container_format_args(output.suffix))
     command.append(str(output))
     return command
@@ -570,6 +669,7 @@ def mux_encoded_video(
     strip_metadata: bool,
     copy_input_timestamps: bool = False,
     trim_end_seconds: float | None = None,
+    video_input_args: Sequence[str] = (),
 ) -> None:
     """Copy encoded video and source audio into the final container."""
     ffmpeg = require_video_tool("ffmpeg")
@@ -579,6 +679,7 @@ def mux_encoded_video(
         "-loglevel",
         "error",
         *(["-copyts"] if copy_input_timestamps else []),
+        *video_input_args,
         "-i",
         str(encoded_video),
         *(["-to", f"{trim_end_seconds:.6f}"] if trim_end_seconds is not None else []),

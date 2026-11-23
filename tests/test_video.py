@@ -1284,6 +1284,11 @@ class TestVideoProvenanceApi:
             "baidu",
             "runninghub",
             "microsoft",
+            "pixverse",
+            "luma",
+            "heygen",
+            "sync_labs",
+            "tiktok_ai",
             "generic_ai_label",
             "kling",
         )

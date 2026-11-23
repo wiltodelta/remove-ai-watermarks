@@ -26,12 +26,16 @@ changes pixels.
 from __future__ import annotations
 
 import logging
+import math
+import subprocess
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from functools import cache, lru_cache
 from itertools import pairwise
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Literal
 
 import cv2
@@ -45,9 +49,13 @@ from remove_ai_watermarks.video_decode import open_video_capture, open_video_cap
 from remove_ai_watermarks.video_encoding import (
     HIGH_BIT_DEPTH_PIXEL_FORMATS,
     abort_raw_video_encoder,
+    container_format_args,
+    count_decoded_video_frames,
     finish_raw_video_encoder,
+    mp4_timescale_args,
     mux_encoded_video,
     probe_video_encode_profile,
+    probe_video_keyframes,
     probe_video_timestamps,
     raw_video_command,
     staged_video_output,
@@ -64,7 +72,6 @@ from remove_ai_watermarks.video_temporal import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
-    from pathlib import Path
 
     from numpy.typing import NDArray
 
@@ -126,6 +133,16 @@ _RUNNINGHUB_WEAK_CONFIDENCE = 0.34
 _RUNNINGHUB_STRONG_CONFIDENCE = 0.40
 _MICROSOFT_WEAK_CONFIDENCE = 0.38
 _MICROSOFT_STRONG_CONFIDENCE = 0.45
+_PIXVERSE_WEAK_CONFIDENCE = 0.36
+_PIXVERSE_STRONG_CONFIDENCE = 0.42
+_LUMA_WEAK_CONFIDENCE = 0.45
+_LUMA_STRONG_CONFIDENCE = 0.52
+_HEYGEN_WEAK_CONFIDENCE = 0.34
+_HEYGEN_STRONG_CONFIDENCE = 0.39
+_SYNC_LABS_WEAK_CONFIDENCE = 0.44
+_SYNC_LABS_STRONG_CONFIDENCE = 0.50
+_TIKTOK_AI_WEAK_CONFIDENCE = 0.42
+_TIKTOK_AI_STRONG_CONFIDENCE = 0.48
 _GENERIC_AI_LABEL_WEAK_CONFIDENCE = 0.48
 _GENERIC_AI_LABEL_STRONG_CONFIDENCE = 0.55
 _MIN_STABLE_FRAMES = 5
@@ -441,6 +458,112 @@ def _dreamina_template() -> NDArray[Any]:
 
 
 @lru_cache(maxsize=1)
+def _pixverse_template() -> NDArray[Any]:
+    """Return a synthetic 'PixVerse.ai' top-right wordmark silhouette."""
+    canvas = Image.new("L", (340, 80), 0)
+    draw = ImageDraw.Draw(canvas)
+    font = _scalable_default_font(52)
+    draw.text((8, 8), "PixVerse.ai", font=font, fill=255, stroke_width=2, stroke_fill=255)
+    return _crop_nonzero(np.asarray(canvas, dtype=np.uint8))
+
+
+@lru_cache(maxsize=1)
+def _luma_template() -> NDArray[Any]:
+    """Return a synthetic Luma 2-facet isometric corner prism + 'Luma' silhouette."""
+    h, w = 106, 456
+    canvas = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(canvas)
+    draw.polygon([(0, 36), (38, 0), (38, 70), (0, 70)], fill=200)
+    draw.polygon([(0, 70), (38, 70), (76, 87), (38, 105)], fill=255)
+    font = _scalable_default_font(104)
+    txt = Image.new("L", (400, 130), 0)
+    ImageDraw.Draw(txt).text((0, 0), "Luma", font=font, fill=255, stroke_width=2, stroke_fill=255)
+    txt_arr = cv2.resize(_crop_nonzero(np.asarray(txt, dtype=np.uint8)), (330, 88), interpolation=cv2.INTER_AREA)
+    out = np.asarray(canvas, dtype=np.uint8).copy()
+    out[12:100, 124:454] = np.maximum(out[12:100, 124:454], txt_arr)
+    return _crop_nonzero(out)
+
+
+@lru_cache(maxsize=1)
+def _heygen_template() -> NDArray[Any]:
+    """Return a synthetic two-line 'Hey [4-facet diamond] / Gen' corner badge silhouette."""
+    w, h = 260, 142
+    canvas = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(canvas)
+    font = _scalable_default_font(64)
+    t_hey = Image.new("L", (200, 90), 0)
+    ImageDraw.Draw(t_hey).text((0, 0), "Hey", font=font, fill=255, stroke_width=2, stroke_fill=255)
+    a_hey = cv2.resize(_crop_nonzero(np.asarray(t_hey, dtype=np.uint8)), (142, 68), interpolation=cv2.INTER_AREA)
+    t_gen = Image.new("L", (200, 90), 0)
+    ImageDraw.Draw(t_gen).text((0, 0), "Gen", font=font, fill=255, stroke_width=2, stroke_fill=255)
+    a_gen = cv2.resize(_crop_nonzero(np.asarray(t_gen, dtype=np.uint8)), (148, 56), interpolation=cv2.INTER_AREA)
+    cx, cy, rx, ry, gap = 206, 34, 48, 31, 3
+    draw.polygon([(cx - gap, cy - gap), (cx - rx, cy - gap), (cx - gap, cy - ry)], fill=235)
+    draw.polygon([(cx + gap, cy - gap), (cx + rx, cy - gap), (cx + gap, cy - ry)], fill=200)
+    draw.polygon([(cx - gap, cy + gap), (cx - rx, cy + gap), (cx - gap, cy + ry)], fill=200)
+    draw.polygon([(cx + gap, cy + gap), (cx + rx, cy + gap), (cx + gap, cy + ry)], fill=235)
+    out = np.asarray(canvas, dtype=np.uint8).copy()
+    out[6:74, 4:146] = np.maximum(out[6:74, 4:146], a_hey)
+    out[78:134, 48:196] = np.maximum(out[78:134, 48:196], a_gen)
+    return _crop_nonzero(out)
+
+
+@lru_cache(maxsize=1)
+def _sync_labs_template() -> NDArray[Any]:
+    """Return a synthetic Sync Labs lens-circle + 'sync.so' silhouette."""
+    w, h = 380, 84
+    canvas = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(canvas)
+    r, cx, cy = 34, 38, 40
+    draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=255)
+    for sx_f, sy_f, fill_val in ((0.96, 0.44, 0), (0.78, 0.26, 255), (0.62, 0.14, 0)):
+        pts = [
+            (cx + round(r * sx_f * math.cos(math.radians(d))), cy + round(r * sy_f * math.sin(math.radians(d))))
+            for d in range(0, 360, 10)
+        ]
+        draw.polygon(pts, fill=fill_val)
+    font = _scalable_default_font(60)
+    draw.text((88, 4), "sync.so", font=font, fill=255, stroke_width=1, stroke_fill=255)
+    return _crop_nonzero(np.asarray(canvas, dtype=np.uint8))
+
+
+@lru_cache(maxsize=1)
+def _tiktok_ai_template() -> NDArray[Any]:
+    """Return a synthetic 'AI-generated' label silhouette for TikTok's bottom-left pill."""
+    txt = Image.new("L", (360, 62), 0)
+    draw = ImageDraw.Draw(txt)
+    font = _scalable_default_font(40)
+    draw.text((16, 10), "AI-generated", font=font, fill=255)
+    return _crop_nonzero(np.asarray(txt, dtype=np.uint8))
+
+
+@lru_cache(maxsize=1)
+def _qwen_en_template() -> NDArray[Any]:
+    """Return a synthetic 3-lobe triangular pinwheel + 'Qwen' silhouette."""
+    w, h = 340, 92
+    canvas = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(canvas)
+    cx, cy = 46.0, 46.0
+    base_lobe = (
+        (-16.0, -34.0),
+        (-4.0, -34.0),
+        (2.0, -23.0),
+        (24.0, -23.0),
+        (30.0, -12.0),
+        (-10.0, -12.0),
+        (-22.0, -24.0),
+    )
+    for k in range(3):
+        ang = math.radians(120.0 * k)
+        ca, sa = math.cos(ang), math.sin(ang)
+        pts = [(round(cx + x * ca - y * sa), round(cy + x * sa + y * ca)) for x, y in base_lobe]
+        draw.polygon(pts, fill=255)
+    font = _scalable_default_font(66)
+    draw.text((98, 8), "Qwen", font=font, fill=255, stroke_width=2, stroke_fill=255)
+    return _crop_nonzero(np.asarray(canvas, dtype=np.uint8))
+
+
+@lru_cache(maxsize=1)
 def _template_sources() -> dict[str, NDArray[Any]]:
     """Return every immutable synthetic template by detector-local key."""
     sora_word, sora_icon = _sora_templates()
@@ -460,9 +583,15 @@ def _template_sources() -> dict[str, NDArray[Any]]:
         "jimeng_pill": _asset_template("jimeng_pill.png"),
         "yuanbao": _asset_template("yuanbao_alpha.png"),
         "qwen": _asset_template("qwen_alpha.png"),
+        "qwen-en": _qwen_en_template(),
         "baidu": _asset_template("baidu_alpha.png"),
         "runninghub": _asset_template("runninghub_alpha.png"),
         "microsoft": _asset_template("microsoft_alpha.png"),
+        "pixverse": _pixverse_template(),
+        "luma": _luma_template(),
+        "heygen": _heygen_template(),
+        "sync_labs": _sync_labs_template(),
+        "tiktok_ai": _tiktok_ai_template(),
         "generic_ai_label": _asset_template("generic_ai_label_alpha.png"),
         "kling-logo": _kling_logo_template(),
         # The Doubao video mark is the same "豆包AI生成" run the image engine
@@ -866,6 +995,9 @@ def _detect_corner_asset_mark(
     min_peak: int = 8,
     rival_keys: tuple[str, ...] = (),
     extend_right_margin: float | None = None,
+    roi_origin_x: float | None = None,
+    kernel_factor: float = 0.22,
+    min_kernel: int = 3,
 ) -> FrameLocalization:
     """Shared normalized-frame corner matcher for calibrated alpha-silhouette marks."""
     if image_bgr.size == 0:
@@ -885,8 +1017,8 @@ def _detect_corner_asset_mark(
         sx, sy = 0, 0
         roi = gray[: max(20, round(nh * 0.18)), : max(32, round(nw * 0.45))]
     else:
-        sx, sy = round(nw * 0.72), 0
-        roi = gray[: max(20, round(nh * 0.16)), sx:]
+        sx, sy = round(nw * (0.72 if roi_origin_x is None else roi_origin_x)), 0
+        roi = gray[: max(24 if roi_origin_x is not None else 20, round(nh * 0.16)), sx:]
 
     feat_cache: dict[int, NDArray[Any]] = {}
     best_conf = 0.0
@@ -900,7 +1032,7 @@ def _detect_corner_asset_mark(
             tw = max(12, round(tmpl_base.shape[1] * th / tmpl_base.shape[0]))
         if th >= roi.shape[0] or tw >= roi.shape[1]:
             continue
-        kernel_size = max(3, round(th * 0.22) | 1)
+        kernel_size = max(min_kernel, round(th * kernel_factor) | 1)
         if key == "microsoft":
             t_res = _resized_raw_template("microsoft", tw, th)
             scores = cv2.matchTemplate(roi, t_res, cv2.TM_CCOEFF_NORMED)
@@ -914,7 +1046,7 @@ def _detect_corner_asset_mark(
             patch_feat: NDArray[Any] | None = None
         else:
             _tmpl, t_feat = _resized_template_feature(key, tw, th, kernel_size)
-            cache_key = ("corner_tophat", corner, kernel_size)
+            cache_key = ("corner_tophat", corner, sx, kernel_size)
             feat = prep.feature_cache.get(cache_key)
             if feat is None:
                 feat = feat_cache.get(kernel_size)
@@ -1055,11 +1187,12 @@ def detect_qwen_frame(
     frame_index: int = 0,
     prepared: _PreparedFrame | None = None,
 ) -> FrameLocalization:
-    """Locate Alibaba Cloud Qwen's bottom-right 通义 mark."""
-    return _detect_corner_asset_mark(
+    """Locate Alibaba Cloud Qwen's bottom-right 通义 or international Qwen mark."""
+    prep = prepared or (_prepare_frame(image_bgr) if image_bgr.size > 0 else None)
+    cn_loc = _detect_corner_asset_mark(
         image_bgr,
         frame_index=frame_index,
-        prepared=prepared,
+        prepared=prep,
         key="qwen",
         corner="br",
         basis="short",
@@ -1068,6 +1201,195 @@ def detect_qwen_frame(
         max_ry=0.040,
         rival_keys=("doubao", "kling-1"),
     )
+    en_loc = _detect_corner_asset_mark(
+        image_bgr,
+        frame_index=frame_index,
+        prepared=prep,
+        key="qwen-en",
+        corner="br",
+        basis="short",
+        rel_sizes=(0.042, 0.048, 0.054, 0.060, 0.066),
+        max_rx=0.060,
+        max_ry=0.050,
+    )
+    if en_loc.confidence >= 0.48 and en_loc.confidence > cn_loc.confidence:
+        return en_loc
+    return cn_loc
+
+
+def detect_pixverse_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate PixVerse's top-right 'PixVerse.ai' wordmark."""
+    return _detect_corner_asset_mark(
+        image_bgr,
+        frame_index=frame_index,
+        prepared=prepared,
+        key="pixverse",
+        corner="tr",
+        basis="short",
+        rel_sizes=(0.022, 0.026, 0.030, 0.035, 0.040, 0.046),
+        max_rx=0.080,
+        max_ry=0.070,
+        min_peak=10,
+        roi_origin_x=0.60,
+        kernel_factor=0.25,
+    )
+
+
+def detect_luma_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate Luma AI's top-left isometric prism + 'Luma [AI]' semi-transparent mark."""
+    if image_bgr.size == 0:
+        return FrameLocalization(frame_index, 0.0, None)
+    frame_height, frame_width = image_bgr.shape[:2]
+    prep = prepared or _prepare_frame(image_bgr)
+    gray, scale = prep.normalized_gray, prep.normalized_scale
+    nh, nw = gray.shape[:2]
+    max_luma_w = min(nw, round(nw * 0.12) + round(nh * 0.13 * 4.5))
+    roi = gray[: max(30, round(nh * 0.20)), : max(64, max_luma_w)]
+    tmpl_base = _template_sources()["luma"]
+    kernel_size = max(5, round(nh * 0.046) | 1)
+    feat = cv2.morphologyEx(
+        roi, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+    )
+    best_conf = 0.0
+    best_region: Region | None = None
+    for rh in (0.095, 0.103, 0.110, 0.118, 0.126):
+        th = max(18, round(nh * rh))
+        tw = max(40, round(tmpl_base.shape[1] * th / tmpl_base.shape[0]))
+        if th >= roi.shape[0] or tw >= roi.shape[1]:
+            continue
+        _tmpl, t_feat = _resized_template_feature("luma", tw, th, kernel_size)
+        _, conf, _, loc = cv2.minMaxLoc(cv2.matchTemplate(feat, t_feat, cv2.TM_CCOEFF_NORMED))
+        lx, ly = loc
+        patch = feat[ly : ly + th, lx : lx + tw]
+        if patch.size == 0 or int(patch.max()) < 8:
+            continue
+        if not (nw * 0.03 <= lx <= nw * 0.11 and nh * 0.015 <= ly <= nh * 0.075):
+            continue
+        if conf > best_conf:
+            best_conf = float(conf)
+            ext_w = min(nw - lx, round(tw * 1.48))
+            best_region = _restore_region(
+                (lx, ly, ext_w, th),
+                scale=scale,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+    return FrameLocalization(frame_index, best_conf, best_region)
+
+
+def detect_heygen_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate HeyGen's bottom-right two-line 'Hey [diamond] / Gen' corner badge."""
+    return _detect_corner_asset_mark(
+        image_bgr,
+        frame_index=frame_index,
+        prepared=prepared,
+        key="heygen",
+        corner="br",
+        basis="width",
+        rel_sizes=(0.16, 0.19, 0.22, 0.25, 0.28),
+        max_rx=0.10,
+        max_ry=0.06,
+        min_peak=12,
+        kernel_factor=0.28,
+        min_kernel=5,
+    )
+
+
+def detect_sync_labs_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate Sync Labs' top-left lens-circle + 'sync.so' mark."""
+    return _detect_corner_asset_mark(
+        image_bgr,
+        frame_index=frame_index,
+        prepared=prepared,
+        key="sync_labs",
+        corner="tl",
+        basis="short",
+        rel_sizes=(0.028, 0.033, 0.038, 0.044, 0.050, 0.056),
+        max_rx=0.090,
+        max_ry=0.090,
+        min_peak=10,
+    )
+
+
+def detect_tiktok_ai_frame(
+    image_bgr: NDArray[Any],
+    *,
+    frame_index: int = 0,
+    prepared: _PreparedFrame | None = None,
+) -> FrameLocalization:
+    """Locate TikTok's bottom-left 'AI-generated' rounded pill."""
+    if image_bgr.size == 0:
+        return FrameLocalization(frame_index, 0.0, None)
+    frame_height, frame_width = image_bgr.shape[:2]
+    prep = prepared or _prepare_frame(image_bgr)
+    gray, scale = prep.normalized_gray, prep.normalized_scale
+    nh, nw = gray.shape[:2]
+    sy = round(nh * 0.86)
+    roi = gray[sy:, : max(48, round(nw * 0.42))]
+    tmpl_base = _template_sources()["tiktok_ai"]
+    feat_cache: dict[int, NDArray[Any]] = {}
+    best_conf = 0.0
+    best_region: Region | None = None
+    for rw in (0.14, 0.16, 0.18, 0.20, 0.22, 0.25):
+        pw = max(28, round(nw * rw))
+        tw = max(22, round(pw * 0.84))
+        th = max(7, round(tmpl_base.shape[0] * tw / tmpl_base.shape[1]))
+        if th >= roi.shape[0] or tw >= roi.shape[1]:
+            continue
+        kernel_size = max(3, round(th * 0.30) | 1)
+        t_raw, t_feat = _resized_template_feature("tiktok_ai", tw, th, kernel_size)
+        feat = feat_cache.get(kernel_size)
+        if feat is None:
+            feat = cv2.morphologyEx(roi, cv2.MORPH_TOPHAT, np.ones((kernel_size, kernel_size), np.uint8))
+            feat_cache[kernel_size] = feat
+        _, conf, _, loc = cv2.minMaxLoc(cv2.matchTemplate(feat, t_feat, cv2.TM_CCOEFF_NORMED))
+        lx, ly = loc
+        patch = feat[ly : ly + th, lx : lx + tw]
+        if patch.size == 0 or int(patch.max()) < 12:
+            continue
+        raw_patch = roi[ly : ly + th, lx : lx + tw]
+        fg = raw_patch[t_raw > 140]
+        bg = raw_patch[t_raw < 40]
+        if fg.size == 0 or bg.size == 0 or (float(fg.mean()) - float(bg.mean())) < 12.0:
+            continue
+        x, y = lx, sy + ly
+        if x > nw * 0.09 or (nh - (y + th)) > nh * 0.06:
+            continue
+        if conf > best_conf:
+            best_conf = float(conf)
+            pad_x = max(2, round((pw - tw) * 0.55))
+            pad_y = max(2, round(th * 0.48))
+            bx = max(0, x - pad_x)
+            by = max(0, y - pad_y)
+            bw = min(nw - bx, tw + 2 * pad_x)
+            bh = min(nh - by, th + 2 * pad_y)
+            best_region = _restore_region(
+                (bx, by, bw, bh),
+                scale=scale,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+    return FrameLocalization(frame_index, best_conf, best_region)
 
 
 def detect_baidu_frame(
@@ -1735,6 +2057,58 @@ VISIBLE_MARK_POLICIES: dict[str, VisibleMarkPolicy] = {
         padding_fraction=0.14,
         mask_style="box",
     ),
+    "pixverse": VisibleMarkPolicy(
+        weak_floor=_PIXVERSE_WEAK_CONFIDENCE,
+        strong_floor=_PIXVERSE_STRONG_CONFIDENCE,
+        transition_floor=0.30,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.80,
+        padding_fraction=0.16,
+        mask_style="box",
+    ),
+    "luma": VisibleMarkPolicy(
+        weak_floor=_LUMA_WEAK_CONFIDENCE,
+        strong_floor=_LUMA_STRONG_CONFIDENCE,
+        transition_floor=0.36,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.80,
+        padding_fraction=0.14,
+        mask_style="box",
+        accepts_provenance=False,
+    ),
+    "heygen": VisibleMarkPolicy(
+        weak_floor=_HEYGEN_WEAK_CONFIDENCE,
+        strong_floor=_HEYGEN_STRONG_CONFIDENCE,
+        transition_floor=0.29,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.85,
+        padding_fraction=0.14,
+        mask_style="box",
+        accepts_provenance=False,
+    ),
+    "sync_labs": VisibleMarkPolicy(
+        weak_floor=_SYNC_LABS_WEAK_CONFIDENCE,
+        strong_floor=_SYNC_LABS_STRONG_CONFIDENCE,
+        transition_floor=0.36,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.80,
+        padding_fraction=0.16,
+        mask_style="box",
+    ),
+    "tiktok_ai": VisibleMarkPolicy(
+        weak_floor=_TIKTOK_AI_WEAK_CONFIDENCE,
+        strong_floor=_TIKTOK_AI_STRONG_CONFIDENCE,
+        transition_floor=0.35,
+        min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
+        cover_after_confirmation=True,
+        anchor_iou=0.80,
+        padding_fraction=0.16,
+        mask_style="box",
+    ),
     "generic_ai_label": VisibleMarkPolicy(
         weak_floor=_GENERIC_AI_LABEL_WEAK_CONFIDENCE,
         strong_floor=_GENERIC_AI_LABEL_STRONG_CONFIDENCE,
@@ -1979,6 +2353,11 @@ def scan_video_marks(
         "baidu": detect_baidu_frame,
         "runninghub": detect_runninghub_frame,
         "microsoft": detect_microsoft_frame,
+        "pixverse": detect_pixverse_frame,
+        "luma": detect_luma_frame,
+        "heygen": detect_heygen_frame,
+        "sync_labs": detect_sync_labs_frame,
+        "tiktok_ai": detect_tiktok_ai_frame,
         "generic_ai_label": detect_generic_ai_label_frame,
         "kling": detect_kling_frame,
     }
@@ -2274,6 +2653,8 @@ def iter_clean_video_frames(
     dilate_px: int | None = None,
     allow_unmasked_donors: bool = True,
     high_depth: bool = False,
+    start_frame: int = 0,
+    stop_frame: int | None = None,
 ) -> Iterator[tuple[NDArray[Any], bool]]:
     """Stream cleaned video frames and per-frame removal flags without forcing an intermediate encode."""
     from remove_ai_watermarks.watermark_registry import (
@@ -2284,6 +2665,15 @@ def iter_clean_video_frames(
     )
 
     normalized_regions = [_normalize_frame_regions(item) for item in regions]
+    total_frames = len(normalized_regions)
+    eff_start = max(0, start_frame)
+    eff_stop = total_frames if stop_frame is None else min(total_frames, stop_frame)
+    if eff_start >= eff_stop:
+        return
+
+    dirty_indices = [
+        idx for idx in range(eff_start, eff_stop) if any(reg is not None for reg in normalized_regions[idx])
+    ]
     clip_mattes = (
         _precalibrate_stationary_mattes(
             source,
@@ -2295,7 +2685,7 @@ def iter_clean_video_frames(
             dilate_px=dilate_px,
             high_depth=high_depth,
         )
-        if temporal_consistency
+        if temporal_consistency and dirty_indices
         else ()
     )
     capture: Any = (
@@ -2316,9 +2706,39 @@ def iter_clean_video_frames(
         use_batch_inpaint = resolved_backend in ("lama", "migan") and backend_prefers_batching(resolved_backend)
         inpaint_batch_size = 8 if use_batch_inpaint else 1
         donor_radius = 12 if temporal_consistency else 0
-        total_frames = len(normalized_regions)
+        has_grab = callable(getattr(capture, "grab", None)) and callable(getattr(capture, "retrieve", None))
+
+        def _skip_to(target_idx: int, cur_idx: int) -> int:
+            while cur_idx < target_idx:
+                if has_grab:
+                    if not capture.grab():
+                        raise RuntimeError(f"Video ended while advancing to frame {cur_idx}: {source}")
+                else:
+                    ok_s, _ = capture.read()
+                    if not ok_s:
+                        raise RuntimeError(f"Video ended while advancing to frame {cur_idx}: {source}")
+                cur_idx += 1
+            return cur_idx
+
+        def _passthrough_until(limit: int) -> Iterator[tuple[NDArray[Any], bool]]:
+            nonlocal next_decode
+            while next_decode < limit:
+                ok_f, raw_f = capture.read()
+                if not ok_f or raw_f is None:
+                    raise RuntimeError(f"Video ended while reading frame {next_decode}: {source}")
+                next_decode += 1
+                yield raw_f, False
+
+        next_decode = _skip_to(eff_start, 0)
+        if not dirty_indices:
+            yield from _passthrough_until(eff_stop)
+            return
+
+        active_start = max(eff_start, dirty_indices[0] - donor_radius)
+        active_end = min(eff_stop - 1, dirty_indices[-1] + donor_radius)
+        yield from _passthrough_until(active_start)
+
         window: deque[tuple[int, NDArray[Any], NDArray[Any] | None]] = deque()
-        next_decode = 0
         prepared_batch: list[tuple[NDArray[Any], list[NDArray[Any]], NDArray[Any] | None, bool]] = []
 
         def _crop_neighbor_mask(
@@ -2435,8 +2855,8 @@ def iter_clean_video_frames(
                     yield out_frame, b_removed
             prepared_batch.clear()
 
-        for frame_index in range(total_frames):
-            while next_decode < total_frames and next_decode <= frame_index + donor_radius:
+        for frame_index in range(active_start, active_end + 1):
+            while next_decode <= active_end and next_decode <= frame_index + donor_radius:
                 _pull_frame()
             while window and window[0][0] < frame_index - donor_radius:
                 window.popleft()
@@ -2522,8 +2942,264 @@ def iter_clean_video_frames(
         flushed = _flush_pending(None)
         if flushed is not None:
             yield flushed
+        window.clear()
+        yield from _passthrough_until(eff_stop)
     finally:
         capture.release()
+
+
+def _source_has_bitstream_ai_sei(source: Path) -> bool:
+    """Return True if the source bitstream carries in-band AI SEI/OBU payloads that stream-copy would preserve."""
+    suffix = source.suffix.lower()
+    if suffix in {".mp4", ".mov", ".m4v"}:
+        from remove_ai_watermarks._internal import isobmff
+
+        sei = isobmff.scan_isobmff_video_sei(source, stop_on_first_kling=True)
+        return bool(sei.kling_tag_offsets or sei.ai_sei_spans or sei.av1_obu_patches)
+    if suffix in {".mkv", ".webm"}:
+        from remove_ai_watermarks._internal import ebml
+
+        return bool(ebml.scan_ebml_av1_ai_obus(source, stop_on_first=True))
+    return False
+
+
+def _try_selective_gop_clean_encode(
+    source: Path,
+    temporary_output: Path,
+    active_scan: VideoScan,
+    active_regions: Sequence[Region | Sequence[Region | None] | None],
+    *,
+    backend: Backend,
+    strip_metadata: bool,
+    padding_fraction: float,
+    mask_style: Literal["box", "veo"],
+    slot_padding_fractions: Sequence[float] | None,
+    slot_mask_styles: Sequence[Literal["box", "veo"]] | None,
+    temporal_consistency: bool,
+    dilate_px: int | None,
+    allow_unmasked_donors: bool,
+    trim_end_frame: int | None,
+    trim_end_seconds: float | None,
+    crf: int,
+    profile: Any,
+    timestamped_input: bool,
+    high_depth: bool,
+) -> int | None:
+    """Losslessly copy untouched H.264 keyframe GOPs when verified frame-exact, else return None."""
+    from remove_ai_watermarks.video_tools import require_video_tool
+
+    total_active = len(active_regions)
+    if total_active < 15 or timestamped_input or high_depth or profile.pixel_format != "yuv420p":
+        return None
+    suffix = temporary_output.suffix.lower()
+    if suffix not in {".mp4", ".mov", ".m4v", ".mkv"}:
+        return None
+    normalized = [_normalize_frame_regions(item) for item in active_regions]
+    dirty_indices = [idx for idx, regs in enumerate(normalized) if any(r is not None for r in regs)]
+    donor_radius = 12 if temporal_consistency else 0
+    if not dirty_indices:
+        if trim_end_frame is None:
+            return None
+    else:
+        early_start = max(0, dirty_indices[0] - donor_radius)
+        early_end = min(total_active - 1, dirty_indices[-1] + donor_radius)
+        if early_start < 30 and (trim_end_frame is not None or early_end >= total_active - 30):
+            return None
+
+    if strip_metadata and _source_has_bitstream_ai_sei(source):
+        return None
+
+    kf_spec = probe_video_keyframes(source)
+    if kf_spec is None or kf_spec.start_pts not in (None, 0):
+        return None
+
+    ffmpeg = require_video_tool("ffmpeg")
+    # Fast path 1: pure trailing bumper trim (zero dirty frames) aligned on a keyframe boundary.
+    if (
+        not dirty_indices
+        and trim_end_frame is not None
+        and trim_end_seconds is not None
+        and kf_spec.has_b_frames == 0
+        and any(idx == trim_end_frame for idx, _ in kf_spec.keyframes)
+    ):
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(source),
+            "-frames:v",
+            str(trim_end_frame),
+            "-to",
+            f"{trim_end_seconds:.6f}",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-c",
+            "copy",
+            "-map_metadata",
+            "-1" if strip_metadata else "0",
+            "-map_chapters",
+            "-1" if strip_metadata else "0",
+            *(["-movflags", "+faststart"] if suffix in {".mp4", ".mov", ".m4v"} else []),
+            *container_format_args(temporary_output.suffix),
+            str(temporary_output),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        if res.returncode == 0 and count_decoded_video_frames(temporary_output) == trim_end_frame:
+            log.info("Selective GOP stream-copy: pure keyframe bumper trim (%d frames)", trim_end_frame)
+            return 0
+        temporary_output.unlink(missing_ok=True)
+
+    # Fast path 2: hybrid GOP stream-copy for H.264 clips with >= 30 untouched GOP frames.
+    if kf_spec.codec_name != "h264" or kf_spec.has_b_frames > 0:
+        return None
+    if trim_end_frame is None and kf_spec.packet_count != total_active:
+        return None
+    prefix_limit = total_active - 1 if not dirty_indices else max(0, dirty_indices[0] - donor_radius)
+    prefix_kfs = [(idx, ts) for idx, ts in kf_spec.keyframes if 30 <= idx <= prefix_limit]
+    prefix_end_idx = prefix_kfs[-1][0] if prefix_kfs else 0
+    suffix_start_idx: int | None = None
+    suffix_ts: float | None = None
+    if dirty_indices and trim_end_frame is None:
+        active_end = min(total_active - 1, dirty_indices[-1] + donor_radius)
+        suffix_kfs = [(idx, ts) for idx, ts in kf_spec.keyframes if active_end < idx <= total_active - 30]
+        if suffix_kfs:
+            suffix_start_idx, suffix_ts = suffix_kfs[0]
+    if prefix_end_idx < 30 and suffix_start_idx is None:
+        return None
+
+    mid_start = prefix_end_idx
+    mid_end = suffix_start_idx if suffix_start_idx is not None else total_active
+    h264_prof_map = {"Constrained Baseline": "baseline", "Baseline": "baseline", "Main": "main", "High": "high"}
+    h264_prof = h264_prof_map.get(kf_spec.profile_name or "", "high")
+    seg_ext = ".mkv" if suffix == ".mkv" else ".mp4"
+    timescale_args = mp4_timescale_args(seg_ext, profile.time_base)
+
+    with TemporaryDirectory(prefix=".raiw-gop-", dir=temporary_output.parent) as gop_dir_str:
+        gop_dir = Path(gop_dir_str)
+        segments: list[Path] = []
+        if prefix_end_idx >= 30:
+            seg_pre = gop_dir / f"seg_prefix{seg_ext}"
+            pre_cmd = [
+                ffmpeg,
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source),
+                "-frames:v",
+                str(prefix_end_idx),
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "copy",
+                *timescale_args,
+                str(seg_pre),
+            ]
+            if subprocess.run(pre_cmd, capture_output=True, check=False).returncode != 0:  # noqa: S603
+                return None
+            segments.append(seg_pre)
+
+        removed_frames = 0
+        if mid_end > mid_start:
+            seg_mid = gop_dir / f"seg_mid{seg_ext}"
+            mid_cmd = raw_video_command(
+                seg_mid,
+                width=active_scan.width,
+                height=active_scan.height,
+                fps=active_scan.fps,
+                crf=crf,
+                profile=profile,
+                input_pix_fmt="bgr24",
+                h264_profile=h264_prof if seg_ext == ".mp4" else None,
+            )
+            proc = start_raw_video_encoder(mid_cmd)
+            mid_written = 0
+            mid_iter = iter_clean_video_frames(
+                source,
+                active_scan,
+                active_regions,
+                backend=backend,
+                padding_fraction=padding_fraction,
+                mask_style=mask_style,
+                slot_padding_fractions=slot_padding_fractions,
+                slot_mask_styles=slot_mask_styles,
+                temporal_consistency=temporal_consistency,
+                dilate_px=dilate_px,
+                allow_unmasked_donors=allow_unmasked_donors,
+                high_depth=False,
+                start_frame=mid_start,
+                stop_frame=mid_end,
+            )
+            try:
+                for frm, was_rem in mid_iter:
+                    if was_rem:
+                        removed_frames += 1
+                    proc.stdin.write(frm.tobytes())
+                    mid_written += 1
+                finish_raw_video_encoder(proc, seg_mid, operation="selective GOP middle encode")
+            except Exception:
+                abort_raw_video_encoder(proc)
+                return None
+            finally:
+                close_mid = getattr(mid_iter, "close", None)
+                if callable(close_mid):
+                    close_mid()
+            if mid_written != (mid_end - mid_start):
+                return None
+            segments.append(seg_mid)
+
+        if suffix_start_idx is not None and suffix_ts is not None:
+            seg_suf = gop_dir / f"seg_suffix{seg_ext}"
+            suf_cmd = [
+                ffmpeg,
+                "-y",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{suffix_ts:.6f}",
+                "-i",
+                str(source),
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "copy",
+                *timescale_args,
+                str(seg_suf),
+            ]
+            if subprocess.run(suf_cmd, capture_output=True, check=False).returncode != 0:  # noqa: S603
+                return None
+            segments.append(seg_suf)
+
+        concat_list = gop_dir / "concat.txt"
+        escaped_lines = [
+            f"file '{seg.as_posix().replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n" for seg in segments
+        ]
+        concat_list.write_text("".join(escaped_lines), encoding="utf-8")
+        mux_ok = False
+        with suppress(RuntimeError):
+            mux_encoded_video(
+                concat_list,
+                source,
+                temporary_output,
+                strip_metadata=strip_metadata,
+                trim_end_seconds=trim_end_seconds,
+                video_input_args=("-f", "concat", "-safe", "0"),
+            )
+            mux_ok = True
+        if mux_ok and count_decoded_video_frames(temporary_output) == total_active:
+            log.info(
+                "Selective GOP stream-copy succeeded: re-encoded [%d, %d) of %d frames",
+                mid_start,
+                mid_end,
+                total_active,
+            )
+            return removed_frames
+        temporary_output.unlink(missing_ok=True)
+        return None
 
 
 def encode_clean_video(
@@ -2580,6 +3256,29 @@ def encode_clean_video(
                 profile,
                 time_base=f"{time_base.numerator}/{time_base.denominator}",
             )
+        selective_removed = _try_selective_gop_clean_encode(
+            source,
+            temporary_output,
+            active_scan,
+            active_regions,
+            backend=backend,
+            strip_metadata=strip_metadata,
+            padding_fraction=padding_fraction,
+            mask_style=mask_style,
+            slot_padding_fractions=slot_padding_fractions,
+            slot_mask_styles=slot_mask_styles,
+            temporal_consistency=temporal_consistency,
+            dilate_px=dilate_px,
+            allow_unmasked_donors=allow_unmasked_donors,
+            trim_end_frame=trim_end_frame,
+            trim_end_seconds=trim_end_seconds,
+            crf=crf,
+            profile=profile,
+            timestamped_input=timestamped_input,
+            high_depth=high_depth,
+        )
+        if selective_removed is not None:
+            return selective_removed
         raw_pix_fmt = "bgr48le" if high_depth else "bgr24"
         process = start_raw_video_encoder(
             raw_video_command(
@@ -2729,15 +3428,49 @@ def has_runninghub_video_provenance(markers: dict[str, str]) -> bool:
     return tc260_producer_in(markers.get("aigc_producer", ""), producer_codes_for_mark("runninghub"))
 
 
-def has_microsoft_video_provenance(markers: dict[str, str]) -> bool:
-    """Whether C2PA provenance names Microsoft."""
+def _has_valid_c2pa_video_provenance(
+    markers: dict[str, str],
+    *,
+    issuer_tokens: tuple[str, ...] = (),
+    identity_tokens: tuple[str, ...] = (),
+    generator_claim_tokens: tuple[str, ...] = (),
+) -> bool:
+    """Shared valid-C2PA AI provenance check across issuer/claim_generator tokens."""
     from remove_ai_watermarks._internal.c2pa import c2pa_credential_level
 
     if c2pa_credential_level(markers) == "invalid":
         return False
     issuer = markers.get("issuer", "").casefold()
+    generator = markers.get("claim_generator", "").casefold()
+    identity = f"{issuer} {generator}"
     source_type = markers.get("source_type", "").casefold()
-    return "microsoft" in issuer and "trainedalgorithmicmedia" in source_type
+    vendor_match = any(tok in issuer for tok in issuer_tokens) or any(tok in identity for tok in identity_tokens)
+    ai_match = "trainedalgorithmicmedia" in source_type or any(tok in generator for tok in generator_claim_tokens)
+    return vendor_match and ai_match
+
+
+def has_microsoft_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether C2PA provenance names Microsoft."""
+    return _has_valid_c2pa_video_provenance(markers, issuer_tokens=("microsoft",))
+
+
+def has_pixverse_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether C2PA provenance names PixVerse."""
+    return _has_valid_c2pa_video_provenance(markers, issuer_tokens=("pixverse",))
+
+
+def has_sync_labs_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether C2PA provenance names Sync Labs / Synchronicity Labs."""
+    return _has_valid_c2pa_video_provenance(markers, identity_tokens=("sync labs", "synchronicity"))
+
+
+def has_tiktok_ai_video_provenance(markers: dict[str, str]) -> bool:
+    """Whether C2PA provenance names TikTok AI generation."""
+    return _has_valid_c2pa_video_provenance(
+        markers,
+        identity_tokens=("tiktok",),
+        generator_claim_tokens=("tiktok ad creative toolbox",),
+    )
 
 
 # Tokens of the C2PA issuer each mark's own vendor signs with, compared casefolded.
@@ -2758,6 +3491,11 @@ _VIDEO_MARK_ISSUER_TOKENS: dict[str, tuple[str, ...]] = {
     "baidu": ("baidu", "ernie"),
     "runninghub": ("runninghub",),
     "microsoft": ("microsoft",),
+    "pixverse": ("pixverse",),
+    "luma": ("luma",),
+    "heygen": ("heygen",),
+    "sync_labs": ("sync labs", "synchronicity"),
+    "tiktok_ai": ("tiktok", "bytedance"),
     "generic_ai_label": (),
     "kling": ("kling", "kuaishou"),
 }
@@ -2782,6 +3520,9 @@ def confirms_video_provenance(mark: str, markers: dict[str, str]) -> bool:
         "baidu": has_baidu_video_provenance,
         "runninghub": has_runninghub_video_provenance,
         "microsoft": has_microsoft_video_provenance,
+        "pixverse": has_pixverse_video_provenance,
+        "sync_labs": has_sync_labs_video_provenance,
+        "tiktok_ai": has_tiktok_ai_video_provenance,
     }.get(mark)
     return bool(confirms and confirms(markers))
 
@@ -2812,7 +3553,7 @@ def contradicts_video_provenance(mark: str, markers: dict[str, str]) -> bool:
         row = producer_for_code(producer)
         if row is None:
             return True
-        if mark in {"dreamina", "jimeng", "jimeng_pill", "seedance", "dola"}:
+        if mark in {"dreamina", "jimeng", "jimeng_pill", "seedance", "dola", "tiktok_ai"}:
             return row.vendor != "ByteDance"
         return mark not in (row.image_mark, row.video_mark)
     from remove_ai_watermarks._internal.c2pa import c2pa_credential_level

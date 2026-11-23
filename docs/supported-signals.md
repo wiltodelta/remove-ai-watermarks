@@ -64,17 +64,22 @@ pill detector; the generic pill shape does not attribute LiblibAI on its own.
 | `kling` | Kling AI swirl, `KLING AI` or `KlingAI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font and capitalization variants, an edge gate, a white-label gate, and anchored temporal recurrence. It also scores the Vidu wordmark, so `vidu` is checked first, and a TC260 label naming a non-Kling producer vetoes the match. |
 | `jimeng` | `★ 即梦AI` wordmark | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Jimeng TC260 provenance. |
 | `jimeng_pill` | Compact `AI生成` pill | Fixed top-left corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, pairs with `jimeng` for simultaneous dual-mark removal. |
-| `qwen` | `千问AI生成` or Qwen Create symbol | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Alibaba TC260 provenance. |
+| `qwen` | `千问AI生成`, Qwen Create symbol, or 3-lobe pinwheel + `Qwen` | Fixed bottom-right corner | Covers both domestic Chinese and international Latin `Qwen` video marks; corroborated by Alibaba TC260 provenance. |
 | `yuanbao` | `元宝` over `AI生成` | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Tencent TC260 provenance. |
 | `baidu` | `百度 AI生成` | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Baidu TC260 provenance. |
 | `runninghub` | `RunningHub AI生成` | Fixed top-left corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by RunningHub TC260 provenance. |
 | `microsoft` | Microsoft white AI badge or beige `Made with AI` pill | Fixed top-right corner | Calibrated at `0/71` corpus FPs; anchored temporal recurrence, corroborated by Microsoft C2PA provenance. |
+| `pixverse` | `PixVerse.ai` wordmark | Fixed top-right corner | Anchored temporal recurrence at `>= 0.36` (`>= 0.42` strong), corroborated by PixVerse C2PA provenance. |
+| `luma` | Isometric corner prism + `Luma [AI]` | Fixed top-left corner | Semi-transparent height-scaled mark; expands box rightward to cover `AI` on landscape/3:4 while clipping cleanly on 9:16 portrait. |
+| `heygen` | Two-line `Hey [diamond] / Gen` corner badge | Fixed bottom-right corner | Targets only the corner AI badge (`anchor_iou=0.85`); diagonal tiled preview watermarks are out of scope and rejected. |
+| `sync_labs` | Lens-circle icon + `sync.so` | Fixed top-left corner | Anchored temporal recurrence at `>= 0.44` (`>= 0.50` strong), corroborated by Synchronicity Labs C2PA provenance. |
+| `tiktok_ai` | Dark translucent `AI-generated` rounded pill | Fixed bottom-left corner | Requires both top-hat glyph match and pill text-over-background contrast, corroborated by TikTok AI C2PA provenance. |
 | `generic_ai_label` | Bare `AI生成` TC260 label | Fixed bottom-right corner | Calibrated at `0/71` corpus FPs; fallback for brand-less TC260 video exports. |
 
 `video identify`, `video visible`, and `video all` share this registry and the
 same temporal arbiter. It is separate from the image registry because selection
 is made over a sequence rather than one raster. The default `auto` mode scans
-all eighteen entries in one decode pass, co-selecting spatially disjoint marks
+all twenty-three entries in one decode pass, co-selecting spatially disjoint marks
 (for example a top-left pill and a bottom-right wordmark) for single-pass removal
 subject to the Veo/Sora overlap exception above; an explicit mark restricts the
 scan to that row.
@@ -222,8 +227,8 @@ fixed native offsets, alongside its synchronized public-model scan. This
 signature does not cover custom messages or shifted/resampled framing, and its
 binomial-tail diagnostic is not a calibrated false-positive probability.
 They provide
-streaming spectral, neural-codec (EnCodec, 44.1 kHz DAC with default
-`preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks, and 44.1 kHz SNAC), and
+streaming spectral, neural-codec (EnCodec, and 44.1 kHz DAC and SNAC both defaulting
+`preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks), and
 combined processing. The 44.1 kHz DAC codec profile handles mono, raw mid/side
 stereo, and tagged 5.1/7.1 surround and is what `auto` selects when pre-strip
 metadata or an explicit audio vendor names ElevenLabs, Google SynthID, or

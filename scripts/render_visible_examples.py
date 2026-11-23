@@ -358,6 +358,46 @@ def _video_mark_frame(key: str, w: int, h: int) -> np.ndarray:
         roi = out[y : y + ph, x : x + pw].astype(np.float32)
         out[y : y + ph, x : x + pw] = np.clip(roi * 0.08 + target * 0.92, 0, 255).astype(np.uint8)
         return out
+    elif key == "pixverse":
+        tmpl = templates["pixverse"]
+        th = max(10, round(short * 0.035))
+        tw = max(20, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = w - tw - round(w * 0.035), round(h * 0.038)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 248)
+    elif key == "luma":
+        tmpl = templates["luma"]
+        th = max(18, round(h * 0.110))
+        tw = max(40, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = round(w * 0.058), round(h * 0.040)
+        alpha = (cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0) * 0.42
+        return _composite_light(base, alpha, x, y, 245)
+    elif key == "heygen":
+        tmpl = templates["heygen"]
+        tw = max(32, round(w * 0.22))
+        th = max(18, round(tmpl.shape[0] * tw / tmpl.shape[1]))
+        x, y = w - tw - round(w * 0.055), h - th - round(h * 0.025)
+        alpha = (cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0) * 0.75
+        return _composite_light(base, alpha, x, y, 245)
+    elif key == "sync_labs":
+        tmpl = templates["sync_labs"]
+        th = max(10, round(short * 0.044))
+        tw = max(24, round(tmpl.shape[1] * th / tmpl.shape[0]))
+        x, y = round(w * 0.040), round(h * 0.055)
+        return _composite_light(base, cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0, x, y, 248)
+    elif key == "tiktok_ai":
+        tmpl = templates["tiktok_ai"]
+        pw = max(36, round(w * 0.18))
+        tw = max(28, round(pw * 0.84))
+        th = max(10, round(tmpl.shape[0] * tw / tmpl.shape[1]))
+        pad_x = max(3, round((pw - tw) * 0.5))
+        pad_y = max(3, round(th * 0.48))
+        bw, bh = tw + 2 * pad_x, th + 2 * pad_y
+        bx, by = round(w * 0.032), h - bh - round(h * 0.020)
+        out = base.copy()
+        roi = out[by : by + bh, bx : bx + bw].astype(np.float32)
+        out[by : by + bh, bx : bx + bw] = np.clip(roi * 0.45 + 32.0 * 0.55, 0, 255).astype(np.uint8)
+        txt_alpha = cv2.resize(tmpl, (tw, th)).astype(np.float32) / 255.0
+        return _composite_light(out, txt_alpha, bx + pad_x, by + pad_y, 248)
     elif key == "generic_ai_label":
         tmpl = templates["generic_ai_label"]
         tw = max(24, round(w * 0.172))

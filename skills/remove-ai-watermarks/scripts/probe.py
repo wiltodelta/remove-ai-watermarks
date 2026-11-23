@@ -36,9 +36,12 @@ _GPU_MARKERS = ("GPU ", "gpu:")
 # `--vendor` 0.32.0), and a stale floor told an agent its CLI was current right
 # 0.73.0 unified all 7 video containers and 9 audio output formats, pruned
 # obsolete experimental audio backends, and promoted non-experimental video
-# profile names across skill references. tests/test_agent_skill.py pins it
-# against the package version and against every "(since CLI X.Y.Z)" annotation.
-MIN_CLI_VERSION = (0, 73, 0)
+# 0.74.0 adds 5 visible video marks (`pixverse`, `luma`, `heygen`, `sync_labs`,
+# `tiktok_ai`), `--native-guide` and `--wan-steps` on video invisible/all/batch,
+# and default `preserve_hf_hz=14000.0` for SNAC on `>= 44.1 kHz` audio.
+# tests/test_agent_skill.py pins it against the package version and against every
+# "(since CLI X.Y.Z)" annotation.
+MIN_CLI_VERSION = (0, 74, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # legacy Homebrew installs can still contain such a build.

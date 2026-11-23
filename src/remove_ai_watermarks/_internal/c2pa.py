@@ -24,6 +24,7 @@ from remove_ai_watermarks._internal.constants import (
     C2PA_SIGNATURES,
     C2PA_SOFT_BINDING_REGISTRY,
     C2PA_SOFT_BINDINGS,
+    C2PA_VENDOR_SOFT_BINDING_PREFIXES,
     PNG_SIGNATURE,
     SYNTHID_EDIT_SIGNERS,
     C2paSoftBindingAlgorithm,
@@ -766,8 +767,8 @@ def soft_binding_vendors_in(buffer: bytes) -> list[str]:
 
 
 def soft_binding_registry_entries_in(buffer: bytes) -> tuple[C2paSoftBindingAlgorithm, ...]:
-    """Return exact registered soft-binding entries named in manifest bytes."""
-    return tuple(
+    """Return exact registered and known vendor-prefix soft-binding entries named in manifest bytes."""
+    official = (
         entry
         for entry in C2PA_SOFT_BINDING_REGISTRY
         if (algorithm := entry.algorithm.encode()) in buffer
@@ -776,12 +777,26 @@ def soft_binding_registry_entries_in(buffer: bytes) -> tuple[C2paSoftBindingAlgo
             buffer,
         )
     )
+    supplemental = (
+        entry
+        for entry in C2PA_VENDOR_SOFT_BINDING_PREFIXES
+        if (prefix := entry.algorithm.encode()) in buffer
+        and re.search(
+            rb"(?<![A-Za-z0-9.-])" + re.escape(prefix) + rb"(?:\.[A-Za-z0-9-]+)*(?![A-Za-z0-9.-])",
+            buffer,
+        )
+    )
+    return (*official, *supplemental)
 
 
 def soft_binding_labels(entries: Iterable[C2paSoftBindingAlgorithm], *, kind: str | None = None) -> list[str]:
     """Return stable display labels for matching registry entries."""
     return sorted(
-        {C2PA_SOFT_BINDINGS[entry.algorithm.encode()] for entry in entries if kind is None or entry.kind == kind}
+        {
+            C2PA_SOFT_BINDINGS.get(entry.algorithm.encode(), entry.display_label)
+            for entry in entries
+            if kind is None or entry.kind == kind
+        }
     )
 
 
@@ -1169,7 +1184,12 @@ def markers_claim_ai(markers: dict[str, str]) -> bool:
     source_type = markers.get("source_type", "")
     if any(key not in C2PA_STRUCTURAL_MARKERS and key != "source_type" for key in markers):
         return True
-    if "trainedalgorithmicmedia" in source_type.casefold() or source_type.startswith("c2pa.ai-disclosure"):
+    source_type_cf = source_type.casefold()
+    if (
+        "trainedalgorithmicmedia" in source_type_cf
+        or "compositesynthetic" in source_type_cf
+        or source_type.startswith("c2pa.ai-disclosure")
+    ):
         return True
     issuer = markers.get("issuer", "")
     return any(org in issuer for org in C2PA_IDENTITY_AI_ORGS) or any(
