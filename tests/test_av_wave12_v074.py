@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import subprocess
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -101,8 +102,6 @@ def test_shipped_snac_operating_point_matches_certified_audio_synthid_manifest()
 def test_snac_defaults_to_preserve_hf_14khz_on_48khz_and_none_on_16khz(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import soundfile as sf
-
     seen_hf: list[float | None] = []
 
     def _fake_snac_resynth(
@@ -124,7 +123,12 @@ def test_snac_defaults_to_preserve_hf_14khz_on_48khz_and_none_on_16khz(
         wav = np.stack([0.2 * np.sin(2.0 * np.pi * 440.0 * t), 0.2 * np.cos(2.0 * np.pi * 440.0 * t)], axis=1)
         src = tmp_path / f"in_{sr}.wav"
         out = tmp_path / f"out_{sr}.wav"
-        sf.write(src, wav, sr)
+        pcm16 = np.clip(np.rint(wav * 32767.0), -32768, 32767).astype("<i2")
+        with wave.open(str(src), "wb") as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(pcm16.tobytes())
         res = remove_audio_invisible(src, out, method="snac", force=True, verify=False)
         assert res.output == out
 
