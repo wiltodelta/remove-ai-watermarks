@@ -349,7 +349,8 @@ space, although pixel processing uses bounded batches. Both `all` and `video all
 profiles (`remove_video_wan_experimental`) require an Ampere-or-newer BF16 NVIDIA
 CUDA GPU, or an explicit `device="mps"` on Apple Silicon that automatic profile
 selection never chooses, and SDR 8-bit or 10-bit HDR (`yuv420p10le`/`yuv422p10le`/`yuv444p10le`, `BT.2020`, `PQ`/`HLG`) MP4, MOV, or M4V input within
-`WAN21_MAX_FRAME_PIXELS` (`1920x1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
+`WAN21_MAX_FRAME_PIXELS` (`3840x2160`, using 1080p-guided high-frequency texture
+restoration above `1920x1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
 (`7200 * 1920 * 1080`). They stream clips longer than `193` frames across `4k+1`
 3D causal windows (`chunk_frames=193`, `overlap_frames=17`) with raised-cosine
 temporal crossfades directly to the encoder, have oracle evidence from an NVIDIA

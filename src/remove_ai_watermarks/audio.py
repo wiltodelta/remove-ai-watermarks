@@ -952,6 +952,8 @@ def remove_audio_invisible(
     allow_quality_override: bool = False,
     vendor: AudioVendor | None = None,
     preserve_hf_hz: float | None = None,
+    max_duration_seconds: float | None = None,
+    progress_callback: Callable[[str, float], None] | None = None,
 ) -> AudioRemovalResult:
     """Process audio and publish only a fully checked negative by default.
 
@@ -987,13 +989,26 @@ def remove_audio_invisible(
     target, original = Path(output).expanduser(), Path(source).expanduser().resolve()
     if target.resolve() == original or (target.exists() and target.samefile(original)):
         raise ValueError("Audio output must differ from the source")
+    if max_duration_seconds is not None and max_duration_seconds <= 0.0:
+        raise ValueError("max_duration_seconds must be positive")
+    if progress_callback is not None:
+        progress_callback("identify", 0.1)
     before = identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
+    if (
+        max_duration_seconds is not None
+        and before.stream.duration is not None
+        and float(before.stream.duration) > max_duration_seconds
+    ):
+        dur_s = float(before.stream.duration)
+        raise ValueError(f"Audio duration {dur_s:.2f}s exceeds max_duration_seconds={max_duration_seconds:.2f}s")
     if method == "auto":
         profiles = adaptive_auto_profiles(scheme, before, vendor=explicit_vendor)
     if should_auto_scrub_audio(before, method=method, explicit_vendor=explicit_vendor):
         eff_allow_unverified = True
     eff_unverified = force or eff_allow_unverified
     if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
+        if progress_callback is not None:
+            progress_callback("complete", 1.0)
         profile = profiles[0]
         return AudioRemovalResult(
             before.source,
@@ -1013,8 +1028,10 @@ def remove_audio_invisible(
     last: AudioVerificationIncomplete | None = None
     for index, profile in enumerate(profiles):
         is_last = index == len(profiles) - 1
+        if progress_callback is not None:
+            progress_callback("resynthesize", 0.35 + 0.45 * (index / max(len(profiles), 1)))
         try:
-            return _remove_audio_profile(
+            result = _remove_audio_profile(
                 source,
                 output,
                 force=force and is_last,
@@ -1030,6 +1047,9 @@ def remove_audio_invisible(
                 allow_quality_override=allow_quality_override and is_last,
                 preserve_hf_hz=preserve_hf_hz,
             )
+            if progress_callback is not None:
+                progress_callback("complete", 1.0)
+            return result
         except AudioVerificationIncomplete as exc:
             last = exc
         except ImportError as exc:

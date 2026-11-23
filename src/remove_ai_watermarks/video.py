@@ -10,7 +10,7 @@ The visible pixel path reuses the image package's shared fill backends.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -1408,6 +1408,10 @@ def remove_video_all(
     audio_vendor: AudioVendor | None = None,
     audio_streams: Sequence[int] | None = None,
     trim_bumper: bool | Literal["auto"] = False,
+    max_duration_seconds: float | None = None,
+    max_frame_pixels: int | None = None,
+    require_gpu: bool = False,
+    progress_callback: Callable[[str, float], None] | None = None,
     _invisible_runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _detected_metadata: dict[str, str] | None = None,
     _runtime_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None,
@@ -1441,8 +1445,35 @@ def remove_video_all(
         model=model,
         temporal_stabilize=temporal_stabilize,
     )
+    if max_duration_seconds is not None and max_duration_seconds <= 0.0:
+        raise ValueError("max_duration_seconds must be positive")
+    if max_frame_pixels is not None and max_frame_pixels <= 0:
+        raise ValueError("max_frame_pixels must be positive")
+    if progress_callback is not None:
+        progress_callback("preflight", 0.05)
     source_path = _video_source(source)
     output_path = _video_output(source_path, output, operation="complete cleaning")
+    if max_frame_pixels is not None or max_duration_seconds is not None:
+        from remove_ai_watermarks.video_encoding import probe_video_timestamps
+        from remove_ai_watermarks.video_invisible import probe_video_geometry
+
+        w_probe, h_probe, fps_probe = probe_video_geometry(source_path)
+        if max_frame_pixels is not None and w_probe * h_probe > max_frame_pixels:
+            area = w_probe * h_probe
+            raise ValueError(
+                f"Video frame area {w_probe}x{h_probe} ({area} px) exceeds max_frame_pixels={max_frame_pixels}"
+            )
+        if max_duration_seconds is not None:
+            ts_probe = probe_video_timestamps(source_path)
+            est_dur = (
+                (ts_probe[-1] - ts_probe[0]) + (1.0 / max(fps_probe, 1e-6))
+                if len(ts_probe) >= 2
+                else (len(ts_probe) / max(fps_probe, 1e-6))
+            )
+            if est_dur > max_duration_seconds:
+                raise ValueError(
+                    f"Video duration {est_dur:.2f}s exceeds max_duration_seconds={max_duration_seconds:.2f}s"
+                )
     explicit_invisible = include_invisible is True
     auto_invisible = include_invisible == "auto"
     norm_invisible_profile = _normalize_video_profile(invisible_profile)
@@ -1537,6 +1568,12 @@ def remove_video_all(
                 visible_mark=vis_mark,
                 runtime=_invisible_runtime,
             )
+            if require_gpu and resolved_invisible_profile == "synthid":
+                raise RuntimeError(
+                    "require_gpu=True refuses 512p 2D CPU fallback; run on a CUDA/MPS GPU or disable require_gpu"
+                )
+            if progress_callback is not None:
+                progress_callback("invisible", 0.5)
             active_runtime = _invisible_runtime
             if active_runtime is None and _runtime_getter is not None:
                 active_runtime = _runtime_getter(
@@ -1718,6 +1755,12 @@ def remove_video_all(
                     visible_mark=detected_vis_mark,
                     runtime=_invisible_runtime,
                 )
+                if require_gpu and resolved_invisible_profile == "synthid":
+                    raise RuntimeError(
+                        "require_gpu=True refuses 512p 2D CPU fallback; run on a CUDA/MPS GPU or disable require_gpu"
+                    )
+                if progress_callback is not None:
+                    progress_callback("invisible", 0.55)
                 active_runtime = _invisible_runtime
                 if active_runtime is None and _runtime_getter is not None:
                     active_runtime = _runtime_getter(
@@ -1753,6 +1796,8 @@ def remove_video_all(
                 remaining_metadata = visible_result.remaining_metadata
 
         if eff_include_audio_invisible:
+            if progress_callback is not None:
+                progress_callback("audio", 0.8)
             from remove_ai_watermarks import video_audio
 
             streams = video_audio.stream_inventory(stage_target)
@@ -1838,6 +1883,8 @@ def remove_video_all(
                 f"{sorted(remaining_metadata)}"
             )
 
+    if progress_callback is not None:
+        progress_callback("complete", 1.0)
     return VideoAllResult(
         source=source_path,
         output=output_path,
@@ -2165,6 +2212,8 @@ def remove_video_invisible(
     )
     source_path = _video_source(source)
     clean_output = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
+    requested_profile = profile
+    is_legacy_experimental = requested_profile.endswith("-experimental")
     if profile == "auto":
         profile = _resolve_video_invisible_profile(
             "auto",
@@ -2183,18 +2232,19 @@ def remove_video_invisible(
     else:
         profile = cast("VideoInvisibleProfile", _normalize_video_profile(profile))
     if profile == "seedance-experimental":
-        return remove_video_seedance_experimental(
+        res_sd = remove_video_seedance_experimental(
             source_path,
             clean_output,
             device=device,
             quality=quality,
             _runtime=cast("VideoVaeRuntime | None", _runtime),
         )
+        return res_sd if is_legacy_experimental else replace(res_sd, experimental=False)
     if profile in WAN_EXPERIMENTAL_PROFILES:
         wan_extra: dict[str, Any] = {}
         if _frame_stream is not None:
             wan_extra["_frame_stream"] = _frame_stream
-        return remove_video_wan_experimental(
+        res_wan = remove_video_wan_experimental(
             source_path,
             clean_output,
             profile=profile,
@@ -2204,6 +2254,7 @@ def remove_video_invisible(
             _runtime=cast("VideoWanRuntime | None", _runtime),
             **wan_extra,
         )
+        return res_wan if is_legacy_experimental else replace(res_wan, experimental=False)
     if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
         supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
         raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
@@ -2346,6 +2397,61 @@ def remove_video_wan_experimental(
         profile=profile,
         strength=strength,
     )
+
+
+def remove_video_seedance(
+    source: str | Path,
+    output: str | Path | None = None,
+    *,
+    device: str = "auto",
+    quality: Literal["delivery", "master"] = "delivery",
+    _runtime: VideoVaeRuntime | None = None,
+) -> VideoSeedanceExperimentalResult:
+    """Production Seedance video watermark removal (default output ``*_clean.mp4``)."""
+    source_path = _video_source(source)
+    clean_output = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
+    result = remove_video_seedance_experimental(
+        source_path,
+        clean_output,
+        device=device,
+        quality=quality,
+        _runtime=_runtime,
+    )
+    return replace(result, experimental=False)
+
+
+def remove_video_wan(
+    source: str | Path,
+    output: str | Path | None = None,
+    *,
+    profile: WanExperimentalProfile = "wan21-synthid",
+    device: str = "auto",
+    quality: Literal["delivery", "master"] = "delivery",
+    seed: int = 0,
+    chunk_frames: int = 193,
+    overlap_frames: int = 17,
+    inference_steps: int | None = None,
+    _runtime: VideoWanRuntime | None = None,
+    _frame_stream: Iterable[Any] | None = None,
+) -> VideoWanExperimentalResult:
+    """Production 3D Wan 2.1 video watermark removal (default output ``*_clean.mp4``)."""
+    source_path = _video_source(source)
+    clean_output = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
+    norm_profile = cast("WanExperimentalProfile", _normalize_video_profile(profile))
+    result = remove_video_wan_experimental(
+        source_path,
+        clean_output,
+        profile=norm_profile,
+        device=device,
+        quality=quality,
+        seed=seed,
+        chunk_frames=chunk_frames,
+        overlap_frames=overlap_frames,
+        inference_steps=inference_steps,
+        _runtime=_runtime,
+        _frame_stream=_frame_stream,
+    )
+    return replace(result, experimental=False)
 
 
 _ORIG_REMOVE_VIDEO_VISIBLE = remove_video_visible

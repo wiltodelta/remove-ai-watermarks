@@ -819,7 +819,7 @@ through `remove_video_wan_experimental` and the shared `profile` /
 explicit `strength` alongside the compatible `noise_std` mirror). It verifies
 hardware BF16 NVIDIA CUDA capability (`torch.version.hip` excluded,
 `torch.cuda.is_bf16_supported(including_emulation=False)`) or explicit `mps` availability and enforces
-`WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
+`WAN21_MAX_FRAME_PIXELS` (`3840 * 2160`, using 1080p-guided high-frequency texture restoration above `WAN21_NATIVE_MAX_PIXELS = 1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
 (`7200 * 1920 * 1080`, 5 minutes at 1080p24) before frame decoding, loads pinned
 Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers@0fad780a534b6463e45facd96134c9f345acfa5b`
 (`licenses/wan/NOTICE.txt`) with an FP32 tiled/sliced `AutoencoderKLWan`, BF16/FP16
@@ -834,7 +834,7 @@ the static neutral prompt embedding on disk via `_wan_prompt_cache_path` so
 `UMT5-XXL` is not downloaded or loaded on warm cache hits)
 without buffering the full decoded video in host RAM. `WAN_SUPPORTED_EXTENSIONS`
 covers `.mp4`, `.mov`, and `.m4v`. `video.py` also exposes
-`profile="auto"`, routing eligible ByteDance/Seedance MP4, MOV, and M4V clips (`WAN21_AUTO_MAX_FRAME_PIXELS = 1920 * 1080`
+`profile="auto"`, routing eligible ByteDance/Seedance MP4, MOV, and M4V clips (`WAN21_AUTO_MAX_FRAME_PIXELS = 3840 * 2160`
 and `WAN21_MIN_CUDA_VRAM_BYTES = 8 GiB`, stepping down to `WAN21_MPS_CHUNK_FRAMES = 33` / `WAN21_MPS_OVERLAP_FRAMES = 9` on `mps` or `WAN21_COMPACT_CHUNK_FRAMES = 81` on `1080p` or `< 16 GiB` CUDA, and passing float32 tensors directly for 10-bit/16-bit sources) to `wan21-seedance-experimental` on BF16 CUDA
 (`seedance-experimental` fallback on CPU/MPS MP4, which streams SD-VAE guides in memory without an intermediate lossy `guide.mp4`, applies guide-resolution `iter_stabilized_regenerated_frames` plus ultra-low-frequency `anchor_low_freq_color` in CIE Lab before sigma-1 texture restoration, or `synthid` on MOV/M4V/MKV/WebM or when the auto Wan budget is
 exceeded) and other eligible SDR 8-bit MP4, MOV, and M4V clips to `wan21-synthid-experimental` on BF16 CUDA

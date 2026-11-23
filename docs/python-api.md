@@ -950,7 +950,8 @@ emulated BF16 are excluded), or with explicit `device="mps"` on Apple Silicon
 and `remove_video_batch`) runs pinned Apache-2.0 3D `Wan 2.1`
 (`Wan-AI/Wan2.1-T2V-1.3B-Diffusers` at `0fad780a534b6463e45facd96134c9f345acfa5b`)
 at native resolution and exact frame timestamps on SDR 8-bit MP4, MOV, and M4V clips within
-`WAN21_MAX_FRAME_PIXELS` (`1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
+`WAN21_MAX_FRAME_PIXELS` (`3840 * 2160`, using 1080p-guided texture restoration
+above `1920 * 1080`) and `WAN21_MAX_TOTAL_PIXEL_FRAMES`
 (`7200 * 1920 * 1080`, streaming clips exceeding `chunk_frames=193` across
 `overlap_frames=17` raised-cosine 3D causal windows directly to the encoder and
 pre-encoding `prompt_embeds` once so the T5 text encoder is freed before 3D

@@ -438,20 +438,20 @@ def test_wan_preflight_budget_bf16_guard_and_strength_field(tmp_path, monkeypatc
         wan.resolve_wan_device("auto")
     monkeypatch.setattr(torch.version, "hip", None, raising=False)
 
-    # 2. Frame-pixel / host-RAM budget & VRAM floor & auto 720p cap
+    # 2. Frame-pixel / host-RAM budget & VRAM floor & 4K cap (>4K rejected)
     frames_decoded = []
     monkeypatch.setattr(wan, "_frames", lambda p: (frames_decoded.append(p), iter(()))[1])
     monkeypatch.setattr(
         wan,
         "validate_experimental_mp4_source",
-        lambda *_a, **_k: (3840, 2160, 24.0, tuple(range(10))),
+        lambda *_a, **_k: (7680, 4320, 24.0, tuple(range(10))),
     )
     with pytest.raises(ValueError, match="frame area"):
         wan.regenerate_wan_experimental(source, output)
     assert frames_decoded == []
     assert wan.can_run_wan_on_source(source, device="auto") is False
 
-    # 1080p is accepted for both auto and explicit wan21-* within total budget, while >1080p is rejected
+    # 1080p and 4K UHD are accepted for both auto and explicit wan21-* within total budget, while >4K is rejected
     monkeypatch.setattr(
         wan,
         "validate_experimental_mp4_source",

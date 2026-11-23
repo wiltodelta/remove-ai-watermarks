@@ -1791,7 +1791,7 @@ def _video_invisible_options(f: Any) -> Any:
         type=click.Choice(["delivery", "master"]),
         default="delivery",
         show_default=True,
-        help="Output quality; master requires seedance-experimental or a wan21-*-experimental profile.",
+        help="Output quality; master requires seedance, wan21-synthid, or wan21-seedance.",
     )(f)
     f = click.option(
         "--device",

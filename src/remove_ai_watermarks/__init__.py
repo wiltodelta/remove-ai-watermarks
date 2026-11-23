@@ -46,7 +46,7 @@ _os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 _warnings.filterwarnings("ignore", message=r".*ImageProcessorFast.*")
 
 
-__version__ = "0.70.0"
+__version__ = "0.71.0"
 
 __all__ = [
     "AudioAllResult",
@@ -111,8 +111,10 @@ __all__ = [
     "remove_video_message",
     "remove_video_metadata",
     "remove_video_region",
+    "remove_video_seedance",
     "remove_video_seedance_experimental",
     "remove_video_visible",
+    "remove_video_wan",
     "remove_video_wan_experimental",
     "remove_visible",
     "remove_visible_detailed",
@@ -197,8 +199,10 @@ if TYPE_CHECKING:
         remove_video_invisible,
         remove_video_metadata,
         remove_video_region,
+        remove_video_seedance,
         remove_video_seedance_experimental,
         remove_video_visible,
+        remove_video_wan,
         remove_video_wan_experimental,
     )
     from remove_ai_watermarks.video_audio import (
@@ -322,8 +326,10 @@ def __getattr__(name: str) -> object:
         "remove_video_invisible",
         "remove_video_metadata",
         "remove_video_region",
+        "remove_video_seedance",
         "remove_video_seedance_experimental",
         "remove_video_visible",
+        "remove_video_wan",
         "remove_video_wan_experimental",
     ):
         from remove_ai_watermarks import video

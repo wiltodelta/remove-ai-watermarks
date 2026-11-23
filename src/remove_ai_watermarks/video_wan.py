@@ -11,9 +11,11 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportAttributeAccessIssue=false
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -36,8 +38,10 @@ from remove_ai_watermarks.video_seedance import (
     _encode_frames,
     _frames,
     _measure,
+    _restore_texture,
     validate_experimental_mp4_source,
 )
+from remove_ai_watermarks.video_temporal import anchor_low_freq_color
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -61,8 +65,9 @@ WAN21_COMPACT_CHUNK_FRAMES = 81
 WAN21_MPS_CHUNK_FRAMES = 33
 WAN21_DEFAULT_OVERLAP_FRAMES = 17
 WAN21_MPS_OVERLAP_FRAMES = 9
-WAN21_AUTO_MAX_FRAME_PIXELS = 1920 * 1080
-WAN21_MAX_FRAME_PIXELS = 1920 * 1080
+WAN21_NATIVE_MAX_PIXELS = 1920 * 1080
+WAN21_AUTO_MAX_FRAME_PIXELS = 3840 * 2160
+WAN21_MAX_FRAME_PIXELS = 3840 * 2160
 WAN21_MAX_TOTAL_PIXEL_FRAMES = 7200 * 1920 * 1080
 WAN21_MIN_CUDA_VRAM_BYTES = 8 * 1024**3
 WAN21_HIGH_VRAM_BYTES = 16 * 1024**3
@@ -337,6 +342,16 @@ def can_run_wan_on_source(
     return True
 
 
+def _wan_guide_size(width: int, height: int) -> tuple[int, int] | None:
+    """Return a 1080p-bounded 16-aligned guide size for >1080p (e.g. 4K) inputs, or None if native."""
+    if width * height <= WAN21_NATIVE_MAX_PIXELS:
+        return None
+    scale = math.sqrt(WAN21_NATIVE_MAX_PIXELS / float(width * height))
+    guide_w = max(WAN21_SPATIAL_MULTIPLE, (int(width * scale) // WAN21_SPATIAL_MULTIPLE) * WAN21_SPATIAL_MULTIPLE)
+    guide_h = max(WAN21_SPATIAL_MULTIPLE, (int(height * scale) // WAN21_SPATIAL_MULTIPLE) * WAN21_SPATIAL_MULTIPLE)
+    return guide_w, guide_h
+
+
 def _run_wan_window(
     bgr_window: list[np.ndarray],
     runtime: VideoWanRuntime,
@@ -350,16 +365,24 @@ def _run_wan_window(
     """Pad spatial/temporal axes on one window, run 3D diffusion, and crop back to BGR."""
     import torch
 
-    win_t = len(bgr_window)
-    pad_h = (WAN21_SPATIAL_MULTIPLE - (orig_h % WAN21_SPATIAL_MULTIPLE)) % WAN21_SPATIAL_MULTIPLE
-    pad_w = (WAN21_SPATIAL_MULTIPLE - (orig_w % WAN21_SPATIAL_MULTIPLE)) % WAN21_SPATIAL_MULTIPLE
+    guide_size = _wan_guide_size(orig_w, orig_h)
+    work_w, work_h = guide_size if guide_size is not None else (orig_w, orig_h)
+    work_window = (
+        [cv2.resize(f, (work_w, work_h), interpolation=cv2.INTER_AREA) for f in bgr_window]
+        if guide_size is not None
+        else bgr_window
+    )
+
+    win_t = len(work_window)
+    pad_h = (WAN21_SPATIAL_MULTIPLE - (work_h % WAN21_SPATIAL_MULTIPLE)) % WAN21_SPATIAL_MULTIPLE
+    pad_w = (WAN21_SPATIAL_MULTIPLE - (work_w % WAN21_SPATIAL_MULTIPLE)) % WAN21_SPATIAL_MULTIPLE
     top, bottom = pad_h // 2, pad_h - (pad_h // 2)
     left, right = pad_w // 2, pad_w - (pad_w // 2)
-    target_h, target_w = orig_h + pad_h, orig_w + pad_w
+    target_h, target_w = work_h + pad_h, work_w + pad_w
 
-    high_depth = bgr_window[0].dtype == np.uint16
+    high_depth = work_window[0].dtype == np.uint16
     video_frames: list[Any] = []
-    for frame_bgr in bgr_window:
+    for frame_bgr in work_window:
         if high_depth:
             rgb_f32 = np.ascontiguousarray(frame_bgr[..., ::-1], dtype=np.float32) / 65535.0
             if pad_h or pad_w:
@@ -404,8 +427,14 @@ def _run_wan_window(
             raw_rgb = np.clip(np.rint(raw_rgb * 65535.0), 0, 65535).astype(np.uint16)
     elif raw_rgb.dtype != np.uint8:
         raw_rgb = np.clip(np.rint(raw_rgb * 255.0), 0, 255).astype(np.uint8)
-    cropped_rgb = raw_rgb[:, top : top + orig_h, left : left + orig_w]
+    cropped_rgb = raw_rgb[:, top : top + work_h, left : left + work_w]
     out_bgr = cropped_rgb[..., ::-1].copy()
+    if guide_size is not None:
+        restored_frames: list[np.ndarray] = []
+        for src_frame, guide_frame in zip(bgr_window, out_bgr, strict=True):
+            up_guide = cv2.resize(guide_frame, (orig_w, orig_h), interpolation=cv2.INTER_LANCZOS4)
+            restored_frames.append(_restore_texture(src_frame, anchor_low_freq_color(src_frame, up_guide)))
+        out_bgr = np.stack(restored_frames, axis=0)
     if out_bgr.shape != (win_t, orig_h, orig_w, 3):
         raise RuntimeError(f"Wan 2.1 output geometry {out_bgr.shape} did not match {(win_t, orig_h, orig_w, 3)}")
     return out_bgr

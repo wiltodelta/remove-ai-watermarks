@@ -499,6 +499,17 @@ def regenerate_video_candidate(
     width, height, source_fps = _probe_video(source)
     size = _fit_size(width, height, long_side)
     effective_fps = source_fps if fps is None else min(fps, source_fps)
+    if size[0] < width or size[1] < height or effective_fps < source_fps - 0.5:
+        log.warning(
+            "2D SynthID VAE fallback downscaling %dx%d@%.2ffps -> %dx%d@%.2ffps; "
+            "use CUDA Wan 2.1 (wan21-synthid) for native-resolution output",
+            width,
+            height,
+            source_fps,
+            size[0],
+            size[1],
+            effective_fps,
+        )
 
     if runtime is None:
         runtime = load_video_vae_runtime(model=model, device=device)
