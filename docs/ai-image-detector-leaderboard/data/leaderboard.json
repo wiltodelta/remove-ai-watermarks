@@ -75,7 +75,7 @@
     {
       "model_id": "wiltodelta/raiw-source-classify",
       "tier": "raiw",
-      "revision": "ebc2dcf0cface677535fe7c1903dd68793ee1f30",
+      "revision": "5f3d7294cad4350d5511e3fb1c1f8eacb8033f59",
       "license": "apache-2.0",
       "weights_mb": 67.0,
       "runtime": "NumPy + ONNX Runtime (CPU)",
@@ -264,9 +264,9 @@
           }
         }
       },
-      "weights_updated_at": "2026-11-19T06:46:33+00:00",
-      "repo_updated_at": "2026-11-19T06:46:33+00:00",
-      "weights_updated_epoch": 1795070793.0
+      "weights_updated_at": "2026-11-23T03:07:53+00:00",
+      "repo_updated_at": "2026-11-23T03:07:53+00:00",
+      "weights_updated_epoch": 1795403273.0
     },
     {
       "model_id": "s-gehring/detectra-openfake",

@@ -81,7 +81,7 @@ CLASSES: tuple[SourceLabel, ...] = (*ALL_PROVIDER_CLASSES, "unknown")
 
 WEIGHTS_ENV = "RAIW_SOURCE_CLASSIFY_WEIGHTS"
 WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
-WEIGHTS_REVISION = "ebc2dcf0cface677535fe7c1903dd68793ee1f30"
+WEIGHTS_REVISION = "5f3d7294cad4350d5511e3fb1c1f8eacb8033f59"
 GITHUB_WEIGHTS_REPO = "wiltodelta/raiw-source-classify"
 GITHUB_WEIGHTS_TAG = "v10"
 CONFIG_FILE = "config.json"
