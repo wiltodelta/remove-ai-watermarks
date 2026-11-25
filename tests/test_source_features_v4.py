@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import tracemalloc
 
 import numpy as np
 from PIL import Image
@@ -10,6 +11,11 @@ from PIL import Image
 from remove_ai_watermarks._internal.source_features_v4 import (
     FEATURE_DIM_V4,
     REGIME_SLICE_V4,
+    _adaptive_tile_grid,
+    _apply_srm_kernel,
+    _convolve_srm_tile,
+    _extract_padded_tile,
+    _opponent_planes_255,
     extract_v4_features,
     extract_v4_features_from_rgb,
 )
@@ -180,3 +186,31 @@ def test_shot_noise_slope_distinguishes_poisson_sensor_from_inverted_noise() -> 
     # Block D3 starts at 384 + 36 + 24 = 444; dim 444 is Luma shot-noise slope
     assert v_pos[444] > 0.3
     assert v_neg[444] < -0.3
+
+
+def test_padded_tile_srm_parity_and_large_frame_memory_ceiling() -> None:
+    """Tile-local padded SRM convolutions match full-frame BORDER_REFLECT_101 bit-for-bit and cap 2048px peak RAM."""
+    rng = np.random.default_rng(707)
+    odd_rgb = rng.integers(0, 256, size=(257, 389, 3), dtype=np.uint8)
+    planes = _opponent_planes_255(odd_rgb)
+    tile, origins = _adaptive_tile_grid(odd_rgb.shape[0], odd_rgb.shape[1])
+    padded_tiles = [_extract_padded_tile(planes, y, x, tile) for y, x in origins]
+
+    for k_i in range(6):
+        full_map = _apply_srm_kernel(planes, k_i)
+        for sub_in, (y, x) in zip(padded_tiles, origins, strict=True):
+            sub_out = _convolve_srm_tile(sub_in, k_i, tile)
+            np.testing.assert_array_equal(sub_out, full_map[y : y + tile, x : x + tile])
+
+    # Warm cached geometry/kernels before measuring per-call allocation ceiling at MAX_ANALYSIS_SIDE (2048x2048)
+    assert extract_v4_features_from_rgb(odd_rgb) is not None
+    large_rgb = rng.integers(0, 256, size=(2048, 2048, 3), dtype=np.uint8)
+    tracemalloc.start()
+    try:
+        vec = extract_v4_features_from_rgb(large_rgb)
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert vec is not None
+    assert peak_bytes < 260 * 1024 * 1024, f"2048x2048 peak allocation regressed to {peak_bytes / 1048576:.1f} MiB"

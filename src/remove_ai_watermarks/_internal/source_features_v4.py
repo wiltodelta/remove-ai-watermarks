@@ -73,6 +73,10 @@ _AUTOCORR_LAGS: tuple[tuple[int, int], ...] = (
 )
 
 
+_SRM_PAD = 2
+_KB5_1D: NDArray[np.float32] = np.array([-0.5, 1.0, -1.0, 1.0, -0.5], dtype=np.float32)
+
+
 @functools.lru_cache(maxsize=1)
 def _srm_kernels() -> tuple[NDArray[np.float32], ...]:
     k_h1 = np.array([[0.0, -1.0, 1.0]], dtype=np.float32)
@@ -235,21 +239,69 @@ def _spectral_256_origins(height: int, width: int, max_tiles: int = 9) -> list[t
     return [(y, x) for y in ys for x in xs][:max_tiles]
 
 
-def _opponent_planes_255(rgb: NDArray[np.uint8]) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
-    """Return float32 [0..255]-scale rgb_f32 and opponent planes (Y, R-G, B-0.5*(R+G))."""
-    vals = rgb.astype(np.float32)
-    r = vals[:, :, 0]
-    g = vals[:, :, 1]
-    b = vals[:, :, 2]
-    planes = np.stack(
-        [
-            0.299 * r + 0.587 * g + 0.114 * b,
-            r - g,
-            b - 0.5 * (r + g),
-        ],
-        axis=-1,
+def _opponent_planes_255(rgb: NDArray[np.uint8]) -> NDArray[np.float32]:
+    """Return float32 [0..255]-scale opponent planes (Y, R-G, B-0.5*(R+G)) in bounded row strips."""
+    h, w = rgb.shape[:2]
+    planes = np.empty((h, w, 3), dtype=np.float32)
+    for y0 in range(0, h, 256):
+        y1 = min(y0 + 256, h)
+        strip = rgb[y0:y1]
+        r = strip[:, :, 0].astype(np.float32)
+        g = strip[:, :, 1].astype(np.float32)
+        b = strip[:, :, 2].astype(np.float32)
+        planes[y0:y1, :, 0] = 0.299 * r + 0.587 * g + 0.114 * b
+        planes[y0:y1, :, 1] = r - g
+        planes[y0:y1, :, 2] = b - 0.5 * (r + g)
+    return planes
+
+
+def _apply_srm_kernel(src: NDArray[np.float32], k_i: int) -> NDArray[np.float32]:
+    """Apply SRM filter `k_i` (`0..5`) with `BORDER_REFLECT_101`."""
+    if k_i == 5:
+        return np.asarray(
+            -cv2.sepFilter2D(src, cv2.CV_32F, _KB5_1D, _KB5_1D, borderType=cv2.BORDER_REFLECT_101),
+            dtype=np.float32,
+        )
+    return np.asarray(
+        cv2.filter2D(src, cv2.CV_32F, _srm_kernels()[k_i], borderType=cv2.BORDER_REFLECT_101),
+        dtype=np.float32,
     )
-    return vals, planes
+
+
+def _extract_padded_tile(
+    planes: NDArray[np.float32],
+    y: int,
+    x: int,
+    tile: int,
+    pad: int = _SRM_PAD,
+) -> NDArray[np.float32]:
+    """Extract one contiguous `(tile + 2*pad, tile + 2*pad, 3)` patch with exact `BORDER_REFLECT_101` context."""
+    h, w = planes.shape[:2]
+    y0, y1 = y - pad, y + tile + pad
+    x0, x1 = x - pad, x + tile + pad
+    sy0, sy1 = max(0, y0), min(h, y1)
+    sx0, sx1 = max(0, x0), min(w, x1)
+    return np.asarray(
+        cv2.copyMakeBorder(
+            planes[sy0:sy1, sx0:sx1],
+            sy0 - y0,
+            y1 - sy1,
+            sx0 - x0,
+            x1 - sx1,
+            cv2.BORDER_REFLECT_101,
+        ),
+        dtype=np.float32,
+    )
+
+
+def _convolve_srm_tile(
+    padded_tile: NDArray[np.float32],
+    k_i: int,
+    tile: int,
+    pad: int = _SRM_PAD,
+) -> NDArray[np.float32]:
+    """Convolve a padded tile with SRM kernel `k_i` and crop the interior `(tile, tile, 3)` response."""
+    return _apply_srm_kernel(padded_tile, k_i)[pad : pad + tile, pad : pad + tile]
 
 
 def _block_a_srm_and_tiles(
@@ -259,80 +311,51 @@ def _block_a_srm_and_tiles(
     """Compute Block A (112-d) adaptive overlapping tile truncated SRM statistics + flat_fraction."""
     h, w = planes.shape[:2]
     tile, origins = _adaptive_tile_grid(h, w)
-    kernels = _srm_kernels()
     n_tiles = len(origins)
+    padded_tiles = [_extract_padded_tile(planes, y, x, tile) for y, x in origins]
 
-    k5_1d = np.array([-0.5, 1.0, -1.0, 1.0, -0.5], dtype=np.float32)
-    raw_maps: list[NDArray[np.float32]] = []
-    for k_i, k in enumerate(kernels):
-        if k_i == 4:
-            raw_maps.append(lap_raw)
-        elif k_i == 5:
-            raw_maps.append(
-                np.asarray(
-                    -cv2.sepFilter2D(planes, cv2.CV_32F, k5_1d, k5_1d, borderType=cv2.BORDER_REFLECT_101),
-                    dtype=np.float32,
-                )
-            )
-        else:
-            raw_maps.append(
-                np.asarray(
-                    cv2.filter2D(planes, cv2.CV_32F, k, borderType=cv2.BORDER_REFLECT_101),
-                    dtype=np.float32,
-                )
-            )
+    tile_tex = np.empty(n_tiles, dtype=np.float64)
+    rms_t3 = np.empty((n_tiles, 6, 3), dtype=np.float64)
+    rms_t15_sel = np.empty((n_tiles, 3, 3), dtype=np.float64)
+    sel_k = (2, 4, 5)
+    sel_slot = {k: i for i, k in enumerate(sel_k)}
 
-    grad_sq_y = raw_maps[0][:, :, 0] ** 2 + raw_maps[1][:, :, 0] ** 2
-    tile_tex = np.array(
-        [float(grad_sq_y[y : y + tile, x : x + tile].mean()) for y, x in origins],
-        dtype=np.float64,
-    )
+    for t_i, sub_in in enumerate(padded_tiles):
+        sq0 = _convolve_srm_tile(sub_in, 0, tile) ** 2
+        sq1 = _convolve_srm_tile(sub_in, 1, tile) ** 2
+        tile_tex[t_i] = float((sq0[:, :, 0] + sq1[:, :, 0]).mean())
+        rms_t3[t_i, 0] = np.sqrt(np.minimum(sq0, 9.0).mean(axis=(0, 1), dtype=np.float64) + EPS)
+        rms_t3[t_i, 1] = np.sqrt(np.minimum(sq1, 9.0).mean(axis=(0, 1), dtype=np.float64) + EPS)
+
     flat_fraction = float(np.mean(tile_tex < 25.0))
 
     order = np.argsort(tile_tex, kind="mergesort")
     half = max(1, n_tiles // 2)
     flat_idx = order[:half]
     tex_idx = order[n_tiles - half :]
-
-    rms_t3 = np.empty((n_tiles, 6, 3), dtype=np.float64)
-    rms_t15_sel = np.empty((n_tiles, 3, 3), dtype=np.float64)
-    sel_k = (2, 4, 5)
-
-    # Precompute contiguous clamped squared maps once (avoids 144 non-contiguous 3D clip+mul allocations)
-    sq_t3_maps = [np.minimum(m * m, 9.0) for m in raw_maps]
-    sq_t15_maps = [np.minimum(raw_maps[k_i] * raw_maps[k_i], 2.25) for k_i in sel_k]
-
-    for t_i, (y, x) in enumerate(origins):
-        for k_i in range(6):
-            tile_m3 = sq_t3_maps[k_i][y : y + tile, x : x + tile].mean(axis=(0, 1), dtype=np.float64)
-            rms_t3[t_i, k_i] = np.sqrt(tile_m3 + EPS)
-        for s_i in range(3):
-            tile_m15 = sq_t15_maps[s_i][y : y + tile, x : x + tile].mean(axis=(0, 1), dtype=np.float64)
-            rms_t15_sel[t_i, s_i] = np.sqrt(tile_m15 + EPS)
-
-    a1_flat = np.log1p(np.median(rms_t3[flat_idx], axis=0)).ravel()
-    a1_tex = np.log1p(np.median(rms_t3[tex_idx], axis=0)).ravel()
-
-    flat_sel = np.median(rms_t3[flat_idx][:, sel_k, :], axis=0)
-    tex_sel = np.median(rms_t3[tex_idx][:, sel_k, :], axis=0)
-    flat_t15 = np.median(rms_t15_sel[flat_idx], axis=0)
-    a2_ratio_ft = (flat_sel / (tex_sel + 1e-4)).ravel()
-    a2_ratio_q = (flat_t15 / (flat_sel + 1e-4)).ravel()
+    flat_rank = {int(t_i): pos for pos, t_i in enumerate(flat_idx)}
 
     # Subsample 2x2 inside flat tiles for order statistics (kurtosis / quantiles) -> 4x faster, identical distribution
     step_q = 2 if tile >= 256 else 1
+    sub_side = len(range(0, tile, step_q))
     a3_list: list[float] = []
-    for k_i in (4, 5):
-        raw_patches = np.stack(
-            [
-                raw_maps[k_i][
-                    origins[int(i)][0] : origins[int(i)][0] + tile : step_q,
-                    origins[int(i)][1] : origins[int(i)][1] + tile : step_q,
-                ]
-                for i in flat_idx
-            ],
-            axis=0,
-        )
+
+    for k_i in (2, 3, 4, 5):
+        s_i = sel_slot.get(k_i, -1)
+        raw_patches = np.empty((len(flat_idx), sub_side, sub_side, 3), dtype=np.float32) if k_i in (4, 5) else None
+        for t_i, (y, x) in enumerate(origins):
+            patch = (
+                lap_raw[y : y + tile, x : x + tile] if k_i == 4 else _convolve_srm_tile(padded_tiles[t_i], k_i, tile)
+            )
+            sq = patch * patch
+            rms_t3[t_i, k_i] = np.sqrt(np.minimum(sq, 9.0).mean(axis=(0, 1), dtype=np.float64) + EPS)
+            if s_i >= 0:
+                rms_t15_sel[t_i, s_i] = np.sqrt(np.minimum(sq, 2.25).mean(axis=(0, 1), dtype=np.float64) + EPS)
+            if raw_patches is not None and t_i in flat_rank:
+                raw_patches[flat_rank[t_i]] = patch[::step_q, ::step_q]
+
+        if raw_patches is None:
+            continue
         t3_patches = np.clip(raw_patches, -3.0, 3.0)
         for c in range(3):
             vals_t3 = t3_patches[:, :, :, c].ravel().astype(np.float64)
@@ -352,10 +375,20 @@ def _block_a_srm_and_tiles(
             sat_frac = float(np.mean(vals_abs > 3.0))
             a3_list.extend((kurt / 10.0, min(q_ratio, 20.0) / 5.0, sat_frac))
 
-    lap_t3_full = np.clip(lap_raw, -3.0, 3.0)
+    del padded_tiles
+
+    a1_flat = np.log1p(np.median(rms_t3[flat_idx], axis=0)).ravel()
+    a1_tex = np.log1p(np.median(rms_t3[tex_idx], axis=0)).ravel()
+
+    flat_sel = np.median(rms_t3[flat_idx][:, sel_k, :], axis=0)
+    tex_sel = np.median(rms_t3[tex_idx][:, sel_k, :], axis=0)
+    flat_t15 = np.median(rms_t15_sel[flat_idx], axis=0)
+    a2_ratio_ft = (flat_sel / (tex_sel + 1e-4)).ravel()
+    a2_ratio_q = (flat_t15 / (flat_sel + 1e-4)).ravel()
+
     flat_patches = np.stack(
         [
-            lap_t3_full[
+            lap_raw[
                 origins[int(t_i)][0] : origins[int(t_i)][0] + tile,
                 origins[int(t_i)][1] : origins[int(t_i)][1] + tile,
             ]
@@ -363,6 +396,7 @@ def _block_a_srm_and_tiles(
         ],
         axis=0,
     )
+    np.clip(flat_patches, -3.0, 3.0, out=flat_patches)
     centred = flat_patches - np.mean(flat_patches, axis=(1, 2), keepdims=True)
     energy = np.sum(centred * centred, axis=(1, 2), dtype=np.float64) + EPS
     lag_acc = np.empty((len(flat_idx), 3, len(_AUTOCORR_LAGS)), dtype=np.float64)
@@ -387,7 +421,7 @@ def _block_a_srm_and_tiles(
     cc_01 = np.empty(n_tiles, dtype=np.float64)
     cc_02 = np.empty(n_tiles, dtype=np.float64)
     for t_i, (y, x) in enumerate(origins):
-        p = lap_t3_full[y : y + tile : 2, x : x + tile : 2].reshape(-1, 3).astype(np.float64)
+        p = np.clip(lap_raw[y : y + tile : 2, x : x + tile : 2], -3.0, 3.0).reshape(-1, 3).astype(np.float64)
         p_c = p - np.mean(p, axis=0, keepdims=True)
         norms = np.sqrt(np.sum(p_c * p_c, axis=0)) + EPS
         cc_01[t_i] = float(np.dot(p_c[:, 0], p_c[:, 1]) / (norms[0] * norms[1]))
@@ -439,24 +473,27 @@ def _block_b_sublattice_and_dct(
     w16 = (w // 16) * 16
     cropped = planes[:h16, :w16]
 
-    # Zero-copy 1-pixel boundary steps locally detrended by each 8-pixel block's truncated mean step
-    raw_jv = np.empty_like(cropped)
-    raw_jv[1:, :, :] = np.minimum(np.abs(cropped[1:, :, :] - cropped[:-1, :, :]), 8.0)
-    raw_jv[0, :, :] = raw_jv[16, :, :] if h16 > 16 else 0.0
+    # Single reusable full-frame buffer for vertical/horizontal boundary steps and B3 squared residuals
+    work = np.empty_like(cropped)
+    np.subtract(cropped[1:, :, :], cropped[:-1, :, :], out=work[1:, :, :])
+    np.abs(work[1:, :, :], out=work[1:, :, :])
+    np.minimum(work[1:, :, :], 8.0, out=work[1:, :, :])
+    work[0, :, :] = work[16, :, :] if h16 > 16 else 0.0
+    blk_jv = work.reshape(h16 // 8, 8, w16, 3)
+    np.subtract(blk_jv, 0.55 * np.mean(blk_jv, axis=1, keepdims=True), out=blk_jv)
+    np.maximum(blk_jv, 0.0, out=blk_jv)
+    prof8_v = blk_jv.mean(axis=(0, 2), dtype=np.float64)
+    prof16_v = work.reshape(h16 // 16, 16, w16, 3).mean(axis=(0, 2), dtype=np.float64)
 
-    raw_jh = np.empty_like(cropped)
-    raw_jh[:, 1:, :] = np.minimum(np.abs(cropped[:, 1:, :] - cropped[:, :-1, :]), 8.0)
-    raw_jh[:, 0, :] = raw_jh[:, 16, :] if w16 > 16 else 0.0
-
-    blk_jv = raw_jv.reshape(h16 // 8, 8, w16, 3)
-    blk_jh = raw_jh.reshape(h16, w16 // 8, 8, 3)
-    jump_v = np.maximum(0.0, blk_jv - 0.55 * np.mean(blk_jv, axis=1, keepdims=True)).reshape(h16, w16, 3)
-    jump_h = np.maximum(0.0, blk_jh - 0.55 * np.mean(blk_jh, axis=2, keepdims=True)).reshape(h16, w16, 3)
-
-    prof8_v = jump_v.reshape(h16 // 8, 8, w16, 3).mean(axis=(0, 2), dtype=np.float64)
-    prof8_h = jump_h.reshape(h16, w16 // 8, 8, 3).mean(axis=(0, 1), dtype=np.float64)
-    prof16_v = jump_v.reshape(h16 // 16, 16, w16, 3).mean(axis=(0, 2), dtype=np.float64)
-    prof16_h = jump_h.reshape(h16, w16 // 16, 16, 3).mean(axis=(0, 1), dtype=np.float64)
+    np.subtract(cropped[:, 1:, :], cropped[:, :-1, :], out=work[:, 1:, :])
+    np.abs(work[:, 1:, :], out=work[:, 1:, :])
+    np.minimum(work[:, 1:, :], 8.0, out=work[:, 1:, :])
+    work[:, 0, :] = work[:, 16, :] if w16 > 16 else 0.0
+    blk_jh = work.reshape(h16, w16 // 8, 8, 3)
+    np.subtract(blk_jh, 0.55 * np.mean(blk_jh, axis=2, keepdims=True), out=blk_jh)
+    np.maximum(blk_jh, 0.0, out=blk_jh)
+    prof8_h = blk_jh.mean(axis=(0, 1), dtype=np.float64)
+    prof16_h = work.reshape(h16, w16 // 16, 16, 3).mean(axis=(0, 1), dtype=np.float64)
 
     webp_4_jump = 0.5 * (
         _f(prof8_v[4, 0]) / (_f(np.median(prof8_v[[1, 2, 3, 5, 6, 7], 0])) + 1e-4)
@@ -511,18 +548,20 @@ def _block_b_sublattice_and_dct(
                 shift_scores.append(prominence)
 
     # B3 (32-d): Strictly Interior {1..6}x{1..6} VAE Sub-Lattice Modulation reusing precomputed lap_raw
-    res_lap = np.clip(lap_raw[:h16, :w16], -3.0, 3.0)
-    res_sq = res_lap * res_lap
-    grid8_sq = res_sq.reshape(h16 // 8, 8, w16 // 8, 8, 3).mean(axis=(0, 2), dtype=np.float64)
+    n_by, n_bx = h16 // 8, w16 // 8
+    np.clip(lap_raw[:h16, :w16], -3.0, 3.0, out=work)
+    np.multiply(work, work, out=work)
+    grid8_sq = work.reshape(n_by, 8, n_bx, 8, 3).mean(axis=(0, 2), dtype=np.float64)
 
-    blk_y = cropped[:, :, 0].reshape(h16 // 8, 8, w16 // 8, 8).transpose(0, 2, 1, 3).reshape(-1, 64)
+    blk_y = cropped[:, :, 0].reshape(n_by, 8, n_bx, 8).transpose(0, 2, 1, 3).reshape(-1, 64)
     block_luma_var = blk_y.var(axis=1)
+    del blk_y
     med_var = _f(np.partition(block_luma_var, len(block_luma_var) // 2)[len(block_luma_var) // 2])
     flat_blk_mask = block_luma_var <= med_var
-    flat_blocks_sq = (
-        res_sq.reshape(h16 // 8, 8, w16 // 8, 8, 3).transpose(0, 2, 1, 3, 4).reshape(-1, 8, 8, 3)[flat_blk_mask]
-    )
+    flat_blocks_sq = work.reshape(n_by, 8, n_bx, 8, 3).transpose(0, 2, 1, 3, 4)[flat_blk_mask.reshape(n_by, n_bx)]
+    del work
     grid8_flat_sq = flat_blocks_sq.mean(axis=0, dtype=np.float64) if len(flat_blocks_sq) > 0 else grid8_sq
+    del flat_blocks_sq
 
     interior_coords = slice(1, 7)
     yy6, xx6 = np.meshgrid(np.arange(1, 7), np.arange(1, 7), indexing="ij")
@@ -561,15 +600,15 @@ def _block_b_sublattice_and_dct(
 
     # B4 (48-d): Vectorized 8x8 DCT AC Quantization, Zero-Occupancy & Double-JPEG Comb Profile
     basis, ac_r, ac_c = _dct_basis_and_ac()
-    n_by, n_bx = h16 // 8, w16 // 8
     total_blocks = n_by * n_bx
     max_sample_blocks = 2048
-    all_blocks = cropped.reshape(n_by, 8, n_bx, 8, 3).transpose(0, 2, 1, 3, 4).reshape(total_blocks, 8, 8, 3)
+    grid_blocks = cropped.reshape(n_by, 8, n_bx, 8, 3).transpose(0, 2, 1, 3, 4)
     if total_blocks > max_sample_blocks:
         step_idx = np.linspace(0, total_blocks - 1, max_sample_blocks, dtype=np.intp)
-        sub_blocks = all_blocks[step_idx]
+        by_idx, bx_idx = np.divmod(step_idx, n_bx)
+        sub_blocks = grid_blocks[by_idx, bx_idx]
     else:
-        sub_blocks = all_blocks
+        sub_blocks = grid_blocks.reshape(total_blocks, 8, 8, 3)
 
     rows_b = basis[ac_r]
     cols_b = basis[ac_c]
@@ -798,7 +837,7 @@ def _block_c_and_coherence(
             cv2.resize(rgb, (SPECTRAL_TILE, SPECTRAL_TILE), interpolation=cv2.INTER_AREA),
             dtype=np.uint8,
         )
-        _, global_planes = _opponent_planes_255(global_rgb)
+        global_planes = _opponent_planes_255(global_rgb)
         c4_parts: list[float] = []
         for c in range(3):
             gp_hat = _moisan_periodic_rfft2(global_planes[:, :, c][None, :, :], denom)
@@ -849,7 +888,6 @@ def _block_c_and_coherence(
 
 def _block_d_sensor_physics(
     rgb: NDArray[np.uint8],
-    vals_f32: NDArray[np.float32],
     planes: NDArray[np.float32],
     lap_opp_raw: NDArray[np.float32],
     d1_coherence: NDArray[np.float64],
@@ -858,12 +896,6 @@ def _block_d_sensor_physics(
 ) -> tuple[NDArray[np.float64], dict[str, float]]:
     """Compute Block D (96-d): D1 (36) + D2 CFA demosaicing (24) + D3 shot-noise slope (20) + D4 CA/gamut (16)."""
     h, w = rgb.shape[:2]
-    r = vals_f32[:, :, 0]
-    g = vals_f32[:, :, 1]
-    b = vals_f32[:, :, 2]
-
-    gm = g - 0.5 * (r + b)
-    rb = r - b
     sub_origins = spec_origins[:6]
     denom, _, _, _, _, _ = _moisan_rfft_geometry(SPECTRAL_TILE)
 
@@ -872,12 +904,22 @@ def _block_d_sensor_physics(
     chk_2d = np.where((yy + xx) % 2 == 0, 1.0, -1.0).astype(np.float32)
     qb_2d = np.where(((yy // 2) + (xx // 2)) % 2 == 0, 1.0, -1.0).astype(np.float32)
 
+    rgb_sub_tiles = np.stack(
+        [rgb[y : y + SPECTRAL_TILE, x : x + SPECTRAL_TILE] for y, x in sub_origins],
+        axis=0,
+    ).astype(np.float32)
+    r_tiles = rgb_sub_tiles[:, :, :, 0]
+    g_tiles = rgb_sub_tiles[:, :, :, 1]
+    b_tiles = rgb_sub_tiles[:, :, :, 2]
+
     d2_list: list[float] = []
-    for idx_ch, ch_map in enumerate((gm, rb, planes[:, :, 0])):
-        tiles = np.stack(
-            [ch_map[y : y + SPECTRAL_TILE, x : x + SPECTRAL_TILE] for y, x in sub_origins],
-            axis=0,
-        ).astype(np.float32)
+    for idx_ch in range(3):
+        if idx_ch == 0:
+            tiles: NDArray[np.float32] = np.asarray(g_tiles - 0.5 * (r_tiles + b_tiles), dtype=np.float32)
+        elif idx_ch == 1:
+            tiles = np.asarray(r_tiles - b_tiles, dtype=np.float32)
+        else:
+            tiles = np.stack([planes[y : y + SPECTRAL_TILE, x : x + SPECTRAL_TILE, 0] for y, x in sub_origins], axis=0)
         p_hat = luma_p_hat[: len(sub_origins)] if idx_ch == 2 else _moisan_periodic_rfft2(tiles, denom)
         mag = np.log1p(np.mean(np.abs(p_hat), axis=0))
         bg = _f(np.median(mag[16:240:2, 16:120:2])) + 1e-6
@@ -895,38 +937,47 @@ def _block_d_sensor_physics(
             (pk_pipi, pk_pi0, pk_0pi, pk_qb_diag, pk_qb_v, pk_qb_h, math.log1p(chk_energy), math.log1p(qb_energy))
         )
 
+    del rgb_sub_tiles, r_tiles, g_tiles, b_tiles
+
     # D3 (20-d): Heteroscedastic Poisson-Gaussian Camera Shot-Noise Curve sigma^2(I) = a * I + b
     # Reconstruct exact per-channel RGB laplacian from opponent laplacian without another filter2D pass!
     # Y = 0.299 R + 0.587 G + 0.114 B, Crg = R - G, Cby = B - 0.5 R - 0.5 G
-    # Inverting the 3x3 linear transform gives exact R, G, B residuals:
+    # Inverting the 3x3 linear transform gives exact R, G, B residuals in bounded 256-row (32-block) strips:
     h8, w8 = (h // 8) * 8, (w // 8) * 8
-    ly = lap_opp_raw[:h8, :w8, 0]
-    lrg = lap_opp_raw[:h8, :w8, 1]
-    lby = lap_opp_raw[:h8, :w8, 2]
-    lg = ly - 0.356 * lrg - 0.114 * lby
-    lr = lg + lrg
-    lb = lby + 0.5 * (lr + lg)
+    n_bx8 = w8 // 8
+    n_blk = (h8 // 8) * n_bx8
+    blk_mean_y = np.empty(n_blk, dtype=np.float64)
+    blk_std_y = np.empty(n_blk, dtype=np.float64)
+    blk_var_ly = np.empty(n_blk, dtype=np.float64)
+    blk_var_lr = np.empty(n_blk, dtype=np.float64)
+    blk_var_lg = np.empty(n_blk, dtype=np.float64)
+    blk_var_lb = np.empty(n_blk, dtype=np.float64)
 
-    y_crop = planes[:h8, :w8, 0]
-    lap_y = np.clip(ly, -4.0, 4.0).astype(np.float32)
-    lap_r = np.clip(lr, -4.0, 4.0).astype(np.float32)
-    lap_g = np.clip(lg, -4.0, 4.0).astype(np.float32)
-    lap_b = np.clip(lb, -4.0, 4.0).astype(np.float32)
+    for y0 in range(0, h8, 256):
+        y1 = min(y0 + 256, h8)
+        sb_y = (y1 - y0) // 8
+        b_slice = slice((y0 // 8) * n_bx8, (y1 // 8) * n_bx8)
 
-    n_blk = (h8 // 8) * (w8 // 8)
-    y_blocks = y_crop.reshape(h8 // 8, 8, w8 // 8, 8).transpose(0, 2, 1, 3).reshape(n_blk, 64)
-    blk_mean_y = y_blocks.mean(axis=1, dtype=np.float64)
-    blk_std_y = y_blocks.std(axis=1, dtype=np.float64)
+        y_blocks = planes[y0:y1, :w8, 0].reshape(sb_y, 8, n_bx8, 8).transpose(0, 2, 1, 3).reshape(sb_y * n_bx8, 64)
+        blk_mean_y[b_slice] = y_blocks.mean(axis=1, dtype=np.float64)
+        blk_std_y[b_slice] = y_blocks.std(axis=1, dtype=np.float64)
 
-    def _blk_mse(arr2d: NDArray[np.float32]) -> NDArray[np.float64]:
-        sq = arr2d * arr2d
-        blocks_sq = sq.reshape(h8 // 8, 8, w8 // 8, 8).transpose(0, 2, 1, 3).reshape(n_blk, 64)
-        return blocks_sq.mean(axis=1, dtype=np.float64)
+        ly = lap_opp_raw[y0:y1, :w8, 0]
+        lrg = lap_opp_raw[y0:y1, :w8, 1]
+        lby = lap_opp_raw[y0:y1, :w8, 2]
+        lg = ly - 0.356 * lrg - 0.114 * lby
+        lr = lg + lrg
+        lb = lby + 0.5 * (lr + lg)
 
-    blk_var_ly = _blk_mse(lap_y)
-    blk_var_lr = _blk_mse(lap_r)
-    blk_var_lg = _blk_mse(lap_g)
-    blk_var_lb = _blk_mse(lap_b)
+        for out_arr, ch_arr in ((blk_var_ly, ly), (blk_var_lr, lr), (blk_var_lg, lg), (blk_var_lb, lb)):
+            clamped = np.clip(ch_arr, -4.0, 4.0).astype(np.float32)
+            sq = clamped * clamped
+            out_arr[b_slice] = (
+                sq.reshape(sb_y, 8, n_bx8, 8)
+                .transpose(0, 2, 1, 3)
+                .reshape(sb_y * n_bx8, 64)
+                .mean(axis=1, dtype=np.float64)
+            )
 
     q55_idx = int(0.55 * (n_blk - 1))
     std_thresh = _f(np.partition(blk_std_y, q55_idx)[q55_idx]) + 1e-3
@@ -968,9 +1019,10 @@ def _block_d_sensor_physics(
 
     # D4 (16-d): Radial Lateral Chromatic Aberration (at stride 2 for >512px) + Gamut / Sparsity
     step_s = 2 if min(h, w) >= 512 else 1
-    r_s = r[::step_s, ::step_s]
-    g_s = g[::step_s, ::step_s]
-    b_s = b[::step_s, ::step_s]
+    rgb_s = rgb[::step_s, ::step_s]
+    r_s = rgb_s[:, :, 0].astype(np.float32)
+    g_s = rgb_s[:, :, 1].astype(np.float32)
+    b_s = rgb_s[:, :, 2].astype(np.float32)
     hs, ws = g_s.shape
 
     gx_r = cv2.Sobel(r_s, cv2.CV_32F, 1, 0, ksize=3)
@@ -1020,7 +1072,6 @@ def _block_d_sensor_physics(
     luma_p = np.maximum(luma_hist / float(luma_s.size), 1e-12)
     luma_ent = float(-np.sum(luma_p * np.log(luma_p)) / math.log(256.0))
 
-    rgb_s = rgb[::step_s, ::step_s]
     q_rgb = (
         ((rgb_s[:, :, 0].astype(np.int32) >> 4) << 8)
         | ((rgb_s[:, :, 1].astype(np.int32) >> 4) << 4)
@@ -1088,16 +1139,14 @@ def extract_v4_features_from_rgb(
 
     w_orig, h_orig = orig_size if orig_size is not None else (w_raw, h_raw)
     work_rgb = _lattice_crop_cap(rgb)
-    vals_f32, planes = _opponent_planes_255(work_rgb)
-    lap_opp_raw = np.asarray(
-        cv2.filter2D(planes, cv2.CV_32F, _srm_kernels()[4], borderType=cv2.BORDER_REFLECT_101),
-        dtype=np.float32,
-    )
+    planes = _opponent_planes_255(work_rgb)
+    lap_opp_raw = _apply_srm_kernel(planes, 4)
 
     vec_a, flat_fraction = _block_a_srm_and_tiles(planes, lap_opp_raw)
     vec_b, reg_b = _block_b_sublattice_and_dct(planes, lap_opp_raw)
     vec_c, d1_coh, luma_p_hat, spec_origins, reg_c = _block_c_and_coherence(work_rgb, planes)
-    vec_d, reg_d = _block_d_sensor_physics(work_rgb, vals_f32, planes, lap_opp_raw, d1_coh, luma_p_hat, spec_origins)
+    vec_d, reg_d = _block_d_sensor_physics(work_rgb, planes, lap_opp_raw, d1_coh, luma_p_hat, spec_origins)
+    del planes, lap_opp_raw
 
     min_side = float(min(h_orig, w_orig))
     max_side = float(max(h_orig, w_orig))
