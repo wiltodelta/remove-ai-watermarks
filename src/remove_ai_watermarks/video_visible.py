@@ -60,6 +60,7 @@ from remove_ai_watermarks.video_encoding import (
     raw_video_command,
     staged_video_output,
     start_raw_video_encoder,
+    write_raw_frame_bytes,
 )
 from remove_ai_watermarks.video_temporal import (
     ClipAlphaMatte,
@@ -396,9 +397,13 @@ def _vidu_template() -> NDArray[Any]:
     return canvas
 
 
+@lru_cache(maxsize=64)
+def _morph_kernel(kernel_size: int) -> NDArray[Any]:
+    return np.ones((kernel_size, kernel_size), dtype=np.uint8)
+
+
 def _top_hat(gray: NDArray[Any]) -> NDArray[Any]:
-    kernel = np.ones((7, 7), dtype=np.uint8)
-    return cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
+    return cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, _morph_kernel(7))
 
 
 @cache
@@ -615,9 +620,20 @@ def _resized_template_feature(
         (width, height),
         interpolation=cv2.INTER_AREA,
     )
-    kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
-    feature = cv2.morphologyEx(template, cv2.MORPH_TOPHAT, kernel)
+    feature = cv2.morphologyEx(template, cv2.MORPH_TOPHAT, _morph_kernel(kernel_size))
     return template, feature
+
+
+@lru_cache(maxsize=2048)
+def _resized_template_half_feature(
+    template_key: str,
+    width: int,
+    height: int,
+    kernel_size: int,
+) -> NDArray[Any]:
+    """Return a 2x downsampled top-hat template feature for coarse pyramid search."""
+    _, feature = _resized_template_feature(template_key, width, height, kernel_size)
+    return cv2.resize(feature, (max(1, width // 2), max(1, height // 2)), interpolation=cv2.INTER_AREA)
 
 
 @lru_cache(maxsize=512)
@@ -675,6 +691,48 @@ def _expanded_region(
     return x, y, max(1, width), max(1, height)
 
 
+def _refine_pyramid_peaks(
+    feature: NDArray[Any],
+    feature_half: NDArray[Any],
+    template_feature: NDArray[Any],
+    template_half: NDArray[Any],
+    *,
+    max_peaks: int,
+    first_coarse_floor: float,
+    later_coarse_floor: float,
+    min_nms_radius: int,
+) -> list[tuple[float, tuple[int, int]]]:
+    """Find coarse 2x top-hat peaks in place and refine each within a full-resolution ``±6 px`` window."""
+    th, tw = template_feature.shape[:2]
+    th2, tw2 = template_half.shape[:2]
+    fh, fw = feature.shape[:2]
+    coarse = cv2.matchTemplate(feature_half, template_half, cv2.TM_CCOEFF_NORMED)
+    candidates: list[tuple[float, tuple[int, int]]] = []
+    for peak_idx in range(max_peaks):
+        _, c_val, _, c_loc = cv2.minMaxLoc(coarse)
+        floor = first_coarse_floor if not candidates else later_coarse_floor
+        if c_val < floor:
+            break
+        cx, cy = c_loc
+        fx, fy = cx * 2, cy * 2
+        rx0 = max(0, fx - 6)
+        ry0 = max(0, fy - 6)
+        rx1 = min(fw, fx + tw + 7)
+        ry1 = min(fh, fy + th + 7)
+        sub = feature[ry0:ry1, rx0:rx1]
+        if sub.shape[0] >= th and sub.shape[1] >= tw:
+            scores = cv2.matchTemplate(sub, template_feature, cv2.TM_CCOEFF_NORMED)
+            _, conf, _, loc = cv2.minMaxLoc(scores)
+            candidates.append((float(conf), (rx0 + loc[0], ry0 + loc[1])))
+        if peak_idx + 1 < max_peaks:
+            x0 = max(0, cx - max(min_nms_radius, tw2 // 2))
+            y0 = max(0, cy - max(min_nms_radius, th2 // 2))
+            x1 = min(coarse.shape[1], cx + max(min_nms_radius + 1, tw2 // 2))
+            y1 = min(coarse.shape[0], cy + max(min_nms_radius + 1, th2 // 2))
+            coarse[y0:y1, x0:x1] = -2.0
+    return candidates
+
+
 def detect_sora_frame(
     image_bgr: NDArray[Any],
     *,
@@ -694,15 +752,27 @@ def detect_sora_frame(
     prepared = prepared or _prepare_frame(image_bgr)
     gray, scale = prepared.normalized_gray, prepared.normalized_scale
     normalized_height, normalized_width = gray.shape[:2]
-    feature = _top_hat(gray)
+    feature = prepared.feature_cache.get(("full_tophat", 7))
+    if feature is None:
+        feature = _top_hat(gray)
+        prepared.feature_cache[("full_tophat", 7)] = feature
+    feature_half = prepared.feature_cache.get(("full_tophat_half", 7))
+    if feature_half is None:
+        feature_half = cv2.resize(
+            feature,
+            (max(1, normalized_width // 2), max(1, normalized_height // 2)),
+            interpolation=cv2.INTER_AREA,
+        )
+        prepared.feature_cache[("full_tophat_half", 7)] = feature_half
     best_confidence = 0.0
     best_region: Region | None = None
+    short_side = min(normalized_height, normalized_width)
 
     for template_index, base_template in enumerate(_sora_templates()):
         icon_only = template_index == 1
         template_key = "sora-icon" if icon_only else "sora-word"
         for relative_height in _SORA_RELATIVE_HEIGHTS:
-            template_height = max(16, round(min(normalized_height, normalized_width) * relative_height))
+            template_height = max(16, round(short_side * relative_height))
             template_width = max(1, round(base_template.shape[1] * template_height / base_template.shape[0]))
             if template_height >= normalized_height or template_width >= normalized_width:
                 continue
@@ -712,28 +782,49 @@ def detect_sora_frame(
                 template_height,
                 7,
             )
-            scores = cv2.matchTemplate(feature, template_feature, cv2.TM_CCOEFF_NORMED)
-            _, confidence, _, location = cv2.minMaxLoc(scores)
-            if confidence <= best_confidence:
-                continue
-            if icon_only:
-                # Edge-only correlation also accepts diamonds and scene texture.
-                # Confirm the full mascot silhouette, including its two eyes.
-                x, y = location
-                candidate = gray[y : y + template_height, x : x + template_width]
-                shape_confidence = float(cv2.matchTemplate(candidate, template, cv2.TM_CCOEFF_NORMED)[0, 0])
-                if shape_confidence < _SORA_ICON_SHAPE_FLOOR:
+            th2, tw2 = max(4, template_height // 2), max(4, template_width // 2)
+            if (
+                th2 < feature_half.shape[0]
+                and tw2 < feature_half.shape[1]
+                and (normalized_height - template_height) * (normalized_width - template_width) >= 2500
+            ):
+                coarse_floor = max(0.36, best_confidence - 0.18)
+                candidates = _refine_pyramid_peaks(
+                    feature,
+                    feature_half,
+                    template_feature,
+                    _resized_template_half_feature(template_key, template_width, template_height, 7),
+                    max_peaks=3,
+                    first_coarse_floor=coarse_floor,
+                    later_coarse_floor=coarse_floor,
+                    min_nms_radius=4,
+                )
+            else:
+                scores = cv2.matchTemplate(feature, template_feature, cv2.TM_CCOEFF_NORMED)
+                _, confidence, _, location = cv2.minMaxLoc(scores)
+                candidates = [(float(confidence), location)]
+
+            for confidence, location in candidates:
+                if confidence <= best_confidence:
                     continue
-            best_confidence = float(confidence)
-            best_region = _expanded_region(
-                location,
-                template_width,
-                template_height,
-                icon_only=icon_only,
-                scale=scale,
-                frame_width=frame_width,
-                frame_height=frame_height,
-            )
+                if icon_only:
+                    # Edge-only correlation also accepts diamonds and scene texture.
+                    # Confirm the full mascot silhouette, including its two eyes.
+                    lx, ly = location
+                    candidate = gray[ly : ly + template_height, lx : lx + template_width]
+                    shape_confidence = float(cv2.matchTemplate(candidate, template, cv2.TM_CCOEFF_NORMED)[0, 0])
+                    if shape_confidence < _SORA_ICON_SHAPE_FLOOR:
+                        continue
+                best_confidence = confidence
+                best_region = _expanded_region(
+                    location,
+                    template_width,
+                    template_height,
+                    icon_only=icon_only,
+                    scale=scale,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
+                )
 
     return FrameLocalization(frame_index, best_confidence, best_region)
 
@@ -745,19 +836,29 @@ def _match_template(
     region: Region,
     kernel_size: int,
     template_feature: NDArray[Any] | None = None,
+    template_key: str | None = None,
+    feature_cache: dict[tuple[Any, ...], NDArray[Any]] | None = None,
+    cache_tag: str = "norm",
 ) -> tuple[float, Region | None]:
     """Match one synthetic silhouette inside a bounded frame region."""
+    _ = template_key
     x, y, width, height = region
     roi = gray[y : y + height, x : x + width]
     template_height, template_width = template.shape[:2]
     if roi.size == 0 or template_height >= roi.shape[0] or template_width >= roi.shape[1]:
         return 0.0, None
-    kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
-    feature = cv2.morphologyEx(roi, cv2.MORPH_TOPHAT, kernel)
+    cache_key = ("roi_tophat", cache_tag, region, kernel_size)
+    feature = feature_cache.get(cache_key) if feature_cache is not None else None
+    if feature is None:
+        feature = cv2.morphologyEx(roi, cv2.MORPH_TOPHAT, _morph_kernel(kernel_size))
+        if feature_cache is not None:
+            feature_cache[cache_key] = feature
     if template_feature is None:
-        template_feature = cv2.morphologyEx(template, cv2.MORPH_TOPHAT, kernel)
+        template_feature = cv2.morphologyEx(template, cv2.MORPH_TOPHAT, _morph_kernel(kernel_size))
+
     scores = cv2.matchTemplate(feature, template_feature, cv2.TM_CCOEFF_NORMED)
     _, confidence, _, location = cv2.minMaxLoc(scores)
+
     patch = feature[location[1] : location[1] + template_height, location[0] : location[0] + template_width]
     if patch.size == 0 or int(patch.max()) < 8:
         return 0.0, None
@@ -815,7 +916,7 @@ def _detect_fixed_mark(
     search_origin: tuple[float, float],
     kernel_fraction: float,
     prefer_larger_within: float = 0.0,
-    normalized: tuple[NDArray[Any], float] | None = None,
+    prepared: _PreparedFrame | None = None,
     frame_index: int,
 ) -> FrameLocalization:
     """Match one fixed synthetic mark inside a normalized-frame search region."""
@@ -823,7 +924,8 @@ def _detect_fixed_mark(
         return FrameLocalization(frame_index, 0.0, None)
 
     frame_height, frame_width = image_bgr.shape[:2]
-    gray, scale = normalized if normalized is not None else _normalized_gray(image_bgr)
+    prep = prepared or _prepare_frame(image_bgr)
+    gray, scale, feature_cache = prep.normalized_gray, prep.normalized_scale, prep.feature_cache
     normalized_height, normalized_width = gray.shape[:2]
     short_side = min(normalized_height, normalized_width)
     search_x = round(normalized_width * search_origin[0])
@@ -852,6 +954,9 @@ def _detect_fixed_mark(
             region=search_region,
             kernel_size=kernel_size,
             template_feature=template_feature,
+            template_key=template_key,
+            feature_cache=feature_cache,
+            cache_tag="norm",
         )
         if candidate is not None and confidence > 0:
             matches.append((confidence, candidate))
@@ -1489,7 +1594,7 @@ def detect_seedance_frame(
         relative_heights=(0.065, 0.075, 0.085, 0.095, 0.105),
         search_origin=(0.68, 0.72),
         kernel_fraction=0.12,
-        normalized=None if prepared is None else (prepared.normalized_gray, prepared.normalized_scale),
+        prepared=prepared,
         frame_index=frame_index,
     )
 
@@ -1515,7 +1620,7 @@ def detect_doubao_frame(
         search_origin=(0.60, 0.76),
         kernel_fraction=0.14,
         prefer_larger_within=0.04,
-        normalized=None if prepared is None else (prepared.normalized_gray, prepared.normalized_scale),
+        prepared=prepared,
         frame_index=frame_index,
     )
 
@@ -1533,7 +1638,7 @@ def detect_dola_frame(
         relative_heights=_DOLA_RELATIVE_HEIGHTS,
         search_origin=(0.65, 0.85),
         kernel_fraction=0.50,
-        normalized=None if prepared is None else (prepared.normalized_gray, prepared.normalized_scale),
+        prepared=prepared,
         frame_index=frame_index,
     )
 
@@ -1586,7 +1691,7 @@ def detect_hailuo_frame(
         relative_heights=_HAILUO_RELATIVE_HEIGHTS,
         search_origin=(0.28, 0.76),
         kernel_fraction=0.18,
-        normalized=None if prepared is None else (prepared.normalized_gray, prepared.normalized_scale),
+        prepared=prepared,
         frame_index=frame_index,
     )
     if detection.region is None:
@@ -1624,7 +1729,7 @@ def detect_vidu_frame(
         relative_heights=_VIDU_RELATIVE_HEIGHTS,
         search_origin=(0.70, 0.84),
         kernel_fraction=0.18,
-        normalized=None if prepared is None else (prepared.normalized_gray, prepared.normalized_scale),
+        prepared=prepared,
         frame_index=frame_index,
     )
 
@@ -1640,7 +1745,6 @@ def detect_kling_frame(
         return FrameLocalization(frame_index, 0.0, None)
     frame_height, frame_width = image_bgr.shape[:2]
     prepared = prepared or _prepare_frame(image_bgr)
-    normalized = prepared.normalized_gray, prepared.normalized_scale
     expanded: list[FrameLocalization] = []
     for template_index, _template in enumerate(_kling_templates()):
         detection = _detect_fixed_mark(
@@ -1650,7 +1754,7 @@ def detect_kling_frame(
             search_origin=(0.64, 0.84),
             kernel_fraction=0.18,
             prefer_larger_within=0.06,
-            normalized=normalized,
+            prepared=prepared,
             frame_index=frame_index,
         )
         if detection.region is None:
@@ -1690,7 +1794,7 @@ def detect_kling_frame(
         search_origin=(0.62, 0.90),
         kernel_fraction=0.18,
         prefer_larger_within=0.03,
-        normalized=normalized,
+        prepared=prepared,
         frame_index=frame_index,
     )
     logo_candidate: FrameLocalization | None = None
@@ -1740,7 +1844,9 @@ def detect_veo_frame(
         return FrameLocalization(frame_index, 0.0, None)
 
     frame_height, frame_width = image_bgr.shape[:2]
-    gray = (prepared or _prepare_frame(image_bgr)).gray
+    prep = prepared or _prepare_frame(image_bgr)
+    gray = prep.gray
+    feat_cache = prep.feature_cache
     short_scale = min(frame_height, frame_width) / _VEO_REFERENCE_SHORT_SIDE
     _, text_base = _veo_templates()
     best_confidence = 0.0
@@ -1770,6 +1876,9 @@ def detect_veo_frame(
             region=(search_x, search_y, search_width, search_height),
             kernel_size=kernel_size,
             template_feature=template_feature,
+            template_key="veo-diamond",
+            feature_cache=feat_cache,
+            cache_tag="raw",
         )
         if confidence > best_confidence:
             best_confidence = confidence
@@ -1796,6 +1905,9 @@ def detect_veo_frame(
             region=corner_region,
             kernel_size=kernel_size,
             template_feature=template_feature,
+            template_key="veo-diamond",
+            feature_cache=feat_cache,
+            cache_tag="raw",
         )
         if confidence >= 0.70 and confidence > best_confidence:
             best_confidence = confidence
@@ -1825,6 +1937,9 @@ def detect_veo_frame(
             region=text_region,
             kernel_size=kernel_size,
             template_feature=template_feature,
+            template_key="veo-text",
+            feature_cache=feat_cache,
+            cache_tag="raw",
         )
         if confidence > best_confidence:
             best_confidence = confidence
@@ -2262,13 +2377,53 @@ def _stabilize_localizations(
     return accepted
 
 
+_COARSE_SCAN_STRIDE = 4
+_COARSE_MIN_CLIP_FRAMES = 24
+
+
+def _coarse_promotion_floor(mark: str) -> float:
+    policy = VISIBLE_MARK_POLICIES.get(mark)
+    if policy is None:
+        return 0.15
+    base = (
+        min(policy.weak_floor, policy.provenance_weak_floor)
+        if policy.provenance_weak_floor is not None
+        else policy.weak_floor
+    )
+    return base * 0.85
+
+
+def _should_promote_coarse_mark(mark: str, coarse_hits: dict[int, FrameLocalization]) -> bool:
+    """Promote a mark to Pass 2 only when coarse samples can participate in a valid stable run."""
+    policy = VISIBLE_MARK_POLICIES.get(mark)
+    floor = _coarse_promotion_floor(mark)
+    qualified = [
+        (idx, loc.region)
+        for idx, loc in sorted(coarse_hits.items())
+        if loc.region is not None and loc.confidence >= floor
+    ]
+    if not qualified:
+        return False
+    if policy is None or policy.min_stable_frames < 12 or len(coarse_hits) < 3:
+        return True
+    min_pair_iou = max(_STABLE_IOU, policy.anchor_iou * 0.92) if policy.anchor_iou is not None else _STABLE_IOU
+    max_coarse_gap = _COARSE_SCAN_STRIDE * 3
+    for i, (idx_a, reg_a) in enumerate(qualified):
+        for idx_b, reg_b in qualified[i + 1 :]:
+            if idx_b - idx_a > max_coarse_gap:
+                break
+            if _region_iou(reg_a, reg_b) >= min_pair_iou:
+                return True
+    return False
+
+
 def _scan_video_detectors(
     source: Path,
     detectors: dict[str, Any],
     *,
     collect_timestamps: bool = True,
 ) -> dict[str, VideoScan]:
-    """Decode once and collect one untrusted candidate per detector and frame."""
+    """Collect untrusted candidates per detector and frame, using coarse-to-fine multi-mark pruning."""
     capture = open_video_capture(source)
     if not capture.isOpened():
         raise RuntimeError(f"OpenCV could not decode video: {source}")
@@ -2279,50 +2434,121 @@ def _scan_video_detectors(
         capture.release()
         raise RuntimeError(f"Video has invalid stream geometry or frame rate: {source}")
 
-    detections: dict[str, list[FrameLocalization]] = {mark: [] for mark in detectors}
-    timestamps: list[float] = []
-    frame_index = 0
+    prev_threads = cv2.getNumThreads()
+    if prev_threads > 1:
+        cv2.setNumThreads(1)
     try:
-        while True:
-            ok, frame = capture.read()
-            if not ok:
-                break
-            if collect_timestamps:
-                timestamps.append(float(capture.get(cv2.CAP_PROP_POS_MSEC)) / 1000)
-            if frame.shape[:2] != (height, width):
-                raise RuntimeError(f"Video changes frame dimensions at frame {frame_index}: {source}")
-            prepared = _prepare_frame(frame)
-            for mark, detector in detectors.items():
-                detections[mark].append(
-                    detector(
-                        frame,
-                        frame_index=frame_index,
-                        prepared=prepared,
-                    )
-                )
-            frame_index += 1
-    finally:
-        capture.release()
-    if frame_index == 0:
-        raise RuntimeError(f"Video contains no decodable frames: {source}")
-    shared_timestamps: tuple[float, ...] = ()
-    if collect_timestamps:
-        probed_timestamps = probe_video_timestamps(source)
-        if len(probed_timestamps) == frame_index:
-            shared_timestamps = probed_timestamps
+        probed_timestamps = probe_video_timestamps(source) if collect_timestamps else ()
+        use_coarse = bool(detectors) and not (0 < len(probed_timestamps) < _COARSE_MIN_CLIP_FRAMES)
+        stride = _COARSE_SCAN_STRIDE if use_coarse else 1
+        can_grab = callable(getattr(capture, "grab", None)) and (not collect_timestamps or bool(probed_timestamps))
+        by_mark: dict[str, dict[int, FrameLocalization]] = {mark: {} for mark in detectors}
+        fallback_timestamps: list[float] = []
+        frame_index = 0
+        try:
+            while True:
+                skip_decode = (not detectors and frame_index > 0) or (stride > 1 and frame_index % stride != 0)
+                if skip_decode and can_grab:
+                    if not capture.grab():
+                        break
+                    frame_index += 1
+                    continue
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                if collect_timestamps and not probed_timestamps:
+                    fallback_timestamps.append(float(capture.get(cv2.CAP_PROP_POS_MSEC)) / 1000)
+                if frame.shape[:2] != (height, width):
+                    raise RuntimeError(f"Video changes frame dimensions at frame {frame_index}: {source}")
+                if detectors and frame_index % stride == 0:
+                    prepared = _prepare_frame(frame)
+                    for mark, detector in detectors.items():
+                        by_mark[mark][frame_index] = detector(frame, frame_index=frame_index, prepared=prepared)
+                frame_index += 1
+        finally:
+            capture.release()
+
+        total_frames = frame_index
+        if total_frames == 0:
+            raise RuntimeError(f"Video contains no decodable frames: {source}")
+
+        if use_coarse:
+            if total_frames < _COARSE_MIN_CLIP_FRAMES:
+                promoted = list(detectors) if total_frames > 1 else []
+            else:
+                promoted = [mark for mark in detectors if _should_promote_coarse_mark(mark, by_mark[mark])]
         else:
-            if probed_timestamps:
-                log.warning(
-                    "ffprobe/decoder frame-count mismatch for %s: timestamps=%s decoded=%s; using decoder timestamps",
-                    source,
-                    len(probed_timestamps),
-                    frame_index,
+            promoted = []
+
+        need_fallback_ts = collect_timestamps and len(probed_timestamps) != total_frames and not fallback_timestamps
+        if promoted or need_fallback_ts:
+            cap2 = open_video_capture(source)
+            if not cap2.isOpened():
+                raise RuntimeError(f"OpenCV could not reopen video: {source}")
+            can_grab2 = callable(getattr(cap2, "grab", None)) and not need_fallback_ts
+            try:
+                for idx in range(total_frames):
+                    if idx % stride == 0 and can_grab2:
+                        if not cap2.grab():
+                            break
+                        continue
+                    ok2, frm2 = cap2.read()
+                    if not ok2:
+                        break
+                    if need_fallback_ts:
+                        fallback_timestamps.append(float(cap2.get(cv2.CAP_PROP_POS_MSEC)) / 1000)
+                    if frm2.shape[:2] != (height, width):
+                        raise RuntimeError(f"Video changes frame dimensions at frame {idx}: {source}")
+                    if idx % stride != 0 and promoted:
+                        prep2 = _prepare_frame(frm2)
+                        for mark in promoted:
+                            by_mark[mark][idx] = detectors[mark](frm2, frame_index=idx, prepared=prep2)
+            finally:
+                cap2.release()
+
+        shared_timestamps: tuple[float, ...] = ()
+        if collect_timestamps:
+            if len(probed_timestamps) == total_frames:
+                shared_timestamps = probed_timestamps
+            else:
+                if probed_timestamps:
+                    log.warning(
+                        "ffprobe/decoder frame-count mismatch for %s: timestamps=%s decoded=%s; "
+                        "using decoder timestamps",
+                        source,
+                        len(probed_timestamps),
+                        total_frames,
+                    )
+                shared_timestamps = tuple(fallback_timestamps)
+
+        if not detectors:
+            return {
+                "": VideoScan(
+                    width,
+                    height,
+                    fps,
+                    tuple(FrameLocalization(i, 0.0, None) for i in range(total_frames)),
+                    shared_timestamps,
                 )
-            shared_timestamps = tuple(timestamps)
-    return {
-        mark: VideoScan(width, height, fps, tuple(mark_detections), shared_timestamps)
-        for mark, mark_detections in detections.items()
-    }
+            }
+        return {
+            mark: VideoScan(
+                width,
+                height,
+                fps,
+                tuple(by_mark[mark].get(i, FrameLocalization(i, 0.0, None)) for i in range(total_frames)),
+                shared_timestamps,
+            )
+            for mark in detectors
+        }
+    finally:
+        if prev_threads > 1:
+            cv2.setNumThreads(prev_threads)
+
+
+def probe_empty_video_scan(source: Path, *, collect_timestamps: bool = True) -> VideoScan:
+    """Return validated stream geometry, frame count, and timestamps without running mark detectors."""
+    return _scan_video_detectors(source, {}, collect_timestamps=collect_timestamps)[""]
 
 
 def scan_video_marks(
@@ -3138,7 +3364,7 @@ def _try_selective_gop_clean_encode(
                 for frm, was_rem in mid_iter:
                     if was_rem:
                         removed_frames += 1
-                    proc.stdin.write(frm.tobytes())
+                    write_raw_frame_bytes(proc.stdin, frm)
                     mid_written += 1
                 finish_raw_video_encoder(proc, seg_mid, operation="selective GOP middle encode")
             except Exception:
@@ -3324,7 +3550,7 @@ def encode_clean_video(
                 if was_removed:
                     removed_frames += 1
                 if timestamped_writer is None:
-                    frame_pipe.write(frame.tobytes())
+                    write_raw_frame_bytes(frame_pipe, frame)
                 else:
                     timestamped_writer.write(frame, active_scan.timestamps[frame_index])
             if timestamped_writer is not None:

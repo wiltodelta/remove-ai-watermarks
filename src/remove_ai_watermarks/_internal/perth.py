@@ -99,6 +99,12 @@ def load_model() -> object:
     return model
 
 
+def clear_model_cache() -> None:
+    """Release the cached Perth model."""
+    with _MODEL_LOCK:
+        load_model.cache_clear()
+
+
 def read(model: Any, samples: object) -> PerthReading:
     import numpy as np
 

@@ -46,7 +46,7 @@ _os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 _warnings.filterwarnings("ignore", message=r".*ImageProcessorFast.*")
 
 
-__version__ = "0.74.0"
+__version__ = "0.75.0"
 
 __all__ = [
     "AudioAllResult",
@@ -94,6 +94,9 @@ __all__ = [
     "identify_video_message",
     "inspect_audio_metadata",
     "inspect_video_metadata",
+    "release_audio_models",
+    "release_models",
+    "release_video_models",
     "remove_all",
     "remove_audio_all",
     "remove_audio_batch",
@@ -158,6 +161,7 @@ if TYPE_CHECKING:
         AudioWindowReading,
         identify_audio,
         inspect_audio_metadata,
+        release_audio_models,
         remove_audio_all,
         remove_audio_batch,
         remove_audio_invisible,
@@ -194,6 +198,8 @@ if TYPE_CHECKING:
         VideoWanExperimentalResult,
         identify_video,
         inspect_video_metadata,
+        release_models,
+        release_video_models,
         remove_video_all,
         remove_video_batch,
         remove_video_invisible,
@@ -264,6 +270,7 @@ def __getattr__(name: str) -> object:
         "AudioWindowReading",
         "identify_audio",
         "inspect_audio_metadata",
+        "release_audio_models",
         "remove_audio_all",
         "remove_audio_batch",
         "remove_audio_invisible",
@@ -321,6 +328,8 @@ def __getattr__(name: str) -> object:
         "VideoWanExperimentalResult",
         "identify_video",
         "inspect_video_metadata",
+        "release_models",
+        "release_video_models",
         "remove_video_all",
         "remove_video_batch",
         "remove_video_invisible",

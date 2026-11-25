@@ -83,3 +83,8 @@ def load_runtime(device: str = "auto") -> VideoVaeRuntime:
 
 
 load_runtime.cache_clear = _load_resolved_runtime.cache_clear  # type: ignore[attr-defined]
+
+
+def clear_model_cache() -> None:
+    """Evict cached float32 video-message VAE runtimes from memory."""
+    _load_resolved_runtime.cache_clear()

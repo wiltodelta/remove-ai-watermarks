@@ -62,6 +62,11 @@ _MIGAN_FILE = "migan.onnx"
 _sessions: dict[str, object] = {}
 
 
+def clear_session_cache() -> None:
+    """Evict cached ONNX inpainting sessions (LaMa / MI-GAN) from memory."""
+    _sessions.clear()
+
+
 @dataclass(frozen=True)
 class _LearnedBackend:
     """One optional model-backed fill: its human label and the module-level names of

@@ -77,6 +77,12 @@ def load_pinned_model(device: str = "cpu") -> Any:
     return model.to(device).train(False)
 
 
+def clear_model_cache() -> None:
+    """Release cached EnCodec models from CPU/accelerator memory."""
+    with _MODEL_LOCK:
+        load_pinned_model.cache_clear()
+
+
 def resynthesize(
     samples: NDArray[Any],
     sample_rate: int,

@@ -403,8 +403,18 @@ def count_decoded_video_frames(source: Path) -> int | None:
     return int(token) if token.isdigit() else None
 
 
-def probe_video_timestamps(source: Path) -> tuple[float, ...]:
-    """Read authoritative display timestamps for the first video stream."""
+def write_raw_frame_bytes(pipe: BinaryIO, array: Any) -> None:
+    """Write a C-contiguous byte view of ``array`` without allocating an extra bytes copy."""
+    import numpy as np
+
+    contiguous = np.asarray(array)
+    if not contiguous.flags.c_contiguous:
+        contiguous = np.ascontiguousarray(contiguous)
+    pipe.write(contiguous.data.cast("B"))
+
+
+def _probe_frame_timestamps(source: Path) -> tuple[float, ...]:
+    """Fallback frame-level timestamp probe via full stream demux/decode."""
     raw_timestamps = _run_ffprobe(
         source,
         (
@@ -428,6 +438,51 @@ def probe_video_timestamps(source: Path) -> tuple[float, ...]:
         log.warning("ffprobe returned no finite frame timestamps for %s", source)
         return ()
     return timestamps
+
+
+def probe_video_timestamps(source: Path) -> tuple[float, ...]:
+    """Read authoritative display timestamps for the first video stream.
+
+    Reads container packet PTS first to avoid decoding every video frame, and
+    falls back to ``-show_frames`` when packet PTS is incomplete, carries
+    discarded edit-list packets, or contains duplicate timestamps.
+    """
+    raw_packets = _run_ffprobe(
+        source,
+        (
+            "-select_streams",
+            "v:0",
+            "-show_packets",
+            "-show_entries",
+            "packet=pts_time,flags",
+        ),
+        purpose="video packet timestamps",
+        output_format="csv=p=0",
+    )
+    if raw_packets is None:
+        return ()
+    pts_values: list[float] = []
+    fallback_needed = False
+    for line in raw_packets.splitlines():
+        if not line:
+            continue
+        parts = line.split(",")
+        try:
+            pts_val = float(parts[0])
+        except ValueError:
+            fallback_needed = True
+            break
+        if not math.isfinite(pts_val):
+            fallback_needed = True
+            break
+        flags = parts[1].strip() if len(parts) > 1 else ""
+        if flags and " " not in flags and set(flags) <= set("KDCBT_") and "D" in flags:
+            fallback_needed = True
+            break
+        pts_values.append(pts_val)
+    if fallback_needed or not pts_values or (len(pts_values) > 1 and len(set(pts_values)) != len(pts_values)):
+        return _probe_frame_timestamps(source)
+    return tuple(sorted(pts_values))
 
 
 @contextmanager

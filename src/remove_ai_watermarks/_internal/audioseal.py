@@ -134,6 +134,12 @@ def load_pinned_detector() -> Any:
     return _load_pinned_model("detector")
 
 
+def clear_model_cache() -> None:
+    """Release the cached AudioSeal detector."""
+    with _MODEL_LOCK:
+        load_pinned_detector.cache_clear()
+
+
 @contextmanager
 def _eager() -> Generator[None, None, None]:
     """Use AudioSeal's local eager context without changing process settings."""

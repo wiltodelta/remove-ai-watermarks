@@ -245,15 +245,15 @@ def _encode_frames(
                 close()
 
 
-def _reconstruct(
-    source: Path, runtime: VideoVaeRuntime, size: tuple[int, int], *, high_depth: bool = False
+def _reconstruct_resized_frames(
+    resized_frames: Iterable[NDArray[Any]],
+    runtime: VideoVaeRuntime,
+    *,
+    high_depth: bool = False,
 ) -> Iterator[NDArray[Any]]:
     import torch
 
-    resized = (
-        cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4) for frame in _frames(source, high_depth=high_depth)
-    )
-    for batch in _stream_batches(resized, 4):
+    for batch in _stream_batches(resized_frames, 4):
         latents = _encode_frame_latents(
             batch, vae=runtime.vae, device=runtime.resolved_device, batch_size=4, scaling_factor=runtime.scaling_factor
         )
@@ -265,6 +265,18 @@ def _reconstruct(
             scaling_factor=runtime.scaling_factor,
             high_depth=high_depth,
         )
+
+
+def _reconstruct(
+    source: Path, runtime: VideoVaeRuntime, size: tuple[int, int], *, high_depth: bool = False
+) -> Iterator[NDArray[Any]]:
+    resized = (
+        cv2.resize(frame, size, interpolation=cv2.INTER_LANCZOS4) for frame in _frames(source, high_depth=high_depth)
+    )
+    yield from _reconstruct_resized_frames(resized, runtime, high_depth=high_depth)
+
+
+_DEFAULT_RECONSTRUCT = _reconstruct
 
 
 def _encode_delivery(master: Path, source: Path, output: Path) -> None:
@@ -336,8 +348,8 @@ def _measure(source: Path, output: Path, fps: float, count: int, *, high_depth: 
         for original, delivered in zip(src_iter, out_iter, strict=True):
             if original.shape != delivered.shape:
                 raise RuntimeError("Experimental Seedance output geometry changed")
-            difference = original.astype(np.float64) - delivered.astype(np.float64)
-            squared_error += float(np.sum(difference * difference))
+            difference = original.astype(np.float32) - delivered.astype(np.float32)
+            squared_error += float(np.sum(difference * difference, dtype=np.float64))
             pixels += original.size
             orig_u8 = (original >> 8).astype(np.uint8) if original.dtype == np.uint16 else original
             deliv_u8 = (delivered >> 8).astype(np.uint8) if delivered.dtype == np.uint16 else delivered
@@ -467,18 +479,54 @@ def regenerate_seedance_experimental(
         master = Path(directory) / f"master{source.suffix.lower()}"
         owned_runtime = runtime is None
         active_runtime = runtime or load_video_vae_runtime(model="stabilityai/sd-vae-ft-mse", device=device)
+        resolved_dev = getattr(active_runtime, "resolved_device", None)
         guide_size = _fit_size(width, height, 512)
-        guide_stream = (
-            _reconstruct(source, active_runtime, guide_size, high_depth=True)
-            if high_depth
-            else _reconstruct(source, active_runtime, guide_size)
-        )
         src_frames = _frames(source, high_depth=high_depth, width=width, height=height)
         src_window: deque[NDArray[Any]] = deque()
+        guide_ref_queue: deque[NDArray[Any]] = deque()
+        use_single_decode = _reconstruct is _DEFAULT_RECONSTRUCT
+
+        def _resized_from_single_decode() -> Iterator[NDArray[Any]]:
+            for src in src_frames:
+                src_window.append(src)
+                guide_ref_queue.append(src)
+                yield (
+                    src
+                    if src.shape[:2] == (guide_size[1], guide_size[0])
+                    else cv2.resize(src, guide_size, interpolation=cv2.INTER_LANCZOS4)
+                )
+
+        if use_single_decode:
+            guide_stream = _reconstruct_resized_frames(
+                _resized_from_single_decode(),
+                active_runtime,
+                high_depth=high_depth,
+            )
+        else:
+            guide_stream = (
+                _reconstruct(source, active_runtime, guide_size, high_depth=True)
+                if high_depth
+                else _reconstruct(source, active_runtime, guide_size)
+            )
 
         def _guide_pairs() -> Iterator[tuple[NDArray[Any], NDArray[Any]]]:
-            for src, raw_guide in zip(src_frames, guide_stream, strict=True):
-                src_window.append(src)
+            if not use_single_decode:
+                for src, raw_guide in zip(src_frames, guide_stream, strict=True):
+                    src_window.append(src)
+                    g_h, g_w = raw_guide.shape[:2]
+                    src_small = (
+                        src
+                        if src.shape[:2] == (g_h, g_w)
+                        else cv2.resize(src, (g_w, g_h), interpolation=cv2.INTER_AREA)
+                    )
+                    if high_depth and raw_guide.dtype != np.uint16:
+                        raw_guide = raw_guide.astype(np.uint16) * 257
+                    yield src_small, raw_guide
+                return
+            for raw_guide in guide_stream:
+                if not guide_ref_queue:
+                    raise ValueError("zip() argument 2 is longer than argument 1")
+                src = guide_ref_queue.popleft()
                 g_h, g_w = raw_guide.shape[:2]
                 src_small = (
                     src if src.shape[:2] == (g_h, g_w) else cv2.resize(src, (g_w, g_h), interpolation=cv2.INTER_AREA)
@@ -486,6 +534,8 @@ def regenerate_seedance_experimental(
                 if high_depth and raw_guide.dtype != np.uint16:
                     raw_guide = raw_guide.astype(np.uint16) * 257
                 yield src_small, raw_guide
+            if guide_ref_queue or next(src_frames, None) is not None:
+                raise ValueError("zip() argument 2 is shorter than argument 1")
 
         def _restored_frames() -> Iterator[NDArray[Any]]:
             for _src_small, stab_guide in iter_stabilized_regenerated_frames(_guide_pairs()):
@@ -511,5 +561,11 @@ def regenerate_seedance_experimental(
                 high_depth=high_depth,
             )
         finally:
+            close_src = getattr(src_frames, "close", None)
+            if callable(close_src):
+                close_src()
             if owned_runtime:
                 del active_runtime
+                from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+
+                empty_accelerator_cache(resolved_dev)

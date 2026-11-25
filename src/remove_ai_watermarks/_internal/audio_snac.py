@@ -134,6 +134,11 @@ def load_pinned_model(*, local_files_only: bool = True, device: str = "cpu") -> 
 load_pinned_model.cache_clear = lambda: (_clear_model_cache(), _load_by_device.cache_clear())  # type: ignore[attr-defined]
 
 
+def clear_model_cache() -> None:
+    """Release cached SNAC models from CPU/accelerator memory."""
+    load_pinned_model.cache_clear()  # type: ignore[attr-defined]
+
+
 def resynthesize(
     samples: Any,
     sample_rate: int,

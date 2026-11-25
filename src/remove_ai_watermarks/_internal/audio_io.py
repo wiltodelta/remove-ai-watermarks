@@ -325,7 +325,7 @@ def write_audio(
                     raise ValueError("Audio samples must be finite")
                 if suffix in _FLAC_CONTAINERS and frames.size and (float(frames.min()) < -1 or float(frames.max()) > 1):
                     raise ValueError("FLAC/MKA cannot preserve samples outside [-1, 1]; use floating-point WAV")
-                process.stdin.write(np.ascontiguousarray(frames).tobytes())
+                process.stdin.write(np.ascontiguousarray(frames).data.cast("B"))
                 count += len(frames)
             if count == 0 or (expected_frames is not None and count != expected_frames):
                 raise ValueError(f"Audio frame count mismatch: wrote {count}, expected {expected_frames}")

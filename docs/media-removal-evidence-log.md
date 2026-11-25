@@ -332,3 +332,41 @@ In Wave 12 (2026-11-23, `v0.74.0`):
     code, and standalone ISOBMFF/XMP `IPTC_AI_MARKERS` (`source_type` + Meta/Canva `app_aigc`)
     in `get_ai_metadata()` for 100% `has_ai_metadata` <-> `get_ai_metadata` <-> `strip_and_verify` parity.
 
+In Wave 13 (2026-11-24, `v0.75.0`):
+- **Unknown-video (`mark="auto"`) visible-mark search & timestamp probing speedup (`19.4x - 588.8x`)**:
+  - Packet-level PTS probing (`ffprobe -show_packets -show_entries packet=pts_time,flags`, falling back
+    to `-show_frames` only on edit-list discard flags, missing PTS, or duplicate PTS) cut 10-clip
+    timestamp probing from `7.796 s` to **`0.402 s` (`19.41x` faster)** with `0/18` timestamp mismatches.
+  - Added 2x coarse-to-fine spatial pyramid refinement (`_refine_pyramid_peaks`) in full-frame
+    `detect_sora_frame` (keeping `_match_template` at full resolution so low-threshold corner ROIs still
+    observe drifting background texture peaks outside `±6 px`), shared per-frame `MORPH_TOPHAT` ROI
+    caching (`prepared.feature_cache`) across `_detect_fixed_mark` and `detect_veo_frame`, up-front
+    `contradicts_video_provenance` filtering with zero-detector timeline probing (`probe_empty_video_scan`)
+    when all candidate marks are contradicted, scoped single-thread OpenCV execution
+    (`cv2.setNumThreads(1)`) inside `_scan_video_detectors`, and two-stage stride-4 coarse-to-fine
+    temporal scanning (`_should_promote_coarse_mark` requiring spatially overlapping coarse support for
+    `min_stable_frames >= 12` marks):
+    - 4-clip unknown `identify_video` benchmark (`veo/example.mp4`, `jimeng/example.mp4`,
+      `pixverse/example.mp4`, `xai-grok-imagine-video.mp4`): CPU time dropped from `134.94 s` to
+      **`9.29 s` (`14.5x`)** and wall time from `318.35 s` to **`9.18 s` (`34.7x`)** (`veo`:
+      `127.33 s -> 3.55 s`, clean `xai-grok`: `70.66 s -> 0.12 s`, **`588.8x`**).
+    - 300-frame 720p `sora/provider-original.mp4` unknown scan dropped from `137.5 s` to **`4.73 s`**
+      (`300/300` frames matched), all `23/23` `visible/*/example.mp4` unknown scans passed in `55.81 s`
+      (`2.43 s/clip` average), and `remove_video_visible(veo/example.mp4)` preserved exact output
+      SHA-256 (`ea2ea00b74227741689d31886aa07e638071a853ca34bc4aabca6038fbf53d39`).
+- **Single-pass multi-decoder audio inspection, `--low-memory` / `release_models()`, & zero-copy video pipes**:
+  - `_scan_audio_multi` (`_WindowSegmentAccumulator`) fuses `identify_audio(..., scheme="auto" | "all")`
+    into **1** `ffmpeg` decode pass (down from `5` on 48 kHz stereo) with shared 16 kHz polyphase
+    resampling across `AudioSeal`, `WavMark`, and `Perth`, inline native `AudioSeal` + `OpenVoice`
+    prefix checks, single-window segment reuse, and 64-frame `WavMark` batching: wall time dropped from
+    `90.59 s` to **`5.41 s` (`16.75x`, CPU `18.40 s -> 9.76 s`)** with bit-for-bit identical
+    `AudioProvenanceReport` outputs.
+  - Added `raiw.release_models()`, `release_audio_models()`, `release_video_models()`,
+    `empty_accelerator_cache()`, `--low-memory` on `audio/video invisible|all|batch`
+    (`78.13 MiB -> 0.00 MiB` cached detector storage), automatic video runtime eviction before
+    `include_audio_invisible=True` in `remove_video_all`, `cuda` + `mps` cache clearing across
+    `video_wan`, `video_seedance`, and `video_invisible`, single-pass source decode + `float32` metric
+    diffs (`94.92 MiB -> 47.52 MiB` at `1080p`) in `video_seedance`, and zero-copy `memoryview` pipe
+    writes (`write_raw_frame_bytes`: `6075.1 KiB -> 0.63 KiB` peak Python allocation per `1080p` frame).
+
+

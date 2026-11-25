@@ -122,6 +122,13 @@ def _hf_crossover_sos(preserve_hf_hz: float, sample_rate: int) -> tuple[Any, Any
     )
 
 
+def clear_model_cache() -> None:
+    """Release cached DAC models from CPU/accelerator memory."""
+    with _MODEL_LOCK:
+        load_pinned_model.cache_clear()
+        _hf_crossover_sos.cache_clear()
+
+
 def blend_hf_crossover(
     processed: Any,
     original: Any,

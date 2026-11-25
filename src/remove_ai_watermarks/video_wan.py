@@ -427,8 +427,6 @@ def _stream_wan_windows(
     _validate_wan_window_args(chunk_frames, overlap_frames)
     from itertools import islice
 
-    import torch
-
     it = iter(frames_bgr)
     step = chunk_frames - overlap_frames
     fade_in = (
@@ -449,8 +447,10 @@ def _stream_wan_windows(
         out_tail: np.ndarray | None = None
         window_index = 0
         while True:
-            if window_index > 0 and runtime.resolved_device == "cuda" and torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if window_index > 0:
+                from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+
+                empty_accelerator_cache(getattr(runtime, "resolved_device", None), collect_gc=False)
             need = chunk_frames if window_index == 0 else step
             in_buf = [*in_tail, peek, *islice(it, need - 1)]
             next_peek = next(it, None)
@@ -619,14 +619,20 @@ def regenerate_wan_experimental(
             overlap_frames=eff_overlap,
             inference_steps=steps,
         )
-        if runtime is None:
-            del active_runtime
-        return _finalize_wan_output(
-            streamed_bgr,
-            source,
-            staged,
-            quality=quality,
-            fps=fps,
-            timestamps=timestamps,
-            high_depth=high_depth,
-        )
+        resolved_dev = getattr(active_runtime, "resolved_device", None)
+        try:
+            return _finalize_wan_output(
+                streamed_bgr,
+                source,
+                staged,
+                quality=quality,
+                fps=fps,
+                timestamps=timestamps,
+                high_depth=high_depth,
+            )
+        finally:
+            if runtime is None:
+                del active_runtime
+                from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+
+                empty_accelerator_cache(resolved_dev)

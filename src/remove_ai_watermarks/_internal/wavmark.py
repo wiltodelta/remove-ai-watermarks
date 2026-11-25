@@ -113,6 +113,11 @@ def load_model() -> object:
     return wavmark.load_model(str(checkpoint_path()))
 
 
+def clear_model_cache() -> None:
+    """Release the cached WavMark model."""
+    load_model.cache_clear()
+
+
 def _samples(samples: object, minimum: int) -> NDArray[Any]:
     import numpy as np
 
@@ -163,8 +168,8 @@ def read(model: Any, samples: object) -> WavMarkReading:
     device = next(model.parameters()).device
     locations: list[int] = []
     messages: list[NDArray[Any]] = []
-    for offset in range(0, len(starts), 10):
-        points = starts[offset : offset + 10]
+    for offset in range(0, len(starts), 64):
+        points = starts[offset : offset + 64]
         batch = np.stack([array[start : start + SAMPLE_RATE] for start in points])
         with torch.inference_mode():
             raw = model.decode(torch.from_numpy(batch).to(device)).detach().cpu().numpy()

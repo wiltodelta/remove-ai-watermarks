@@ -392,6 +392,12 @@ def load_detector(scheme: VideoMessageScheme) -> VideoMessageDecoder:
     return VideoMessageDecoder(scheme, model)
 
 
+def clear_model_cache() -> None:
+    """Release cached VideoSeal/PixelSeal/ChunkySeal decoders."""
+    with _MODEL_LOCK:
+        load_detector.cache_clear()
+
+
 def validate_logits(predictions: Any, frames: int, *, num_bits: int = 256) -> Any:
     """Return the same valid tensor, rejecting incomplete or invalid NN output."""
     torch = import_module("torch")

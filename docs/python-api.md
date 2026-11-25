@@ -589,7 +589,7 @@ preserves an existing output. `force=True` permits unverified or still-positive
 results. `verify=False` requires `force=True`, `allow_unverified=True`, or an explicit `vendor`. Outputs accept `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, `.oga`, `.opus` (`libopus` 192 kbps), `.aac` (`aac` 192 kbps ADTS), and `.mka` (`flac` in Matroska); AI metadata is
 discarded. The source must stay unchanged during processing.
 
-`inspect_audio_metadata(source)` returns `AudioMetadataReport`, and `remove_audio_metadata(source, output=None, *, keep_standard=True)` strips AI creation tags and C2PA manifests without re-encoding audio frames (`AudioMetadataResult`). `remove_audio_all(source, output=None, *, include_invisible=False, scheme="auto", method="auto", ...)` returns `AudioAllResult`, always writing a metadata-cleaned output (`<source>_clean<ext>` by default) and optionally cleaning compatible waveform watermarks when `include_invisible=True`. `remove_audio_batch(input_dir, output_dir=None, *, mode="all", include_invisible=False, ...)` runs sequentially over a directory and returns `AudioBatchSummary` of `AudioBatchItem` rows.
+`inspect_audio_metadata(source)` returns `AudioMetadataReport`, and `remove_audio_metadata(source, output=None, *, keep_standard=True)` strips AI creation tags and C2PA manifests without re-encoding audio frames (`AudioMetadataResult`). `remove_audio_all(source, output=None, *, include_invisible=False, scheme="auto", method="auto", low_memory=False, ...)` returns `AudioAllResult`, always writing a metadata-cleaned output (`<source>_clean<ext>` by default) and optionally cleaning compatible waveform watermarks when `include_invisible=True`. `remove_audio_batch(input_dir, output_dir=None, *, mode="all", include_invisible=False, low_memory=False, ...)` runs sequentially over a directory and returns `AudioBatchSummary` of `AudioBatchItem` rows. Pass `low_memory=True` on `remove_audio_invisible`, `remove_audio_all`, or `remove_audio_batch`, or call `raiw.release_audio_models()` / `raiw.release_models()` explicitly, to evict cached neural codec and detector weights from CPU/CUDA/MPS memory.
 
 `AudioRemovalResult` includes `before`, `after`, `frames_processed`,
 `verified_removed`, `skipped`, `removed_markers`, `method`, `verification_scope`,
@@ -921,7 +921,7 @@ and `wan21-seedance` uses `strength=0.12`. Both accept
 reuse one loaded pipeline across
 batch items, and perform no runtime oracle verification. On the 2D `synthid` profile,
 `native_guide=True` runs latent regeneration at `long_side` (default 512) and upscales
-cleanly to native `(width, height)` with CIE Lab low-frequency color anchoring. `VideoAllResult` also
+cleanly to native `(width, height)` with CIE Lab low-frequency color anchoring. Pass `low_memory=True` on `remove_video_invisible`, `remove_video_all`, or `remove_video_batch` (or call `raiw.release_video_models()` / `raiw.release_models()`) to release cached video/audio models and empty CUDA/MPS allocator caches immediately after processing (`remove_video_all` also releases owned video runtimes automatically before entering `include_audio_invisible=True`). `VideoAllResult` also
 records `audio_verification_scope` and `audio_quality_passed` when
 `include_audio_invisible=True`.
 

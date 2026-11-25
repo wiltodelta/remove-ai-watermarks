@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import gc
 import os
 import secrets
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -54,3 +56,19 @@ def model_cache_dir() -> Path:
     root = os.environ.get("HF_HOME") or os.environ.get("XDG_CACHE_HOME")
     base = Path(root).expanduser() if root else Path.home() / ".cache"
     return base / "remove-ai-watermarks"
+
+
+def empty_accelerator_cache(device: str | None = None, *, collect_gc: bool = True) -> None:
+    """Run Python GC and empty active Torch CUDA/MPS allocator caches if Torch is loaded."""
+    if collect_gc:
+        gc.collect()
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return
+    try:
+        if device in (None, "cuda") and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if device in (None, "mps") and hasattr(torch, "mps") and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:  # noqa: S110
+        pass

@@ -96,6 +96,12 @@ def load_model(device: str | None = None) -> DecoderModel:
     return load_decoder(_download_files(), "44_1_khz/73999_iteration/dec_m_0.ckpt", device)
 
 
+def clear_model_cache() -> None:
+    """Release cached SilentCipher decoders."""
+    with MODEL_LOCK:
+        load_model.cache_clear()
+
+
 def load_decoder(
     paths: dict[str, Path],
     checkpoint: str,

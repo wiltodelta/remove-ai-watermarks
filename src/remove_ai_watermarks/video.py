@@ -439,6 +439,71 @@ def _video_output(
     return path
 
 
+def _clear_video_model_caches() -> None:
+    import sys
+
+    for mod_name, fn_name in (
+        ("remove_ai_watermarks._internal.video_message_models", "clear_model_cache"),
+        ("remove_ai_watermarks._internal.video_message_regeneration", "clear_model_cache"),
+        ("remove_ai_watermarks.region_eraser", "clear_session_cache"),
+    ):
+        mod = sys.modules.get(mod_name)
+        if mod is not None:
+            clear_fn = getattr(mod, fn_name, None)
+            if callable(clear_fn):
+                clear_fn()
+
+
+def release_video_models() -> None:
+    """Release cached video message/VAE runtimes, ONNX sessions, and GPU/MPS allocator caches."""
+    from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+
+    _clear_video_model_caches()
+    empty_accelerator_cache()
+
+
+def release_models() -> None:
+    """Release cached audio and video neural models and empty GPU/MPS allocator caches."""
+    from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+    from remove_ai_watermarks.audio import clear_audio_model_caches
+
+    clear_audio_model_caches()
+    _clear_video_model_caches()
+    empty_accelerator_cache()
+
+
+def _non_contradicted_marks(candidate_marks: tuple[str, ...], markers: dict[str, str]) -> tuple[str, ...]:
+    """Filter out visible marks already contradicted by container provenance before scanning frames."""
+    if not markers:
+        return candidate_marks
+    from remove_ai_watermarks.video_visible import contradicts_video_provenance
+
+    return tuple(m for m in candidate_marks if not contradicts_video_provenance(m, markers))
+
+
+def _scan_or_probe_video_marks(
+    source_path: Path,
+    active_marks: tuple[str, ...],
+    *,
+    collect_timestamps: bool = True,
+) -> tuple[dict[str, VideoScan], VideoScan]:
+    """Scan ``active_marks`` or probe stream timeline with zero detectors when all marks are contradicted."""
+    from remove_ai_watermarks.video_visible import probe_empty_video_scan, scan_video_marks
+
+    if not active_marks:
+        return {}, probe_empty_video_scan(source_path, collect_timestamps=collect_timestamps)
+    scans = (
+        scan_video_marks(source_path, active_marks)
+        if collect_timestamps
+        else scan_video_marks(
+            source_path,
+            active_marks,
+            collect_timestamps=False,
+        )
+    )
+    return scans, scans[active_marks[0]]
+
+
 def _visible_removal_plan(
     selected_mark: str,
     selected_scan: VideoScan,
@@ -777,14 +842,14 @@ def identify_video(
 
     if check_visible:
         _require_video_runtime()
-        from remove_ai_watermarks.video_visible import scan_video_marks
 
-        scans = scan_video_marks(
+        active_marks = _non_contradicted_marks(VIDEO_VISIBLE_MARKS, markers)
+        scans, base_scan = _scan_or_probe_video_marks(
             source_path,
-            VIDEO_VISIBLE_MARKS,
+            active_marks,
             collect_timestamps=False,
         )
-        total_frames = len(scans[VIDEO_VISIBLE_MARKS[0]].detections)
+        total_frames = len(base_scan.detections)
         selected_all = _select_stable_visible_marks(scans, markers, VIDEO_VISIBLE_MARKS)
         if selected_all:
             selected_marks_tuple = tuple(item[0] for item in selected_all)
@@ -926,7 +991,7 @@ def remove_video_visible(
     _require_video_runtime()
 
     from remove_ai_watermarks.metadata import get_ai_metadata
-    from remove_ai_watermarks.video_visible import encode_clean_video, scan_video_marks
+    from remove_ai_watermarks.video_visible import encode_clean_video
     from remove_ai_watermarks.watermark_registry import resolve_backend
 
     candidate_marks, explicit_multi = _parse_mark_selector(mark)
@@ -937,8 +1002,8 @@ def remove_video_visible(
     output_path = _video_output(source_path, output, operation="visible watermark removal")
     markers = get_ai_metadata(source_path) if _metadata_markers is None else _metadata_markers
 
-    scans = scan_video_marks(source_path, candidate_marks)
-    base_scan = scans[candidate_marks[0]]
+    active_marks = _non_contradicted_marks(candidate_marks, markers)
+    scans, base_scan = _scan_or_probe_video_marks(source_path, active_marks)
     total_frames = len(base_scan.detections)
     selected_all = _select_stable_visible_marks(scans, markers, candidate_marks, explicit_multi=explicit_multi)
     should_trim_bumper = trim_bumper is True or (trim_bumper == "auto" and (bool(markers) or bool(selected_all)))
@@ -1458,6 +1523,7 @@ def remove_video_all(
     max_duration_seconds: float | None = None,
     max_frame_pixels: int | None = None,
     require_gpu: bool = False,
+    low_memory: bool = False,
     progress_callback: Callable[[str, float], None] | None = None,
     _invisible_runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _detected_metadata: dict[str, str] | None = None,
@@ -1576,13 +1642,13 @@ def remove_video_all(
         )
         if can_fuse:
             from remove_ai_watermarks.video_encoding import HIGH_BIT_DEPTH_PIXEL_FORMATS, probe_video_encode_profile
-            from remove_ai_watermarks.video_visible import encode_clean_video, iter_clean_video_frames, scan_video_marks
+            from remove_ai_watermarks.video_visible import encode_clean_video, iter_clean_video_frames
             from remove_ai_watermarks.watermark_registry import resolve_backend
 
             candidate_marks, explicit_multi = _parse_mark_selector(mark)
             resolve_backend(backend)  # type: ignore[arg-type]
-            scans = scan_video_marks(source_path, candidate_marks)
-            base_scan = scans[candidate_marks[0]]
+            active_marks = _non_contradicted_marks(candidate_marks, detected_metadata)
+            scans, base_scan = _scan_or_probe_video_marks(source_path, active_marks)
             total_frames = len(base_scan.detections)
             selected_all = _select_stable_visible_marks(
                 scans, detected_metadata, candidate_marks, explicit_multi=explicit_multi
@@ -1842,6 +1908,8 @@ def remove_video_all(
                 remaining_metadata = visible_result.remaining_metadata
 
         if eff_include_audio_invisible:
+            if invisible_applied and _invisible_runtime is None and _runtime_getter is None:
+                active_runtime = None
             if progress_callback is not None:
                 progress_callback("audio", 0.8)
             from remove_ai_watermarks import video_audio
@@ -1928,6 +1996,8 @@ def remove_video_all(
                 f"{len(remaining_metadata)} AI metadata marker(s) survived the complete pipeline: "
                 f"{sorted(remaining_metadata)}"
             )
+    if low_memory:
+        release_models()
 
     if progress_callback is not None:
         progress_callback("complete", 1.0)
@@ -1985,6 +2055,7 @@ def remove_video_batch(
     audio_vendor: AudioVendor | None = None,
     audio_streams: Sequence[int] | None = None,
     trim_bumper: bool | Literal["auto"] = False,
+    low_memory: bool = False,
 ) -> VideoBatchResult:
     """Process every supported video in one directory.
 
@@ -2090,7 +2161,7 @@ def remove_video_batch(
             if mode == "all":
                 selected_runtime: VideoVaeRuntime | VideoWanRuntime | None = None
                 lazy_getter: Callable[[Literal["vae", "wan"]], VideoVaeRuntime | VideoWanRuntime] | None = None
-                if include_invisible:
+                if include_invisible and not low_memory:
                     _video_source(source_path)
                     if invisible_profile == "auto" or include_invisible == "auto":
                         if source_path.suffix.lower() in _REGENERATED_VIDEO_EXTENSIONS:
@@ -2132,6 +2203,7 @@ def remove_video_batch(
                     audio_vendor=audio_vendor,
                     audio_streams=audio_streams,
                     trim_bumper=trim_bumper,
+                    low_memory=low_memory,
                     _invisible_runtime=selected_runtime,
                     _runtime_getter=lazy_getter,
                 )
@@ -2210,6 +2282,13 @@ def remove_video_batch(
                 )
             )
 
+    if runtimes:
+        from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+
+        runtimes.clear()
+        empty_accelerator_cache()
+    if low_memory and (mode != "all" or any(item.error is not None for item in items)):
+        release_models()
     return VideoBatchResult(
         directory=directory_path,
         output_directory=output_path,
@@ -2233,6 +2312,7 @@ def remove_video_invisible(
     temporal_stabilize: bool = True,
     native_guide: bool = False,
     wan_steps: int | None = None,
+    low_memory: bool = False,
     _runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _frame_stream: Iterable[Any] | None = None,
 ) -> VideoInvisibleResult:
@@ -2283,65 +2363,69 @@ def remove_video_invisible(
         )
     else:
         profile = cast("VideoInvisibleProfile", _normalize_video_profile(profile))
-    if profile == "seedance-experimental":
-        res_sd = remove_video_seedance_experimental(
-            source_path,
-            clean_output,
-            device=device,
-            quality=quality,
-            _runtime=cast("VideoVaeRuntime | None", _runtime),
-        )
-        return res_sd if is_legacy_experimental else replace(res_sd, experimental=False)
-    if profile in WAN_EXPERIMENTAL_PROFILES:
-        res_wan = remove_video_wan_experimental(
-            source_path,
-            clean_output,
-            profile=profile,
-            device=device,
-            quality=quality,
-            seed=seed,
-            inference_steps=wan_steps,
-            _runtime=cast("VideoWanRuntime | None", _runtime),
-            _frame_stream=_frame_stream,
-        )
-        return res_wan if is_legacy_experimental else replace(res_wan, experimental=False)
-    if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
-        supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
-        raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
-    _require_video_runtime()
-    from remove_ai_watermarks.video_invisible import regenerate_video_candidate
+    try:
+        if profile == "seedance-experimental":
+            res_sd = remove_video_seedance_experimental(
+                source_path,
+                clean_output,
+                device=device,
+                quality=quality,
+                _runtime=cast("VideoVaeRuntime | None", _runtime),
+            )
+            return res_sd if is_legacy_experimental else replace(res_sd, experimental=False)
+        if profile in WAN_EXPERIMENTAL_PROFILES:
+            res_wan = remove_video_wan_experimental(
+                source_path,
+                clean_output,
+                profile=profile,
+                device=device,
+                quality=quality,
+                seed=seed,
+                inference_steps=wan_steps,
+                _runtime=cast("VideoWanRuntime | None", _runtime),
+                _frame_stream=_frame_stream,
+            )
+            return res_wan if is_legacy_experimental else replace(res_wan, experimental=False)
+        if source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
+            supported = ", ".join(sorted(_REGENERATED_VIDEO_EXTENSIONS))
+            raise ValueError(f"Video SynthID regeneration requires one of: {supported}")
+        _require_video_runtime()
+        from remove_ai_watermarks.video_invisible import regenerate_video_candidate
 
-    output_path = _video_output(
-        source_path,
-        clean_output,
-        operation="SynthID removal",
-    )
-    regen_extra: dict[str, Any] = {}
-    if native_guide:
-        regen_extra["native_guide"] = True
-    if _frame_stream is not None:
-        regen_extra["_frame_stream"] = _frame_stream
-    metrics = regenerate_video_candidate(
-        source_path,
-        output_path,
-        noise_std=noise_std,
-        long_side=long_side,
-        fps=fps,
-        batch_size=batch_size,
-        seed=seed,
-        model=model,
-        device=device,
-        runtime=cast("VideoVaeRuntime | None", _runtime),
-        temporal_stabilize=temporal_stabilize,
-        **regen_extra,
-    )
-    return VideoInvisibleResult(
-        source=source_path,
-        output=output_path,
-        noise_std=noise_std,
-        metrics=metrics,
-        remaining_metadata=get_ai_metadata(output_path),
-    )
+        output_path = _video_output(
+            source_path,
+            clean_output,
+            operation="SynthID removal",
+        )
+        regen_extra: dict[str, Any] = {}
+        if native_guide:
+            regen_extra["native_guide"] = True
+        if _frame_stream is not None:
+            regen_extra["_frame_stream"] = _frame_stream
+        metrics = regenerate_video_candidate(
+            source_path,
+            output_path,
+            noise_std=noise_std,
+            long_side=long_side,
+            fps=fps,
+            batch_size=batch_size,
+            seed=seed,
+            model=model,
+            device=device,
+            runtime=cast("VideoVaeRuntime | None", _runtime),
+            temporal_stabilize=temporal_stabilize,
+            **regen_extra,
+        )
+        return VideoInvisibleResult(
+            source=source_path,
+            output=output_path,
+            noise_std=noise_std,
+            metrics=metrics,
+            remaining_metadata=get_ai_metadata(output_path),
+        )
+    finally:
+        if low_memory:
+            release_video_models()
 
 
 def remove_video_seedance_experimental(

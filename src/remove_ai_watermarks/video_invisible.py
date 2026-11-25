@@ -32,6 +32,7 @@ from remove_ai_watermarks.video_encoding import (
     raw_video_command,
     staged_video_output,
     start_raw_video_encoder,
+    write_raw_frame_bytes,
 )
 from remove_ai_watermarks.video_synthid import (
     DEFAULT_VIDEO_SYNTHID_FPS,
@@ -473,7 +474,7 @@ def encode_video_frames(
                 for frame in chain((first,), iterator):
                     if frame.shape[:2] != (height, width):
                         raise ValueError("Video frames must have matching dimensions")
-                    frame_pipe.write(frame.tobytes())
+                    write_raw_frame_bytes(frame_pipe, frame)
                 finish_raw_video_encoder(process, encoded_video, operation="SynthID removal encode")
                 mux_encoded_video(encoded_video, source, temporary_output, strip_metadata=True)
             except Exception:
@@ -547,6 +548,7 @@ def regenerate_video_candidate(
             effective_fps,
         )
 
+    owned_runtime = runtime is None
     if runtime is None:
         runtime = load_video_vae_runtime(model=model, device=device)
     elif runtime.model != model or runtime.requested_device != device:
@@ -662,7 +664,7 @@ def regenerate_video_candidate(
                     yield out_ref, _upscale_clean_guide(out_ref, small_ref, small_cand)
 
             for reference, candidate in _final_pairs():
-                frame_pipe.write(candidate.tobytes())
+                write_raw_frame_bytes(frame_pipe, candidate)
                 reference_f32 = reference.astype(np.float32)
                 candidate_f32 = candidate.astype(np.float32)
                 difference = reference_f32 - candidate_f32
@@ -693,6 +695,12 @@ def regenerate_video_candidate(
         except Exception:
             abort_raw_video_encoder(process)
             raise
+        finally:
+            if owned_runtime:
+                del vae, runtime
+                from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+
+                empty_accelerator_cache(resolved_device)
 
         mse = squared_error / pixel_count
         peak = 65535.0 if high_depth else 255.0

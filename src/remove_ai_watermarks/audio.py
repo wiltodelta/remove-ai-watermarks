@@ -273,6 +273,29 @@ def _model_samples(samples: NDArray[Any], sample_rate: int) -> NDArray[Any]:
     )
 
 
+def _read_prepared_model(
+    model: Any,
+    prepared: NDArray[Any],
+    raw_len: int,
+    rate: int,
+    scheme: str,
+) -> tuple[AudioModelReading | None, str | None, bool]:
+    if scheme in {"wavmark", "perth"} and len(prepared) < 16000:
+        return None, "Audio is shorter than one complete model window", True
+    try:
+        decoder = {"audioseal": audioseal.read, "wavmark": wavmark.read, "perth": perth.read}[scheme]
+        return decoder(model, prepared), None, False
+    except RuntimeError as exc:
+        log.warning(
+            "Audio decoder check failed: scheme=%s sample_rate=%s sample_count=%s error=%s",
+            scheme,
+            rate,
+            raw_len,
+            exc,
+        )
+        return None, str(exc), False
+
+
 def _read_model(
     model: Any, samples: NDArray[Any], rate: int, scheme: str, *, native_audioseal: bool = False
 ) -> tuple[AudioModelReading | None, str | None, bool]:
@@ -291,46 +314,14 @@ def _read_model(
     # AudioSeal 0.2 does not resample internally. Some encoders, including the
     # published LTX marker, stamp at the native sample clock instead of 16 kHz.
     prepared = samples if native_audioseal else _model_samples(samples, rate)
-    if scheme in {"wavmark", "perth"} and len(prepared) < 16000:
-        return None, "Audio is shorter than one complete model window", True
-    try:
-        decoder = {"audioseal": audioseal.read, "wavmark": wavmark.read, "perth": perth.read}[scheme]
-        return decoder(model, prepared), None, False
-    except RuntimeError as exc:
-        log.warning(
-            "Audio decoder check failed: scheme=%s sample_rate=%s sample_count=%s error=%s",
-            scheme,
-            rate,
-            len(samples),
-            exc,
-        )
-        return None, str(exc), False
+    return _read_prepared_model(model, prepared, len(samples), rate, scheme)
 
 
-def _scan_audio(
-    source: Path, info: audio_io.AudioStreamInfo, scheme: str
+def _eval_openvoice_frames(
+    model: Any,
+    frames: NDArray[Any],
+    info: audio_io.AudioStreamInfo,
 ) -> tuple[tuple[AudioDetection, ...], tuple[str, ...]]:
-    checks, notes = _scan_audio_at_clock(source, info, scheme)
-    if scheme == "audioseal" and info.sample_rate in _AUDIOSEAL_NATIVE_SAMPLE_RATES:
-        native_checks, native_notes = _scan_audio_at_clock(source, info, scheme, native_audioseal=True)
-        checks += native_checks
-        notes = tuple(dict.fromkeys((*notes, *native_notes)))
-    if scheme == "wavmark":
-        signature_checks, signature_notes = _scan_openvoice_default(source, info)
-        checks += signature_checks
-        notes += signature_notes
-    return checks, notes
-
-
-def _scan_openvoice_default(
-    source: Path, info: audio_io.AudioStreamInfo
-) -> tuple[tuple[AudioDetection, ...], tuple[str, ...]]:
-    import numpy as np
-
-    model = wavmark.load_model()
-    reader = audio_io.read_audio(source, info, chunk_frames=wavmark.OPENVOICE_PREFIX_SAMPLES)
-    with closing(reader):
-        frames = next(reader, np.empty((0, info.channels), dtype=np.float32))
     channels: list[int | Literal["mix"]] = list(range(info.channels))
     if info.channels > 1:
         channels.append("mix")
@@ -381,81 +372,41 @@ def _scan_openvoice_default(
     return tuple(checks), notes
 
 
-def _scan_audio_at_clock(
-    source: Path, info: audio_io.AudioStreamInfo, scheme: str, *, native_audioseal: bool = False
+def _scan_audio(
+    source: Path, info: audio_io.AudioStreamInfo, scheme: str
 ) -> tuple[tuple[AudioDetection, ...], tuple[str, ...]]:
+    checks, notes = _scan_audio_multi(source, info, (scheme,))
+    return checks, notes
+
+
+_DEFAULT_SCAN_AUDIO = _scan_audio
+
+
+def scan_openvoice_default(
+    source: Path, info: audio_io.AudioStreamInfo
+) -> tuple[tuple[AudioDetection, ...], tuple[str, ...]]:
+    """Read only the OpenVoice prefix samples from ``source`` and evaluate the default signature."""
     import numpy as np
 
-    loader = {
-        "audioseal": audioseal.load_pinned_detector,
-        "wavmark": wavmark.load_model,
-        "perth": perth.load_model,
-        "silentcipher": silentcipher.load_model,
-    }[scheme]
-    model = loader()
-    channels: list[int | Literal["mix"]] = list(range(info.channels))
-    if info.channels > 1:
-        channels.append("mix")
-    windows: dict[int | Literal["mix"], list[AudioWindowReading]] = {channel: [] for channel in channels}
-    segments: dict[int | Literal["mix"], list[AudioWindowReading]] = {channel: [] for channel in channels}
-    count = 0
-    previous = np.empty((0, info.channels), dtype=np.float32)
-    window_frames = info.sample_rate * (silentcipher.WINDOW_SECONDS if scheme == "silentcipher" else 1)
-    max_segment_frames = min(
-        _MAX_WHOLE_SECONDS * info.sample_rate,
-        max(window_frames, _MAX_WHOLE_VALUES // max(1, info.channels)),
-    )
-    segment_chunks: list[NDArray[Any]] = []
-    segment_start = 0
-    segment_len = 0
+    model = wavmark.load_model()
+    reader = audio_io.read_audio(source, info, chunk_frames=wavmark.OPENVOICE_PREFIX_SAMPLES)
+    with closing(reader):
+        frames = next(reader, np.empty((0, info.channels), dtype=np.float32))
+    return _eval_openvoice_frames(model, frames, info)
 
-    def flush_segment(block: NDArray[Any], start_frame: int, end_frame: int) -> None:
-        for channel in channels:
-            mono = block.mean(axis=1) if channel == "mix" else block[:, channel]
-            seg_reading, seg_error, seg_inapplicable = _read_model(
-                model, mono, info.sample_rate, scheme, native_audioseal=native_audioseal
-            )
-            segments[channel].append(
-                AudioWindowReading(start_frame, end_frame, seg_reading, seg_error, inapplicable=seg_inapplicable)
-            )
 
-    for frames in audio_io.read_audio(source, info, chunk_frames=window_frames):
-        if not np.isfinite(frames).all():
-            raise ValueError("Audio input contains nonfinite samples")
-        window, start = frames, count
-        if len(frames) < window_frames and len(previous):
-            window = np.concatenate((previous[-(window_frames - len(frames)) :], frames))
-            start = count + len(frames) - len(window)
-        for channel in channels:
-            mono = window.mean(axis=1) if channel == "mix" else window[:, channel]
-            reading, error, win_inapplicable = _read_model(
-                model, mono, info.sample_rate, scheme, native_audioseal=native_audioseal
-            )
-            windows[channel].append(
-                AudioWindowReading(start, count + len(frames), reading, error, inapplicable=win_inapplicable)
-            )
-        previous = frames
-        count += len(frames)
+_scan_openvoice_default = scan_openvoice_default
 
-        pending = frames
-        while len(pending):
-            if segment_len >= max_segment_frames:
-                joined_seg = np.concatenate(segment_chunks)
-                flush_segment(joined_seg, segment_start, segment_start + len(joined_seg))
-                overlap = joined_seg[-min(window_frames, max(0, max_segment_frames - 1), len(joined_seg)) :]
-                segment_start = segment_start + len(joined_seg) - len(overlap)
-                segment_chunks = [overlap] if len(overlap) else []
-                segment_len = len(overlap)
-            space = max_segment_frames - segment_len
-            take = pending[:space]
-            segment_chunks.append(take)
-            segment_len += len(take)
-            pending = pending[space:]
 
-    if segment_len > 0:
-        joined_seg = np.concatenate(segment_chunks)
-        flush_segment(joined_seg, segment_start, segment_start + len(joined_seg))
-
+def _finalize_scheme_detections(
+    scheme: str,
+    *,
+    native_audioseal: bool,
+    info: audio_io.AudioStreamInfo,
+    channels: list[int | Literal["mix"]],
+    windows: dict[int | Literal["mix"], list[AudioWindowReading]],
+    segments: dict[int | Literal["mix"], list[AudioWindowReading]],
+) -> tuple[tuple[AudioDetection, ...], tuple[str, ...]]:
     multi_segment = False
     detections: list[AudioDetection] = []
     for channel in channels:
@@ -508,6 +459,285 @@ def _scan_audio_at_clock(
     ):
         caveats.append("Some decoder checks failed; those checks are unverified, not negative.")
     return tuple(detections), tuple(caveats)
+
+
+class _WindowSegmentAccumulator:
+    """Shared tail-padded window and bounded overlapping-segment feeder for one sample clock."""
+
+    def __init__(
+        self,
+        *,
+        channels: int,
+        win_frames: int,
+        max_seg_frames: int,
+        on_window: Callable[[NDArray[Any], int, int], None],
+        on_segment: Callable[[NDArray[Any] | None, int, int, bool], None],
+    ) -> None:
+        import numpy as np
+
+        self._np = np
+        self.win_frames = win_frames
+        self.max_seg_frames = max_seg_frames
+        self._on_window = on_window
+        self._on_segment = on_segment
+        self._prev = np.empty((0, channels), dtype=np.float32)
+        self._count = 0
+        self._seg_chunks: list[NDArray[Any]] = []
+        self._seg_start = 0
+        self._seg_len = 0
+        self._win_count = 0
+        self._single_bounds: tuple[int, int] | None = None
+        self._seg_flushes = 0
+
+    def _flush_segment(self) -> None:
+        end_f = self._seg_start + self._seg_len
+        reuse_single = (
+            self._seg_flushes == 0 and self._win_count == 1 and self._single_bounds == (self._seg_start, end_f)
+        )
+        self._seg_flushes += 1
+        if reuse_single:
+            self._on_segment(None, self._seg_start, end_f, True)
+            return
+        block = self._seg_chunks[0] if len(self._seg_chunks) == 1 else self._np.concatenate(self._seg_chunks)
+        self._on_segment(block, self._seg_start, end_f, False)
+
+    def feed(self, frames: NDArray[Any]) -> None:
+        window, start = frames, self._count
+        if len(frames) < self.win_frames and len(self._prev):
+            window = self._np.concatenate((self._prev[-(self.win_frames - len(frames)) :], frames))
+            start = self._count + len(frames) - len(window)
+        end = self._count + len(frames)
+        if self._win_count == 0:
+            self._single_bounds = (start, end)
+        self._win_count += 1
+        self._on_window(window, start, end)
+        self._prev = frames
+        self._count = end
+
+        pending = frames
+        while len(pending):
+            if self._seg_len >= self.max_seg_frames:
+                joined_seg = (
+                    self._seg_chunks[0] if len(self._seg_chunks) == 1 else self._np.concatenate(self._seg_chunks)
+                )
+                self._seg_flushes += 1
+                self._on_segment(joined_seg, self._seg_start, self._seg_start + len(joined_seg), False)
+                overlap = joined_seg[-min(self.win_frames, max(0, self.max_seg_frames - 1), len(joined_seg)) :]
+                self._seg_start = self._seg_start + len(joined_seg) - len(overlap)
+                self._seg_chunks = [overlap] if len(overlap) else []
+                self._seg_len = len(overlap)
+            space = self.max_seg_frames - self._seg_len
+            take = pending[:space]
+            self._seg_chunks.append(take)
+            self._seg_len += len(take)
+            pending = pending[space:]
+
+    def finish(self) -> None:
+        if self._seg_len > 0:
+            self._flush_segment()
+
+
+def _scan_audio_multi(
+    source: Path,
+    info: audio_io.AudioStreamInfo,
+    schemes: tuple[str, ...],
+) -> tuple[tuple[AudioDetection, ...], tuple[str, ...]]:
+    """Decode the audio stream once via ffmpeg and share resampled 16 kHz windows across active decoders."""
+    import numpy as np
+
+    if not schemes:
+        return (), ()
+    loaders = {
+        "audioseal": audioseal.load_pinned_detector,
+        "wavmark": wavmark.load_model,
+        "perth": perth.load_model,
+        "silentcipher": silentcipher.load_model,
+    }
+    models = {name: loaders[name]() for name in schemes}
+    channels: list[int | Literal["mix"]] = list(range(info.channels))
+    if info.channels > 1:
+        channels.append("mix")
+
+    one_sec_schemes = tuple(s for s in schemes if s != "silentcipher")
+    has_native_audioseal = "audioseal" in one_sec_schemes and info.sample_rate in _AUDIOSEAL_NATIVE_SAMPLE_RATES
+    has_openvoice = "wavmark" in one_sec_schemes
+    has_silentcipher = "silentcipher" in schemes
+
+    clock_keys: list[tuple[str, bool]] = [(s, False) for s in one_sec_schemes]
+    if has_native_audioseal:
+        clock_keys.append(("audioseal", True))
+
+    windows_1s: dict[tuple[str, bool], dict[int | Literal["mix"], list[AudioWindowReading]]] = {
+        ck: {ch: [] for ch in channels} for ck in clock_keys
+    }
+    segments_1s: dict[tuple[str, bool], dict[int | Literal["mix"], list[AudioWindowReading]]] = {
+        ck: {ch: [] for ch in channels} for ck in clock_keys
+    }
+    sc_windows: dict[int | Literal["mix"], list[AudioWindowReading]] = {ch: [] for ch in channels}
+    sc_segments: dict[int | Literal["mix"], list[AudioWindowReading]] = {ch: [] for ch in channels}
+
+    def _eval_1s(
+        target: dict[tuple[str, bool], dict[int | Literal["mix"], list[AudioWindowReading]]],
+        block: NDArray[Any],
+        start_f: int,
+        end_f: int,
+    ) -> None:
+        for ch in channels:
+            mono = block.mean(axis=1) if ch == "mix" else block[:, ch]
+            prep_16k = _model_samples(mono, info.sample_rate)
+            for s in one_sec_schemes:
+                r, err, inapp = _read_prepared_model(models[s], prep_16k, len(mono), info.sample_rate, s)
+                target[(s, False)][ch].append(AudioWindowReading(start_f, end_f, r, err, inapplicable=inapp))
+            if has_native_audioseal:
+                r, err, inapp = _read_prepared_model(
+                    models["audioseal"], mono, len(mono), info.sample_rate, "audioseal"
+                )
+                target[("audioseal", True)][ch].append(AudioWindowReading(start_f, end_f, r, err, inapplicable=inapp))
+
+    def _on_1s_segment(block: NDArray[Any] | None, start_f: int, end_f: int, reuse_single: bool) -> None:
+        if reuse_single or block is None:
+            for ck in clock_keys:
+                for ch in channels:
+                    segments_1s[ck][ch].append(windows_1s[ck][ch][0])
+            return
+        _eval_1s(segments_1s, block, start_f, end_f)
+
+    def _eval_sc(
+        target: dict[int | Literal["mix"], list[AudioWindowReading]],
+        block: NDArray[Any],
+        start_f: int,
+        end_f: int,
+    ) -> None:
+        for ch in channels:
+            mono = block.mean(axis=1) if ch == "mix" else block[:, ch]
+            r, err, inapp = _read_model(models["silentcipher"], mono, info.sample_rate, "silentcipher")
+            target[ch].append(AudioWindowReading(start_f, end_f, r, err, inapplicable=inapp))
+
+    def _on_sc_segment(block: NDArray[Any] | None, start_f: int, end_f: int, reuse_single: bool) -> None:
+        if reuse_single or block is None:
+            for ch in channels:
+                sc_segments[ch].append(sc_windows[ch][0])
+            return
+        _eval_sc(sc_segments, block, start_f, end_f)
+
+    win_frames_1s = info.sample_rate
+    acc_1s = (
+        _WindowSegmentAccumulator(
+            channels=info.channels,
+            win_frames=win_frames_1s,
+            max_seg_frames=min(
+                _MAX_WHOLE_SECONDS * info.sample_rate,
+                max(win_frames_1s, _MAX_WHOLE_VALUES // max(1, info.channels)),
+            ),
+            on_window=lambda w, s, e: _eval_1s(windows_1s, w, s, e),
+            on_segment=_on_1s_segment,
+        )
+        if clock_keys
+        else None
+    )
+
+    win_frames_sc = info.sample_rate * silentcipher.WINDOW_SECONDS
+    acc_sc = (
+        _WindowSegmentAccumulator(
+            channels=info.channels,
+            win_frames=win_frames_sc,
+            max_seg_frames=min(
+                _MAX_WHOLE_SECONDS * info.sample_rate,
+                max(win_frames_sc, _MAX_WHOLE_VALUES // max(1, info.channels)),
+            ),
+            on_window=lambda w, s, e: _eval_sc(sc_windows, w, s, e),
+            on_segment=_on_sc_segment,
+        )
+        if has_silentcipher
+        else None
+    )
+    sc_buf: list[NDArray[Any]] = []
+    sc_buf_len = 0
+
+    ov_parts: list[NDArray[Any]] = []
+    ov_len = 0
+
+    read_chunk = win_frames_sc if (acc_sc is not None and acc_1s is None and not has_openvoice) else win_frames_1s
+    for frames in audio_io.read_audio(source, info, chunk_frames=read_chunk):
+        if not np.isfinite(frames).all():
+            raise ValueError("Audio input contains nonfinite samples")
+        if has_openvoice and ov_len < wavmark.OPENVOICE_PREFIX_SAMPLES:
+            take_ov = frames[: wavmark.OPENVOICE_PREFIX_SAMPLES - ov_len]
+            ov_parts.append(take_ov)
+            ov_len += len(take_ov)
+
+        if acc_1s is not None:
+            acc_1s.feed(frames)
+
+        if acc_sc is not None:
+            if read_chunk == win_frames_sc:
+                acc_sc.feed(frames)
+            else:
+                rem_sc = frames
+                while len(rem_sc):
+                    take_n = min(len(rem_sc), win_frames_sc - sc_buf_len)
+                    sc_buf.append(rem_sc[:take_n])
+                    sc_buf_len += take_n
+                    rem_sc = rem_sc[take_n:]
+                    if sc_buf_len == win_frames_sc:
+                        acc_sc.feed(np.concatenate(sc_buf) if len(sc_buf) > 1 else sc_buf[0])
+                        sc_buf = []
+                        sc_buf_len = 0
+
+    if acc_1s is not None:
+        acc_1s.finish()
+
+    if acc_sc is not None:
+        if sc_buf_len > 0:
+            acc_sc.feed(np.concatenate(sc_buf) if len(sc_buf) > 1 else sc_buf[0])
+        acc_sc.finish()
+
+    all_detections: list[AudioDetection] = []
+    all_caveats: list[str] = []
+    for s in schemes:
+        if s == "silentcipher":
+            dets, notes = _finalize_scheme_detections(
+                "silentcipher",
+                native_audioseal=False,
+                info=info,
+                channels=channels,
+                windows=sc_windows,
+                segments=sc_segments,
+            )
+            all_detections.extend(dets)
+            all_caveats.extend(notes)
+            continue
+        dets, notes = _finalize_scheme_detections(
+            s,
+            native_audioseal=False,
+            info=info,
+            channels=channels,
+            windows=windows_1s[(s, False)],
+            segments=segments_1s[(s, False)],
+        )
+        if s == "audioseal" and has_native_audioseal:
+            nat_dets, nat_notes = _finalize_scheme_detections(
+                "audioseal",
+                native_audioseal=True,
+                info=info,
+                channels=channels,
+                windows=windows_1s[("audioseal", True)],
+                segments=segments_1s[("audioseal", True)],
+            )
+            dets = (*dets, *nat_dets)
+            notes = tuple(dict.fromkeys((*notes, *nat_notes)))
+        elif s == "wavmark":
+            ov_arr = (
+                np.concatenate(ov_parts)
+                if len(ov_parts) > 1
+                else (ov_parts[0] if ov_parts else np.empty((0, info.channels), dtype=np.float32))
+            )
+            sig_dets, sig_notes = _eval_openvoice_frames(models["wavmark"], ov_arr, info)
+            dets = (*dets, *sig_dets)
+            notes = (*notes, *sig_notes)
+        all_detections.extend(dets)
+        all_caveats.extend(notes)
+    return tuple(all_detections), tuple(all_caveats)
 
 
 def _audio_metadata_vendor(
@@ -654,8 +884,9 @@ def identify_audio(
             requested = _AUTO_SCHEMES
         else:
             requested = (scheme,)
-        found: list[AudioDetection] = []
         skipped_auto: list[str] = []
+        active_names: list[str] = []
+        by_scheme: dict[str, list[AudioDetection]] = {}
         for name in requested:
             if not availability[name]():
                 if scheme == "auto":
@@ -663,11 +894,20 @@ def identify_audio(
                 else:
                     caveats.append(f"{name} decoding is unavailable; install remove-ai-watermarks[{extras[name]}].")
                     if len(requested) > 1:
-                        found.append(AudioDetection(name, 0, "unverified", None, ()))
+                        by_scheme[name] = [AudioDetection(name, 0, "unverified", None, ())]
                 continue
-            checks, notes = _scan_audio(path, info, name)
-            found.extend(checks)
+            active_names.append(name)
+        if _scan_audio is _DEFAULT_SCAN_AUDIO:
+            checks, notes = _scan_audio_multi(path, info, tuple(active_names))
+            for det in checks:
+                by_scheme.setdefault(det.scheme, []).append(det)
             caveats.extend(notes)
+        else:
+            for name in active_names:
+                checks, notes = _scan_audio(path, info, name)
+                by_scheme[name] = list(checks)
+                caveats.extend(notes)
+        found = [det for name in requested for det in by_scheme.get(name, ())]
         if scheme == "auto":
             if len(skipped_auto) == len(requested):
                 caveats.append("audioseal decoding is unavailable; install remove-ai-watermarks[audio-detect].")
@@ -688,6 +928,22 @@ def identify_audio(
     status = _aggregate(detections)
     recipe = _recommend_audio_recipe(path, info=info, markers=markers, watermark_status=status)
     return AudioProvenanceReport(path, digest, info, markers, status, detections, tuple(caveats), recipe)
+
+
+def clear_audio_model_caches() -> None:
+    """Clear in-process caches of neural audio codecs and watermark detectors without running GC."""
+    for mod in (audio_dac, audio_snac, audio_codec, audioseal, wavmark, perth, silentcipher):
+        clear_fn = getattr(mod, "clear_model_cache", None)
+        if callable(clear_fn):
+            clear_fn()
+
+
+def release_audio_models() -> None:
+    """Release cached neural audio codecs and watermark detectors from CPU/GPU memory."""
+    from remove_ai_watermarks._internal.utils import empty_accelerator_cache
+
+    clear_audio_model_caches()
+    empty_accelerator_cache()
 
 
 def _missing_decoder_reason(report: AudioProvenanceReport) -> str | None:
@@ -907,6 +1163,7 @@ def remove_audio_invisible(
     preserve_hf_hz: float | None = None,
     max_duration_seconds: float | None = None,
     progress_callback: Callable[[str, float], None] | None = None,
+    low_memory: bool = False,
 ) -> AudioRemovalResult:
     """Process audio and publish only a fully checked negative by default.
 
@@ -943,74 +1200,82 @@ def remove_audio_invisible(
         raise ValueError("max_duration_seconds must be positive")
     if progress_callback is not None:
         progress_callback("identify", 0.1)
-    before = identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
-    if (
-        max_duration_seconds is not None
-        and before.stream.duration is not None
-        and float(before.stream.duration) > max_duration_seconds
-    ):
-        dur_s = float(before.stream.duration)
-        raise ValueError(f"Audio duration {dur_s:.2f}s exceeds max_duration_seconds={max_duration_seconds:.2f}s")
-    if method == "auto":
-        profiles = adaptive_auto_profiles(scheme, before, vendor=explicit_vendor)
-    if should_auto_scrub_audio(before, method=method, explicit_vendor=explicit_vendor):
-        eff_allow_unverified = True
-    eff_unverified = force or eff_allow_unverified
-    if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
-        if progress_callback is not None:
-            progress_callback("complete", 1.0)
-        profile = profiles[0]
-        return AudioRemovalResult(
-            before.source,
-            None,
-            0,
-            before,
-            None,
-            None,
-            True,
-            {},
-            method=profile,
-            bandwidth_kbps=bandwidth_kbps if profile in {"encodec", "combined"} else None,
-            vocoder_device=vocoder_device if profile != "spectral" else None,
-        )
-    if not verify or before.watermark_status != "detected" or (not eff_unverified and _missing_decoder_reason(before)):
-        profiles = profiles[:1]
-    last: AudioVerificationIncomplete | None = None
-    for index, profile in enumerate(profiles):
-        is_last = index == len(profiles) - 1
-        if progress_callback is not None:
-            progress_callback("resynthesize", 0.35 + 0.45 * (index / max(len(profiles), 1)))
-        try:
-            result = _remove_audio_profile(
-                source,
-                output,
-                force=force and is_last,
-                verify=verify,
-                stream=stream,
-                method=profile,
-                bandwidth_kbps=bandwidth_kbps,
-                scheme=scheme,
-                _before=before,
-                vocoder_device=vocoder_device,
-                allow_unverified=eff_allow_unverified and is_last,
-                allow_positive=allow_positive and is_last,
-                allow_quality_override=allow_quality_override and is_last,
-                preserve_hf_hz=preserve_hf_hz,
-            )
+    try:
+        before = identify_audio(source, check_invisible=verify, stream=stream, scheme=scheme)
+        if (
+            max_duration_seconds is not None
+            and before.stream.duration is not None
+            and float(before.stream.duration) > max_duration_seconds
+        ):
+            dur_s = float(before.stream.duration)
+            raise ValueError(f"Audio duration {dur_s:.2f}s exceeds max_duration_seconds={max_duration_seconds:.2f}s")
+        if method == "auto":
+            profiles = adaptive_auto_profiles(scheme, before, vendor=explicit_vendor)
+        if should_auto_scrub_audio(before, method=method, explicit_vendor=explicit_vendor):
+            eff_allow_unverified = True
+        eff_unverified = force or eff_allow_unverified
+        if not (eff_unverified or allow_positive) and before.watermark_status != "detected":
             if progress_callback is not None:
                 progress_callback("complete", 1.0)
-            return result
-        except AudioVerificationIncomplete as exc:
-            last = exc
-        except ImportError as exc:
-            if last is not None:
-                raise AudioVerificationIncomplete(
-                    last.before, last.after, f"Automatic fallback unavailable: {exc}"
-                ) from exc
-            raise
-    if last is None:
-        raise RuntimeError("No audio processing profile was attempted")
-    raise last
+            profile = profiles[0]
+            return AudioRemovalResult(
+                before.source,
+                None,
+                0,
+                before,
+                None,
+                None,
+                True,
+                {},
+                method=profile,
+                bandwidth_kbps=bandwidth_kbps if profile in {"encodec", "combined"} else None,
+                vocoder_device=vocoder_device if profile != "spectral" else None,
+            )
+        if (
+            not verify
+            or before.watermark_status != "detected"
+            or (not eff_unverified and _missing_decoder_reason(before))
+        ):
+            profiles = profiles[:1]
+        last: AudioVerificationIncomplete | None = None
+        for index, profile in enumerate(profiles):
+            is_last = index == len(profiles) - 1
+            if progress_callback is not None:
+                progress_callback("resynthesize", 0.35 + 0.45 * (index / max(len(profiles), 1)))
+            try:
+                result = _remove_audio_profile(
+                    source,
+                    output,
+                    force=force and is_last,
+                    verify=verify,
+                    stream=stream,
+                    method=profile,
+                    bandwidth_kbps=bandwidth_kbps,
+                    scheme=scheme,
+                    _before=before,
+                    vocoder_device=vocoder_device,
+                    allow_unverified=eff_allow_unverified and is_last,
+                    allow_positive=allow_positive and is_last,
+                    allow_quality_override=allow_quality_override and is_last,
+                    preserve_hf_hz=preserve_hf_hz,
+                )
+                if progress_callback is not None:
+                    progress_callback("complete", 1.0)
+                return result
+            except AudioVerificationIncomplete as exc:
+                last = exc
+            except ImportError as exc:
+                if last is not None:
+                    raise AudioVerificationIncomplete(
+                        last.before, last.after, f"Automatic fallback unavailable: {exc}"
+                    ) from exc
+                raise
+        if last is None:
+            raise RuntimeError("No audio processing profile was attempted")
+        raise last
+    finally:
+        if low_memory:
+            release_audio_models()
 
 
 def _remove_audio_profile(
@@ -1524,6 +1789,7 @@ def remove_audio_all(
     allow_quality_override: bool = False,
     vendor: AudioVendor | None = None,
     preserve_hf_hz: float | None = None,
+    low_memory: bool = False,
 ) -> AudioAllResult:
     """Remove AI metadata and optionally process compatible invisible audio watermarks.
 
@@ -1587,6 +1853,7 @@ def remove_audio_all(
         allow_quality_override=allow_quality_override,
         vendor=vendor,
         preserve_hf_hz=preserve_hf_hz,
+        low_memory=low_memory,
     )
     detected_metadata = dict(inv_res.before.metadata_markers)
     if not inv_res.skipped and inv_res.output is not None:
@@ -1644,6 +1911,7 @@ def remove_audio_batch(
     allow_positive: bool = False,
     allow_quality_override: bool = False,
     vendor: AudioVendor | None = None,
+    low_memory: bool = False,
 ) -> AudioBatchSummary:
     """Process every supported audio file in one directory sequentially."""
     directory_path = Path(directory).expanduser()
@@ -1709,6 +1977,7 @@ def remove_audio_batch(
                     allow_positive=allow_positive,
                     allow_quality_override=allow_quality_override,
                     vendor=vendor,
+                    low_memory=low_memory,
                 )
                 if all_res.remaining_metadata:
                     raise RuntimeError(

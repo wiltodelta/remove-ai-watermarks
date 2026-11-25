@@ -205,7 +205,7 @@ Regression coverage:
 
 ## Audio
 
-[`audio.py`](../src/remove_ai_watermarks/audio.py) exposes `identify_audio`, `inspect_audio_metadata`, `remove_audio_metadata`, `remove_audio_invisible`, `remove_audio_all`, and `remove_audio_batch`. Inspection binds reports to a source hash, checks each
+[`audio.py`](../src/remove_ai_watermarks/audio.py) exposes `identify_audio`, `inspect_audio_metadata`, `remove_audio_metadata`, `remove_audio_invisible`, `remove_audio_all`, `remove_audio_batch`, and `release_audio_models` (with `low_memory=True` on the removal and batch entry points). Inspection binds reports to a source hash, decodes multi-scheme inspections (`scheme="auto"` or `"all"`) through a single `ffmpeg` stream (`_scan_audio_multi`) that shares 16 kHz polyphase resampling across `AudioSeal`, `WavMark`, and `Perth` alongside native-clock `AudioSeal`, `OpenVoice` prefix slices, and 3-second `SilentCipher` windows, checks each
 channel and a multichannel downmix with whole-clip (`<= 30 s` bounded
 `whole_segments` passes on tracks exceeding 30 seconds) and sliding-window reads,
 attaches install hints when explicitly requested optional decoders are missing (`scheme="auto"` scans only installed compatible decoders and leaves status `unverified` only when zero decoders are installed), and keeps
@@ -621,7 +621,7 @@ transfer (`_HDR_TRANSFERS`) that cannot be represented in
 Seedance profile remains 8-bit SDR only), so no path silently reduces HDR to SDR
 8-bit.
 `probe_video_timestamps` reads authoritative per-frame display PTS through
-ffprobe. The CSV reader consumes the first column and ignores appended SEI
+ffprobe, querying packet PTS (`-show_packets -show_entries packet=pts_time,flags`, sorted into display order) first and falling back to `-show_frames` (`frame=best_effort_timestamp_time`) when packets carry edit-list discard flags (`D`), missing PTS, or duplicate timestamps. `write_raw_frame_bytes` streams contiguous `memoryview` byte slices into raw `ffmpeg` stdin pipes without allocating intermediate `.tobytes()` copies. The CSV reader consumes the first column and ignores appended SEI
 side-data columns; otherwise a valid first row such as `0.000000,` invalidates
 the entire authoritative timeline. Decoder timestamps are only a count-matched fallback when ffprobe is
 unavailable or fails; this avoids decoder anomalies such as one spurious
@@ -867,9 +867,7 @@ top-left badge) and calibrated independently. A strong relocated Veo
 diamond may bypass the known layout anchors, but weak free-corner matches never
 enter the temporal arbiter.
 
-The default `auto` route decodes each frame once, shares its grayscale and
-normalized representations across all detectors, and caches resized synthetic
-template features for the fixed stream geometry. Provider confidence scales
+The default `auto` route filters out provenance-contradicted marks up front (`_non_contradicted_marks`, falling back to zero-detector `probe_empty_video_scan` when all marks are contradicted), scopes OpenCV to a single worker thread (`cv2.setNumThreads(1)`) inside `_scan_video_detectors`, runs a two-stage stride-4 coarse-to-fine temporal scan (`_should_promote_coarse_mark` promotes stationary marks only when spatially overlapping coarse candidates support a 12-frame run), shares per-frame grayscale, normalized grayscale, and `MORPH_TOPHAT` ROI maps (`prepared.feature_cache`) across all detectors, and uses 2x spatial pyramid peak refinement (`_refine_pyramid_peaks`, `_resized_template_half_feature`) in full-frame `detect_sora_frame` while keeping `_match_template` full-resolution so low-threshold corner ROIs still observe drifting texture peaks outside `±6 px`. Provider confidence scales
 are not comparable: selection applies each provider's temporal arbiter and
 takes the first stable result in specificity order (`VIDEO_VISIBLE_MARKS`:
 `sora`, `veo`, `dreamina`, `jimeng`, `jimeng_pill`, `seedance`, `doubao`, `dola`,

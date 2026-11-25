@@ -1470,6 +1470,11 @@ def cmd_audio_metadata(
 @click.option(
     "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
 )
+@click.option(
+    "--low-memory",
+    is_flag=True,
+    help="Evict cached neural audio models and empty GPU/MPS caches after processing.",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit the result as JSON.")
 def cmd_audio_invisible(
     source: Path,
@@ -1480,6 +1485,7 @@ def cmd_audio_invisible(
     allow_quality_override: bool,
     verify: bool,
     stream: int,
+    low_memory: bool,
     as_json: bool,
     method: AudioMethod,
     bandwidth: str,
@@ -1494,6 +1500,7 @@ def cmd_audio_invisible(
 
     target = output if output is not None else source.with_name(f"{source.stem}_processed.wav")
     try:
+        inv_extra: dict[str, Any] = {"low_memory": True} if low_memory else {}
         result = remove_audio_invisible(
             source,
             target,
@@ -1508,6 +1515,7 @@ def cmd_audio_invisible(
             vocoder_device=vocoder_device,
             vendor=vendor,
             scheme=scheme,
+            **inv_extra,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as exc:
         _verification_error(exc, as_json=as_json)
@@ -1577,6 +1585,11 @@ def cmd_audio_invisible(
     "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
 )
 @click.option("--keep-standard/--remove-all", default=True, help="Keep standard metadata.")
+@click.option(
+    "--low-memory",
+    is_flag=True,
+    help="Evict cached neural audio models and empty GPU/MPS caches after processing.",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit the result as JSON.")
 def cmd_audio_all(
     source: Path,
@@ -1589,6 +1602,7 @@ def cmd_audio_all(
     verify: bool,
     stream: int,
     keep_standard: bool,
+    low_memory: bool,
     as_json: bool,
     method: AudioMethod,
     bandwidth: str,
@@ -1601,6 +1615,7 @@ def cmd_audio_all(
     from remove_ai_watermarks.audio import remove_audio_all
 
     try:
+        all_extra: dict[str, Any] = {"low_memory": True} if low_memory else {}
         result = remove_audio_all(
             source,
             output,
@@ -1617,6 +1632,7 @@ def cmd_audio_all(
             vocoder_device=vocoder_device,
             vendor=vendor,
             keep_standard=keep_standard,
+            **all_extra,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as exc:
         _verification_error(exc, as_json=as_json)
@@ -1672,6 +1688,11 @@ def cmd_audio_all(
     help="Check selected compatible models before and after when --invisible is set.",
 )
 @click.option("--keep-standard/--remove-all", default=True, help="Keep standard metadata.")
+@click.option(
+    "--low-memory",
+    is_flag=True,
+    help="Evict cached neural audio models and empty GPU/MPS caches after each file.",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit the batch summary as JSON.")
 def cmd_audio_batch(
     directory: Path,
@@ -1684,6 +1705,7 @@ def cmd_audio_batch(
     allow_quality_override: bool,
     verify: bool,
     keep_standard: bool,
+    low_memory: bool,
     as_json: bool,
     method: AudioMethod,
     bandwidth: str,
@@ -1697,6 +1719,7 @@ def cmd_audio_batch(
     from remove_ai_watermarks.audio import remove_audio_batch
 
     try:
+        batch_extra: dict[str, Any] = {"low_memory": True} if low_memory else {}
         result = remove_audio_batch(
             directory,
             output_dir,
@@ -1713,6 +1736,7 @@ def cmd_audio_batch(
             vocoder_device=vocoder_device,
             vendor=vendor,
             keep_standard=keep_standard,
+            **batch_extra,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as exc:
         _verification_error(exc, as_json=as_json)
@@ -1767,6 +1791,11 @@ def _video_visible_options(f: Any) -> Any:
 
 def _video_invisible_options(f: Any) -> Any:
     """Apply the shared invisible-video removal options."""
+    f = click.option(
+        "--low-memory",
+        is_flag=True,
+        help="Evict cached neural models and empty GPU/MPS caches between stages and files.",
+    )(f)
     f = click.option(
         "--wan-steps",
         type=click.IntRange(min=1, max=50),
@@ -2373,10 +2402,11 @@ def cmd_video_invisible(
     temporal_stabilize: bool,
     native_guide: bool,
     wan_steps: int | None,
-    batch_size: int,
-    seed: int,
-    device: str,
-    as_json: bool,
+    low_memory: bool = False,
+    batch_size: int = 4,
+    seed: int = 0,
+    device: str = "auto",
+    as_json: bool = False,
 ) -> None:
     """Regenerate video pixels with an explicitly selected profile."""
 
@@ -2387,6 +2417,7 @@ def cmd_video_invisible(
         _banner()
         console.print(f"  Regenerating {source.name} with the {profile} profile...")
     try:
+        inv_extra: dict[str, Any] = {"low_memory": True} if low_memory else {}
         result = remove_video_invisible(
             source,
             output,
@@ -2401,6 +2432,7 @@ def cmd_video_invisible(
             temporal_stabilize=temporal_stabilize,
             native_guide=native_guide,
             wan_steps=wan_steps,
+            **inv_extra,
         )
     except (OSError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -2584,6 +2616,7 @@ def cmd_video_all(
     temporal_stabilize: bool,
     native_guide: bool = False,
     wan_steps: int | None = None,
+    low_memory: bool = False,
     batch_size: int = 4,
     seed: int = 0,
     device: str = "auto",
@@ -2618,6 +2651,8 @@ def cmd_video_all(
         all_extra: dict[str, Any] = {}
         if trim_bumper:
             all_extra["trim_bumper"] = trim_bumper
+        if low_memory:
+            all_extra["low_memory"] = True
         result = remove_video_all(
             source,
             output,
@@ -2725,6 +2760,7 @@ def cmd_video_batch(
     temporal_stabilize: bool,
     native_guide: bool = False,
     wan_steps: int | None = None,
+    low_memory: bool = False,
     batch_size: int = 4,
     seed: int = 0,
     device: str = "auto",
@@ -2749,6 +2785,7 @@ def cmd_video_batch(
         _banner()
         console.print(f"  Processing video directory {directory} in {mode} mode...")
     try:
+        batch_extra: dict[str, Any] = {"low_memory": True} if low_memory else {}
         result = remove_video_batch(
             directory,
             output_dir,
@@ -2777,6 +2814,7 @@ def cmd_video_batch(
             audio_allow_quality_override=audio_allow_quality_override,
             audio_vendor=audio_vendor,
             audio_streams=audio_streams or None,
+            **batch_extra,
         )
     except (OSError, ImportError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
