@@ -287,10 +287,6 @@ def test_seedance_reconstruct_opens_single_source_decoder(
             source_opens += 1
         return orig_frames(path, *args, **kwargs)
 
-    class _FakeLatent:
-        shape = (1, 4, 8, 8)
-        dtype = None
-
     class _FakeRuntime:
         model = "stabilityai/sd-vae-ft-mse"
         requested_device = "cpu"
@@ -298,9 +294,8 @@ def test_seedance_reconstruct_opens_single_source_decoder(
         vae = object()
         scaling_factor = 0.18215
 
-    import torch
-
-    _FakeLatent.dtype = torch.float32
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(video_seedance, "is_available", lambda: True)
     monkeypatch.setattr(video_seedance, "_frames", counting_frames)
     monkeypatch.setattr(
         video_seedance,
