@@ -1,7 +1,7 @@
 """Generated C2PA soft-binding registry; do not edit by hand.
 
 Source: https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json
-Revision: 529093be86d6b6dad6f0fb912a138740f2b5d2b4
+Revision: fefec931eecc7ecb5e18403c987838f5e64bde2b
 Source license: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
 Changes: validated, ordered, and reduced to fields used at runtime; descriptions
 are shortened to their first sentence for display.
@@ -12,7 +12,7 @@ from __future__ import annotations
 C2PA_SOFT_BINDING_SOURCE_URL = (
     "https://raw.githubusercontent.com/c2pa-org/softbinding-algorithm-list/main/softbinding-algorithm-list.json"
 )
-C2PA_SOFT_BINDING_SOURCE_REVISION = "529093be86d6b6dad6f0fb912a138740f2b5d2b4"
+C2PA_SOFT_BINDING_SOURCE_REVISION = "fefec931eecc7ecb5e18403c987838f5e64bde2b"
 C2PA_SOFT_BINDING_SOURCE_LICENSE = "CC BY 4.0"
 
 C2PA_SOFT_BINDING_ROWS: tuple[
@@ -526,10 +526,10 @@ C2PA_SOFT_BINDING_ROWS: tuple[
         "watermark",
         ("image",),
         (),
-        "BlockFact invisible image watermarking for provenance",
+        "Deprecated",
         "2026-07-10T16:00:00.000Z",
         ("https://api.blockfact.io/api/soft-binding/v1",),
-        False,
+        True,
     ),
     (
         46,
@@ -966,6 +966,17 @@ C2PA_SOFT_BINDING_ROWS: tuple[
         "castLabs forensic watermarking session-v1 variant for video manifest recovery",
         "2026-11-10T00:00:00.000Z",
         (),
+        False,
+    ),
+    (
+        81,
+        "io.blockfact.image.watermark.32",
+        "watermark",
+        ("image",),
+        (),
+        "BlockFact invisible image watermark for provenance recovery",
+        "2026-11-18T00:00:00.000Z",
+        ("https://api.blockfact.io/api/soft-binding/v1",),
         False,
     ),
 )

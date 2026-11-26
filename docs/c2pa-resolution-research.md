@@ -32,13 +32,14 @@ endpoint contract or supply a compatible waveform/pixel decoder.
 | `com.ottxp.koltheia.photonote.1` | fingerprint | `koltheia.ottxp.com/api/softbinding/v1` | request contract unverified | ? | ? |
 | `com.art-koffee.phash.1` | fingerprint | `www.art-koffee.com/c2pa/v1` | request contract unverified | ? | ? |
 
-The Etchv, KolTheia, and ArtKoffee endpoints are declared in the [packaged upstream registry revision](https://github.com/c2pa-org/softbinding-algorithm-list/blob/529093be86d6b6dad6f0fb912a138740f2b5d2b4/softbinding-algorithm-list.json).
-This refresh records their URLs; the providers' request and privacy contracts have not
+The Etchv, KolTheia, and ArtKoffee endpoints are declared in the [upstream registry revision that introduced them](https://github.com/c2pa-org/softbinding-algorithm-list/blob/529093be86d6b6dad6f0fb912a138740f2b5d2b4/softbinding-algorithm-list.json).
+The registry records their URLs; the providers' request and privacy contracts have not
 been verified. The library does not call them.
 
-The registry preserves `io.blockfact.audio.watermark.32` as its exact name,
-while its decoded-media declaration is image-only. The identifier does not
-establish audio or video compatibility.
+The current registry deprecates `io.blockfact.audio.watermark.32` and adds
+`io.blockfact.image.watermark.32` with the same declared resolution endpoint.
+Both entries declare images. The historical identifier remains in the snapshot
+so existing manifests can still be identified by their exact algorithm names.
 
 Sources, verified 2026-09-07 against the vendors' own pages: the Monolith
 soft-binding documentation (lookup endpoints public by design, "a verifier is

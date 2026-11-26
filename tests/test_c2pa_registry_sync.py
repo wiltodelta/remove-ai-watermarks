@@ -99,6 +99,7 @@ def test_packaged_snapshot_preserves_published_resolution_apis():
         "com.aiwatermark.audioseal.1": ("https://aiwatermark.com/api/v1",),
         "me.deepmark.audio.vigil.128": ("https://resolution-api.deepmark.me",),
         "io.blockfact.audio.watermark.32": ("https://api.blockfact.io/api/soft-binding/v1",),
+        "io.blockfact.image.watermark.32": ("https://api.blockfact.io/api/soft-binding/v1",),
         "com.joinmonolith.sha256": ("https://api.joinmonolith.com/api/c2pa",),
         "studio.aidr.silentcipher.1": ("https://aidr.studio/api/c2pa/v1",),
         "com.etchv.watermark.1": ("https://api.etchv.com/c2pa/v1",),
