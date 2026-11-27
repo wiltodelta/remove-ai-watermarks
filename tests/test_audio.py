@@ -903,6 +903,9 @@ def test_identify_audio_recommended_recipe_and_cli_rendering(tmp_path, monkeypat
     monkeypatch.setattr(audio.audioseal, "is_available", lambda: True)
     monkeypatch.setattr(audio.audioseal, "load_pinned_detector", object)
     monkeypatch.setattr(audio.audioseal, "read", lambda _m, _s: audio.audioseal.AudioSealReading(0.0, 0.0, (0,) * 16))
+    monkeypatch.setattr(audio.wavmark, "is_available", lambda: False)
+    monkeypatch.setattr(audio.perth, "is_available", lambda: False)
+    monkeypatch.setattr(audio.silentcipher, "is_available", lambda: False)
 
     # 1. Completely unmarked audio -> recommended_recipe is None
     monkeypatch.setattr(audio.metadata, "get_ai_metadata", lambda _p: {})

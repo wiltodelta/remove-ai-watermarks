@@ -70,18 +70,17 @@ when an optional backend is absent.
 | `remove` | `metadata --remove`, `visible` or `all` for an image; `video metadata --remove`, `video visible` or `video all` for a video; `audio metadata --remove` or `audio all --invisible` for audio; `text metadata --remove` or `text all` for text (or top-level `all --preset` when `preset` is set) | One output file, `<name>_clean` beside the source unless `output` is given |
 | `batch` | `batch --mode` for images or mixed directories (`media: "all"`), with optional `--preset`; `video batch --mode` for video (`media: "video"`); or `audio batch --mode` for audio (`media: "audio"`) | A separate output directory, `<dir>_clean` unless `output_dir` is given |
 | `audio_identify` | `audio identify --json`; `check_invisible: false` skips models | Nothing |
-| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `vendor`, `allow_unverified`, `allow_positive`, `allow_quality_override`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka`, `<name>_processed.wav` by default |
+| `audio_invisible` | `audio invisible --json`, with explicit `stream`, `vendor`, `allow_unverified`, `force`, and `verify` options | `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka`, `<name>_processed.wav` by default |
 | `video_message_identify` | `video message identify --json`, required `reference`, optional `scheme` | Nothing |
 | `video_message_remove` | `video message remove --json`, same reference and scheme, profile and verification options | MP4, MOV, or M4V, `<name>_message_processed.mp4` by default |
-| `video_audio` | `video audio --json`, with the same audio options plus `all_streams` | MKV/MOV with PCM or MP4 with AAC, `<name>_audio_processed.mkv` by default |
+| `video_audio` | `video audio --json`, with optional `stream` (omitted cleans all watermarked tracks) and the same audio options | MKV/MOV with PCM or MP4 with AAC, `<name>_audio_processed.mkv` by default |
 
-Audio tools ship since 0.63.0. `stream` is a nonnegative audio-track ordinal (`video_audio` also accepts `all_streams: true` to inspect all tracks and clean every detected watermarked track while stream-copying unmarked tracks).
+Audio tools ship since 0.63.0. `stream` is a nonnegative audio-track ordinal (`video_audio` inspects all tracks and cleans every detected watermarked track while stream-copying unmarked tracks when `stream` is omitted, or targets one track when `stream` is set).
 `audio_invisible` and `video_audio` accept `method: "auto"` (default), `"spectral"`, `"encodec"`,
-or `"combined"`, and integer
-`bandwidth` (`6`, `12`, or `24`, default `24`) for the optional codec backend.
-`audio_invisible` requires `audio-detect` for default source-positive and
-saved-output-negative verification. A `vendor` other than `"auto"` (`google`, `elevenlabs`, `suno`, `udio`, `openai`, `cartesia`, `meta`, `resemble`, `microsoft`) names a known source cohort for stripped files, selects a vendor-matched profile sequence, and implies `allow_unverified`. `allow_unverified: true` (for example with `method: "dac"`, or alongside `verify: false`) permits unverified processing with the `audio` extra while keeping the audio SNR/RMS/window integrity gate active (`force: true` remains an alias enabling `allow_unverified`, `allow_positive`, and `allow_quality_override`). Audio tools require ffmpeg and
-ffprobe. `scheme: "audioseal"` (default), `"auto"` (scans installed non-experimental decoders `audioseal`, `wavmark`, `perth` without failing on missing optional extras), `"wavmark"`, `"perth"`, `"silentcipher"`, or `"all"` selects
+`"combined"`, `"dac"`, or `"snac"`.
+`audio_invisible` requires a compatible decoder extra such as `audio-detect` for default source-positive and
+saved-output-negative verification. A `vendor` other than `"auto"` (`google`, `elevenlabs`, `suno`, `udio`, `openai`, `cartesia`, `meta`, `resemble`, `microsoft`) names a known source cohort for stripped files, selects a vendor-matched profile sequence, and implies `allow_unverified`. `allow_unverified: true` (for example with `method: "dac"`, or alongside `verify: false`) permits unverified processing with the `audio` extra while keeping the audio SNR/RMS/window integrity gate active (`force: true` also overrides final decoder and quality checks). Audio tools require ffmpeg and
+ffprobe. `scheme: "auto"` (default; scans installed non-experimental decoders `audioseal`, `wavmark`, `perth` without failing on missing optional extras), `"audioseal"`, `"wavmark"`, `"perth"`, `"silentcipher"`, or `"all"` selects
 compatible public-model checks. WavMark needs `audio-wavmark`, Perth v1 needs `audio-perth`, and SilentCipher-44k needs
 `audio-silentcipher`; `all` needs every decoder extra. Auto tries spectral then combined for AudioSeal and Perth v1, neural then
 combined for WavMark and SilentCipher-44k, and combined for `all`. Neural profiles need `audio-codec`.

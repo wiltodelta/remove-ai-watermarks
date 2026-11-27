@@ -277,16 +277,36 @@ COMMANDS = ROOT / "skills" / "remove-ai-watermarks" / "references" / "commands.m
 INSTALL = ROOT / "skills" / "remove-ai-watermarks" / "references" / "install.md"
 PYPROJECT = ROOT / "pyproject.toml"
 
-_PINNED_ABSENT_FLAGS = ("--model", "--steps", "--guidance-scale")
+_PINNED_ABSENT_FLAGS = (
+    "--model",
+    "--steps",
+    "--guidance-scale",
+    "--native-guide",
+    "--keep-fps",
+    "--wan-steps",
+    "--no-temporal-stabilize",
+    "--fidelity-anchor",
+    "--text-manifest",
+    "--allow-positive",
+    "--allow-quality-override",
+    "--audio-allow-positive",
+    "--audio-allow-quality-override",
+    "--bandwidth",
+    "--all-streams",
+    "--target-stream",
+    "--inpaint-method",
+    "--humanize",
+    "--unsharp",
+)
 
 
-def _cli_commands() -> dict[tuple[str, ...], object]:
+def _cli_commands() -> dict[tuple[str, ...], Any]:
     """Every leaf command of the installed CLI, keyed by its invocation path."""
     import click
 
     from remove_ai_watermarks.cli import main
 
-    found: dict[tuple[str, ...], object] = {}
+    found: dict[tuple[str, ...], Any] = {}
 
     def walk(group: click.Group, path: tuple[str, ...] = ()) -> None:
         for name, command in group.commands.items():
@@ -301,7 +321,7 @@ def _cli_commands() -> dict[tuple[str, ...], object]:
 
 
 def _long_options(command: object) -> set[str]:
-    return {opt for param in command.params for opt in param.opts if opt.startswith("--")}
+    return {opt for param in command.params for opt in (*param.opts, *param.secondary_opts) if opt.startswith("--")}
 
 
 def _choices(command: object, option: str) -> set[str]:

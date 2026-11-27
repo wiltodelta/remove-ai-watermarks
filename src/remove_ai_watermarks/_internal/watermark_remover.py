@@ -16,7 +16,6 @@ from remove_ai_watermarks._internal.watermark_profiles import (
     INVISIBLE_EXTRA,
     PROFILE_CHOICES,
     QWEN21_ZIMAGE_PROFILE,
-    QWEN_ZIMAGE_PROFILE,
     REMOVAL_MODULES,
     SDXL_ZIMAGE_PROFILE,
     fidelity_skip_reason,
@@ -267,7 +266,6 @@ class WatermarkRemover:
         tile_size: int = 1024,
         tile_overlap: int = 128,
         text_manifest: VerifiedTextManifest | None = None,
-        fidelity_anchor: bool = False,
     ) -> Path:
         """Regenerate image pixels and write the result without AI metadata.
 
@@ -291,8 +289,6 @@ class WatermarkRemover:
             self._qwen_zimage_pipeline = None
         if text_manifest is not None and tile:
             raise ValueError("Verified text restoration is not calibrated with tiled diffusion")
-        if fidelity_anchor and self.model_profile != QWEN_ZIMAGE_PROFILE:
-            raise ValueError("The fidelity anchor is supported only by the qwen-zimage profile")
         fidelity_enabled = (
             self.model_profile == QWEN21_ZIMAGE_PROFILE
             and fidelity_skip_reason(
@@ -317,7 +313,6 @@ class WatermarkRemover:
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             text_manifest=text_manifest,
-            fidelity_anchor=fidelity_anchor,
         )
         self._write_output(result, destination, display_tags_from=image_path)
         return destination

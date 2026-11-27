@@ -369,4 +369,36 @@ In Wave 13 (2026-11-24, `v0.75.0`):
     diffs (`94.92 MiB -> 47.52 MiB` at `1080p`) in `video_seedance`, and zero-copy `memoryview` pipe
     writes (`write_raw_frame_bytes`: `6075.1 KiB -> 0.63 KiB` peak Python allocation per `1080p` frame).
 
+In Wave 14 (2026-11-26, `v0.76.0`):
+- **Live Google Gemini SynthID oracle certification of native-resolution + native-FPS guided 2D `synthid`**
+  (`gemini.google.com/u/1/app/78a7b2439b97f3e1` & `/u/1/app/279dc48d99564bf2`):
+  - `gemini_omni_flash_synthid_2d_native.mp4` (`sha256:701d93cc378ffba1ef4ede332289b5516b96420d1578b5cc4ccdbc80f0f6e898`,
+    derived from silent video stream of `data/fixtures/provenance/google-gemini-omni-flash-api.mp4`,
+    `1280x720 @ 24.0 fps`, `240` frames, `vae=stabilityai/sd-vae-ft-mse`, `noise_std=0.15`, `long_side=512`,
+    `psnr_db=28.8728`, `temporal_residual_ratio=1.2936`): **`not_detected`**
+    (`"This video does not show signs of being made with Google AI... No reliable signals were detected indicating how the content was created"`).
+  - `veo_3_1_lite_synthid_2d_native.mp4` (`sha256:81c40d5f31ddba379e8bdcadcfc818e42ee2df42023e0e79e6f373a5139c15d8`,
+    derived from silent video stream of `data/fixtures/provenance/higgsfield-veo-3-1-lite.mp4`,
+    `1280x720 @ 24.0 fps`, `192` frames, `vae=stabilityai/sd-vae-ft-mse`, `noise_std=0.15`, `long_side=512`,
+    `psnr_db=24.9739`, `temporal_residual_ratio=1.4836`): **`not_detected`**
+    (`"The video does not show signs of being made with Google AI... No reliable signals were detected indicating how the content was created"`).
+  - Recorded both rows in `data/evaluations/video-synthid-oracle.csv`, promoted native resolution + native FPS
+    (`DEFAULT_VIDEO_SYNTHID_FPS = None`) to the standard `synthid` default, updated
+    `test_shipped_defaults_match_a_certified_manifest_row` to bind `(vae, noise_std, long_side, fps)` to the manifest,
+    and removed the `--native-guide` / `--keep-fps` workaround flags.
+- **CLI surface cleanup & default unification across image, video, audio, and MCP**:
+  - Retired 19 redundant, workaround, or oracle-uncertified CLI flags (`--native-guide`, `--keep-fps`, `--wan-steps`,
+    `--fidelity-anchor`/`--no-fidelity-anchor`, `--text-manifest`, `--long-side` and `--no-temporal-stabilize` on
+    `video invisible|all|batch`, `--allow-positive`, `--allow-quality-override`, `--audio-allow-positive`,
+    `--audio-allow-quality-override`, `--bandwidth`, `--all-streams`, `--target-stream`, `--inpaint-method`,
+    `--humanize`, `--unsharp`), collapsed `video audio` track selection onto repeatable `--stream`, and unified
+    `--backend auto`, `--scheme auto` / `--audio-scheme auto`, and `batch --mode all` across the CLI.
+- **Visible video detector hardening (`detect_veo_frame` & `hailuo`)**:
+  - Added `_VEO_TRANSITION_CONFIDENCE = 0.35` gate in `detect_veo_frame` so sub-transition background noise returns
+    `FrameLocalization(frame_index, 0.0, None)` instead of uncalibrated candidate boxes.
+  - Tightened `VISIBLE_MARK_POLICIES["hailuo"].anchor_iou` from `0.80` to `0.99` to reject `6 px` horizontal
+    scene-texture drift on wide `272x32` boxes (clearing the `192/192` post-C2PA-strip `hailuo` false positive on
+    `veo/provider-original.mp4` and `240/240` on clean ceramic-jar video `41b3e3bf...` while preserving `90/90` on
+    `hailuo/example.mp4` and `124/124` on `hailuo/provider-original.mp4` including `720p`/`480p` CRF 28 re-encodes).
+
 

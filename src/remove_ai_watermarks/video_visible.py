@@ -90,6 +90,7 @@ _SORA_PROVENANCE_WEAK_CONFIDENCE = 0.58
 _SORA_STRICT_WEAK_CONFIDENCE = 0.60
 _SORA_STRONG_CONFIDENCE = 0.65
 _SORA_ICON_SHAPE_FLOOR = 0.50
+_VEO_TRANSITION_CONFIDENCE = 0.35
 _VEO_PROVENANCE_WEAK_CONFIDENCE = 0.45
 _VEO_STRICT_WEAK_CONFIDENCE = 0.50
 _VEO_STRONG_CONFIDENCE = 0.55
@@ -1945,6 +1946,8 @@ def detect_veo_frame(
             best_confidence = confidence
             best_region = candidate
 
+    if best_confidence < _VEO_TRANSITION_CONFIDENCE:
+        return FrameLocalization(frame_index, 0.0, None)
     return FrameLocalization(frame_index, best_confidence, best_region)
 
 
@@ -2011,7 +2014,7 @@ VISIBLE_MARK_POLICIES: dict[str, VisibleMarkPolicy] = {
         weak_floor=_VEO_STRICT_WEAK_CONFIDENCE,
         provenance_weak_floor=_VEO_PROVENANCE_WEAK_CONFIDENCE,
         strong_floor=_VEO_STRONG_CONFIDENCE,
-        transition_floor=0.35,
+        transition_floor=_VEO_TRANSITION_CONFIDENCE,
         min_stable_frames=_MIN_VEO_STABLE_FRAMES,
         cover_after_confirmation=True,
         padding_fraction=0.18,
@@ -2072,7 +2075,14 @@ VISIBLE_MARK_POLICIES: dict[str, VisibleMarkPolicy] = {
         transition_floor=0.28,
         min_stable_frames=_MIN_FIXED_MARK_STABLE_FRAMES,
         cover_after_confirmation=True,
-        anchor_iou=0.80,
+        # Hailuo's wide composite box (~9:1 aspect, e.g. 272x32 at 720p) gives
+        # 6 px of horizontal scene-texture drift an IoU of 0.96 with the run
+        # anchor, which caused metadata-stripped Veo Flow exports and clean jar
+        # product shots to chain into 192-240 frame false runs at 0.80-0.95
+        # (2026-11-26). Real and 720p/480p CRF 28 re-encoded Hailuo overlays stay
+        # pixel-locked across runs, so 0.99 rejects drifting scene texture while
+        # preserving all 124/124 provider-original and 90/90 synthetic frames.
+        anchor_iou=0.99,
         padding_fraction=0.12,
         mask_style="box",
         # No provenance_weak_floor: the measured weak floor stays the entry bar;

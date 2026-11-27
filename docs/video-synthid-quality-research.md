@@ -409,7 +409,11 @@ ship uncertified, and the risk direction is unfavorable. Port the VFR/PTS bridge
 `video_visible.py`): at native frame rate the output stops reading as a proxy, and
 silent CFR-ification becomes a master-quality defect. Add `fps` and `long_side`
 pins next to `tests/test_video_invisible.py:285`, tied to the certifying manifest
-row.
+row. *(Update `0.76.0`: `DEFAULT_VIDEO_SYNTHID_FPS` moved to `None` to preserve
+native source frame rate after certifying the `512p`-guided native `1280x720@24fps`
+operating point on `google-gemini-omni-flash-api` and `higgsfield-veo-3-1-lite` in
+`data/evaluations/video-synthid-oracle.csv`, pinned by
+`test_shipped_defaults_match_a_certified_manifest_row`.)*
 
 **S3. Clamp and align `_fit_size` (0 oracle submissions, with a caveat).**
 `scale = min(1.0, long_side / max(width, height))` at `:88`; align the long side

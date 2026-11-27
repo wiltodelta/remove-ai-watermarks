@@ -99,7 +99,7 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Video SynthID (`video invisible`) | `video,diffusion` (includes FFmpeg and ffprobe) |
 | Invisible images | `qwen-zimage`, plus NVIDIA CUDA |
 | Learned image/video fill | add `migan` or `lama` |
-| Verified text restoration (`--text-manifest`) | add `text-restoration` |
+| Verified text restoration (Python API `text_manifest`) | add `text-restoration` |
 | Open DWT-DCT detect | add `detect` |
 | 10-provider source-pipeline classifier (`classify-source`) | add `source-classify` |
 | Adobe TrustMark | add `trustmark` |

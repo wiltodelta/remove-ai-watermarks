@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/google-gemini/gemini-cli/main/schemas/gemini-extension.json",
   "name": "remove-ai-watermarks",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "description": "Identify and remove AI provenance marks from images, video, audio, and text the user generated or edited, using the remove-ai-watermarks CLI.",
   "contextFileName": "skills/remove-ai-watermarks/SKILL.md",
   "mcpServers": {

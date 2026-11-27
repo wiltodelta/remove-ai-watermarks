@@ -336,8 +336,6 @@ Single-encode stabilization reduced `temporal_residual_ratio` by `10.9-30.7%`
 and slightly improved PSNR and SSIM on every carrier without re-strengthening
 25-window `VideoSeal 1.0`. On `lite-003`, unaligned SIFT p95 displacement also
 dropped (`47.07 -> 31.64 px`), while on `flow-001` smooth water-surface motion
-shifted SIFT p95 modestly (`8.27 -> 11.89 px`). High-level `remove_video_invisible`,
-`remove_video_all`, and `remove_video_batch` enable `temporal_stabilize=True` by
-default (`--no-temporal-stabilize` disables it), while low-level
-`regenerate_video_candidate` and `remove_video_message` keep `temporal_stabilize=False`
-unless explicitly passed.
+shifted SIFT p95 modestly (`8.27 -> 11.89 px`). High-level `remove_video_invisible`, `remove_video_all`, `remove_video_batch`, and
+`regenerate_video_candidate` enable `temporal_stabilize=True` by default, while
+`remove_video_message` keeps its own verification-gated recipe.

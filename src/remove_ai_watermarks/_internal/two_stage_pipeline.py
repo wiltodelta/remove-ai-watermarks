@@ -993,7 +993,6 @@ class TwoStageZImagePipeline:
         tile_size: int = 1024,
         tile_overlap: int = 128,
         text_manifest: VerifiedTextManifest | None = None,
-        fidelity_anchor: bool = False,
     ) -> Image.Image:
         """Execute global regeneration and masked face repair."""
         if text_manifest is not None and tile:
@@ -1042,21 +1041,7 @@ class TwoStageZImagePipeline:
             return result
         if donor is None:
             raise RuntimeError("Verified text restoration requires a VAE donor")
-        from remove_ai_watermarks._internal.text_restoration import (
-            blend_fidelity_anchor,
-            restore_verified_text,
-        )
+        from remove_ai_watermarks._internal.text_restoration import restore_verified_text
 
-        # The anchor is OFF by default since 0.27.1: blending 15% of the Qwen-VAE
-        # donor ACROSS THE WHOLE FRAME returned detector-visible OpenAI SynthID on
-        # poster-scale manifests (official Content Provenance API, 2026-08-19:
-        # detected x6 with the anchor, clean x6 without it, base clean throughout;
-        # see docs/text-protection-research.md). ``fidelity_anchor=True`` keeps the
-        # 0.27.0 research behavior for reproduction.
-        if fidelity_anchor:
-            self._progress("Blending the Qwen-VAE fidelity anchor...")
-            anchor = blend_fidelity_anchor(result, donor)
-        else:
-            anchor = result
         self._progress(f"Restoring {len(text_manifest.lines)} verified text lines...")
-        return restore_verified_text(image, anchor, donor, text_manifest.lines)
+        return restore_verified_text(image, result, donor, text_manifest.lines)

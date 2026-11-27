@@ -88,7 +88,7 @@ saved output is negative in whole-clip and window checks. A resistant or
 incompletely checked candidate raises an error and preserves an existing output.
 No targeted source signal exits 2 without writing. Hard failures exit 1.
 
-Use `--allow-unverified` (for example with `--method dac` on proprietary audio marks or alongside `--no-verify`) to process without a local source-positive decoder match while still enforcing the saved-file SNR, RMS, and 1-second active-window integrity gate. Use `--allow-positive` only when you explicitly want to retain an output that still tests positive on the final attempt (exits 1), and `--allow-quality-override` only when you explicitly want to bypass the audio integrity gate. `--force` remains an alias enabling `--allow-unverified`, `--allow-positive`, and `--allow-quality-override` on the final attempt. Unverified processing exits 0 with
+Use `--allow-unverified` (for example with `--method dac` on proprietary audio marks or alongside `--no-verify`) to process without a local source-positive decoder match while still enforcing the saved-file SNR, RMS, and 1-second active-window integrity gate. `--force` additionally overrides final decoder and quality checks on the last attempt. Unverified processing exits 0 with
 `verified_removed: null`; this is not a removal certificate. `--verify` is the
 default. The default output is `SOURCE_processed.wav`; `-o` / `--output`
 accepts `.wav`, `.flac`, `.mp3` (`libmp3lame` 256 kbps CBR with Xing header), `.m4a` (`aac` 192 kbps with faststart), `.ogg`, `.oga`, `.opus` (`libopus` 192 kbps), `.aac` (`aac` 192 kbps ADTS), or `.mka` (`flac` in Matroska). Encoding discards AI metadata and preserves native sample
@@ -98,20 +98,19 @@ See [audio coverage](audio-video-removal.md) for tested families and limits.
 
 `audio metadata` inspects (`--check`, default) or strips (`--remove`) AI creation tags and C2PA manifests on standalone audio files without altering PCM/compressed audio frames via stream-copy remuxing (`-o` / `--output` defaults to `<source>_clean<ext>`; `--keep-standard/--remove-all` controls non-AI tags; `--json` emits JSON).
 
-`audio all` provides the predictable single-file product contract (`<source>_clean<ext>` by default): it always strips verified AI metadata (`--keep-standard/--remove-all`) and, when `--invisible` is passed (`--no-invisible` is the default), runs compatible waveform watermark removal (`--scheme auto` by default, plus `--method`, `--bandwidth`, `--vocoder-device`, `--vendor`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--low-memory`, `--stream`, `--json`). An explicit `--vendor` cohort implies the waveform stage even without `--invisible`. When `--invisible` finds no positive compatible watermark (and neither `--allow-unverified` nor `--force` is set) and the source carries no AI metadata, `audio all` copies the source file byte-for-byte rather than re-muxing container headers unnecessarily.
+`audio all` provides the predictable single-file product contract (`<source>_clean<ext>` by default): it always strips verified AI metadata (`--keep-standard/--remove-all`) and, when `--invisible` is passed (`--no-invisible` is the default), runs compatible waveform watermark removal (`--scheme auto` by default, plus `--method`, `--vocoder-device`, `--vendor`, `--allow-unverified`, `--force`, `--verify/--no-verify`, `--low-memory`, `--stream`, `--json`). An explicit `--vendor` cohort implies the waveform stage even without `--invisible`. When `--invisible` finds no positive compatible watermark (and neither `--allow-unverified` nor `--force` is set) and the source carries no AI metadata, `audio all` copies the source file byte-for-byte rather than re-muxing container headers unnecessarily.
 
-`audio batch` processes every supported audio file in a top-level directory (`-o` / `--output-dir` defaults to `<dir>_clean`, `--mode [all|metadata]` defaults to `all`, with `--invisible/--no-invisible`, `--scheme`, `--method`, `--bandwidth`, `--vocoder-device`, `--vendor`, `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--low-memory`, `--keep-standard/--remove-all`, and `--json`). Pass `--low-memory` on `audio invisible`, `audio all`, or `audio batch` to evict cached neural codec and detector weights from RAM/VRAM immediately after each call or file.
+`audio batch` processes every supported audio file in a top-level directory (`-o` / `--output-dir` defaults to `<dir>_clean`, `--mode [all|metadata]` defaults to `all`, with `--invisible/--no-invisible`, `--scheme`, `--method`, `--vocoder-device`, `--vendor`, `--allow-unverified`, `--force`, `--verify/--no-verify`, `--low-memory`, `--keep-standard/--remove-all`, and `--json`). Pass `--low-memory` on `audio invisible`, `audio all`, or `audio batch` to evict cached neural codec and detector weights from RAM/VRAM immediately after each call or file.
 
 `--method spectral` fixes the spectral profile. `--method encodec` selects
-optional neural resynthesis. `--bandwidth` accepts
-`6`, `12`, or `24` kbps and defaults to `24`; it applies only to EnCodec.
+optional neural resynthesis at 24 kbps.
 `--vocoder-device` (`auto` default, `cpu`, `mps`, or `cuda`) applies to EnCodec,
 `combined`, DAC, and SNAC; `spectral` requires `cpu`.
-Lower bandwidth can change speech timbre or music substantially. On 2-channel stereo tracks, EnCodec resynthesizes in Mid/Side (`M/S`) space rather than independent L/R passes so stereo phantom-center phase coherence is preserved, while retaining native channels, rate, and sample-frame count using bounded context.
+Neural resynthesis can change speech timbre or music. On 2-channel stereo tracks, EnCodec resynthesizes in Mid/Side (`M/S`) space rather than independent L/R passes so stereo phantom-center phase coherence is preserved, while retaining native channels, rate, and sample-frame count using bounded context.
 It has the same source-positive and saved-output verification gate, and can
 fail even when a whole-clip reading is negative but a window remains positive.
 `--method combined` applies the spectral filter followed by that neural codec.
-It uses the same optional extra and bandwidth choices. Automatic neural
+It uses the same optional extra. Automatic neural
 fallback also needs `audio-codec`; if unavailable, output remains unpublished.
 `--method dac` selects the FP32 44.1 kHz 3-codebook
 Descript Audio Codec (`audio-codec` extra, pinned to
@@ -143,14 +142,14 @@ watermark removal or erasure of every residual message bit.
 
 ```bash
 remove-ai-watermarks video audio input.mp4 -o processed.mkv --stream 0 --json
-remove-ai-watermarks video audio input.mp4 -o processed.mp4 --all-streams --scheme auto --json
+remove-ai-watermarks video audio input.mp4 -o processed.mp4 --scheme auto --json
 ```
 
-This command processes one selected audio track (`--stream N`, default `0`) or every watermarked audio track (`--all-streams`, optionally restricted to repeatable zero-based ordinals via `--target-stream N`) while copying encoded video and subtitle streams.
-It accepts `--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--stream`, `--all-streams`, `--target-stream`, `--scheme`, `--json`, and
+This command inspects and cleans every watermarked audio track by default (or restricts processing to one or more zero-based ordinals via repeatable `--stream N`) while copying encoded video and subtitle streams.
+It accepts `--allow-unverified`, `--force`, `--verify/--no-verify`, `--stream`, `--scheme`, `--json`, and
 `-o` / `--output` with the same verification and exit policy as `audio invisible`.
-It also accepts `--method`, `--bandwidth`, `--vocoder-device`, and `--vendor` with the same audio backend rules.
-When `--all-streams` is passed, every audio track in the container is inspected sequentially; unmarked tracks are stream-copied unchanged while each positively detected track is cleaned and verified in the final mux.
+It also accepts `--method`, `--vocoder-device`, and `--vendor` with the same audio backend rules.
+When `--stream` is omitted (or repeated), every targeted audio track in the container is inspected sequentially; unmarked tracks are stream-copied unchanged while each positively detected track is cleaned and verified in the final mux.
 The default output is `SOURCE_audio_processed.mkv`. MKV and MOV store the selected audio as uncompressed float PCM and can substantially
 increase file size. An explicit `.mp4` output encodes only the selected track as
 lossy AAC with a target bitrate of 192 kbps. Final verification and fidelity
@@ -337,11 +336,10 @@ installed for a learned backend. A video input is routed to `video erase`, where
 `--track` tracks moving user-specified boxes across frames via pyramidal Lucas-Kanade
 flow and Sobel/NCC template refinement.
 
-Two more knobs tune the fill. `--dilate N` (default 3) grows every box by `N`
+`--dilate N` (default 3) grows every box by `N`
 pixels before inpainting, which helps when a mark has a soft edge or a drop
 shadow just outside the box you measured; it applies to every backend because it
-shapes the mask. `--inpaint-method telea|ns` selects the classical algorithm and
-only affects the `cv2` backend. Like `visible`, `erase` strips AI metadata from
+shapes the mask. Like `visible`, `erase` defaults to `--backend auto` and strips AI metadata from
 the output by default; pass `--keep-metadata` to retain it. The ICC colour profile
 and the EXIF orientation tag survive either way.
 
@@ -430,12 +428,11 @@ Invisible regeneration is deliberately opt-in:
 
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible
-remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --keep-fps --audio-invisible
-remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --native-guide
+remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --audio-invisible
 ```
 
 That option is supported across all seven video containers (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`, `.avi`, `.flv`). It is lossy and uses the
-same default SynthID profile as `video invisible` (including default motion-compensated `--temporal-stabilize` / `--no-temporal-stabilize`, `--keep-fps` to preserve native source frame rate, `--native-guide` for fast 512p-guided native-resolution 2D upscaling, `--wan-steps` to customize 3D `Wan 2.1` denoising steps, and `--low-memory` on `video invisible`, `video all`, and `video batch` to evict cached neural models and empty GPU/MPS allocator caches between stages and files). Pass `--audio-invisible` (`--no-audio-invisible` is the default) alongside `--audio-scheme` (default `auto`), `--audio-method` (default `auto`), repeatable `--audio-stream N` (to restrict inspection/processing to specific zero-based audio tracks), and optional `--audio-allow-unverified` (`--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline, yielding 4-layer audiovisual cleaning (metadata + visible marks + video pixels + audio tracks). Silent videos skip `scipy` audio-extra requirements even when `--audio-invisible` is set. To select the Seedance recipe:
+same default SynthID profile as `video invisible` (preserving native resolution and frame rate with motion-compensated optical-flow stabilization by default, and supporting `--low-memory` on `video invisible`, `video all`, and `video batch` to evict cached neural models and empty GPU/MPS allocator caches between stages and files). Pass `--audio-invisible` (`--no-audio-invisible` is the default) alongside `--audio-scheme` (default `auto`), `--audio-method` (default `auto`), repeatable `--audio-stream N` (to restrict inspection/processing to specific zero-based audio tracks), and optional `--audio-allow-unverified` (or `--audio-force`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline, yielding 4-layer audiovisual cleaning (metadata + visible marks + video pixels + audio tracks). Silent videos skip `scipy` audio-extra requirements even when `--audio-invisible` is set. To select the Seedance recipe:
 
 ```bash
 remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile seedance
@@ -660,9 +657,7 @@ chat model to ignore the verifier and reason about raw pixels: that is ordinary
 Gemini reasoning, not a second oracle check.
 
 The default output is `<source>_clean` in the same container. The
-source is never overwritten. Use `--noise-std`, `--long-side`, `--fps`,
-`--keep-fps` (preserve native source frame rate rather than resampling to 12 fps),
-`--temporal-stabilize` / `--no-temporal-stabilize` (default enabled: optical-flow motion-compensated temporal blending to suppress VAE inter-frame flicker),
+source is never overwritten. By default, 2D `synthid` preserves native resolution and native source frame rate, upscaling cleanly from its internal 512p VAE guide with CIE Lab low-frequency color anchoring and motion-compensated optical-flow stabilization. Use `--noise-std`, optional `--fps` (to cap the output frame rate),
 `--batch-size`, `--seed`, and `--device` to control the regeneration. The
 default noise level is `0.15`. It cleared both carriers in the 2026-07-29
 short-clip calibration and the complete public eight-second Veo carrier in the
@@ -691,8 +686,7 @@ remove-ai-watermarks video all veo.mp4 -o veo_clean.mp4 --invisible --profile au
 Prefer `--audio-allow-unverified` over `--audio-force` when processing a
 public-decoder-negative track: `--audio-allow-unverified` keeps the saved-file
 SNR, RMS, and 1-second active-window integrity gate active, whereas
-`--audio-force` also enables `--audio-allow-positive` and
-`--audio-allow-quality-override`. When provenance metadata was already stripped
+`--audio-force` also overrides final decoder and quality checks. When provenance metadata was already stripped
 and you know the AI generator cohort (`google`, `elevenlabs`, `suno`, `udio`,
 `openai`, `cartesia`, `meta`, `resemble`, `microsoft`), pass `--audio-vendor` on
 `video all` or `video batch` (or `--vendor` on `audio invisible`, `audio all`,
@@ -718,7 +712,7 @@ for 10-bit; `--quality master` retains lossless output. Legacy
 `--profile wan21-seedance-experimental` remain accepted as aliases for
 `seedance`, `wan21-synthid`, and `wan21-seedance`. `--device` supports the same
 devices as SynthID. The SynthID tuning options
-(`--noise-std`, `--long-side`, `--fps`, `--batch-size`, `--seed`) must retain
+(`--noise-std`, `--fps`, `--batch-size`, `--seed`) must retain
 their defaults when Seedance is selected. `--quality master` is rejected for
 SynthID. The default profile is `auto`, which routes ByteDance/Seedance clips
 to the Seedance pipeline automatically and SynthID/other clips to the SynthID
@@ -942,57 +936,13 @@ completed baseline. The default profile and `auto` routing remain unchanged.
 The Qwen-2.1 profile requires compliance with the non-commercial Qwen Research
 License; it is never selected by `auto`.
 
-### Restore operator-verified text
+### Restore operator-verified text (Python API)
 
-`--text-manifest` enables the experimental `vae-glyphs` post-pass. It reconstructs
-the source with the selected profile's VAE, erases the annotated candidate glyphs
-with LaMa, and composites only the reconstructed glyph cores through source-derived
-silhouettes. It does not run OCR or choose which strings are correct. The optional
-Qwen-only `--fidelity-anchor` described below additionally blends 15% of the
-reconstruction across the full frame.
-
-Install the combined extra and run only with an operator-verified manifest:
-
-```bash
-uv tool install --force "remove-ai-watermarks[text-restoration]"
-remove-ai-watermarks invisible image.png -o clean.png \
-  --pipeline qwen-zimage --text-manifest verified-lines.json --force
-```
-
-The option works with `qwen-zimage`, `qwen21-zimage`, `sdxl-zimage`, `chroma-zimage`,
-and `auto`. Each concrete profile reconstructs the donor through its own already
-loaded VAE; for Google provenance, `auto` therefore keeps the normal SDXL route.
-
-``verified: true`` may also be set by an automated operator that attests
-machine-verified geometry: stability-gated detector boxes inside sane caps. Such
-operators should use the geometry-only schema 2, which carries no transcription
-or script metadata.
-
-Since 0.27.1 the global 15% Qwen-VAE fidelity-anchor blend is off by default and
-remains available only with `qwen-zimage`: it
-was measured to return detector-visible OpenAI SynthID on poster-scale manifests
-(official Content Provenance API, 2026-08-19). `--fidelity-anchor` restores the
-0.27.0 research behavior; text-box fidelity lost by the default is well under one
-MAE point on the measured fixtures.
-
-The manifest is a JSON object with `verified: true`, decoded RGB dimensions,
-`source_pixel_sha256`, and a non-empty `lines` array. Schema 1 is retained for
-manually reviewed annotations: each line has an integer `[x1, y1, x2, y2]` box,
-exact `text`, a non-empty `script`, and an optional angle from -30 to 30 degrees.
-Schema 2 is geometry-only: each line has the box and optional angle, with no
-required `text` or `script`. Lines must be in top-to-bottom, left-to-right order.
-The hash binds the annotations to decoded RGB geometry and pixels, so metadata-only
-container changes remain valid while a resized or edited source fails closed. The
-experimental helper
-`remove_ai_watermarks._internal.text_restoration.source_pixel_sha256` computes it.
-
-This mode is supported by every profile at native geometry with `humanize=0` and
-`unsharp=0`. An unset adaptive-polish option is forced off so verified text remains
-the final pixel-writing stage; an explicit request to enable it is rejected. `all`
-also accepts the flag, but its
-manifest must match the pixels entering the invisible stage; if visible-mark
-removal changes those pixels, the hash check rejects the run. One oracle verdict does
-not certify another manifest, seed, model/runtime version, or output hash.
+Operator-verified text restoration (`text_manifest=Path("verified-lines.json")` on
+`InvisibleOptions` / `InvisibleEngine.remove_watermark`) is exposed exclusively
+through the [Python API](python-api.md#restore-operator-verified-text) and has no
+CLI flag. Install `remove-ai-watermarks[text-restoration]` when calling it from
+Python.
 
 ### Work with limited memory
 
@@ -1035,8 +985,6 @@ reach for one only when you know why the default is wrong for your file.
 | `--pipeline` | Profile: `qwen-zimage` (default), `qwen21-zimage` (Qwen Research License: non-commercial/personal use only), `sdxl-zimage`, `chroma-zimage`, `auto`. |
 | `--seed` | Fixed at 0 by default: every profile is certified at that seed, and removal near the floor is seed-dependent. |
 | `--controlnet-scale` | Canny ControlNet conditioning on the global stage. Higher keeps the original structure and text closer. |
-| `--humanize` | Analog film grain, 0 = off, typical 2.0-6.0. |
-| `--unsharp` | Unsharp-mask sharpening, 0 = off. |
 | `--adaptive-polish` / `--no-adaptive-polish` | Overrides the profile's own choice. Unset lets the profile decide: off for `qwen-zimage` and `qwen21-zimage`, whose outputs already match the input's detail level, on for `sdxl-zimage`. |
 | `--max-resolution` | Cap the long side before diffusion; 0 = native. |
 | `--tile`, `--tile-size`, `--tile-overlap` | Tiled regeneration for large inputs, as above. |

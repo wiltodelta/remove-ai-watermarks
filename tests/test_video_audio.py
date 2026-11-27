@@ -518,11 +518,11 @@ def test_remove_video_audio_all_streams_cleans_multiple_tracks_and_cli_all_strea
     assert audio.identify_audio(output, stream=0, scheme="auto").watermark_status == "not_detected"
     assert audio.identify_audio(output, stream=1, scheme="auto").watermark_status == "not_detected"
 
-    # Re-running on the already-cleaned output skips cleanly with exit code 2 via CLI --all-streams
+    # Re-running on the already-cleaned output skips cleanly with exit code 2 via default multi-stream CLI
     cli_out = tmp_path / "second_pass.mkv"
     skip_run = CliRunner().invoke(
         main,
-        ["video", "audio", "--all-streams", "--scheme", "auto", "-o", str(cli_out), "--json", str(output)],
+        ["video", "audio", "-o", str(cli_out), "--json", str(output)],
     )
     assert skip_run.exit_code == 2, skip_run.output
     assert json.loads(skip_run.output)["skipped"] is True
@@ -531,7 +531,7 @@ def test_remove_video_audio_all_streams_cleans_multiple_tracks_and_cli_all_strea
     pos_out = tmp_path / "cli_cleaned.mkv"
     pos_run = CliRunner().invoke(
         main,
-        ["video", "audio", "--all-streams", "--scheme", "auto", "-o", str(pos_out), "--json", str(source)],
+        ["video", "audio", "-o", str(pos_out), "--json", str(source)],
     )
     assert pos_run.exit_code == 0, pos_run.output
     payload = json.loads(pos_run.output)

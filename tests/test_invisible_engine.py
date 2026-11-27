@@ -66,8 +66,8 @@ class TestVerifiedTextMode:
         manifest = tmp_path / "manifest.json"
         manifest.write_text("{}", encoding="utf-8")
         cases = (
-            ("qwen-zimage", {"tile": True}, "not calibrated with --tile"),
-            ("qwen-zimage", {"max_resolution": 1024}, "max-resolution 0"),
+            ("qwen-zimage", {"tile": True}, "not calibrated with tile=True"),
+            ("qwen-zimage", {"max_resolution": 1024}, "max_resolution=0"),
             ("qwen-zimage", {"humanize": 1.0}, "humanize=0"),
             ("qwen-zimage", {"adaptive_polish": True}, "polish disabled"),
         )
@@ -78,15 +78,6 @@ class TestVerifiedTextMode:
                     text_manifest=manifest,
                     **kwargs,
                 )
-
-    def test_rejects_fidelity_anchor_without_manifest(self, tmp_path):
-        import pytest
-
-        with pytest.raises(ValueError, match="fidelity_anchor requires a text manifest"):
-            self._engine().remove_watermark(
-                tmp_path / "unused.png",
-                fidelity_anchor=True,
-            )
 
     def test_loads_and_forwards_verified_manifest(self, tmp_path, monkeypatch):
         import json
@@ -129,14 +120,7 @@ class TestVerifiedTextMode:
 
         assert seen["text_manifest"].lines[0].text == "Exact"
         assert seen["vendor"] == "google"
-        # Leak-safe default since 0.27.1: the global 15% donor blend is OFF unless
-        # explicitly requested (measured to return detector-visible OpenAI SynthID
-        # on poster-scale manifests; see docs/text-protection-research.md).
-        assert seen["fidelity_anchor"] is False
-
-        engine.remove_watermark(source, output, text_manifest=manifest, fidelity_anchor=True)
-
-        assert seen["fidelity_anchor"] is True
+        assert "fidelity_anchor" not in seen
 
 
 class TestNativeOutputSize:

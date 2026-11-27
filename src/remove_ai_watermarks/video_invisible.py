@@ -220,12 +220,12 @@ def read_sampled_frames(
     source: Path,
     *,
     duration: float | None,
-    output_fps: float,
+    output_fps: float | None,
     size: tuple[int, int],
 ) -> tuple[list[np.ndarray], float]:
     """Read uniformly sampled frames and resize them to the VAE geometry."""
     _width, _height, source_fps = _probe_video(source)
-    effective_fps = min(output_fps, source_fps)
+    effective_fps = source_fps if output_fps is None else min(output_fps, source_fps)
     frames = list(
         _iter_sampled_frames(
             source,
@@ -510,8 +510,8 @@ def regenerate_video_candidate(
     duration: float | None = None,
     runtime: VideoVaeRuntime | None = None,
     temporal_stabilize: bool = True,
-    native_guide: bool = False,
     timestamps: Sequence[float] | None = None,
+    output_size: tuple[int, int] | None = None,
     _frame_stream: Iterable[NDArray[Any]] | None = None,
 ) -> RegenerationMetrics:
     """Regenerate video pixels and return fidelity metrics.
@@ -519,8 +519,9 @@ def regenerate_video_candidate(
     The default profile is certified against the provider oracle. This function
     does not perform a per-file SynthID decode because Google exposes no local
     decoder. When ``fps=None``, the source video's native frame rate is preserved.
-    When ``native_guide=True``, latent regeneration runs at ``long_side`` and
-    upscales cleanly to native ``(width, height)`` with CIE Lab color anchoring.
+    Latent regeneration runs at ``long_side`` and upscales cleanly to
+    ``output_size`` (defaulting to native ``(width, height)``) with CIE Lab
+    low-frequency color anchoring.
     """
     if not 0.0 <= noise_std <= 1.0:
         raise ValueError("noise_std must be between 0 and 1")
@@ -533,13 +534,12 @@ def regenerate_video_candidate(
     if device not in {"auto", "cuda", "mps", "cpu"}:
         raise ValueError("device must be auto, cuda, mps, or cpu")
     width, height, source_fps = _probe_video(source)
-    size = _fit_size(width, height, long_side)
-    out_w, out_h = (width, height) if native_guide else size
+    out_w, out_h = (width, height) if output_size is None else output_size
+    size = _fit_size(out_w, out_h, min(long_side, max(out_w, out_h)))
     effective_fps = source_fps if fps is None else min(fps, source_fps)
-    if out_w < width or out_h < height or effective_fps < source_fps - 0.5:
+    if (out_w, out_h) != (width, height) or effective_fps < source_fps - 0.5:
         log.warning(
-            "2D SynthID VAE fallback downscaling %dx%d@%.2ffps -> %dx%d@%.2ffps; "
-            "use --native-guide or CUDA Wan 2.1 (wan21-synthid) for native-resolution output",
+            "2D SynthID VAE fallback downscaling %dx%d@%.2ffps -> %dx%d@%.2ffps",
             width,
             height,
             source_fps,
@@ -643,25 +643,31 @@ def regenerate_video_candidate(
                     decode_kwargs["high_depth"] = True
                 return _decode_frame_latents(latent_batches, **decode_kwargs)
 
-            def _final_pairs() -> Generator[tuple[NDArray[Any], NDArray[Any]], None, None]:
+            def _final_pairs() -> Iterable[tuple[NDArray[Any], NDArray[Any]]]:
+                if size == (out_w, out_h):
+                    direct_pairs = (
+                        pair
+                        for out_batch in _stream_batches(sampled_frames, batch_size)
+                        for pair in zip(out_batch, _encode_decode_small(out_batch), strict=True)
+                    )
+                    return iter_stabilized_regenerated_frames(direct_pairs) if temporal_stabilize else direct_pairs
+
                 frame_queue: deque[NDArray[Any]] = deque()
 
                 def _small_pairs() -> Generator[tuple[NDArray[Any], NDArray[Any]], None, None]:
                     for out_batch in _stream_batches(sampled_frames, batch_size):
                         frame_queue.extend(out_batch)
-                        small_batch = (
-                            [cv2.resize(frm, size, interpolation=cv2.INTER_AREA) for frm in out_batch]
-                            if size != (out_w, out_h)
-                            else out_batch
-                        )
+                        small_batch = [cv2.resize(frm, size, interpolation=cv2.INTER_AREA) for frm in out_batch]
                         yield from zip(small_batch, _encode_decode_small(small_batch), strict=True)
 
                 raw_pairs: Iterable[tuple[NDArray[Any], NDArray[Any]]] = (
                     iter_stabilized_regenerated_frames(_small_pairs()) if temporal_stabilize else _small_pairs()
                 )
-                for small_ref, small_cand in raw_pairs:
-                    out_ref = frame_queue.popleft()
-                    yield out_ref, _upscale_clean_guide(out_ref, small_ref, small_cand)
+                return (
+                    (out_ref, _upscale_clean_guide(out_ref, small_ref, small_cand))
+                    for small_ref, small_cand in raw_pairs
+                    for out_ref in (frame_queue.popleft(),)
+                )
 
             for reference, candidate in _final_pairs():
                 write_raw_frame_bytes(frame_pipe, candidate)

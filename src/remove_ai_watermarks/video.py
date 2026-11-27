@@ -1242,7 +1242,6 @@ def _has_2d_vae_overrides(
     batch_size: int,
     model: str,
     temporal_stabilize: bool,
-    native_guide: bool = False,
 ) -> bool:
     return (
         noise_std != DEFAULT_VIDEO_SYNTHID_NOISE_STD
@@ -1251,7 +1250,6 @@ def _has_2d_vae_overrides(
         or batch_size != 4
         or model != DEFAULT_VIDEO_SYNTHID_VAE
         or not temporal_stabilize
-        or native_guide
     )
 
 
@@ -1298,8 +1296,6 @@ def _resolve_video_invisible_profile(
     seed: int,
     model: str,
     temporal_stabilize: bool,
-    native_guide: bool = False,
-    wan_steps: int | None = None,
     detected_metadata: dict[str, str] | None = None,
     visible_mark: str | None = None,
     runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
@@ -1316,23 +1312,14 @@ def _resolve_video_invisible_profile(
         batch_size=batch_size,
         model=model,
         temporal_stabilize=temporal_stabilize,
-        native_guide=native_guide,
     )
     resolved: Literal["synthid", "seedance-experimental", "wan21-synthid-experimental", "wan21-seedance-experimental"]
     if has_overrides or source_path.suffix.lower() not in _REGENERATED_VIDEO_EXTENSIONS:
-        if wan_steps is not None:
-            raise ValueError(
-                "wan_steps cannot be combined with 2D VAE SynthID tuning options or unsupported containers"
-            )
         resolved = "synthid"
     else:
         from remove_ai_watermarks import video_wan
 
-        can_wan = video_wan.can_run_wan_on_source(
-            source_path, device=device, runtime=runtime, for_auto=wan_steps is None
-        )
-        if not can_wan and wan_steps is not None:
-            raise ValueError("wan_steps requires an eligible CUDA or MPS Wan 2.1 device and runtime")
+        can_wan = video_wan.can_run_wan_on_source(source_path, device=device, runtime=runtime, for_auto=True)
         if not can_wan and seed != 0:
             resolved = "synthid"
         else:
@@ -1436,8 +1423,6 @@ def _validate_video_profile(
     seed: int = 0,
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     temporal_stabilize: bool = True,
-    native_guide: bool = False,
-    wan_steps: int | None = None,
 ) -> None:
     """Reject incompatible profile options before processing any stage."""
     if profile not in VIDEO_INVISIBLE_PROFILES:
@@ -1450,15 +1435,6 @@ def _validate_video_profile(
         raise ValueError("quality must be delivery or master")
     if profile not in {"auto", "synthid"} and not enabled:
         raise ValueError("Selecting an invisible profile requires include_invisible=True (--invisible)")
-    if wan_steps is not None:
-        if wan_steps < 1:
-            raise ValueError("wan_steps must be >= 1")
-        if not enabled:
-            raise ValueError("wan_steps requires include_invisible=True (--invisible)")
-        if profile in {"synthid", "seedance-experimental"}:
-            raise ValueError(
-                "wan_steps is only supported for Wan 2.1 profiles (wan21-synthid, wan21-seedance, or auto)"
-            )
     fixed_quality_profiles = {
         "auto",
         "seedance-experimental",
@@ -1474,7 +1450,6 @@ def _validate_video_profile(
         batch_size=batch_size,
         model=model,
         temporal_stabilize=temporal_stabilize,
-        native_guide=native_guide,
     )
     if profile == "seedance-experimental" and (has_overrides or seed != 0):
         raise ValueError("Seedance uses a fixed recipe; SynthID tuning options must retain their defaults")
@@ -1483,8 +1458,6 @@ def _validate_video_profile(
             "Wan 2.1 profiles use fixed native geometry and frame timing; "
             "2D VAE SynthID tuning options must retain their defaults"
         )
-    if wan_steps is not None and has_overrides:
-        raise ValueError("wan_steps cannot be combined with 2D VAE SynthID tuning options")
 
 
 def remove_video_all(
@@ -1505,8 +1478,6 @@ def remove_video_all(
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     device: str = "auto",
     temporal_stabilize: bool = True,
-    native_guide: bool = False,
-    wan_steps: int | None = None,
     include_audio_invisible: bool = False,
     audio_scheme: AudioScheme = "auto",
     audio_method: AudioMethod = "auto",
@@ -1557,8 +1528,6 @@ def remove_video_all(
         seed=seed,
         model=model,
         temporal_stabilize=temporal_stabilize,
-        native_guide=native_guide,
-        wan_steps=wan_steps,
     )
     if max_duration_seconds is not None and max_duration_seconds <= 0.0:
         raise ValueError("max_duration_seconds must be positive")
@@ -1666,15 +1635,13 @@ def remove_video_all(
                 seed=seed,
                 model=model,
                 temporal_stabilize=temporal_stabilize,
-                native_guide=native_guide,
-                wan_steps=wan_steps,
                 detected_metadata=detected_metadata,
                 visible_mark=vis_mark,
                 runtime=_invisible_runtime,
             )
             if require_gpu and resolved_invisible_profile == "synthid":
                 raise RuntimeError(
-                    "require_gpu=True refuses 512p 2D CPU fallback; run on a CUDA/MPS GPU or disable require_gpu"
+                    "require_gpu=True refuses 2D VAE fallback; run on a CUDA/MPS GPU or disable require_gpu"
                 )
             if progress_callback is not None:
                 progress_callback("invisible", 0.5)
@@ -1697,8 +1664,6 @@ def remove_video_all(
                     model=model,
                     device=device,
                     temporal_stabilize=temporal_stabilize,
-                    native_guide=native_guide,
-                    wan_steps=wan_steps,
                     _runtime=active_runtime,
                 )
                 remaining_metadata = invisible_result.remaining_metadata
@@ -1793,8 +1758,6 @@ def remove_video_all(
                         model=model,
                         device=device,
                         temporal_stabilize=temporal_stabilize,
-                        native_guide=native_guide,
-                        wan_steps=wan_steps,
                         _runtime=active_runtime,
                         _frame_stream=_fused_clean_stream(),
                     )
@@ -1859,15 +1822,13 @@ def remove_video_all(
                     seed=seed,
                     model=model,
                     temporal_stabilize=temporal_stabilize,
-                    native_guide=native_guide,
-                    wan_steps=wan_steps,
                     detected_metadata=detected_metadata,
                     visible_mark=detected_vis_mark,
                     runtime=_invisible_runtime,
                 )
                 if require_gpu and resolved_invisible_profile == "synthid":
                     raise RuntimeError(
-                        "require_gpu=True refuses 512p 2D CPU fallback; run on a CUDA/MPS GPU or disable require_gpu"
+                        "require_gpu=True refuses 2D VAE fallback; run on a CUDA/MPS GPU or disable require_gpu"
                     )
                 if progress_callback is not None:
                     progress_callback("invisible", 0.55)
@@ -1889,8 +1850,6 @@ def remove_video_all(
                     model=model,
                     device=device,
                     temporal_stabilize=temporal_stabilize,
-                    native_guide=native_guide,
-                    wan_steps=wan_steps,
                     _runtime=active_runtime,
                 )
                 remaining_metadata = invisible_result.remaining_metadata
@@ -2040,8 +1999,6 @@ def remove_video_batch(
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     device: str = "auto",
     temporal_stabilize: bool = True,
-    native_guide: bool = False,
-    wan_steps: int | None = None,
     include_audio_invisible: bool = False,
     audio_scheme: AudioScheme = "auto",
     audio_method: AudioMethod = "auto",
@@ -2079,8 +2036,6 @@ def remove_video_batch(
         seed=seed,
         model=model,
         temporal_stabilize=temporal_stabilize,
-        native_guide=native_guide,
-        wan_steps=wan_steps,
     )
     directory_path = Path(directory)
     if not directory_path.exists():
@@ -2188,8 +2143,6 @@ def remove_video_batch(
                     model=model,
                     device=device,
                     temporal_stabilize=temporal_stabilize,
-                    native_guide=native_guide,
-                    wan_steps=wan_steps,
                     include_audio_invisible=include_audio_invisible,
                     audio_scheme=audio_scheme,
                     audio_method=audio_method,
@@ -2310,8 +2263,6 @@ def remove_video_invisible(
     model: str = DEFAULT_VIDEO_SYNTHID_VAE,
     device: str = "auto",
     temporal_stabilize: bool = True,
-    native_guide: bool = False,
-    wan_steps: int | None = None,
     low_memory: bool = False,
     _runtime: VideoVaeRuntime | VideoWanRuntime | None = None,
     _frame_stream: Iterable[Any] | None = None,
@@ -2337,8 +2288,6 @@ def remove_video_invisible(
         seed=seed,
         model=model,
         temporal_stabilize=temporal_stabilize,
-        native_guide=native_guide,
-        wan_steps=wan_steps,
     )
     source_path = _video_source(source)
     clean_output = Path(output) if output is not None else source_path.with_stem(source_path.stem + "_clean")
@@ -2357,8 +2306,6 @@ def remove_video_invisible(
             seed=seed,
             model=model,
             temporal_stabilize=temporal_stabilize,
-            native_guide=native_guide,
-            wan_steps=wan_steps,
             runtime=_runtime,
         )
     else:
@@ -2381,7 +2328,6 @@ def remove_video_invisible(
                 device=device,
                 quality=quality,
                 seed=seed,
-                inference_steps=wan_steps,
                 _runtime=cast("VideoWanRuntime | None", _runtime),
                 _frame_stream=_frame_stream,
             )
@@ -2397,11 +2343,6 @@ def remove_video_invisible(
             clean_output,
             operation="SynthID removal",
         )
-        regen_extra: dict[str, Any] = {}
-        if native_guide:
-            regen_extra["native_guide"] = True
-        if _frame_stream is not None:
-            regen_extra["_frame_stream"] = _frame_stream
         metrics = regenerate_video_candidate(
             source_path,
             output_path,
@@ -2414,7 +2355,7 @@ def remove_video_invisible(
             device=device,
             runtime=cast("VideoVaeRuntime | None", _runtime),
             temporal_stabilize=temporal_stabilize,
-            **regen_extra,
+            _frame_stream=_frame_stream,
         )
         return VideoInvisibleResult(
             source=source_path,

@@ -631,42 +631,16 @@ def test_cli_qwen_zimage_keeps_profile_postprocess_default(tmp_image_path, monke
     assert mock_engine.remove_watermark.call_args.kwargs["adaptive_polish"] is True
 
 
-def test_cli_forwards_verified_text_manifest(tmp_image_path, tmp_path, monkeypatch):
+def test_cli_rejects_retired_text_manifest_and_fidelity_anchor_flags(tmp_image_path):
     from remove_ai_watermarks import cli
 
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text("{}", encoding="utf-8")
-    mock_engine = MagicMock()
-    mock_engine.remove_watermark.return_value = tmp_image_path
-    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.is_available", lambda: True)
-    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.InvisibleEngine", MagicMock(return_value=mock_engine))
-
-    result = CliRunner().invoke(
-        cli.main,
-        ["invisible", str(tmp_image_path), "--text-manifest", str(manifest), "--force"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert mock_engine.remove_watermark.call_args.kwargs["text_manifest"] == manifest
-
-
-def test_cli_reports_verified_text_manifest_errors(tmp_image_path, tmp_path, monkeypatch):
-    from remove_ai_watermarks import cli
-
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text("{}", encoding="utf-8")
-    mock_engine = MagicMock()
-    mock_engine.remove_watermark.side_effect = ValueError("manifest pixels do not match")
-    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.is_available", lambda: True)
-    monkeypatch.setattr("remove_ai_watermarks.invisible_engine.InvisibleEngine", MagicMock(return_value=mock_engine))
-
-    result = CliRunner().invoke(
-        cli.main,
-        ["invisible", str(tmp_image_path), "--text-manifest", str(manifest), "--force"],
-    )
-
-    assert result.exit_code == 1
-    assert "manifest pixels do not match" in result.output
+    for retired in (
+        ["--text-manifest", str(tmp_image_path)],
+        ["--fidelity-anchor"],
+        ["--no-fidelity-anchor"],
+    ):
+        result = CliRunner().invoke(cli.main, ["invisible", str(tmp_image_path), *retired])
+        assert result.exit_code != 0
 
 
 def test_no_face_path_still_runs_verified_text_restoration(monkeypatch):
@@ -680,14 +654,11 @@ def test_no_face_path_still_runs_verified_text_restoration(monkeypatch):
     source = Image.new("RGB", (32, 32), (10, 20, 30))
     donor = Image.new("RGB", (32, 32), (40, 50, 60))
     global_result = Image.new("RGB", (32, 32), (70, 80, 90))
-    anchor = Image.new("RGB", (32, 32), (100, 110, 120))
     restored = Image.new("RGB", (32, 32), (130, 140, 150))
     pipeline._vae_roundtrip = MagicMock(return_value=donor)
     pipeline._run_global = MagicMock(return_value=global_result)
     monkeypatch.setattr(two_stage_pipeline, "detect_faces", lambda _image: [])
-    blend = MagicMock(return_value=anchor)
     restore = MagicMock(return_value=restored)
-    monkeypatch.setattr(text_restoration, "blend_fidelity_anchor", blend)
     monkeypatch.setattr(text_restoration, "restore_verified_text", restore)
     manifest = VerifiedTextManifest(
         "0" * 64,
@@ -699,16 +670,7 @@ def test_no_face_path_still_runs_verified_text_restoration(monkeypatch):
     result = pipeline.run(source, strength=0.1, seed=0, text_manifest=manifest)
 
     assert result is restored
-    # Off by default since 0.27.1 (leak finding, docs/text-protection-research.md):
-    # no whole-frame donor blend; the raw global result feeds restoration.
-    blend.assert_not_called()
     restore.assert_called_once_with(source, global_result, donor, manifest.lines)
-
-    result = pipeline.run(source, strength=0.1, seed=0, text_manifest=manifest, fidelity_anchor=True)
-
-    assert result is restored
-    blend.assert_called_once_with(global_result, donor)
-    restore.assert_called_with(source, anchor, donor, manifest.lines)
 
 
 def test_tiled_verified_text_is_rejected_before_model_work():
@@ -1299,9 +1261,7 @@ def test_watermark_remover_accepts_text_manifest_for_every_diffusers_profile(tmp
 
     assert runtime.run.call_count == 1
     assert runtime.run.call_args.kwargs["text_manifest"] is manifest
-    with pytest.raises(ValueError, match=r"fidelity anchor.*qwen-zimage"):
-        remover.remove_watermark(source, text_manifest=manifest, fidelity_anchor=True)
-    assert runtime.run.call_count == 1
+    assert "fidelity_anchor" not in runtime.run.call_args.kwargs
 
 
 def test_watermark_remover_dispatches_to_chroma_pipeline(monkeypatch):

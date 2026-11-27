@@ -502,6 +502,7 @@ def remove_video_message(
                         runtime=runtime,
                         temporal_stabilize=temporal_stabilize,
                         timestamps=source_timestamps,
+                        output_size=fit_video_size(*geometry[:2], long_side),
                     )
                 _restore_audio_metadata(staged, audio_streams)
                 after = identify_video_message(staged, reference_hex=reference_hex, scheme=scheme, check_message=verify)

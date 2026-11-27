@@ -37,12 +37,14 @@ _GPU_MARKERS = ("GPU ", "gpu:")
 # 0.73.0 unified all 7 video containers and 9 audio output formats, pruned
 # obsolete experimental audio backends, and promoted non-experimental video
 # 0.74.0 adds 5 visible video marks (`pixverse`, `luma`, `heygen`, `sync_labs`,
-# `tiktok_ai`), `--native-guide` and `--wan-steps` on video invisible/all/batch,
-# and default `preserve_hf_hz=14000.0` for SNAC on `>= 44.1 kHz` audio;
-# 0.75.0 adds `--low-memory` on audio/video invisible, all, and batch commands.
+# `tiktok_ai`) and default `preserve_hf_hz=14000.0` for SNAC on `>= 44.1 kHz` audio;
+# 0.75.0 adds `--low-memory` on audio/video invisible, all, and batch commands;
+# 0.76.0 promotes guided native-resolution/FPS 2D SynthID to the default,
+# unifies `--backend auto`, `--scheme auto`, `batch --mode all`, and `video audio --stream`,
+# and removes legacy debug/workaround CLI flags.
 # tests/test_agent_skill.py pins it against the package version and against every
 # "(since CLI X.Y.Z)" annotation.
-MIN_CLI_VERSION = (0, 75, 0)
+MIN_CLI_VERSION = (0, 76, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # legacy Homebrew installs can still contain such a build.

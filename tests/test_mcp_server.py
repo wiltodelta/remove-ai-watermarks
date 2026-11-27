@@ -110,19 +110,20 @@ def test_video_audio_MP4_output_reaches_legacy_and_catalog_routes():
     mcp_server.call_tool("video_audio", {"path": "input.mov", "output": "processed.mp4", "stream": 1}, runner)
     assert runner.calls == [["video", "audio", "--json", "--stream", "1", "-o", "processed.mp4", "--", "input.mov"]]
     operation = next(item for item in operation_catalog() if item["id"] == "cli_video_audio")
-    args, output = plan_operation(operation, {"source": "input.mov", "output": "processed.mp4", "stream": 1})
+    args, output = plan_operation(operation, {"source": "input.mov", "output": "processed.mp4", "streams": [1]})
     assert output == "processed.mp4"
     output_flag = "-o" if "-o" in args else "--output"
     assert args[args.index(output_flag) + 1] == "processed.mp4"
+    assert args[args.index("--stream") + 1] == "1"
     parameter = next(item for item in operation["parameters"] if item["name"] == "output")
     assert "MP4 with AAC" in parameter["schema"]["description"]
 
 
 def test_neural_audio_options_are_forwarded_to_the_cli():
     runner = _Recorder(stdout="{}")
-    result = mcp_server.call_tool("audio_invisible", {"path": "input.wav", "method": "encodec", "bandwidth": 6}, runner)
+    result = mcp_server.call_tool("audio_invisible", {"path": "input.wav", "method": "encodec"}, runner)
     assert result["isError"] is False
-    assert runner.calls[0][-6:] == ["--method", "encodec", "--bandwidth", "6", "--", "input.wav"]
+    assert runner.calls[0][-4:] == ["--method", "encodec", "--", "input.wav"]
 
 
 def test_dac_audio_options_reach_legacy_and_catalog_mcp():
@@ -140,9 +141,9 @@ def test_dac_audio_options_reach_legacy_and_catalog_mcp():
     assert args[args.index("--vocoder-device") + 1] == "mps"
 
 
-def test_invalid_neural_audio_bandwidth_is_rejected_before_launch():
+def test_retired_neural_audio_bandwidth_is_rejected_before_launch():
     runner = _Recorder()
-    result = mcp_server.call_tool("audio_invisible", {"path": "input.wav", "bandwidth": 7}, runner)
+    result = mcp_server.call_tool("audio_invisible", {"path": "input.wav", "bandwidth": 6}, runner)
     assert result["isError"] is True
     assert runner.calls == []
 
@@ -461,7 +462,6 @@ def test_legacy_audio_and_video_message_tools_stay_in_lockstep_with_cli_catalog_
                 ("scheme", "scheme"),
                 ("method", "method"),
                 ("vocoder_device", "vocoder_device"),
-                ("bandwidth", "bandwidth"),
             ],
         ),
         (
@@ -471,7 +471,6 @@ def test_legacy_audio_and_video_message_tools_stay_in_lockstep_with_cli_catalog_
                 ("scheme", "scheme"),
                 ("method", "method"),
                 ("vocoder_device", "vocoder_device"),
-                ("bandwidth", "bandwidth"),
             ],
         ),
         ("video_message_identify", "cli_video_message_identify", [("scheme", "scheme")]),
@@ -539,12 +538,12 @@ def test_mcp_convenience_tools_route_audio_and_video_audio_all_streams() -> None
 
     res_va_all = mcp_server.call_tool(
         "video_audio",
-        {"path": "clip.mov", "all_streams": True, "scheme": "auto"},
+        {"path": "clip.mov", "scheme": "audioseal"},
         runner,
     )
     assert res_va_all["isError"] is False
-    assert "--all-streams" in runner.calls[-1]
-    assert runner.calls[-1][runner.calls[-1].index("--scheme") + 1] == "auto"
+    assert "--stream" not in runner.calls[-1]
+    assert runner.calls[-1][runner.calls[-1].index("--scheme") + 1] == "audioseal"
     _assert_the_cli_accepts(runner.calls[-1])
 
     # Split audio permissions and check_audio identify flag

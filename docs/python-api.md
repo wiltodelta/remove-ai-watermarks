@@ -239,8 +239,7 @@ The complete field set, with the shipped defaults:
 | `tile` | `False` | Regenerate large inputs in overlapping tiles instead of downscaling. |
 | `tile_size` | `1024` | Tile side in pixels when `tile` is set. |
 | `tile_overlap` | `128` | Tile overlap in pixels. More overlap hides seams and costs time. |
-| `text_manifest` | `None` | Path to an operator-verified text manifest; see the text-restoration section. |
-| `fidelity_anchor` | `False` | Opt into the fidelity-anchor pass. |
+| `text_manifest` | `None` | Path to an operator-verified text manifest; see [restore operator-verified text](#restore-operator-verified-text). |
 
 `tests/test_docs_cover_the_public_surface.py` fails when a field is added here
 and not to this table, because this seam had already drifted by eight fields
@@ -719,10 +718,10 @@ when no visual, metadata, or audio signal requires rewriting. This gives callers
 one predictable output path without mutating clean containers.
 It does not run lossy invisible regeneration by default.
 
-`include_invisible=True` explicitly adds VAE regeneration for MP4, MOV, or M4V
-with the default `invisible_profile="synthid"`, motion-compensated `temporal_stabilize=True`, and `invisible_fps=DEFAULT_VIDEO_SYNTHID_FPS` (pass `invisible_fps=None` to preserve native source frame rate). Select
-`invisible_profile="seedance-experimental"` for the experimental MP4 texture-transfer
-recipe, or `invisible_profile="wan21-synthid-experimental"` / `"wan21-seedance-experimental"`
+`include_invisible=True` explicitly adds VAE regeneration across all 7 supported video containers
+with the default `invisible_profile="auto"` (routing to `wan21-synthid` / `wan21-seedance` on eligible BF16 CUDA GPUs, or to native-resolution 2D `synthid` / `seedance` otherwise, with motion-compensated `temporal_stabilize=True` and `fps=DEFAULT_VIDEO_SYNTHID_FPS`, which is `None` to preserve native source frame rate). Select
+`invisible_profile="seedance"` for the Seedance texture-transfer
+recipe, or `invisible_profile="wan21-synthid"` / `"wan21-seedance"`
 on NVIDIA CUDA GPUs (or explicit Apple Silicon `device="mps"`) for full native-resolution 3D `Wan 2.1` video diffusion, and
 `invisible_quality="delivery"` (default) or `"master"` for their output encode.
 Pass `include_audio_invisible=True` (with `audio_scheme="auto"`, `audio_method="auto"`, `audio_allow_unverified=False`, `audio_allow_positive=False`, `audio_allow_quality_override=False`, `audio_streams=None`, or compatibility alias `audio_force=False`) to also inspect and clean compatible watermarked audio tracks in the same atomic pipeline.
@@ -915,13 +914,11 @@ down to 81-frame chunks on 1080p or `< 16 GiB` CUDA and skipping `UMT5-XXL` when
 the static prompt embedding is cached locally; `seedance` fallback on CPU/MPS)
 when ByteDance/Seedance metadata or visible marks are present, and
 `wan21-synthid` (`synthid` fallback) otherwise. `wan21-synthid` uses `strength=0.38`
-and `wan21-seedance` uses `strength=0.12`. Both accept
-`quality="delivery"` or `"master"`, `seed`, and optional `inference_steps` / `wan_steps`
-(defaulting to the oracle-certified 20 steps; e.g. `wan_steps=6` for 3.3x faster denoising),
-reuse one loaded pipeline across
+and `wan21-seedance` uses `strength=0.12` across the certified 20-step schedule. Both accept
+`quality="delivery"` or `"master"` and `seed`, reuse one loaded pipeline across
 batch items, and perform no runtime oracle verification. On the 2D `synthid` profile,
-`native_guide=True` runs latent regeneration at `long_side` (default 512) and upscales
-cleanly to native `(width, height)` with CIE Lab low-frequency color anchoring. Pass `low_memory=True` on `remove_video_invisible`, `remove_video_all`, or `remove_video_batch` (or call `raiw.release_video_models()` / `raiw.release_models()`) to release cached video/audio models and empty CUDA/MPS allocator caches immediately after processing (`remove_video_all` also releases owned video runtimes automatically before entering `include_audio_invisible=True`). `VideoAllResult` also
+latent regeneration runs at `long_side` (default 512) and upscales
+cleanly to native `(width, height)` at native frame rate (`fps=None`) with CIE Lab low-frequency color anchoring by default. Pass `low_memory=True` on `remove_video_invisible`, `remove_video_all`, or `remove_video_batch` (or call `raiw.release_video_models()` / `raiw.release_models()`) to release cached video/audio models and empty CUDA/MPS allocator caches immediately after processing (`remove_video_all` also releases owned video runtimes automatically before entering `include_audio_invisible=True`). `VideoAllResult` also
 records `audio_verification_scope` and `audio_quality_passed` when
 `include_audio_invisible=True`.
 
@@ -1073,9 +1070,9 @@ restore it with `True` before the next eligible request. These setters accept on
 the Qwen-2.1 profile. Eligibility and quality guards do not establish
 watermark-removal evidence. See [profile limits](cli.md#fidelity-profile).
 
-### Reviewed text manifests
+### Restore operator-verified text
 
-The opt-in verified-text stage uses the same `text_manifest` argument as the CLI:
+The opt-in verified-text stage is available through the Python API (`text_manifest` on `InvisibleEngine.remove_watermark` and `InvisibleOptions`):
 
 ```python
 engine.remove_watermark(
@@ -1085,8 +1082,7 @@ engine.remove_watermark(
 )
 ```
 
-Install `remove-ai-watermarks[text-restoration]`. The manifest schema and safety
-constraints are documented in the CLI guide. The engine verifies its decoded RGB
+Install `remove-ai-watermarks[text-restoration]`. The manifest is a JSON object with `verified: true`, decoded RGB dimensions, `source_pixel_sha256` (computed via `remove_ai_watermarks._internal.text_restoration.source_pixel_sha256`), and a non-empty `lines` array ordered top-to-bottom, left-to-right. The engine verifies its decoded RGB
 hash before loading the diffusion models. Qwen, SDXL, and Chroma reconstruct the
 donor with the VAE already loaded for the selected profile; no second generative
 profile runs. The engine turns an unset `adaptive_polish` off in verified-text mode
@@ -1099,14 +1095,6 @@ against the staged pixels rather than the pristine source.
 Use manifest schema 1 for manually reviewed text plus script metadata. Automated
 operators that verify only text-region geometry should emit schema 2 lines with a
 `box` and optional `angle`; no placeholder transcription or script is required.
-
-Since 0.27.1 the mode's global 15% Qwen-VAE fidelity-anchor blend is **off by
-default** (`fidelity_anchor=False`): that whole-frame blend was measured to
-return detector-visible OpenAI SynthID on poster-scale manifests (official
-Content Provenance API, 2026-08-19 - detected x6 with the anchor, clean x6
-without it, controls and base outputs validated in the same sessions). Pass
-`fidelity_anchor=True` with `qwen-zimage` to reproduce the 0.27.0 research
-behavior. Chroma rejects that Qwen-specific reproduction flag.
 
 ### Drafting manifest lines
 

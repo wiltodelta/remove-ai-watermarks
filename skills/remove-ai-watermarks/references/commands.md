@@ -132,7 +132,7 @@ remove-ai-watermarks all track.mp3 --preset deep-clean -o clean.mp3
 remove-ai-watermarks batch ./media --mode all --preset balanced --output-dir ./clean
 ```
 
-`batch` modes: `visible`, `invisible`, `metadata`, `all`. Both `all` and `batch` accept `--preset [lossless-fast|balanced|deep-clean]` (which switches default `batch` mode to `all`); `batch` processes visual media (images and videos) in `--mode visible` and mixed directories of images, videos, audio, and text files in `metadata`, `invisible`, and `all` modes.
+`batch` modes: `visible`, `invisible`, `metadata`, `all` (default `all`, since CLI 0.76.0). Both `all` and `batch` accept `--preset [lossless-fast|balanced|deep-clean]`; `batch` processes visual media (images and videos) in `--mode visible` and mixed directories of images, videos, audio, and text files in `metadata`, `invisible`, and `all` modes.
 
 ## Video
 
@@ -169,7 +169,7 @@ user-specified `--region` boxes across frames.
 
 `video invisible` and `video all --invisible` accept MP4, MOV, M4V, MKV, WebM, AVI, and FLV.
 That is the default SynthID profile. It is lossy; its shipped noise profile
-is pinned, so do not lower it. Motion-compensated `--temporal-stabilize` is enabled by default (`--no-temporal-stabilize` disables it), `--keep-fps` preserves the native source frame rate instead of resampling to 12 fps, `--native-guide` (since CLI 0.74.0) runs fast 512p 2D VAE regeneration and upscales cleanly to native resolution and frame rate, and `--low-memory` (since CLI 0.75.0) on `video invisible`, `video all`, `video batch`, `audio invisible`, `audio all`, and `audio batch` evicts cached neural models and empties GPU/MPS caches after processing. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, `--audio-allow-positive`, `--audio-allow-quality-override`, or alias `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also enables `--audio-allow-positive` and `--audio-allow-quality-override`; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only).
+is pinned, so do not lower it. Since CLI 0.76.0, 2D `synthid` preserves native resolution and native source frame rate by default (upscaling cleanly from its internal 512p VAE guide with CIE Lab low-frequency color anchoring and motion-compensated optical-flow stabilization; pass `--fps` only to cap output frame rate), and `--low-memory` (since CLI 0.75.0) on `video invisible`, `video all`, `video batch`, `audio invisible`, `audio all`, and `audio batch` evicts cached neural models and empties GPU/MPS caches after processing. On `video all` and `video batch`, `--audio-invisible` (`--audio-scheme`, `--audio-method`, `--audio-stream`, `--audio-allow-unverified`, or `--audio-force`) inspects and cleans compatible watermarked audio tracks in the same pipeline (since CLI 0.63.0). For proprietary audio marks with no local public decoder (such as short Veo/Gemini SynthID or ElevenLabs audio), pass `--audio-allow-unverified` (`--audio-invisible --audio-method dac --audio-allow-unverified`, or `--audio-method auto` when ElevenLabs/Google SynthID C2PA metadata is present), which processes unverified audio while keeping the SNR/RMS/window integrity gate active (`--audio-force` also overrides final decoder and quality checks; `--audio-method auto` without vendor metadata or a positive public decoder runs `spectral` only).
 
 For an owned Seedance video, `--profile auto` routes ByteDance/Seedance clips automatically, or opt in explicitly with `--profile seedance` (legacy alias `seedance-experimental`):
 
@@ -204,9 +204,9 @@ remove-ai-watermarks video all input.mp4 -o clean.mp4 --invisible --profile wan2
 ```
 
 Both `wan21-*` profiles use pinned Apache-2.0 `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`
-(`strength=0.38` for SynthID, `strength=0.12` for Seedance, 193-frame chunks
+(`strength=0.38` for SynthID, `strength=0.12` for Seedance, 20 inference steps, 193-frame chunks
 with 17-frame raised-cosine temporal crossfades on longer clips), accept
-`--quality [delivery|master]`, `--seed`, and `--wan-steps` (default certified 20; e.g. `--wan-steps 6` for fast scrubbing, since CLI 0.74.0), require `device=auto`, `cuda`, or an
+`--quality [delivery|master]` and `--seed`, require `device=auto`, `cuda`, or an
 explicit `mps` (FP16 transformer; `auto` never selects MPS), and
 reject 2D VAE SynthID tuning flags. Neither performs per-file oracle verification.
 
@@ -231,8 +231,8 @@ remove-ai-watermarks audio batch ./tracks -o ./tracks_clean --mode all --invisib
 ```
 
 `audio identify` and `audio invisible` accept `--stream N`, a zero-based audio-track ordinal (`audio identify` also emits `recommended_recipe` when AI metadata or a compatible watermark signal is found). `audio metadata` checks (`--check`) or strips (`--remove`) AI metadata via stream-copy remuxing (`--keep-standard/--remove-all`, `-o`). `audio all` strips AI metadata and, with `--invisible`, removes compatible waveform watermarks (`--scheme auto` default, writing a metadata-cleaned passthrough when no positive compatible watermark is detected). `audio batch` runs `--mode [all|metadata]` across a directory (`-o` / `--output-dir`). Inspection without
-models needs ffmpeg and ffprobe. `--scheme audioseal` (default on `identify`/`invisible`) needs
-`audio-detect`; `--scheme auto` scans every installed compatible decoder without failing on absent optional extras; `--scheme wavmark` needs `audio-wavmark`; `--scheme perth` needs `audio-perth`; `--scheme silentcipher` needs `audio-silentcipher`; `--scheme all` checks
+models needs ffmpeg and ffprobe. `--scheme auto` (default across all audio and video commands, since CLI 0.76.0) scans every installed compatible decoder without failing on absent optional extras; `--scheme audioseal` needs
+`audio-detect`; `--scheme wavmark` needs `audio-wavmark`; `--scheme perth` needs `audio-perth`; `--scheme silentcipher` needs `audio-silentcipher`; `--scheme all` checks
 all named models and needs all named decoder extras. WavMark also checks the
 published OpenVoice default raw framing at native samples 0 and 32000. JSON
 labels it `framing="openvoice-default"` with its native `decoder_sample_rate`.
@@ -248,7 +248,7 @@ discarded and saved-file decoder verification enforced after encoding. The spect
 neural resynthesis for AudioSeal and Perth v1, neural then combined for WavMark and SilentCipher (using Mid/Side stereo on 2-channel EnCodec passes), routes mono, stereo, or tagged 5.1/7.1 audio carrying ElevenLabs metadata to `dac` (or `encodec`/`combined` when `dac` is absent) and Google SynthID metadata exclusively to `dac`/`combined` (failing closed rather than falling back to `encodec` when `dac` is absent or the layout is unsupported) instead of `spectral`, and adapts to positively detected schemes under `--scheme auto` or `all` before falling back to `combined`. Each candidate must pass the saved-output gate before publication.
 `--method spectral`, `encodec`, `combined`, `dac`, or `snac` fixes one profile. Neural profiles
 need `audio-codec`; a missing required fallback fails without replacing output.
-`--bandwidth` accepts `6`, `12`, or `24` kbps, default `24`, for EnCodec profiles.
+EnCodec profiles run at 24 kbps.
 Keep the requested decoder extras for verification. Neural processing changes speech
 timbre or music and can retain a watermark. Whole-clip and window checks must
 both pass; a negative whole-clip result alone is insufficient. These options
@@ -271,7 +271,7 @@ single-pass resynthesis up to 30 seconds and overlap-window streaming on longer
 audio (`> 30 s`), supporting mono, raw mid/side stereo, and tagged `5.1`/`7.1`
 surround stems on `--vocoder-device [auto|cpu|mps|cuda]`; `auto` excludes `snac`.
 
-`--allow-unverified` permits processing without a local source-positive decoder match (or with `--no-verify`) while keeping the audio SNR/RMS/window integrity gate active (`--allow-positive` permits a still-positive final candidate; `--allow-quality-override` overrides the integrity gate; `--force` enables all three).
+`--allow-unverified` permits processing without a local source-positive decoder match (or with `--no-verify`) while keeping the audio SNR/RMS/window integrity gate active (`--force` also overrides final decoder and quality checks).
 `--method spectral --allow-unverified --no-verify` only needs the `audio` extra. Other
 processing methods retain their own model extras. A still-positive written
 candidate exits 1. Unverified processing exits 0 with
@@ -281,9 +281,9 @@ candidate exits 1. Unverified processing exits 0 with
 SynthID, Perth v2, or other production schemes. Visual video processing continues
 to copy audio unchanged.
 
-`video audio input.mp4 -o processed.mkv --stream 0 --json` (since CLI 0.63.0)
-applies the same audio profile and verification policy inside a video (`--stream N` for one track, or `--all-streams` / repeatable `--target-stream N` to inspect and clean watermarked tracks while stream-copying unmarked tracks). It accepts
-`--allow-unverified`, `--allow-positive`, `--allow-quality-override`, `--force`, `--verify/--no-verify`, `--stream`, `--all-streams`, `--target-stream`, `--scheme`, `--json`, and `-o` / `--output`.
+`video audio input.mp4 -o processed.mkv --json` (since CLI 0.63.0)
+applies the same audio profile and verification policy inside a video (by default inspecting all audio tracks and cleaning every watermarked track while stream-copying unmarked tracks; pass `--stream N` once for a single track or repeat `--stream N` for selected tracks, since CLI 0.76.0). It accepts
+`--allow-unverified`, `--force`, `--verify/--no-verify`, `--stream`, `--scheme`, `--json`, and `-o` / `--output`.
 Default output: `<source>_audio_processed.mkv`. MKV and MOV outputs store the
 selected track as uncompressed float PCM, increasing file size. Explicit MP4 output
 encodes only the selected track as lossy AAC (target 192 kbps); `--method auto`

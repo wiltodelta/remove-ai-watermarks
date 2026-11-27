@@ -3890,7 +3890,7 @@ wheels = [
 
 [[package]]
 name = "remove-ai-watermarks"
-version = "0.75.0"
+version = "0.76.0"
 source = { editable = "." }
 dependencies = [
     { name = "c2pa-python" },

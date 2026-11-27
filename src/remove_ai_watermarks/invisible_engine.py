@@ -231,7 +231,6 @@ class InvisibleEngine:
         tile_size: int = 1024,
         tile_overlap: int = 128,
         text_manifest: Path | None = None,
-        fidelity_anchor: bool = False,
     ) -> Path:
         """Remove invisible watermark from an image.
 
@@ -269,18 +268,10 @@ class InvisibleEngine:
             tile_overlap: Overlap between adjacent tiles in px (default 128).
             text_manifest: Operator-verified text lines bound to the decoded source
                 pixels. Enables the experimental profile-VAE ``vae-glyphs`` post-pass.
-                Requires the ``text-restoration`` extra and either ``qwen-zimage``
-                or ``chroma-zimage``. Incompatible with downscaling, humanize,
-                unsharp, and adaptive polish. Tiling is rejected because that
-                combination has no provider-oracle calibration.
-            fidelity_anchor: Blend 15% of the Qwen-VAE donor across the whole frame
-                before glyph restoration. OFF by default since 0.27.1: that global
-                blend was measured to return detector-visible OpenAI SynthID on
-                poster-scale manifests (detected x6 with the anchor vs clean x6
-                without it, base clean; official Content Provenance API,
-                2026-08-19 - docs/text-protection-research.md). ``True`` reproduces
-                the 0.27.0 research behavior. Requires ``text_manifest`` and the
-                ``qwen-zimage`` profile.
+                Requires the ``text-restoration`` extra and a supported profile.
+                Incompatible with downscaling, humanize, unsharp, and adaptive polish.
+                Tiling is rejected because that combination has no provider-oracle
+                calibration.
 
         Returns:
             Path to the cleaned image.
@@ -298,15 +289,13 @@ class InvisibleEngine:
             else resolve_adaptive_polish(adaptive_polish, effective_profile)
         )
 
-        if fidelity_anchor and text_manifest is None:
-            raise ValueError("fidelity_anchor requires a text manifest")
         if text_manifest is not None:
             if tile:
-                raise ValueError("--text-manifest is not calibrated with --tile")
+                raise ValueError("text_manifest is not calibrated with tile=True")
             if max_resolution != 0:
-                raise ValueError("--text-manifest requires --max-resolution 0")
+                raise ValueError("text_manifest requires max_resolution=0")
             if humanize > 0.0 or unsharp > 0.0 or adaptive_polish:
-                raise ValueError("--text-manifest requires humanize=0, unsharp=0, and adaptive polish disabled")
+                raise ValueError("text_manifest requires humanize=0, unsharp=0, and adaptive polish disabled")
             from remove_ai_watermarks import region_eraser
 
             if not region_eraser.lama_available():
@@ -382,7 +371,6 @@ class InvisibleEngine:
                 tile_size=tile_size,
                 tile_overlap=tile_overlap,
                 text_manifest=verified_text,
-                fidelity_anchor=fidelity_anchor,
             )
 
             # Post-processing chain: decode the diffusion output ONCE, apply the

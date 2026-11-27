@@ -6,7 +6,7 @@ contracts that unit tests with fakes cannot.
 
 WHAT IT COVERS AND WHY THAT SHAPE
   * Every choice-valued flag at least once (`--backend`, `--sensitivity`, `--mark`,
-    `--mode`, `--inpaint-method`, ...). Full permutation is combinatorially large and
+    `--mode`, ...). Full permutation is combinatorially large and
     mostly meaningless; dead branches and typos hide in the CHOICES, not in their
     products.
   * Every input FORMAT and shape edge case through the pixel paths -- PNG/JPEG/WebP/
@@ -233,30 +233,43 @@ def main() -> None:
     r.run("visible no-mark exits 2", ["visible", str(chatgpt), "-o", str(noout)], expect_exit=EXIT_NO_VISIBLE_MARK)
     r.check("visible no-mark writes NO output", not noout.exists(), "wrote an output for an undetected mark")
 
-    # ---- erase: backends, methods, repeated regions, dilate ------------------
-    for method in ("telea", "ns"):
-        r.run(
-            f"erase --inpaint-method {method}",
-            [
-                "erase",
-                str(doubao),
-                "--region",
-                "10,10,60,30",
-                "--inpaint-method",
-                method,
-                "-o",
-                str(tmp / f"e_{method}.png"),
-            ],
-        )
+    # ---- erase: backends, repeated regions, dilate ---------------------------
+    r.run(
+        "erase rejects retired --inpaint-method",
+        ["erase", str(doubao), "--region", "10,10,60,30", "--inpaint-method", "telea"],
+        expect_exit=2,
+    )
     r.run(
         "erase repeated --region",
-        ["erase", str(doubao), "--region", "10,10,40,20", "--region", "80,80,40,20", "-o", str(tmp / "e_multi.png")],
+        [
+            "erase",
+            str(doubao),
+            "--region",
+            "10,10,40,20",
+            "--region",
+            "80,80,40,20",
+            "--backend",
+            "cv2",
+            "-o",
+            str(tmp / "e_multi.png"),
+        ],
     )
     r.run(
         "erase --dilate",
-        ["erase", str(doubao), "--region", "10,10,40,20", "--dilate", "5", "-o", str(tmp / "e_dil.png")],
+        [
+            "erase",
+            str(doubao),
+            "--region",
+            "10,10,40,20",
+            "--dilate",
+            "5",
+            "--backend",
+            "cv2",
+            "-o",
+            str(tmp / "e_dil.png"),
+        ],
     )
-    for backend in ("cv2", "migan", "lama"):
+    for backend in ("auto", "cv2", "migan", "lama"):
         have = {"migan": migan_available(), "lama": lama_available()}.get(backend, True)
         if not have:
             r.skip(f"erase --backend {backend}", f"the `{backend}` extra is not installed")
@@ -277,7 +290,18 @@ def main() -> None:
         )
     r.run(
         "erase --dilate 0 (no dilation)",
-        ["erase", str(doubao), "--region", "10,10,40,20", "--dilate", "0", "-o", str(tmp / "e_d0.png")],
+        [
+            "erase",
+            str(doubao),
+            "--region",
+            "10,10,40,20",
+            "--dilate",
+            "0",
+            "--backend",
+            "cv2",
+            "-o",
+            str(tmp / "e_d0.png"),
+        ],
     )
     r.run("erase rejects a malformed --region", ["erase", str(doubao), "--region", "not,a,box"], expect_exit=2)
 
@@ -364,8 +388,7 @@ def _knob_rows(r: Runner, tmp: Path, img: Path) -> None:
 
     Deliberately cheap (`--max-resolution 384`): these rows answer "is the knob accepted
     and does the run complete", NOT "is the output good". Quality per knob needs a
-    per-knob oracle and most of them have none (`--humanize` has no oracle at all), so
-    claiming more here would be dishonest.
+    per-knob oracle, so claiming more here would be dishonest.
     """
     # Both surviving profiles are CUDA-only, pin a fixed model stack and let each stage
     # own its schedule and CFG. The knobs that used to contradict that (--model, --steps,
@@ -394,6 +417,10 @@ def _knob_rows(r: Runner, tmp: Path, img: Path) -> None:
         (["--model", "org/custom"], "model"),
         (["--device", "cpu"], "devcpu"),
         (["--auto"], "auto"),
+        (["--humanize", "0.3"], "hum"),
+        (["--unsharp", "0.5"], "uns"),
+        (["--fidelity-anchor"], "fa"),
+        (["--text-manifest", "boxes.json"], "tm"),
     ):
         run(f"{args[0]} is no longer an option", args, tag=tag, expect=2)
 
@@ -411,8 +438,6 @@ def _knob_rows(r: Runner, tmp: Path, img: Path) -> None:
         for label in (
             "--strength",
             "--controlnet-scale",
-            "--humanize",
-            "--unsharp",
             "--no-adaptive-polish",
             "--tile",
             "--pipeline sdxl-zimage",
@@ -423,8 +448,6 @@ def _knob_rows(r: Runner, tmp: Path, img: Path) -> None:
     run("--pipeline sdxl-zimage", ["--pipeline", "sdxl-zimage"], tag="sdxlz")
     run("--strength", ["--strength", "0.2"], tag="strength")
     run("--controlnet-scale", ["--controlnet-scale", "0.5"], tag="cns")
-    run("--humanize", ["--humanize", "0.3"], tag="hum")
-    run("--unsharp", ["--unsharp", "0.5"], tag="uns")
     run("--no-adaptive-polish", ["--no-adaptive-polish"], tag="nap")
     run("--tile", ["--tile", "--tile-size", "256", "--tile-overlap", "64"], tag="tile")
 

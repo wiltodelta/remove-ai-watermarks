@@ -23,7 +23,6 @@ if TYPE_CHECKING:
 
 TEXT_MANIFEST_SCHEMA = 2
 _SUPPORTED_TEXT_MANIFEST_SCHEMAS = frozenset({1, TEXT_MANIFEST_SCHEMA})
-FIDELITY_BLEND_ALPHA = 0.15
 GLYPH_FEATHER = 0.5
 GLYPH_SIDE_PAD_RATIO = 0.12
 GLYPH_SIDE_PAD_LIMIT = 1.0
@@ -133,16 +132,6 @@ def _load_line(item: Any, width: int, height: int, index: int, schema_version: i
     if not math.isfinite(angle) or abs(angle) > 30.0:
         raise ValueError(f"Text manifest line {index} angle must be between -30 and 30 degrees")
     return VerifiedTextLine(box, text, script, angle)
-
-
-def blend_fidelity_anchor(clean: Image.Image, donor: Image.Image) -> Image.Image:
-    """Blend 15% Qwen-VAE reconstruction into the oracle-clean pipeline output."""
-    clean_rgb = np.asarray(clean.convert("RGB"), dtype=np.float32)
-    donor_rgb = np.asarray(donor.convert("RGB"), dtype=np.float32)
-    if clean_rgb.shape != donor_rgb.shape:
-        raise ValueError("Clean result and Qwen-VAE donor dimensions must match")
-    blended = np.rint(clean_rgb * (1.0 - FIDELITY_BLEND_ALPHA) + donor_rgb * FIDELITY_BLEND_ALPHA)
-    return Image.fromarray(np.clip(blended, 0, 255).astype(np.uint8))
 
 
 def restore_verified_text(

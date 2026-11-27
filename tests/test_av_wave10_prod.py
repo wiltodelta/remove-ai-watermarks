@@ -197,5 +197,10 @@ def test_2d_synthid_logs_warning_when_downscaling(
         lambda **_: (_ for _ in ()).throw(RuntimeError("stop_after_warning")),
     )
     with pytest.raises(RuntimeError, match="stop_after_warning"):
-        video_invisible.regenerate_video_candidate(src, tmp_path / "out.mp4", device="cpu")
+        video_invisible.regenerate_video_candidate(src, tmp_path / "out.mp4", fps=12.0, device="cpu")
     assert any("2D SynthID VAE fallback downscaling" in rec.message for rec in caplog.records)
+
+    caplog.clear()
+    with pytest.raises(RuntimeError, match="stop_after_warning"):
+        video_invisible.regenerate_video_candidate(src, tmp_path / "native.mp4", device="cpu")
+    assert not any("2D SynthID VAE fallback downscaling" in rec.message for rec in caplog.records)

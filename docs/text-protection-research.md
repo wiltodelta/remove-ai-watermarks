@@ -363,9 +363,9 @@ The anchor was therefore the leak channel: a 15% global donor admixture over a
 scrubbed frame returns enough OpenAI SynthID for the provider detector. Fidelity
 cost of dropping it (source-referenced text-box MAE): 11.60->11.72, 7.79->7.86,
 and 7.57->8.13 across the two posters and the CJK sign - well under one point
-against base MAEs of 24.7/16.8/10.2. Since 0.27.1 the anchor is off by default
-(`fidelity_anchor` parameter on `remove_watermark` / `InvisibleOptions` /
-`--fidelity-anchor`); Google rows were not re-queried because the default
+against base MAEs of 24.7/16.8/10.2. Since 0.27.1 the anchor was turned off by
+default, and in 0.76.0 `fidelity_anchor` / `--fidelity-anchor` was removed from
+the CLI and public options; Google rows were not re-queried because the default
 strength leaves that fixture's base detected (the vendor-strength lane tracks
 that separately). Certification artifacts: private archive
 `text-restoration-2026-08-19-A1` (sha256-stamped rows).

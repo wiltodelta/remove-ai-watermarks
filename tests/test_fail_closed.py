@@ -299,10 +299,15 @@ class TestEmptyBatch:
     def test_image_batch(self, tmp_path):
         indir = tmp_path / "in"
         indir.mkdir()
-        (indir / "notes.txt").write_text("not an image")
+        (indir / "notes.bin").write_bytes(b"\x00\x01\x02")
         result = _invoke(["batch", str(indir), "-o", str(tmp_path / "out")])
         assert result.exit_code == 2, result.output
         assert not (tmp_path / "out").exists()
+
+        (indir / "notes.txt").write_text("not an image")
+        vis_result = _invoke(["batch", str(indir), "--mode", "visible", "-o", str(tmp_path / "out_vis")])
+        assert vis_result.exit_code == 2, vis_result.output
+        assert not (tmp_path / "out_vis").exists()
 
     def test_video_batch(self, tmp_path):
         indir = tmp_path / "in"

@@ -9,9 +9,7 @@ import pytest
 from PIL import Image, PngImagePlugin
 
 from remove_ai_watermarks._internal.text_restoration import (
-    FIDELITY_BLEND_ALPHA,
     VerifiedTextLine,
-    blend_fidelity_anchor,
     load_verified_text_manifest,
     restore_verified_text,
     source_pixel_sha256,
@@ -126,19 +124,6 @@ def test_manifest_rejects_unverified_or_unbound_input(tmp_path, mutation, messag
 
     with pytest.raises(ValueError, match=message):
         load_verified_text_manifest(path, source)
-
-
-def test_fidelity_anchor_uses_the_calibrated_rounding() -> None:
-    clean = Image.fromarray(np.array([[[1, 2, 3], [100, 150, 200]]], dtype=np.uint8))
-    donor = Image.fromarray(np.array([[[255, 254, 253], [200, 100, 50]]], dtype=np.uint8))
-
-    result = np.asarray(blend_fidelity_anchor(clean, donor))
-    expected = np.rint(
-        np.asarray(clean, dtype=np.float32) * (1.0 - FIDELITY_BLEND_ALPHA)
-        + np.asarray(donor, dtype=np.float32) * FIDELITY_BLEND_ALPHA
-    ).astype(np.uint8)
-
-    assert np.array_equal(result, expected)
 
 
 def test_restoration_uses_lama_and_qwen_vae_core(monkeypatch) -> None:

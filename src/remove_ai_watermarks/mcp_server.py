@@ -28,7 +28,6 @@ from typing import IO, Any, cast
 from remove_ai_watermarks import __version__
 from remove_ai_watermarks._internal.constants import (
     ALL_PRESETS,
-    AUDIO_BANDWIDTHS_KBPS,
     AUDIO_EXTENSIONS,
     AUDIO_METHODS,
     AUDIO_SCHEMES,
@@ -169,21 +168,24 @@ for _name, _description, _options in (
     ),
     (
         "video_audio",
-        "Process one selected audio track (or all source-positive tracks with all_streams=true) inside a video, "
-        "copying other encoded streams. Outputs MKV/MOV with float PCM or MP4 with selected-track AAC "
+        "Process one selected audio track (stream=N) or all source-positive tracks (when stream is omitted) inside a "
+        "video, copying other encoded streams. Outputs MKV/MOV with float PCM or MP4 with selected-track AAC "
         "(target 192 kbps). "
         "Visual marks and untouched audio tracks remain unchanged. "
         "Default publication requires compatible source-positive and final-mux-negative checks "
         "for the requested models.",
-        {"all_streams": {"type": "boolean", "default": False}},
+        {},
     ),
 ):
+    _stream_spec: dict[str, Any] = (
+        {"type": "integer", "minimum": 0} if _name == "video_audio" else {"type": "integer", "minimum": 0, "default": 0}
+    )
     _options = {
         **_options,
         "scheme": {
             "type": "string",
             "enum": list(AUDIO_SCHEMES),
-            "default": AUDIO_SCHEMES[0],
+            "default": "auto",
         },
     }
     if _name != "audio_identify":
@@ -192,8 +194,6 @@ for _name, _description, _options in (
             "output": {"type": "string"},
             "force": {"type": "boolean", "default": False},
             "allow_unverified": {"type": "boolean", "default": False},
-            "allow_positive": {"type": "boolean", "default": False},
-            "allow_quality_override": {"type": "boolean", "default": False},
             "verify": {"type": "boolean", "default": True},
             "method": {
                 "type": "string",
@@ -211,11 +211,6 @@ for _name, _description, _options in (
                 "enum": list(AUDIO_VENDORS),
                 "default": AUDIO_VENDORS[0],
             },
-            "bandwidth": {
-                "type": "integer",
-                "enum": list(AUDIO_BANDWIDTHS_KBPS),
-                "default": AUDIO_BANDWIDTHS_KBPS[-1],
-            },
         }
     TOOLS.append(
         {
@@ -227,7 +222,7 @@ for _name, _description, _options in (
                 "additionalProperties": False,
                 "properties": {
                     "path": {"type": "string"},
-                    "stream": {"type": "integer", "minimum": 0, "default": 0},
+                    "stream": _stream_spec,
                     **_options,
                 },
             },
@@ -453,13 +448,8 @@ def _validate_output_and_verify_flags(
     flags = ["-o", output]
     if values["force"]:
         flags.append("--force")
-    if allow_audio_permissions:
-        if allow_unverified:
-            flags.append("--allow-unverified")
-        if values.get("allow_positive"):
-            flags.append("--allow-positive")
-        if values.get("allow_quality_override"):
-            flags.append("--allow-quality-override")
+    if allow_audio_permissions and allow_unverified:
+        flags.append("--allow-unverified")
     if not values["verify"]:
         flags.append("--no-verify")
     return flags
@@ -469,7 +459,9 @@ def _audio_command(values: dict[str, Any], *, video: bool = False) -> tuple[list
     source = Path(values["path"])
     identify = "check_invisible" in values
     prefix = ["video", "audio"] if video else ["audio", "identify" if identify else "invisible"]
-    command = [*prefix, "--json", "--stream", str(values["stream"])]
+    command = [*prefix, "--json"]
+    if "stream" in values:
+        command.extend(["--stream", str(values["stream"])])
     output = None
     if identify:
         if not values["check_invisible"]:
@@ -480,15 +472,11 @@ def _audio_command(values: dict[str, Any], *, video: bool = False) -> tuple[list
         command.extend(_validate_output_and_verify_flags(source, output, values, allow_audio_permissions=True))
         if values["method"] != AUDIO_METHODS[0]:
             command.extend(["--method", values["method"]])
-        if values["bandwidth"] != AUDIO_BANDWIDTHS_KBPS[-1]:
-            command.extend(["--bandwidth", str(values["bandwidth"])])
         if values["vocoder_device"] != AUDIO_VOCODER_DEVICES[0]:
             command.extend(["--vocoder-device", values["vocoder_device"]])
         if values.get("vendor", AUDIO_VENDORS[0]) != AUDIO_VENDORS[0]:
             command.extend(["--vendor", values["vendor"]])
-    if values.get("all_streams"):
-        command.append("--all-streams")
-    if values["scheme"] != AUDIO_SCHEMES[0]:
+    if values["scheme"] != "auto":
         command.extend(["--scheme", values["scheme"]])
     return [*command, "--", values["path"]], output
 

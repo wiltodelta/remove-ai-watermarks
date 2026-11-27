@@ -298,7 +298,7 @@ or SilentCipher do not certify an entire song or an unsupported provider.
 The `audio identify`, `audio metadata`, `audio invisible`, `audio all`, and `audio batch` commands provide named
 public AudioSeal/WavMark/Perth v1/SilentCipher-44k checks (`--scheme auto` scans installed decoders) and spectral, neural-codec (with Mid/Side stereo EnCodec, and 44.1 kHz DAC and SNAC both defaulting `preserve_hf_hz=14000.0` on `>= 44.1 kHz` tracks; `auto` selects DAC when pre-strip metadata identifies ElevenLabs or Google SynthID),
 or combined processing
-into `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka`, while `video audio` (`--stream N` or `--all-streams`) and `video all --audio-invisible` clean compatible audio tracks inside video containers.
+into `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka`, while `video audio` (all watermarked tracks by default, or repeatable `--stream N`) and `video all --audio-invisible` clean compatible audio tracks inside video containers.
 They write standalone `.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, or `.mka` outputs. They do not change standalone `video invisible`
 described below. The fixed spectral profile changes audible content and fails
 on the calibrated tone-stack carrier. Verification is limited to the pinned

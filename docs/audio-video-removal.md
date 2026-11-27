@@ -628,14 +628,14 @@ quality and synchronization must accompany a detector result.
 
 By default, visual video paths copy audio unchanged unless `--audio-invisible`
 (`include_audio_invisible=True` on `remove_video_all` / `remove_video_batch`) is
-enabled. `video audio` processes one selected track by default, or every
-watermarked audio stream when `--all-streams` (`remove_video_audio_all_streams`)
-is passed; it saves float PCM in MKV/MOV or lossy AAC in MP4 (target 192 kbps),
+enabled. `video audio` inspects all audio tracks and cleans every watermarked
+audio stream by default (`remove_video_audio_all_streams`), or restricts
+processing to one or more tracks via repeatable `--stream N`; it saves float PCM in MKV/MOV or lossy AAC in MP4 (target 192 kbps),
 and copies all non-target streams unchanged. Publication checks untouched
 streams' encoded packet hashes, timestamps, and audio priming/tail trimming,
 each cleaned audio track's continuous timeline, sample-frame count and offset,
-and fresh decoder readings after the final mux. Single-track `video audio`
-without `--all-streams` does not certify or remove marks on uninspected sibling
+and fresh decoder readings after the final mux. Single-track `video audio --stream N`
+does not certify or remove marks on uninspected sibling
 audio tracks. Unsupported muxes and discontinuous source audio are rejected
 without padding or truncating samples. Fidelity and detector readings cover the
 actual decoded final output. Uncompressed audio can substantially increase

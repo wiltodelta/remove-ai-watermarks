@@ -4142,7 +4142,7 @@ class TestSignalDiscovery20261027VideoGaps:
 
 
 class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
-    def test_video_invisible_defaults_temporal_stabilize_and_supports_keep_fps(
+    def test_video_invisible_defaults_temporal_stabilize_and_native_fps(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -4156,31 +4156,32 @@ class TestVideoInvisibleStabilizeKeepFpsAndFourLayerAll:
         def fake_regenerate(_src: Path, target: Path, **kwargs: object):
             seen_kwargs.append(kwargs)
             target.write_bytes(_MP4_FTYP + _box(b"mdat", _VIDEO_PAYLOAD))
-            return _regeneration_metrics(fps=30.0 if kwargs.get("fps") is None else 12.0)
+            fps_arg = kwargs.get("fps")
+            return _regeneration_metrics(fps=30.0 if fps_arg is None else float(fps_arg))
 
         monkeypatch.setattr(video_invisible, "regenerate_video_candidate", fake_regenerate)
 
         res_default = remove_video_invisible(source, tmp_path / "default_out.mp4")
         assert seen_kwargs[-1]["temporal_stabilize"] is True
-        assert seen_kwargs[-1]["fps"] == 12.0
-        assert res_default.fps == 12.0
+        assert seen_kwargs[-1]["fps"] is None
+        assert res_default.fps == 30.0
 
-        res_keep = CliRunner().invoke(
+        res_capped = CliRunner().invoke(
             main,
             [
                 "video",
                 "invisible",
                 str(source),
                 "-o",
-                str(tmp_path / "keep_fps_out.mp4"),
-                "--keep-fps",
-                "--no-temporal-stabilize",
+                str(tmp_path / "capped_fps_out.mp4"),
+                "--fps",
+                "12",
             ],
         )
-        assert res_keep.exit_code == 0, res_keep.output
-        assert seen_kwargs[-1]["fps"] is None
-        assert seen_kwargs[-1]["temporal_stabilize"] is False
-        assert "30 fps" in res_keep.output
+        assert res_capped.exit_code == 0, res_capped.output
+        assert seen_kwargs[-1]["fps"] == 12.0
+        assert seen_kwargs[-1]["temporal_stabilize"] is True
+        assert "12 fps" in res_capped.output
 
     def test_video_all_with_audio_invisible_updates_audio_status_and_processes_tracks(
         self,

@@ -18,6 +18,7 @@ from remove_ai_watermarks.video_synthid import (
     DEFAULT_VIDEO_SYNTHID_FPS,
     DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
     DEFAULT_VIDEO_SYNTHID_NOISE_STD,
+    DEFAULT_VIDEO_SYNTHID_VAE,
 )
 
 if TYPE_CHECKING:
@@ -366,33 +367,34 @@ def test_probe_video_timestamps_uses_best_effort_pts(
 def test_shipped_defaults_match_a_certified_manifest_row() -> None:
     """The shipped operating point must be one the provider oracle actually cleared.
 
-    Pinning the constant alone was not enough. Only ``noise_std`` was asserted, so
-    ``long_side`` and ``fps`` could move to an uncertified geometry with a green
-    suite -- and they are two thirds of what the oracle was shown. Reading the
-    manifest ties all three to the evidence: raising the resolution or the frame
-    rate now fails here until a ``not_detected`` row exists for that exact triple.
-
-    The tuple stops at three fields because the model is a fourth thing the oracle
-    was shown and neither historical row recorded it. The manifest says
-    ``unrecorded`` rather than leaving an ambiguous empty field. Add ``vae`` here in
-    the same commit as the first row that records one.
+    Ties ``(vae, noise_std, long_side, fps)`` directly to ``not_detected`` rows in
+    ``data/evaluations/video-synthid-oracle.csv``. When ``DEFAULT_VIDEO_SYNTHID_FPS``
+    is ``None`` (preserve native source frame rate), a row certifies native FPS
+    only when ``fps == source_fps`` and ``stratum`` records native guided output.
     """
     with ORACLE_MANIFEST.open(newline="", encoding="utf-8") as stream:
-        certified = {
-            (float(row["noise_std"]), int(row["long_side"]), float(row["fps"]))
-            for row in csv.DictReader(stream)
-            # The manifest deliberately leaves unrecorded fields empty, so a row
-            # missing part of its configuration certifies no triple and is skipped
-            # rather than crashing the parse.
-            if row["output_verdict"] == "not_detected"
-            and all(row[field] for field in ("noise_std", "long_side", "fps"))
-        }
+        certified: set[tuple[str, float, int, float | None]] = set()
+        for row in csv.DictReader(stream):
+            if row["output_verdict"] != "not_detected" or row["vae"] == "unrecorded":
+                continue
+            if not all(row[field] for field in ("vae", "noise_std", "long_side", "fps", "source_fps")):
+                continue
+            row_fps = float(row["fps"])
+            src_fps = float(row["source_fps"])
+            certified.add((row["vae"], float(row["noise_std"]), int(row["long_side"]), row_fps))
+            if math.isclose(row_fps, src_fps) and row.get("stratum", "").startswith("native_"):
+                certified.add((row["vae"], float(row["noise_std"]), int(row["long_side"]), None))
 
     assert certified, f"{ORACLE_MANIFEST.name} records no fully configured certified row"
-    shipped = (DEFAULT_VIDEO_SYNTHID_NOISE_STD, DEFAULT_VIDEO_SYNTHID_LONG_SIDE, DEFAULT_VIDEO_SYNTHID_FPS)
+    shipped = (
+        DEFAULT_VIDEO_SYNTHID_VAE,
+        DEFAULT_VIDEO_SYNTHID_NOISE_STD,
+        DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
+        DEFAULT_VIDEO_SYNTHID_FPS,
+    )
     assert shipped in certified, (
-        f"shipped (noise_std, long_side, fps)={shipped} has no certified row in "
-        f"{ORACLE_MANIFEST.name}; certified: {sorted(certified)}"
+        f"shipped (vae, noise_std, long_side, fps)={shipped} has no certified row in "
+        f"{ORACLE_MANIFEST.name}; certified: {sorted(certified, key=str)}"
     )
 
 

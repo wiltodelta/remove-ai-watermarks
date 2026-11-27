@@ -369,7 +369,7 @@ compatible decoder on the actual mux. AAC priming and tail trimming must preserv
 the native decoded count and offset; there is no padding, truncation, or timing
 repair. Final fidelity also uses decoded mux audio, with the final source-SHA256
 immutability assertion evaluated after all staged reads complete.
-Its CLI route is `video audio` (`--stream N` for single-track `remove_video_audio`, or `--all-streams` / `--target-stream N` for multi-track `remove_video_audio_all_streams`), separate from visual processing unless `include_audio_invisible=True` (`--audio-invisible`) is passed to `remove_video_all` or `remove_video_batch` (which inspects `stream_inventory` first so silent videos do not require `scipy`, probes canonical `audio_io.probe_audio` channel layouts with untagged 1/2-channel fallbacks, checks `adaptive_auto_profiles`, returns reusable source `AudioProvenanceReport` readings to avoid duplicate packet scans, wraps `remove_video_all` in an outer `atomic_video_output` transaction across final `get_ai_metadata` verification, and copies completely clean videos byte-for-byte). Post-processing verification across `audio.py` and `video_audio.py` delegates to `audio.verification_outcome`, requiring every source-positive `(scheme, channel, decoder_sample_rate)` check to return `not_detected` on the saved output while distinguishing short-clip window inapplicability from execution failures under `scheme="auto"`. Other stream
+Its CLI route is `video audio` (by default inspecting all tracks and cleaning every watermarked track via `remove_video_audio_all_streams`, or targeting one track via `--stream N` / `remove_video_audio` or selected tracks via repeated `--stream N`), separate from visual processing unless `include_audio_invisible=True` (`--audio-invisible`) is passed to `remove_video_all` or `remove_video_batch` (which inspects `stream_inventory` first so silent videos do not require `scipy`, probes canonical `audio_io.probe_audio` channel layouts with untagged 1/2-channel fallbacks, checks `adaptive_auto_profiles`, returns reusable source `AudioProvenanceReport` readings to avoid duplicate packet scans, wraps `remove_video_all` in an outer `atomic_video_output` transaction across final `get_ai_metadata` verification, and copies completely clean videos byte-for-byte). Post-processing verification across `audio.py` and `video_audio.py` delegates to `audio.verification_outcome`, requiring every source-positive `(scheme, channel, decoder_sample_rate)` check to return `not_detected` on the saved output while distinguishing short-clip window inapplicability from execution failures under `scheme="auto"`. Other stream
 marks and metadata remain outside standalone `video audio`'s verification scope. The packet format is
 FFmpeg's [per-packet hash muxer](https://ffmpeg.org/ffmpeg-formats.html#framemd5).
 
@@ -432,7 +432,7 @@ reported per file without retrying the same multi-GB initialization.
 Cleanup results separate an action from a watermark verdict. The retained
 `invisible_removed` boolean means only that the visual regeneration stage ran;
 `visual_invisible_action` exposes `not_run` or `regenerated` without implying a
-fresh oracle result (`temporal_stabilize=True` is enabled by default on SynthID VAE regeneration, and `fps=None` / `--keep-fps` preserves native source FPS). `VideoAudioStatus` records `copied_if_present` and
+fresh oracle result (`temporal_stabilize=True` and native resolution / native `fps=None` are enabled by default on SynthID VAE regeneration). `VideoAudioStatus` records `copied_if_present` and
 `unverified` for metadata, visible, invisible, and default all/batch outputs (no extra probe, decode, model, or network call runs), or `processed` with `not_detected`/`detected`/`unverified` when `include_audio_invisible=True` cleans detected audio tracks in `remove_video_all` / `remove_video_batch`. A
 visible no-op or failed batch item with no published output reports
 `stream_action=not_written` instead.
@@ -945,7 +945,14 @@ clip, an OpenArt export, scored 0.81 against the real overlay's 0.63, and 68
 inspected clips between 0.24 and 0.81 showed no Kling mark. What does separate
 them is geometry over time: the real overlay's box is identical on every frame,
 texture matches drift, so the Kling policy tightens `anchor_iou` from 0.80 to
-0.95.
+0.95, and the wide Hailuo composite policy tightens `anchor_iou` to 0.99 (on a
+`272x32` box at 720p, `6 px` of horizontal scene-texture drift still has `0.96`
+IoU, which let metadata-stripped Veo Flow exports chain into full-clip false
+runs below `0.99`, while real and `720p`/`480p` CRF 28 re-encoded Hailuo labels
+preserve `124/124` frames). `detect_veo_frame` also drops candidates below
+`_VEO_TRANSITION_CONFIDENCE` (`0.35`, matching `VISIBLE_MARK_POLICIES["veo"].transition_floor`)
+so sub-transition background noise returns `region=None` rather than arbitrary
+bounding boxes.
 
 TC260 producer identities live in
 [`_internal/tc260_producers.py`](../src/remove_ai_watermarks/_internal/tc260_producers.py).

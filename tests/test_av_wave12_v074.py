@@ -276,8 +276,6 @@ def test_native_guide_upscales_512p_vae_to_native_resolution_and_toggles_tiling(
         src,
         out_guided,
         profile="synthid",
-        fps=None,
-        native_guide=True,
         device="cpu",
         _runtime=rt,
     )
@@ -293,16 +291,16 @@ def test_native_guide_upscales_512p_vae_to_native_resolution_and_toggles_tiling(
     assert "enable" in tiling_calls
 
 
-def test_cli_wan_steps_and_native_guide_validation_and_forwarding(
+def test_cli_video_invisible_defaults_to_native_fps_and_rejects_removed_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     src = tmp_path / "clip.mp4"
     _write_minimal_mp4(src, width=320, height=240, fps=24, seconds=1)
     runner = CliRunner()
 
-    bad = runner.invoke(main, ["video", "invisible", str(src), "--profile", "synthid", "--wan-steps", "6"])
-    assert bad.exit_code != 0
-    assert "wan_steps" in bad.output
+    for retired in ("--wan-steps", "--native-guide", "--keep-fps", "--long-side", "--no-temporal-stabilize"):
+        bad = runner.invoke(main, ["video", "invisible", str(src), retired])
+        assert bad.exit_code != 0
 
     captured: dict[str, Any] = {}
 
@@ -322,9 +320,8 @@ def test_cli_wan_steps_and_native_guide_validation_and_forwarding(
         )
 
     monkeypatch.setattr("remove_ai_watermarks.video.remove_video_invisible", _stub_inv)
-    ok = runner.invoke(main, ["video", "invisible", str(src), "-o", str(tmp_path / "o.mp4"), "--native-guide"])
+    ok = runner.invoke(main, ["video", "invisible", str(src), "-o", str(tmp_path / "o.mp4")])
     assert ok.exit_code == 0, ok.output
-    assert captured["native_guide"] is True
     assert captured["fps"] is None
 
 

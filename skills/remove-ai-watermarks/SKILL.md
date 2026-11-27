@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Audio needs ffmpeg and ffprobe. The video extra bundles these tools on supported platforms. Installer may be uv, pipx, pip, or Homebrew.
 metadata:
   author: wiltodelta
-  version: "1.0.24"
+  version: "1.0.25"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -193,7 +193,7 @@ fallback fails without replacing output. Explicit `--method spectral`, `encodec`
 or `combined` fixes one profile. Neural processing can also fail and changes
 audio timbre. Keep the same verification gate. Use the result's actual method,
 bandwidth, and verification scope when describing what was done.
-Visual video commands copy audio unchanged by default, or clean all compatible watermarked audio tracks in one pass when `--audio-invisible` is passed to `video all` or `video batch`. Use `video audio` (`--stream N` or `--all-streams`) for audio-only track processing while stream-copying video, with MKV/MOV PCM or MP4 AAC
+Visual video commands copy audio unchanged by default, or clean all compatible watermarked audio tracks in one pass when `--audio-invisible` is passed to `video all` or `video batch`. Use `video audio` (omitting `--stream` to clean all watermarked tracks, or passing repeatable `--stream N` to restrict tracks) for audio-only track processing while stream-copying video, with MKV/MOV PCM or MP4 AAC
 output (target 192 kbps), and the same verification policy. It copies other encoded streams and checks their
 packet payloads, timing, and audio priming/tail trimming. Final checks use the
 actual decoded mux; count or offset failures are rejected without padding or

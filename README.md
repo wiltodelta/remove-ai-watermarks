@@ -20,7 +20,7 @@ Video support covers provenance identification, complete visible-plus-metadata
 cleaning, directory batches, 23 visible AI video marks (including Sora, Veo,
 Seedance, Doubao, Dola, Hailuo AI, Vidu, Wan, Qwen, PixVerse, Luma AI, HeyGen,
 Sync Labs, TikTok AI, and Kling AI) with selective GOP stream-copy, and
-oracle-certified 2D VAE (including `--native-guide`) and 3D `Wan 2.1`
+oracle-certified native-resolution 2D VAE and 3D `Wan 2.1`
 regeneration for video SynthID and Seedance removal.
 
 > [raiw.cc](https://raiw.cc) runs this library as a hosted service, with the GPU
@@ -58,7 +58,7 @@ regeneration for video SynthID and Seedance removal.
 | Strip AI metadata from audio | `audio metadata` | No |
 | Process a detected compatible audio watermark and verify the saved file (`.wav`, `.flac`, `.mp3`, `.m4a`, `.ogg`, `.oga`, `.opus`, `.aac`, `.mka`) | `audio invisible` | No |
 | Strip AI metadata and optionally clean compatible audio watermarks | `audio all` / `audio batch` | No |
-| Process one or all audio tracks (`--all-streams`) while copying encoded video | `video audio` | No |
+| Process all or selected audio tracks (`--stream`) while copying encoded video | `video audio` | No |
 | Remove visible marks, AI metadata, and opt-in video/audio invisible marks | `video all` | Depends on `--invisible` |
 | Strip AI metadata from video | `video metadata` | No |
 | Remove a registered visible AI mark from video | `video visible` | No |
@@ -217,7 +217,7 @@ policy. These are separate from pixel detection and per-file removal verificatio
 strips verified AI metadata. If neither signal is found, it still writes a
 same-container passthrough, so application callers get one predictable output
 contract. Proprietary invisible-video removal is excluded by default:
-`--invisible` opts into the lossy, oracle-certified video SynthID profile (with motion-compensated temporal stabilization enabled by default, `--keep-fps` to retain native frame rate, `--native-guide` for fast 512p-guided native-resolution 2D upscaling, and `--wan-steps` for fast 3D `Wan 2.1` denoising), and `--audio-invisible` inspects and cleans compatible watermarked audio tracks in the same atomic pipeline.
+`--invisible` opts into the lossy, oracle-certified video SynthID profile (preserving native resolution and frame rate with motion-compensated temporal stabilization by default, or routing to 3D `Wan 2.1` on BF16 CUDA under `--profile auto`), and `--audio-invisible` inspects and cleans compatible watermarked audio tracks in the same atomic pipeline.
 
 Process a directory with the same contract:
 
@@ -298,18 +298,16 @@ image came from an AI generator, add `--force`:
 remove-ai-watermarks invisible image.png -o clean.png --force
 ```
 
-Typography-heavy images can opt into the experimental verified-text post-pass.
-It accepts manually reviewed strings and line boxes or an operator-verified
-geometry-only manifest; it never treats raw OCR output as ground truth or runs
-automatically:
+Typography-heavy images can opt into the experimental verified-text post-pass
+through the Python API (`InvisibleOptions(text_manifest=...)`). It accepts
+manually reviewed strings and line boxes or an operator-verified geometry-only
+manifest; it never treats raw OCR output as ground truth or runs automatically:
 
 ```bash
-uv tool install --force "remove-ai-watermarks[text-restoration]"
-remove-ai-watermarks invisible image.png -o clean.png \
-  --text-manifest verified-lines.json --force
+uv pip install "remove-ai-watermarks[text-restoration]"
 ```
 
-See the [CLI guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/cli.md#restore-operator-verified-text) for the manifest
+See the [Python API guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/python-api.md#restore-operator-verified-text) for the manifest
 schema, compatibility restrictions, and oracle caveats.
 
 See the [installation guide](https://github.com/wiltodelta/remove-ai-watermarks/blob/main/docs/installation.md) for Homebrew, uv, optional

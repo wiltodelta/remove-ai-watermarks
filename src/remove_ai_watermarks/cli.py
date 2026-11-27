@@ -24,7 +24,6 @@ import click
 from remove_ai_watermarks import __version__, image_io, watermark_registry
 from remove_ai_watermarks._internal.constants import (
     ALL_PRESETS,
-    AUDIO_BANDWIDTHS_KBPS,
     AUDIO_EXTENSIONS,
     AUDIO_METHODS,
     AUDIO_SCHEMES,
@@ -54,12 +53,7 @@ from remove_ai_watermarks._internal.watermark_profiles import (
     vendor_for_strength,
 )
 from remove_ai_watermarks.video import VIDEO_VISIBLE_MARKS
-from remove_ai_watermarks.video_synthid import (
-    DEFAULT_VIDEO_SYNTHID_FPS,
-    DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-    DEFAULT_VIDEO_SYNTHID_NOISE_STD,
-    VIDEO_SYNTHID_LATENT_MULTIPLE,
-)
+from remove_ai_watermarks.video_synthid import DEFAULT_VIDEO_SYNTHID_NOISE_STD
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -212,10 +206,6 @@ _controlnet_scale_option = click.option(
     "(structure/text preservation strength). Higher = closer to original structure.",
 )
 
-_unsharp_option = click.option(
-    "--unsharp", type=float, default=0.0, help="Unsharp-mask sharpening strength (0 = off, typical: 0.3-0.8)."
-)
-
 _adaptive_polish_option = click.option(
     "--adaptive-polish/--no-adaptive-polish",
     default=None,
@@ -223,7 +213,7 @@ _adaptive_polish_option = click.option(
     "targeting the input's sharpness, sparing text), countering the over-smoothed look. "
     "Unset follows the profile: ON for sdxl-zimage, OFF for qwen-zimage, whose "
     "upstream-matching output is left unchanged. It self-limits where there is no detail "
-    "deficit (text/flat graphics). Independent of --unsharp/--humanize.",
+    "deficit (text/flat graphics).",
 )
 
 
@@ -341,9 +331,6 @@ _seed_option = click.option(
     "at a fixed seed, because SynthID removal near the strength floor is seed-dependent.",
 )
 _hf_token_option = click.option("--hf-token", type=str, default=None, help="Hugging Face API token.")
-_humanize_option = click.option(
-    "--humanize", type=float, default=0.0, help="Analog Humanizer film grain intensity (0 = off, typical: 2.0-6.0)."
-)
 _max_resolution_option = click.option(
     "--max-resolution",
     type=int,
@@ -370,26 +357,6 @@ _cpu_offload_option = click.option(
         "the global stack of qwen-zimage, qwen21-zimage, and sdxl-zimage, which also "
         "stream theirs automatically on a card too small to hold it; chroma-zimage "
         "keeps its global stack resident either way."
-    ),
-)
-
-_text_manifest_option = click.option(
-    "--text-manifest",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-    help=(
-        "Experimental verified-text restoration manifest. Requires the text-restoration "
-        "extra, native untiled geometry, and no postprocessing."
-    ),
-)
-
-_fidelity_anchor_option = click.option(
-    "--fidelity-anchor/--no-fidelity-anchor",
-    default=False,
-    help=(
-        "With --text-manifest: blend 15% of the Qwen-VAE donor across the whole "
-        "frame. Off by default - the global blend was measured to return "
-        "detector-visible OpenAI SynthID on poster-scale manifests."
     ),
 )
 
@@ -901,11 +868,11 @@ def _parse_frame_range(spec: str | None) -> tuple[int, int] | None:
 @click.option(
     "--backend",
     type=click.Choice(["auto", "cv2", "migan", "lama"]),
-    default="cv2",
-    help="Inpaint backend. cv2: instant, no model download. migan: light ONNX MI-GAN, ~1 GB RAM, "
-    "near-LaMa quality (extra 'migan'). lama: big-LaMa, best quality but ~4.7 GB RAM (extra 'lama').",
+    default="auto",
+    show_default=True,
+    help="Inpaint backend. auto: best installed (LaMa > MI-GAN > cv2). cv2: instant, no model download. "
+    "migan: light ONNX MI-GAN, ~1 GB RAM (extra 'migan'). lama: big-LaMa, best quality, ~4.7 GB RAM (extra 'lama').",
 )
-@click.option("--inpaint-method", type=click.Choice(["telea", "ns"]), default="telea", help="cv2 inpaint method.")
 @click.option("--dilate", type=int, default=3, help="Grow the box by this many px before inpainting.")
 @click.option("--strip-metadata/--keep-metadata", default=True, help="Strip AI metadata from output.")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON output when erasing video.")
@@ -919,7 +886,6 @@ def cmd_erase(
     track: bool,
     output: Path | None,
     backend: Literal["auto", "cv2", "migan", "lama"],
-    inpaint_method: str,
     dilate: int,
     strip_metadata: bool,
     as_json: bool,
@@ -971,10 +937,9 @@ def cmd_erase(
     console.print(f"  Input:  {source.name}  ({w}x{h})  {len(boxes)} region(s), backend={resolved_img_backend}")
 
     t0 = time.monotonic()
-    method: Literal["telea", "ns"] = "ns" if inpaint_method == "ns" else "telea"
     try:
         with console.status(f"Erasing ({resolved_img_backend})..."):
-            result = erase(image, boxes=boxes, backend=resolved_img_backend, dilate=dilate, cv2_method=method)
+            result = erase(image, boxes=boxes, backend=resolved_img_backend, dilate=dilate)
     except RuntimeError as e:
         console.print(f"  Error: {e}")
         raise SystemExit(1) from e
@@ -995,16 +960,12 @@ def cmd_erase(
 @_pipeline_option
 @_seed_option
 @_hf_token_option
-@_humanize_option
 @_max_resolution_option
 @_controlnet_scale_option
-@_unsharp_option
 @_adaptive_polish_option
 @_tile_options
 @_force_option
 @_cpu_offload_option
-@_text_manifest_option
-@_fidelity_anchor_option
 @click.pass_context
 def cmd_invisible(
     ctx: click.Context,
@@ -1015,8 +976,6 @@ def cmd_invisible(
     pipeline: str,
     seed: int | None,
     hf_token: str | None,
-    humanize: float,
-    unsharp: float,
     max_resolution: int,
     controlnet_scale: float,
     adaptive_polish: bool | None,
@@ -1025,8 +984,6 @@ def cmd_invisible(
     tile_overlap: int,
     force: bool,
     cpu_offload: bool,
-    text_manifest: Path | None,
-    fidelity_anchor: bool,
 ) -> None:
     """Attempt to disrupt invisible AI watermarks through pixel regeneration.
 
@@ -1102,16 +1059,12 @@ def cmd_invisible(
             output_path=output,
             strength=strength,
             seed=seed,
-            humanize=humanize,
-            unsharp=unsharp,
             adaptive_polish=adaptive_polish,
             max_resolution=max_resolution,
             vendor=vendor_label,
             tile=tile,
             tile_size=tile_size,
             tile_overlap=tile_overlap,
-            text_manifest=text_manifest,
-            fidelity_anchor=fidelity_anchor,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         console.print(f"  Error: {exc}")
@@ -1275,13 +1228,6 @@ def _audio_method_options(func: Any) -> Any:
         show_default=True,
         help="Neural audio inference device for DAC, SNAC, EnCodec, and combined; spectral requires cpu.",
     )(func)
-    func = click.option(
-        "--bandwidth",
-        type=click.Choice([str(bw) for bw in AUDIO_BANDWIDTHS_KBPS]),
-        default=str(AUDIO_BANDWIDTHS_KBPS[-1]),
-        show_default=True,
-        help="EnCodec bandwidth in kbps; applies to encodec and combined methods.",
-    )(func)
     return click.option(
         "--method",
         type=click.Choice(list(AUDIO_METHODS)),
@@ -1297,43 +1243,29 @@ def _audio_method_options(func: Any) -> Any:
 def _audio_scheme_option(
     func: Any = None,
     *,
-    default: AudioScheme = AUDIO_SCHEMES[0],
     flag: str = "--scheme",
 ) -> Any:
     opt = click.option(
         flag,
         type=click.Choice(list(AUDIO_SCHEMES)),
-        default=default,
+        default="auto",
         show_default=True,
-        help="Compatible public models to check; all requests every named model, auto checks installed models.",
+        help="Compatible public models to check; auto checks installed models, all requests every named model.",
     )
     return opt if func is None else opt(func)
 
 
 def _audio_permission_options(func: Any = None, *, prefix: str = "--") -> Any:
-    """Apply split audio verification and quality-override flags."""
-
-    def apply(target: Any) -> Any:
-        target = click.option(
-            f"{prefix}allow-quality-override",
-            is_flag=True,
-            help="Permit writing an output that fails the audio SNR/RMS/window integrity gate on the final attempt.",
-        )(target)
-        target = click.option(
-            f"{prefix}allow-positive",
-            is_flag=True,
-            help="Permit writing an output that still tests positive under local decoders on the final attempt.",
-        )(target)
-        return click.option(
-            f"{prefix}allow-unverified",
-            is_flag=True,
-            help=(
-                "Process without a local source-positive decoder match (or with --no-verify), "
-                "keeping the quality gate active."
-            ),
-        )(target)
-
-    return apply if func is None else apply(func)
+    """Apply audio unverified-processing permission flag."""
+    opt = click.option(
+        f"{prefix}allow-unverified",
+        is_flag=True,
+        help=(
+            "Process without a local source-positive decoder match (or with --no-verify), "
+            "keeping the quality gate active."
+        ),
+    )
+    return opt if func is None else opt(func)
 
 
 def _audio_check_label(scheme: str) -> str:
@@ -1459,7 +1391,7 @@ def cmd_audio_metadata(
 @click.option(
     "--force",
     is_flag=True,
-    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override on the final attempt.",
+    help="Force processing even without a local source-positive match or when final decoder/quality checks fail.",
 )
 @click.option(
     "--verify/--no-verify",
@@ -1481,14 +1413,11 @@ def cmd_audio_invisible(
     output: Path | None,
     force: bool,
     allow_unverified: bool,
-    allow_positive: bool,
-    allow_quality_override: bool,
     verify: bool,
     stream: int,
     low_memory: bool,
     as_json: bool,
     method: AudioMethod,
-    bandwidth: str,
     vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
@@ -1506,12 +1435,9 @@ def cmd_audio_invisible(
             target,
             force=force,
             allow_unverified=allow_unverified,
-            allow_positive=allow_positive,
-            allow_quality_override=allow_quality_override,
             verify=verify,
             stream=stream,
             method=method,
-            bandwidth_kbps=float(bandwidth),
             vocoder_device=vocoder_device,
             vendor=vendor,
             scheme=scheme,
@@ -1555,7 +1481,7 @@ def cmd_audio_invisible(
 
 @cmd_audio.command("all")
 @_audio_method_options
-@_audio_scheme_option(default="auto")
+@_audio_scheme_option
 @_audio_permission_options
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option(
@@ -1573,7 +1499,7 @@ def cmd_audio_invisible(
 @click.option(
     "--force",
     is_flag=True,
-    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override when --invisible is set.",
+    help="Force audio processing when --invisible is set even if unverified or failing final decoder/quality checks.",
 )
 @click.option(
     "--verify/--no-verify",
@@ -1597,15 +1523,12 @@ def cmd_audio_all(
     invisible: bool,
     force: bool,
     allow_unverified: bool,
-    allow_positive: bool,
-    allow_quality_override: bool,
     verify: bool,
     stream: int,
     keep_standard: bool,
     low_memory: bool,
     as_json: bool,
     method: AudioMethod,
-    bandwidth: str,
     vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
@@ -1622,12 +1545,9 @@ def cmd_audio_all(
             include_invisible=invisible,
             force=force,
             allow_unverified=allow_unverified,
-            allow_positive=allow_positive,
-            allow_quality_override=allow_quality_override,
             verify=verify,
             stream=stream,
             method=method,
-            bandwidth_kbps=float(bandwidth),
             scheme=scheme,
             vocoder_device=vocoder_device,
             vendor=vendor,
@@ -1654,7 +1574,7 @@ def cmd_audio_all(
 
 @cmd_audio.command("batch")
 @_audio_method_options
-@_audio_scheme_option(default="auto")
+@_audio_scheme_option
 @_audio_permission_options
 @click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option(
@@ -1679,7 +1599,7 @@ def cmd_audio_all(
 @click.option(
     "--force",
     is_flag=True,
-    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override when --invisible is set.",
+    help="Force audio processing when --invisible is set even if unverified or failing final decoder/quality checks.",
 )
 @click.option(
     "--verify/--no-verify",
@@ -1701,14 +1621,11 @@ def cmd_audio_batch(
     invisible: bool,
     force: bool,
     allow_unverified: bool,
-    allow_positive: bool,
-    allow_quality_override: bool,
     verify: bool,
     keep_standard: bool,
     low_memory: bool,
     as_json: bool,
     method: AudioMethod,
-    bandwidth: str,
     vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
@@ -1727,11 +1644,8 @@ def cmd_audio_batch(
             include_invisible=invisible,
             force=force,
             allow_unverified=allow_unverified,
-            allow_positive=allow_positive,
-            allow_quality_override=allow_quality_override,
             verify=verify,
             method=method,
-            bandwidth_kbps=float(bandwidth),
             scheme=scheme,
             vocoder_device=vocoder_device,
             vendor=vendor,
@@ -1778,7 +1692,8 @@ def _video_visible_options(f: Any) -> Any:
     f = click.option(
         "--backend",
         type=click.Choice(["auto", "cv2", "migan", "lama"]),
-        default="cv2",
+        default="auto",
+        show_default=True,
         help="Per-frame visible-fill backend.",
     )(f)
     return click.option(
@@ -1795,28 +1710,6 @@ def _video_invisible_options(f: Any) -> Any:
         "--low-memory",
         is_flag=True,
         help="Evict cached neural models and empty GPU/MPS caches between stages and files.",
-    )(f)
-    f = click.option(
-        "--wan-steps",
-        type=click.IntRange(min=1, max=50),
-        default=None,
-        help="Inference steps for Wan 2.1 3D profiles (default: certified 20; e.g. 6 for fast scrubbing).",
-    )(f)
-    f = click.option(
-        "--native-guide",
-        is_flag=True,
-        help="Run fast 512p 2D VAE regeneration and upscale cleanly to native resolution and frame rate.",
-    )(f)
-    f = click.option(
-        "--temporal-stabilize/--no-temporal-stabilize",
-        default=True,
-        show_default=True,
-        help="Motion-compensated optical-flow stabilization across VAE-regenerated frames.",
-    )(f)
-    f = click.option(
-        "--keep-fps",
-        is_flag=True,
-        help="Preserve the source video's native frame rate instead of capping at --fps.",
     )(f)
     f = click.option(
         "--profile",
@@ -1850,16 +1743,8 @@ def _video_invisible_options(f: Any) -> Any:
     f = click.option(
         "--fps",
         type=click.FloatRange(min=1.0),
-        default=DEFAULT_VIDEO_SYNTHID_FPS,
-        show_default=True,
-        help="SynthID output frame rate, capped at the source frame rate.",
-    )(f)
-    f = click.option(
-        "--long-side",
-        type=click.IntRange(min=VIDEO_SYNTHID_LATENT_MULTIPLE),
-        default=DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-        show_default=True,
-        help="SynthID output long side in pixels.",
+        default=None,
+        help="Optional SynthID output frame-rate cap (default: preserve source frame rate).",
     )(f)
     return click.option(
         "--noise-std",
@@ -1894,8 +1779,8 @@ def _video_audio_invisible_options(f: Any) -> Any:
         "--audio-force",
         is_flag=True,
         help=(
-            "Alias enabling --audio-allow-unverified, --audio-allow-positive, and --audio-allow-quality-override "
-            "when --audio-invisible is set."
+            "Force audio processing when --audio-invisible is set even if unverified or failing "
+            "final decoder/quality checks."
         ),
     )(f)
     f = click.option(
@@ -1905,7 +1790,7 @@ def _video_audio_invisible_options(f: Any) -> Any:
         show_default=True,
         help="Audio watermark removal method when --audio-invisible is enabled.",
     )(f)
-    f = _audio_scheme_option(f, default="auto", flag="--audio-scheme")
+    f = _audio_scheme_option(f, flag="--audio-scheme")
     return click.option(
         "--audio-invisible/--no-audio-invisible",
         default=False,
@@ -2079,24 +1964,19 @@ def cmd_video_message_remove(
     help="Output MKV/MOV with PCM or MP4 with AAC, default SOURCE_audio_processed.mkv.",
 )
 @click.option(
-    "--stream", type=click.IntRange(min=0), default=0, show_default=True, help="Audio track ordinal, starting at zero."
-)
-@click.option(
-    "--all-streams",
-    is_flag=True,
-    help="Inspect and process every source-positive audio track instead of one --stream ordinal.",
-)
-@click.option(
-    "--target-stream",
-    "target_streams",
+    "--stream",
+    "streams",
     type=click.IntRange(min=0),
     multiple=True,
-    help="Audio stream ordinal to include in multi-stream processing (repeatable; implies --all-streams).",
+    help=(
+        "Zero-based audio stream ordinal to inspect/clean (repeatable; default: inspect all tracks "
+        "and clean every watermarked track)."
+    ),
 )
 @click.option(
     "--force",
     is_flag=True,
-    help="Alias enabling --allow-unverified, --allow-positive, and --allow-quality-override on the final attempt.",
+    help="Force processing even without a local source-positive match or when final decoder/quality checks fail.",
 )
 @click.option(
     "--verify/--no-verify",
@@ -2108,17 +1988,12 @@ def cmd_video_message_remove(
 def cmd_video_audio(
     source: Path,
     output: Path | None,
-    stream: int,
-    all_streams: bool,
-    target_streams: tuple[int, ...],
+    streams: tuple[int, ...],
     force: bool,
     allow_unverified: bool,
-    allow_positive: bool,
-    allow_quality_override: bool,
     verify: bool,
     as_json: bool,
     method: AudioMethod,
-    bandwidth: str,
     vocoder_device: AudioDevice,
     vendor: AudioVendor,
     scheme: AudioScheme,
@@ -2128,7 +2003,8 @@ def cmd_video_audio(
 
     from remove_ai_watermarks.video_audio import remove_video_audio, remove_video_audio_all_streams
 
-    use_multi = all_streams or bool(target_streams)
+    streams = tuple(dict.fromkeys(streams))
+    use_multi = len(streams) != 1
     target = output if output is not None else source.with_name(f"{source.stem}_audio_processed.mkv")
     try:
         outcome: Any = (
@@ -2137,28 +2013,22 @@ def cmd_video_audio(
                 target,
                 force=force,
                 allow_unverified=allow_unverified,
-                allow_positive=allow_positive,
-                allow_quality_override=allow_quality_override,
                 verify=verify,
                 method=method,
-                bandwidth_kbps=float(bandwidth),
                 vocoder_device=vocoder_device,
                 vendor=vendor,
                 scheme=scheme,
-                streams=target_streams or None,
+                streams=streams or None,
             )
             if use_multi
             else remove_video_audio(
                 source,
                 target,
-                stream=stream,
+                stream=streams[0],
                 force=force,
                 allow_unverified=allow_unverified,
-                allow_positive=allow_positive,
-                allow_quality_override=allow_quality_override,
                 verify=verify,
                 method=method,
-                bandwidth_kbps=float(bandwidth),
                 vocoder_device=vocoder_device,
                 vendor=vendor,
                 scheme=scheme,
@@ -2186,7 +2056,7 @@ def cmd_video_audio(
             console.print(
                 "No compatible source-positive audio signal; no output written."
                 if outcome.skipped
-                else f"Processed audio track {stream}: {outcome.output}"
+                else f"Processed audio track {streams[0]}: {outcome.output}"
             )
             console.print(f"Compatible {_audio_check_label(scheme)} checks: {status}")
             console.print(f"Processing method: {outcome.method}")
@@ -2204,7 +2074,7 @@ def cmd_video_audio(
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--no-visible", is_flag=True, help="Skip visible-mark detection; inspect metadata only.")
 @click.option("--audio/--no-audio", default=False, help="Inspect audio streams with compatible public decoders.")
-@_audio_scheme_option(default="auto", flag="--audio-scheme")
+@_audio_scheme_option(flag="--audio-scheme")
 @click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
 def cmd_video_identify(
     source: Path,
@@ -2370,38 +2240,18 @@ def _print_video_audio_status(
         _print_video_audio_unverified()
 
 
-def _effective_cli_fps(
-    ctx: click.Context,
-    fps: float,
-    *,
-    keep_fps: bool,
-    native_guide: bool,
-) -> float | None:
-    """Resolve CLI FPS, preserving source FPS when --keep-fps or --native-guide (with default --fps) is active."""
-    if keep_fps or (native_guide and ctx.get_parameter_source("fps") == click.core.ParameterSource.DEFAULT):
-        return None
-    return fps
-
-
 @cmd_video.command("invisible")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_video_output_option
 @_video_invisible_options
 @click.option("--json", "as_json", is_flag=True, help="Emit the regeneration result as JSON.")
-@click.pass_context
 def cmd_video_invisible(
-    ctx: click.Context,
     source: Path,
     output: Path | None,
     profile: VideoInvisibleProfile,
     quality: Literal["delivery", "master"],
     noise_std: float,
-    long_side: int,
-    fps: float,
-    keep_fps: bool,
-    temporal_stabilize: bool,
-    native_guide: bool,
-    wan_steps: int | None,
+    fps: float | None = None,
     low_memory: bool = False,
     batch_size: int = 4,
     seed: int = 0,
@@ -2412,7 +2262,6 @@ def cmd_video_invisible(
 
     from remove_ai_watermarks.video import remove_video_invisible
 
-    eff_fps = _effective_cli_fps(ctx, fps, keep_fps=keep_fps, native_guide=native_guide)
     if not as_json:
         _banner()
         console.print(f"  Regenerating {source.name} with the {profile} profile...")
@@ -2424,14 +2273,10 @@ def cmd_video_invisible(
             profile=profile,
             quality=quality,
             noise_std=noise_std,
-            long_side=long_side,
-            fps=eff_fps,
+            fps=fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
-            temporal_stabilize=temporal_stabilize,
-            native_guide=native_guide,
-            wan_steps=wan_steps,
             **inv_extra,
         )
     except (OSError, RuntimeError, ValueError) as e:
@@ -2598,9 +2443,7 @@ def cmd_video_erase(
 @_video_audio_invisible_options
 @click.option("--trim-bumper", is_flag=True, help="Detect and trim a trailing full-screen static AI outro bumper.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the complete video cleaning result as JSON.")
-@click.pass_context
 def cmd_video_all(
-    ctx: click.Context,
     source: Path,
     output: Path | None,
     mark: str,
@@ -2610,12 +2453,7 @@ def cmd_video_all(
     profile: VideoInvisibleProfile,
     quality: Literal["delivery", "master"],
     noise_std: int | float,
-    long_side: int,
-    fps: float,
-    keep_fps: bool,
-    temporal_stabilize: bool,
-    native_guide: bool = False,
-    wan_steps: int | None = None,
+    fps: float | None = None,
     low_memory: bool = False,
     batch_size: int = 4,
     seed: int = 0,
@@ -2625,8 +2463,6 @@ def cmd_video_all(
     audio_method: AudioMethod = "auto",
     audio_force: bool = False,
     audio_allow_unverified: bool = False,
-    audio_allow_positive: bool = False,
-    audio_allow_quality_override: bool = False,
     audio_streams: tuple[int, ...] = (),
     audio_vendor: AudioVendor = "auto",
     trim_bumper: bool | Literal["auto"] = False,
@@ -2636,7 +2472,6 @@ def cmd_video_all(
 
     from remove_ai_watermarks.video import remove_video_all
 
-    eff_fps = _effective_cli_fps(ctx, fps, keep_fps=keep_fps, native_guide=native_guide)
     if not as_json:
         _banner()
         stage_parts = ["visible marks"]
@@ -2663,21 +2498,15 @@ def cmd_video_all(
             invisible_profile=profile,
             invisible_quality=quality,
             noise_std=float(noise_std),
-            long_side=long_side,
-            fps=eff_fps,
+            fps=fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
-            temporal_stabilize=temporal_stabilize,
-            native_guide=native_guide,
-            wan_steps=wan_steps,
             include_audio_invisible=audio_invisible,
             audio_scheme=audio_scheme,
             audio_method=audio_method,
             audio_force=audio_force,
             audio_allow_unverified=audio_allow_unverified,
-            audio_allow_positive=audio_allow_positive,
-            audio_allow_quality_override=audio_allow_quality_override,
             audio_vendor=audio_vendor,
             audio_streams=audio_streams or None,
             **all_extra,
@@ -2741,9 +2570,7 @@ def cmd_video_all(
 @_video_invisible_options
 @_video_audio_invisible_options
 @click.option("--json", "as_json", is_flag=True, help="Emit the video batch summary as JSON.")
-@click.pass_context
 def cmd_video_batch(
-    ctx: click.Context,
     directory: Path,
     output_dir: Path | None,
     mode: Literal["all", "visible", "metadata"],
@@ -2754,12 +2581,7 @@ def cmd_video_batch(
     profile: VideoInvisibleProfile,
     quality: Literal["delivery", "master"],
     noise_std: float,
-    long_side: int,
-    fps: float,
-    keep_fps: bool,
-    temporal_stabilize: bool,
-    native_guide: bool = False,
-    wan_steps: int | None = None,
+    fps: float | None = None,
     low_memory: bool = False,
     batch_size: int = 4,
     seed: int = 0,
@@ -2769,8 +2591,6 @@ def cmd_video_batch(
     audio_method: AudioMethod = "auto",
     audio_force: bool = False,
     audio_allow_unverified: bool = False,
-    audio_allow_positive: bool = False,
-    audio_allow_quality_override: bool = False,
     audio_streams: tuple[int, ...] = (),
     audio_vendor: AudioVendor = "auto",
     as_json: bool = False,
@@ -2780,7 +2600,6 @@ def cmd_video_batch(
 
     from remove_ai_watermarks.video import remove_video_batch
 
-    eff_fps = _effective_cli_fps(ctx, fps, keep_fps=keep_fps, native_guide=native_guide)
     if not as_json:
         _banner()
         console.print(f"  Processing video directory {directory} in {mode} mode...")
@@ -2797,21 +2616,15 @@ def cmd_video_batch(
             invisible_profile=profile,
             invisible_quality=quality,
             noise_std=noise_std,
-            long_side=long_side,
-            fps=eff_fps,
+            fps=fps,
             batch_size=batch_size,
             seed=seed,
             device=device,
-            temporal_stabilize=temporal_stabilize,
-            native_guide=native_guide,
-            wan_steps=wan_steps,
             include_audio_invisible=audio_invisible,
             audio_scheme=audio_scheme,
             audio_method=audio_method,
             audio_force=audio_force,
             audio_allow_unverified=audio_allow_unverified,
-            audio_allow_positive=audio_allow_positive,
-            audio_allow_quality_override=audio_allow_quality_override,
             audio_vendor=audio_vendor,
             audio_streams=audio_streams or None,
             **batch_extra,
@@ -3327,16 +3140,12 @@ def _resolve_preset(
 @_pipeline_option
 @_seed_option
 @_hf_token_option
-@_humanize_option
 @_max_resolution_option
 @_controlnet_scale_option
-@_unsharp_option
 @_adaptive_polish_option
 @_tile_options
 @_force_option
 @_cpu_offload_option
-@_text_manifest_option
-@_fidelity_anchor_option
 @click.pass_context
 @_pixels_required
 def cmd_all(
@@ -3351,8 +3160,6 @@ def cmd_all(
     pipeline: str,
     seed: int | None,
     hf_token: str | None,
-    humanize: float,
-    unsharp: float,
     max_resolution: int,
     controlnet_scale: float,
     adaptive_polish: bool | None,
@@ -3361,8 +3168,6 @@ def cmd_all(
     tile_overlap: int,
     force: bool,
     cpu_offload: bool,
-    text_manifest: Path | None,
-    fidelity_anchor: bool,
 ) -> None:
     """Remove ALL watermarks: visible + invisible + metadata.
 
@@ -3395,12 +3200,7 @@ def cmd_all(
             profile="auto",
             quality="delivery",
             noise_std=DEFAULT_VIDEO_SYNTHID_NOISE_STD,
-            long_side=DEFAULT_VIDEO_SYNTHID_LONG_SIDE,
-            fps=DEFAULT_VIDEO_SYNTHID_FPS,
-            keep_fps=False,
-            temporal_stabilize=True,
-            native_guide=False,
-            wan_steps=None,
+            fps=None,
             batch_size=4,
             seed=(seed or 0) if vid_inv_mode else 0,
             device="auto",
@@ -3409,8 +3209,6 @@ def cmd_all(
             audio_method="auto",
             audio_force=eff_force,
             audio_allow_unverified=False,
-            audio_allow_positive=False,
-            audio_allow_quality_override=False,
             audio_streams=(),
             audio_vendor=mapped_audio_vendor,
             trim_bumper="auto" if not lossless_only else False,
@@ -3426,14 +3224,12 @@ def cmd_all(
             invisible=not lossless_only,
             force=eff_force,
             allow_unverified=False,
-            allow_positive=False,
-            allow_quality_override=False,
             verify=True,
             stream=0,
             keep_standard=True,
+            low_memory=False,
             as_json=False,
             method="auto",
-            bandwidth=str(AUDIO_BANDWIDTHS_KBPS[-1]),
             vocoder_device="auto",
             vendor=mapped_vendor,
             scheme="auto",
@@ -3513,8 +3309,6 @@ def cmd_all(
                 pipeline=pipeline,
                 seed=seed,
                 hf_token=hf_token,
-                humanize=humanize,
-                unsharp=unsharp,
                 adaptive_polish=adaptive_polish,
                 max_resolution=max_resolution,
                 controlnet_conditioning_scale=controlnet_scale,
@@ -3522,8 +3316,6 @@ def cmd_all(
                 tile=tile,
                 tile_size=tile_size,
                 tile_overlap=tile_overlap,
-                text_manifest=text_manifest,
-                fidelity_anchor=fidelity_anchor,
             ),
             force=force,
             progress=progress,
@@ -3601,19 +3393,21 @@ def _batch_engine(mode: str, options: InvisibleOptions) -> object | None:
     help="Output directory (default: <dir>_clean/).",
 )
 @click.option(
-    "--mode", type=click.Choice(["visible", "invisible", "metadata", "all"]), default="visible", help="Processing mode."
+    "--mode",
+    type=click.Choice(["visible", "invisible", "metadata", "all"]),
+    default="all",
+    show_default=True,
+    help="Processing mode.",
 )
 @_preset_option
 @_strength_option
 @_visible_backend_option
 @_visible_sensitivity_option
-@_humanize_option
 @_all_vendor_option
 @_pipeline_option
 @_seed_option
 @_hf_token_option
 @_max_resolution_option
-@_unsharp_option
 @_controlnet_scale_option
 @_adaptive_polish_option
 @_tile_options
@@ -3634,8 +3428,6 @@ def cmd_batch(
     hf_token: str | None,
     backend: str,
     sensitivity: str,
-    humanize: float,
-    unsharp: float,
     max_resolution: int,
     controlnet_scale: float,
     adaptive_polish: bool | None,
@@ -3654,8 +3446,6 @@ def cmd_batch(
     if output_dir is None:
         output_dir = directory.parent / (directory.name + "_clean")
 
-    if preset is not None and ctx.get_parameter_source("mode") == click.core.ParameterSource.DEFAULT:
-        mode = "all"
     eff_force, eff_backend, lossless_only = _resolve_preset(preset, force=force, backend=backend)
 
     entries = sorted(p for p in directory.iterdir() if p.is_file())
@@ -3703,8 +3493,6 @@ def cmd_batch(
             pipeline=pipeline,
             seed=seed,
             hf_token=hf_token,
-            humanize=humanize,
-            unsharp=unsharp,
             adaptive_polish=adaptive_polish,
             max_resolution=max_resolution,
             controlnet_conditioning_scale=controlnet_scale,
@@ -3777,7 +3565,6 @@ def cmd_batch(
                                 vp,
                                 output_dir / vp.name,
                                 profile="auto",
-                                fps=DEFAULT_VIDEO_SYNTHID_FPS,
                                 seed=seed or 0,
                             )
                             processed += 1
@@ -3801,7 +3588,6 @@ def cmd_batch(
                         backend=eff_backend,
                         include_invisible=vid_inv_mode,
                         invisible_profile="auto",
-                        fps=DEFAULT_VIDEO_SYNTHID_FPS,
                         seed=(seed or 0) if vid_inv_mode else 0,
                         include_audio_invisible=(mode == "all" and not lossless_only),
                         audio_force=eff_force,
