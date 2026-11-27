@@ -44,6 +44,64 @@ def test_smoke_rejects_unexpected_process_outcomes(monkeypatch, tmp_path, code):
     assert smoke.Runner(tmp_path).run("visible", ["visible", "input.png"], expect_exit=(0, 2)).status == "FAIL"
 
 
+def test_media_smoke_generates_both_fixtures_with_resolved_ffmpeg(monkeypatch, tmp_path):
+    import smoke_matrix as smoke
+
+    from remove_ai_watermarks import video_tools
+
+    ffmpeg = str(tmp_path / "bundled tools" / "ffmpeg")
+    fixtures = []
+
+    def run(command, **kwargs):
+        output = Path(command[-1])
+        if "-y" in command:
+            fixtures.append((command[0], output.name))
+        output.write_bytes(b"media")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(video_tools, "find_video_tool", lambda name: ffmpeg if name == "ffmpeg" else None)
+    monkeypatch.setattr(subprocess, "run", run)
+    runner = smoke.Runner(tmp_path)
+    smoke._media_rows(runner, tmp_path)
+
+    assert fixtures == [(ffmpeg, "media.mp4"), (ffmpeg, "media.mp3")]
+    assert [result.status for result in runner.results] == ["pass"] * 4
+
+
+def test_media_smoke_skips_when_ffmpeg_is_unavailable(monkeypatch, tmp_path):
+    import smoke_matrix as smoke
+
+    from remove_ai_watermarks import video_tools
+
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(video_tools, "find_video_tool", lambda name: None)
+    runner = smoke.Runner(tmp_path)
+    smoke._media_rows(runner, tmp_path)
+
+    (result,) = runner.results
+    assert result.status == "skip"
+    assert "remove-ai-watermarks[video]" in result.detail
+
+
+def test_media_smoke_reports_bundle_initialization_failure(monkeypatch, tmp_path):
+    import smoke_matrix as smoke
+
+    from remove_ai_watermarks import video_tools
+
+    def fail(name):
+        raise RuntimeError("could not initialize bundled FFmpeg")
+
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(video_tools, "find_video_tool", fail)
+    runner = smoke.Runner(tmp_path)
+    smoke._media_rows(runner, tmp_path)
+
+    (result,) = runner.results
+    assert result.status == "FAIL"
+    assert "could not initialize bundled FFmpeg" in result.detail
+
+
 @pytest.mark.parametrize("code", [-11, 127, 137])
 def test_robustness_rejects_abnormal_exit_without_text(monkeypatch, code):
     import robustness_suite as robustness

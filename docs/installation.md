@@ -13,9 +13,10 @@ It installs Pillow, piexif, and c2pa-python for reading metadata directly from
 files. It does not install NumPy, OpenCV, pillow-heif, Torch, diffusion models,
 or invisible-watermark decoders.
 
-Native Suno audio creation-comment inspection additionally requires ffprobe
-on `PATH`; audio stream-copy metadata removal requires ffmpeg. These tools
-are not bundled. Neither is needed for ordinary image metadata inspection.
+Native Suno audio creation-comment inspection requires ffprobe. Audio stream-copy
+metadata removal requires ffmpeg. The default package can use system executables
+on `PATH`. On [supported platforms](#video-processing), the `video` extra bundles
+both tools. Ordinary image metadata inspection works without them.
 
 Install it as an isolated command with uv:
 
@@ -95,7 +96,9 @@ uv tool install --force "remove-ai-watermarks[visible,heif]"
 
 ## Audio processing
 
-Audio inspection and processing require both ffmpeg and ffprobe on PATH.
+Audio commands can use ffmpeg and ffprobe from `PATH` or from the
+[`video` extra](#video-processing). To use the bundled tools alongside an audio
+backend, combine the extras, for example `"remove-ai-watermarks[audio,video]"`.
 `audio identify --no-invisible` uses the default package. Install the CPU
 spectral processor separately from the compatible AudioSeal decoder:
 

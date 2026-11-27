@@ -482,17 +482,23 @@ def _media_rows(r: Runner, tmp: Path) -> None:
     The corpus is images only, so the media is synthesized here with ffmpeg rather than
     left untested.
     """
-    if not shutil.which("ffmpeg"):
-        r.skip("audio/video metadata strip", "ffmpeg not on PATH")
+    from remove_ai_watermarks.video_tools import find_video_tool
+
+    try:
+        ffmpeg = find_video_tool("ffmpeg")
+    except RuntimeError as error:
+        r.check("audio/video metadata strip", False, str(error))
+        return
+    if ffmpeg is None:
+        r.skip("audio/video metadata strip", 'install system FFmpeg or "remove-ai-watermarks[video]"')
         return
     for name, gen in (
         ("mp4", ["-f", "lavfi", "-i", "testsrc=duration=1:size=128x128:rate=8", "-pix_fmt", "yuv420p"]),
         ("mp3", ["-f", "lavfi", "-i", "sine=frequency=440:duration=1"]),
     ):
         src = tmp / f"media.{name}"
-        ff = shutil.which("ffmpeg") or "ffmpeg"
         made = subprocess.run(  # noqa: S603
-            [ff, "-y", *gen, "-metadata", "comment=Made with AI", str(src)],
+            [ffmpeg, "-y", *gen, "-metadata", "comment=Made with AI", str(src)],
             capture_output=True,
             check=False,
         )
